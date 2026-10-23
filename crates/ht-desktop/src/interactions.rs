@@ -252,16 +252,20 @@ impl Desktop {
                 let comment = self.editing == Editing::Comment;
                 let saved = self.save_edit(window, cx);
                 if saved && comment && self.previous == Screen::Inbox && (!stay || complete) {
+                    if !self.archive_notification(cx) {
+                        return;
+                    }
                     if complete && let Some(task_id) = self.selected_task() {
-                        self.enqueue(
+                        if !self.enqueue(
                             Write::TaskPatch {
                                 task_id,
                                 patch: TaskPatch::Status(Status::Archive),
                             },
                             cx,
-                        );
+                        ) {
+                            return;
+                        }
                     }
-                    self.archive_notification(cx);
                     self.playlist_step(1, cx);
                 }
             }
@@ -367,8 +371,8 @@ impl Desktop {
                 }
             }
             ArchiveNotification => {
-                self.archive_notification(cx);
-                if self.screen == Screen::Task && self.previous == Screen::Inbox {
+                let archived = self.archive_notification(cx);
+                if archived && self.screen == Screen::Task && self.previous == Screen::Inbox {
                     self.playlist_step(1, cx);
                 }
             }
@@ -519,7 +523,7 @@ impl Desktop {
             );
         }
     }
-    fn archive_notification(&mut self, cx: &mut Context<Self>) {
+    fn archive_notification(&mut self, cx: &mut Context<Self>) -> bool {
         let id = if self.screen == Screen::Inbox {
             self.selection_id()
         } else {
@@ -529,8 +533,9 @@ impl Desktop {
                 .map(|n| n.id)
         };
         if let Some(notification_id) = id {
-            self.enqueue(Write::InboxArchive { notification_id }, cx);
+            return self.enqueue(Write::InboxArchive { notification_id }, cx);
         }
+        true
     }
     fn bulk_archive(&mut self, tasks: bool, cx: &mut Context<Self>) {
         for id in self.interaction.bulk.iter().copied().collect::<Vec<_>>() {
@@ -605,6 +610,7 @@ impl Desktop {
             _ => unreachable!(),
         };
         div()
+            .w_full()
             .id(if editing == Editing::Title {
                 "title-editor"
             } else {
@@ -616,7 +622,15 @@ impl Desktop {
             )
             .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
             .child(input)
-            .into_any_element()
+            .layout_key(
+                &self.layout,
+                if editing == Editing::Title {
+                    "editor.title"
+                } else {
+                    "editor.description"
+                },
+                None,
+            )
     }
     pub(super) fn edit_description(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.screen != Screen::Task {
@@ -637,6 +651,17 @@ impl Desktop {
             Modal::Commands | Modal::Search | Modal::LocalSearch | Modal::Boards
         ) && self.selected_task().is_none()
         {
+            return;
+        }
+        if matches!(modal, Modal::Assign | Modal::Column)
+            && self
+                .selected_task()
+                .and_then(|id| self.db.task(id).ok().flatten())
+                .is_some_and(|t| t.status != Status::Normal)
+        {
+            self.error =
+                Some("Unarchive this task before assigning it or changing its column".into());
+            cx.notify();
             return;
         }
         if matches!(modal, Modal::Assign | Modal::Tags) {
@@ -685,6 +710,12 @@ impl Desktop {
             .and_then(|id| self.db.task(id).ok().flatten())
             .is_some_and(|t| t.status == Status::Archive)
         {
+            rows.retain(|r| {
+                !matches!(
+                    r.action,
+                    CommandAction::Shortcut(Action::Assign | Action::MoveColumn)
+                )
+            });
             if let Some(row) = rows.iter_mut().find(|r| r.key == "archiveTask") {
                 row.name = "Unarchive task".into();
             }
@@ -927,12 +958,18 @@ impl Desktop {
                 cx.notify();
             }
             _ => {
-                let targets: Vec<_> =
-                    if self.screen == Screen::Board && !self.interaction.bulk.is_empty() {
-                        self.interaction.bulk.iter().copied().collect()
-                    } else {
-                        self.selected_task().into_iter().collect()
-                    };
+                let targets: Vec<_> = if self.screen == Screen::Board
+                    && !self.interaction.bulk.is_empty()
+                    && matches!(
+                        choice.action,
+                        ChoiceAction::Column(_)
+                            | ChoiceAction::Assignee(_)
+                            | ChoiceAction::Label(_)
+                    ) {
+                    self.interaction.bulk.iter().copied().collect()
+                } else {
+                    self.selected_task().into_iter().collect()
+                };
                 for task_id in targets {
                     let write = match choice.action {
                         ChoiceAction::Column(section_id) => Write::TaskSection {
@@ -1024,6 +1061,9 @@ impl Desktop {
                     if !self.enqueue(write, cx) {
                         return;
                     }
+                    if matches!(choice.action, ChoiceAction::Delete) {
+                        self.interaction.bulk.remove(&task_id);
+                    }
                     if matches!(choice.action, ChoiceAction::Column(_))
                         && self.screen == Screen::Board
                         && self.interaction.bulk.is_empty()
@@ -1042,6 +1082,10 @@ impl Desktop {
                             self.board_scroll.scroll_to_item(column);
                         }
                     }
+                }
+                if matches!(choice.action, ChoiceAction::Delete) && self.screen == Screen::Task {
+                    self.switch(self.previous, cx);
+                    window.focus(&self.focus, cx);
                 }
             }
         }

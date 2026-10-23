@@ -12,6 +12,49 @@ public class BehaviorInput {
   [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref Point point);
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect rect);
   [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
+  [DllImport("user32.dll")] static extern uint MsgWaitForMultipleObjectsEx(uint count, IntPtr[] handles, uint timeout, uint mask, uint flags);
+  [DllImport("user32.dll")] static extern bool TranslateMessage(ref Message message);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern IntPtr DispatchMessage(ref Message message);
+  public sealed class MessageWatch : IDisposable {
+    readonly System.IO.FileSystemWatcher watcher;
+    readonly System.Threading.AutoResetEvent changed = new System.Threading.AutoResetEvent(false);
+    readonly System.IO.FileSystemEventHandler change;
+    readonly System.IO.RenamedEventHandler rename;
+    public MessageWatch(string folder, string file) {
+      watcher = new System.IO.FileSystemWatcher(folder, file);
+      change = (s,e) => Signal(); rename = (s,e) => Signal();
+      watcher.Changed += change; watcher.Created += change; watcher.Deleted += change; watcher.Renamed += rename;
+      watcher.EnableRaisingEvents = true;
+    }
+    void Signal() { try { changed.Set(); } catch (ObjectDisposedException) {} }
+    public void WaitForChanged(System.IO.WatcherChangeTypes type, int timeout) {
+      var timer = System.Diagnostics.Stopwatch.StartNew();
+      var handles = new[] { changed.SafeWaitHandle.DangerousGetHandle() };
+      while (timer.ElapsedMilliseconds < timeout) {
+        Message message;
+        while (PeekMessage(out message, IntPtr.Zero, 0, 0, 1)) { TranslateMessage(ref message); DispatchMessage(ref message); }
+        uint left = (uint)Math.Max(0, timeout - timer.ElapsedMilliseconds);
+        uint result = MsgWaitForMultipleObjectsEx(1, handles, left, 0x04FF, 4);
+        if (result == 0 || result == 258) return;
+        if (result != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+      }
+    }
+    public void Dispose() { watcher.EnableRaisingEvents = false; watcher.Changed -= change; watcher.Created -= change; watcher.Deleted -= change; watcher.Renamed -= rename; watcher.Dispose(); changed.Dispose(); }
+  }
+  public static bool WaitForExit(System.Diagnostics.Process process, int timeout) {
+    var timer = System.Diagnostics.Stopwatch.StartNew();
+    var handles = new[] { process.Handle };
+    while (timer.ElapsedMilliseconds < timeout) {
+      Message message;
+      while (PeekMessage(out message, IntPtr.Zero, 0, 0, 1)) { TranslateMessage(ref message); DispatchMessage(ref message); }
+      uint left = (uint)Math.Max(0, timeout - timer.ElapsedMilliseconds);
+      uint result = MsgWaitForMultipleObjectsEx(1, handles, left, 0x04FF, 4);
+      if (result == 0) { process.Refresh(); return process.HasExited; }
+      if (result == 258) return false;
+      if (result != 1) throw new System.ComponentModel.Win32Exception(Marshal.GetLastWin32Error());
+    }
+    process.Refresh(); return process.HasExited;
+  }
   public delegate bool EnumProc(IntPtr h, IntPtr p);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder text, int length);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr p);
@@ -24,7 +67,7 @@ public class BehaviorInput {
   [DllImport("user32.dll", SetLastError=true)] public static extern bool PostMessage(IntPtr h, uint m, IntPtr w, IntPtr l);
   [DllImport("user32.dll")] public static extern uint MapVirtualKey(uint key, uint type);
   [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int w, int he, uint flags);
-  [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
+  [DllImport("user32.dll")] public static extern IntPtr SetThreadDpiAwarenessContext(IntPtr context);
   public static IntPtr Find(uint pid) {
     IntPtr found = IntPtr.Zero;
     EnumWindows((h, p) => { uint id; GetWindowThreadProcessId(h, out id); if (id == pid) { var title = new System.Text.StringBuilder(256); GetWindowText(h, title, 256); if (title.ToString() == "Hypertask") { found = h; return false; } } return true; }, IntPtr.Zero);
@@ -55,8 +98,9 @@ public class BehaviorInput {
   }
 }
 '@
+if ([BehaviorInput]::SetThreadDpiAwarenessContext([IntPtr](-4)) -eq [IntPtr]::Zero) { throw 'Cannot set DPI-aware measurement context' }
 function Wait-Change([string]$file, [int]$timeout = 1200) {
-  $watch = New-Object IO.FileSystemWatcher (Split-Path $file), (Split-Path $file -Leaf)
+  $watch = New-Object BehaviorInput+MessageWatch (Split-Path $file), (Split-Path $file -Leaf)
   try { $null = $watch.WaitForChanged([IO.WatcherChangeTypes]::All, $timeout) } finally { $watch.Dispose() }
 }
 function Read-Json([string]$path) {
@@ -83,7 +127,7 @@ function Key([string]$chord) {
   $special = @{ Enter=13; Esc=27; Tab=9; Down=40; Up=38; Left=37; Right=39; F2=113; Home=36; End=35; Backspace=8; Delete=46; ";"=186; ","=188; "."=190; "/"=191 }
   $vk = if ($special.ContainsKey($last)) { $special[$last] } elseif ($last.Length -eq 1) { [int][char]$last.ToUpper() } else { throw "Unknown key $chord" }
   $beforeKey = (Read-Json "$w\$script:id.behavior.json").state.key_events
-  $watch = New-Object IO.FileSystemWatcher $w, "$script:id.behavior.json"
+  $watch = New-Object BehaviorInput+MessageWatch $w, "$script:id.behavior.json"
   [BehaviorInput]::Begin($script:h, [int[]]$mods)
   try {
     [BehaviorInput]::Key($script:h, $vk)
@@ -98,7 +142,7 @@ function Key([string]$chord) {
         $left = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
         if ($left -gt 0) { $null = $watch.WaitForChanged([IO.WatcherChangeTypes]::All, $left) }
       } while ([DateTime]::UtcNow -lt $deadline)
-      Assert-That $ack "Posted key $chord was not acknowledged with its exact modifiers"
+      Assert-That $ack "Posted key $chord not acknowledged: before=$beforeKey count=$($state.key_events) actual=$($state.last_key)/$($state.last_ctrl)/$($state.last_shift) wanted=$($want -join ',')/$($mods -contains 17)/$($mods -contains 16)"
     }
   } finally { [BehaviorInput]::End($script:h, [int[]]$mods); $watch.Dispose() }
 
@@ -108,14 +152,17 @@ function Type-Text([string]$text) {
   Wait-Change "$w\$script:id.behavior.json"
 }
 function Click([string]$key) {
-  $scale = [BehaviorInput]::GetDpiForWindow($script:h) / 96.0
   $rect = New-Object BehaviorInput+Rect
   $null = [BehaviorInput]::GetClientRect($script:h, [ref]$rect)
   for ($attempt = 0; $attempt -lt 80; $attempt++) {
     $s = Read-Json "$w\$script:id.behavior.json"
     if ($key -eq "inbox.tab.last") { $key = ($s.elements | Where-Object { $_.key -match "^inbox.tab.[0-9]+$" } | Sort-Object { [int]($_.key.Split(".")[-1]) } | Select-Object -Last 1).key }
+    $layout = Read-Json "$w\$script:id.json"
+    $null = [BehaviorInput]::GetClientRect($script:h, [ref]$rect)
+    $scale = $rect.right / [double]$layout.width
+    Assert-That ($scale -gt 0 -and [Math]::Abs($scale - $rect.bottom / [double]$layout.height) -lt 0.02) 'Client pixels do not match the measured viewport'
     $e = @($s.elements | Where-Object key -eq $key)[0]
-    Assert-That ($null -ne $e) "Missing measured element $key"
+    Assert-That ($null -ne $e -and $e.w -gt 0 -and $e.h -gt 0) "Missing or empty measured element $key"
     $x = [int](($e.x + $e.w / 2) * $scale); $y = [int](($e.y + $e.h / 2) * $scale)
     if ($y -gt 0 -and $y -lt ($rect.bottom - 40)) { break }
     $point = New-Object BehaviorInput+Point
@@ -129,6 +176,7 @@ function Click([string]$key) {
     Wait-Change "$w\$script:id.behavior.json"
   }
   Assert-That ($y -gt 0 -and $y -lt ($rect.bottom - 40) -and $x -gt 0 -and $x -lt $rect.right) "Element $key is outside the client viewport"
+  $script:inputLog += @{ op='click'; key=$key; x=$x; y=$y; scale=$scale; clientWidth=$rect.right; clientHeight=$rect.bottom }
   $pos = ($y -shl 16) -bor ($x -band 65535)
   [BehaviorInput]::Post($script:h, 0x200, 0, $pos)
   [BehaviorInput]::Post($script:h, 0x201, 1, $pos)
@@ -173,6 +221,7 @@ function Clipboard-Expected($kind, $state) {
 $results = @()
 foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Take)) {
   $script:id = $case.id
+  $script:inputLog = @()
   if ($id -notmatch '^[a-z0-9-]+$') { throw 'Unsafe case id' }
   $p = $null; $failure = $null; $clipboardBackup = $null; $ownClipboardSequence = $null
   try {
@@ -185,15 +234,15 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
     $null = $p.WaitForInputIdle(1000)
     $script:h = [BehaviorInput]::Find($p.Id)
     Assert-That ($h -ne [IntPtr]::Zero) 'Test HWND not found'
-    # Bottom of Z-order, shown without activation; never attach to the owner's input queue.
-    $null = [BehaviorInput]::SetWindowPos($h, [IntPtr]1, 0, 0, 1440, 940, 0x10 -bor 0x40)
-    $watch = New-Object IO.FileSystemWatcher $w, "$id.behavior.json"
+    # Offscreen at the bottom of Z-order, shown without activation; never attach to the owner's input queue.
+    $null = [BehaviorInput]::SetWindowPos($h, [IntPtr]1, -16000, 0, 1440, 940, 0x10 -bor 0x40)
+    $watch = New-Object BehaviorInput+MessageWatch $w, "$id.behavior.json"
     try { if (!(Test-Path "$w\$id.behavior.json")) { $null = $watch.WaitForChanged([IO.WatcherChangeTypes]::All, 15000) } } finally { $watch.Dispose() }
     # A hidden GPUI HWND can be enumerated before its CW_USEDEFAULT creation size
     # is replaced. Resize only after the first render, without activating it.
-    Assert-That ([BehaviorInput]::SetWindowPos($h, [IntPtr]1, 0, 0, 1441, 940, 0x10 -bor 0x40)) 'Cannot resize test HWND'
-    Assert-That ([BehaviorInput]::SetWindowPos($h, [IntPtr]1, 0, 0, 1440, 940, 0x10 -bor 0x40)) 'Cannot size test HWND'
-    $watch = New-Object IO.FileSystemWatcher $w, "$id.json"
+    Assert-That ([BehaviorInput]::SetWindowPos($h, [IntPtr]1, -16000, 0, 1441, 940, 0x10 -bor 0x40)) 'Cannot resize test HWND'
+    Assert-That ([BehaviorInput]::SetWindowPos($h, [IntPtr]1, -16000, 0, 1440, 940, 0x10 -bor 0x40)) 'Cannot size test HWND'
+    $watch = New-Object BehaviorInput+MessageWatch $w, "$id.json"
     $deadline = [DateTime]::UtcNow.AddSeconds(5)
     try {
       do {
@@ -214,7 +263,7 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
         'type' { Type-Text $step.value }
         'click' { Click $step.value }
         'expect' {
-          $watch = New-Object IO.FileSystemWatcher $w, "$script:id.behavior.json"
+          $watch = New-Object BehaviorInput+MessageWatch $w, "$script:id.behavior.json"
           $deadline = [DateTime]::UtcNow.AddSeconds(5)
           try {
             do {
@@ -236,7 +285,8 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
         'expect-element' {
           $current = Snapshot $step.name
           $element = @($current.elements | Where-Object key -eq $step.key)[0]
-          Assert-That ($null -ne $element -and $element.text -eq $step.value) "Element $($step.key) did not show $($step.value)"
+          $field = if ($step.field) { $step.field } else { 'text' }
+          Assert-That ($null -ne $element -and $element.($field) -eq $step.value) "Element $($step.key) did not show $($step.value)"
         }
         default { throw "Unknown operation $($step.op)" }
       }
@@ -258,9 +308,10 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
     if ($p -and !$p.HasExited) {
       # Graceful close checkpoints SQLite; forced termination is an infrastructure failure.
       [BehaviorInput]::Post($script:h, 0x10, 0, 0)
-      if (!$p.WaitForExit(10000)) { Stop-Process -Id $p.Id -Force; $failure = 'Test copy failed to exit gracefully' }
+      if (![BehaviorInput]::WaitForExit($p, 10000)) { Stop-Process -Id $p.Id -Force; $failure = 'Test copy failed to exit gracefully' }
     }
   }
+  $script:inputLog | ConvertTo-Json -Depth 10 | Set-Content "$w\$id-input-log.json" -Encoding UTF8
   $result = [pscustomobject]@{ id=$id; passed=($null -eq $failure); error=$failure; database="$id.db" }
   $results += $result
   if ($failure) { "FAIL $id $failure" } else { "INPUT_OK $id (SQLite assertions pending on VPS)" }

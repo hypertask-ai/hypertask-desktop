@@ -1478,6 +1478,7 @@ impl Desktop {
                             div()
                                 .text_size(px(13.))
                                 .line_height(px(19.5))
+                                .when(self.editing == Editing::Title && self.column == column && self.selected == row, |d| d.w_full())
                                 .child(if self.editing == Editing::Title && self.column == column && self.selected == row { self.focused_editor(Editing::Title, cx) } else { div().child(title.clone()).into_any_element() })
                                 .layout_key(
                                     &self.layout,

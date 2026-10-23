@@ -1761,6 +1761,12 @@
       {
         "op": "key",
         "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "back",
+        "field": "screen",
+        "value": "board"
       }
     ],
     "mutation": {
@@ -2044,6 +2050,12 @@
       {
         "op": "key",
         "value": "Ctrl+Enter"
+      },
+      {
+        "op": "expect",
+        "name": "advanced",
+        "field": "task_id",
+        "value": 54302
       }
     ],
     "also_mutation": {
@@ -2077,6 +2089,12 @@
       {
         "op": "key",
         "value": "Ctrl+Alt+Shift+Enter"
+      },
+      {
+        "op": "expect",
+        "name": "advanced",
+        "field": "task_id",
+        "value": 54302
       }
     ],
     "mutation": {
@@ -2377,7 +2395,7 @@
       },
       {
         "op": "type",
-        "value": "graphte"
+        "value": "porcleain"
       },
       {
         "op": "expect",
@@ -2393,7 +2411,14 @@
         "op": "expect",
         "name": "applied",
         "field": "theme",
-        "value": "graphite"
+        "value": "porcelain"
+      },
+      {
+        "op": "expect-element",
+        "name": "theme-color",
+        "key": "rail",
+        "field": "bg",
+        "value": "#f5f5f6"
       }
     ]
   },
@@ -2562,5 +2587,174 @@
         "value": null
       }
     ]
+  },
+  {
+    "id": "command-archive-context",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+E"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "type",
+        "value": "assign task"
+      },
+      {
+        "op": "expect",
+        "name": "no-assign",
+        "field": "choice_count",
+        "value": 0
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "type",
+        "value": "move task to column"
+      },
+      {
+        "op": "expect",
+        "name": "no-move",
+        "field": "choice_count",
+        "value": 0
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "type",
+        "value": "unarchive task"
+      },
+      {
+        "op": "expect",
+        "name": "one",
+        "field": "choice_count",
+        "value": 1
+      },
+      {
+        "op": "expect-element",
+        "name": "unarchive",
+        "key": "command.choice.0",
+        "value": "Unarchive task"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "status": "Archive"
+    }
+  },
+  {
+    "id": "task-title-mouse-focus",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "click",
+        "value": "task.title"
+      },
+      {
+        "op": "click",
+        "value": "editor.title"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "type",
+        "value": "behavior mouse title"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_title",
+      "title": "behavior mouse title"
+    }
+  },
+  {
+    "id": "board-title-mouse-focus",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "F2"
+      },
+      {
+        "op": "click",
+        "value": "editor.title"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "expect",
+        "name": "no-bulk",
+        "field": "bulk_count",
+        "value": 0
+      },
+      {
+        "op": "type",
+        "value": "behavior board mouse title"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "inline",
+        "field": "screen",
+        "value": "board"
+      }
+    ],
+    "mutation": {
+      "kind": "task_title",
+      "title": "behavior board mouse title"
+    }
+  },
+  {
+    "id": "description-mouse-focus",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+D"
+      },
+      {
+        "op": "click",
+        "value": "editor.description"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "type",
+        "value": "behavior mouse description"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "description": "behavior mouse description",
+      "content_type": "html"
+    }
   }
 ]

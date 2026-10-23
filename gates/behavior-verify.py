@@ -69,6 +69,7 @@ for case in cases:
             import re
             elements = {e['key']:e for e in before['elements']}
             comments = [e for k,e in elements.items() if re.fullmatch(r'task\.comment\.[0-9]+',k)]
+            assert comments, 'placement fixture must contain an existing rendered comment'
             composer = elements['task.composer']
             assert all(composer['y'] >= e['y'] + e['h'] - 0.01 for e in comments), 'composer precedes comments'
         footer = {
@@ -87,7 +88,7 @@ for case in cases:
             elif step['op'] == 'expect-element':
                 snapshot = load(out / f"{name}-{step['name']}.behavior.json")
                 element = next(e for e in snapshot['elements'] if e['key'] == step['key'])
-                assert element['text'] == step['value'], step
+                assert element[step.get('field','text')] == step['value'], step
         db = out / result['database']
         assert db.is_file(), 'missing isolated database'
         # Read-only CLI invocation: do not silently create a missing SQLite database.
