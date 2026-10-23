@@ -1,0 +1,384 @@
+use super::*;
+use crate::{command_center::{self, CommandAction}, shortcuts::{self, Action}};
+use gpui::{ClipboardItem, MouseButton};
+use ht_core::{TaskPatch, generated::Status};
+use std::{collections::BTreeSet, time::Instant};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum Modal { Commands, Column, Priority, Size, DueDate, Delete }
+#[derive(Clone)]
+struct Choice { name: String, action: ChoiceAction }
+#[derive(Clone, Copy)]
+enum ChoiceAction { Command(CommandAction), Column(i64), Priority(u8), Size(u8), DueDate(i64), Delete }
+pub(super) struct Interaction {
+    pub modal: Option<Modal>,
+    pub query: Entity<TextInput>,
+    pub description: Entity<TextInput>,
+    pub choice: usize,
+    pub bulk: BTreeSet<i64>,
+    pub playlist: Vec<i64>,
+    pub task_part: usize,
+    last_g: Option<(Instant, bool)>,
+    modal_scroll: ScrollHandle,
+}
+impl Interaction {
+    pub fn new(cx: &mut Context<Desktop>) -> Self {
+        let query = cx.new(|cx| TextInput::new(String::new(), "Type a command or search...", color(0x8e9093), cx));
+        cx.observe(&query, |this, _, cx| { this.interaction.choice = 0; cx.notify(); }).detach();
+        let description = cx.new(|cx| TextInput::new(String::new(), "Add Description", color(0x8e9093), cx));
+        Self { modal: None, query, description, choice: 0, bulk: BTreeSet::new(), playlist: vec![], task_part: 0, last_g: None, modal_scroll: ScrollHandle::new() }
+    }
+}
+impl Desktop {
+    pub(super) fn interaction_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        let key = &event.keystroke;
+        let ctrl = key.modifiers.control || key.modifiers.platform;
+        if key.key == "k" && ctrl && !key.modifiers.shift && !key.modifiers.alt {
+            if self.interaction.modal == Some(Modal::Commands) { self.close_modal(window, cx); }
+            else { self.show_modal(Modal::Commands, window, cx); }
+            cx.stop_propagation();
+            return;
+        }
+        if self.interaction.modal.is_some() {
+            let count = self.choices(cx).len();
+            match key.key.as_str() {
+                "escape" => self.close_modal(window, cx),
+                "down" | "j" if !ctrl && !key.modifiers.alt => {
+                    self.interaction.choice = (self.interaction.choice + 1).min(count.saturating_sub(1));
+                    self.interaction.modal_scroll.scroll_to_item(self.interaction.choice);
+                    cx.notify();
+                }
+                "up" | "k" if !ctrl && !key.modifiers.alt => {
+                    self.interaction.choice = self.interaction.choice.saturating_sub(1);
+                    self.interaction.modal_scroll.scroll_to_item(self.interaction.choice);
+                    cx.notify();
+                }
+                "enter" => self.run_choice(window, cx),
+                "tab" => (),
+                _ => return,
+            }
+            cx.stop_propagation();
+            return;
+        }
+        // Focus, rather than a stale editing flag, is authoritative after mouse navigation.
+        let editor = if self.comment_input.focus_handle(cx).is_focused(window) { Editing::Comment }
+            else if self.title_input.focus_handle(cx).is_focused(window) { Editing::Title }
+            else if self.interaction.description.focus_handle(cx).is_focused(window) { Editing::Description }
+            else { Editing::None };
+        self.editing = editor;
+        if editor == Editing::None && !ctrl && !key.modifiers.alt {
+            if let Some((at, shift)) = self.interaction.last_g.take().filter(|(at, _)| at.elapsed() < Duration::from_secs(1)) {
+                let _ = at;
+                let action = match key.key.as_str() {
+                    "g" => Some(if shift { Action::Last } else { Action::First }),
+                    "i" => Some(Action::Inbox),
+                    "t" if self.screen == Screen::Inbox || self.screen == Screen::Task => Some(Action::Board),
+                    _ => None,
+                };
+                if let Some(action) = action { self.run_shortcut(action, window, cx); cx.stop_propagation(); return; }
+            }
+            if key.key == "g" {
+                self.interaction.last_g = Some((Instant::now(), key.modifiers.shift));
+                cx.stop_propagation(); return;
+            }
+        }
+        let action = if editor == Editing::Title && key.key == "enter" && !key.modifiers.alt { Some(Action::Save { stay: true, complete: false }) }
+            else { shortcuts::resolve(key, self.screen, editor != Editing::None) };
+        if let Some(action) = action {
+            self.run_shortcut(action, window, cx);
+            cx.stop_propagation();
+        }
+    }
+
+    pub(super) fn remember_playlist(&mut self) {
+        if self.screen != Screen::Task {
+            self.interaction.playlist = match self.screen {
+                Screen::Inbox => self.filtered.iter().filter_map(|&i| self.inbox[i].task_id).collect(),
+                Screen::Board => self.columns.iter().flat_map(|c| c.cards.iter().map(|t| t.id)).collect(),
+                Screen::Task => vec![],
+            };
+            self.interaction.playlist.dedup();
+        }
+        self.interaction.task_part = 0;
+    }
+
+    pub(super) fn run_shortcut(&mut self, action: Action, window: &mut Window, cx: &mut Context<Self>) {
+        use Action::*;
+        match action {
+            Commands => self.show_modal(Modal::Commands, window, cx),
+            Inbox | Board => {
+                if action == Board && let Some(id) = self.selected_task() && let Ok(Some(task)) = self.db.task(id) { self.options.board = task.project_id; }
+                self.switch(if action == Inbox { Screen::Inbox } else { Screen::Board }, cx);
+                window.focus(&self.focus, cx);
+            }
+            Back => {
+                if self.editing != Editing::None { self.editing = Editing::None; window.focus(&self.focus, cx); }
+                else if !self.interaction.bulk.is_empty() { self.interaction.bulk.clear(); }
+                else if self.screen == Screen::Task { self.switch(self.previous, cx); window.focus(&self.focus, cx); }
+                self.moving = false;
+            }
+            Save { stay, complete } => {
+                let comment = self.editing == Editing::Comment;
+                let saved = self.save_edit(window, cx);
+                if saved && comment && self.previous == Screen::Inbox && !stay {
+                    if complete { self.archive_task(cx); }
+                    self.archive_notification(cx);
+                    self.playlist_step(1, cx);
+                }
+            }
+            DiscardDraft => {
+                self.comment_input.update(cx, |input, cx| input.reset(window, cx));
+                self.editing = Editing::None;
+                window.focus(&self.focus, cx);
+            }
+            Comment => {
+                if self.screen != Screen::Task && let Some(id) = self.selected_task() { self.open_task(id, cx); }
+                if self.screen == Screen::Task { self.edit_comment(window, cx); }
+            }
+            Rename => {
+                if self.screen != Screen::Task && let Some(id) = self.selected_task() { self.open_task(id, cx); }
+                self.edit_title(window, cx);
+            }
+            Description => self.edit_description(window, cx),
+            Open if self.screen == Screen::Task => {
+                if self.interaction.task_part == 0 { self.edit_description(window, cx); }
+                else { self.edit_comment(window, cx); }
+            }
+            Open => { if let Some(id) = self.selected_task() { self.open_task(id, cx); } }
+            Next | Previous if self.screen == Screen::Task => {
+                self.playlist_step(if action == Next { 1 } else { -1 }, cx);
+            }
+            Next | Previous => {
+                self.selected = if action == Next { self.selected.saturating_add(1) } else { self.selected.saturating_sub(1) };
+                self.clamp_selection();
+            }
+            First | Last => {
+                self.selected = if action == First { 0 } else { usize::MAX };
+                self.clamp_selection();
+            }
+            NextColumn | PreviousColumn => match self.screen {
+                Screen::Inbox => {
+                    let count = self.splits.len();
+                    if count > 0 {
+                        self.split = (self.split + if action == NextColumn { 1 } else { count - 1 }) % count;
+                        self.selected = 0; self.filter_inbox();
+                    }
+                }
+                Screen::Board => self.focus_column(action == NextColumn),
+                Screen::Task => {
+                    let count = self.comments.len() + 2;
+                    self.interaction.task_part = (self.interaction.task_part + if action == NextColumn { 1 } else { count - 1 }) % count;
+                    match self.interaction.task_part {
+                        0 => self.description_anchor.scroll_to(window, cx),
+                        n if n == count - 1 => self.composer_anchor.scroll_to(window, cx),
+                        n => { if let Some(anchor) = self.comment_anchors.get(n - 1) { anchor.scroll_to(window, cx); } }
+                    }
+                }
+            },
+            MoveLeft | MoveRight => self.move_task(action == MoveRight, cx),
+            Archive => { if self.screen == Screen::Board && !self.interaction.bulk.is_empty() { self.bulk_archive(true, cx); } else { self.archive_task(cx); } }
+            ArchiveNotification => {
+                self.archive_notification(cx);
+                if self.screen == Screen::Task { self.playlist_step(1, cx); }
+            }
+            Select => {
+                if let Some(id) = self.selection_id() && !self.interaction.bulk.remove(&id) { self.interaction.bulk.insert(id); }
+            }
+            SelectAll { all_splits } => {
+                let ids: Vec<_> = match self.screen {
+                    Screen::Inbox if all_splits => self.inbox.iter().map(|n| n.id).collect(),
+                    Screen::Inbox => self.filtered.iter().map(|&i| self.inbox[i].id).collect(),
+                    Screen::Board => self.columns.iter().flat_map(|c| c.cards.iter().map(|t| t.id)).collect(),
+                    Screen::Task => vec![],
+                };
+                self.interaction.bulk.extend(ids);
+            }
+            BulkArchive => self.bulk_archive(false, cx),
+            MoveColumn => self.show_modal(Modal::Column, window, cx),
+            Priority => self.show_modal(Modal::Priority, window, cx),
+            Size => self.show_modal(Modal::Size, window, cx),
+            DueDate => self.show_modal(Modal::DueDate, window, cx),
+            Delete => self.show_modal(Modal::Delete, window, cx),
+            CopyId | CopyTitleId | CopyUrl | CopyTitleUrl => self.copy_task(action, cx),
+            Search | CopyPublicUrl | CopyPublicTitleUrl => { self.error = Some("This action is not available in the native app yet".into()); }
+        }
+        if self.screen == Screen::Inbox { self.inbox_scroll.scroll_to_item(self.selected, ScrollStrategy::Nearest); }
+        if self.screen == Screen::Board && let Some(list) = self.column_lists.get(self.column) { list.scroll_to_reveal_item(self.selected); }
+        cx.notify();
+    }
+    fn selection_id(&self) -> Option<i64> {
+        if self.screen == Screen::Inbox { self.filtered.get(self.selected).map(|&i| self.inbox[i].id) }
+        else { self.selected_task() }
+    }
+    fn focus_column(&mut self, next: bool) {
+        let count = self.columns.len();
+        if count > 0 {
+            self.column = (self.column + if next { 1 } else { count - 1 }) % count;
+            self.selected = 0; self.clamp_selection(); self.board_scroll.scroll_to_item(self.column);
+        }
+    }
+    fn move_task(&mut self, right: bool, cx: &mut Context<Self>) {
+        let Some(task_id) = self.selected_task() else { return; };
+        let index = if self.screen == Screen::Task {
+            self.detail.as_ref().and_then(|d| self.columns.iter().position(|c| Some(c.id) == d.task.section_id)).unwrap_or(self.column)
+        } else { self.column };
+        let next = if right { index.saturating_add(1) } else { index.saturating_sub(1) };
+        if next == index { return; }
+        if let Some(column) = self.columns.get(next) {
+            let section_id = column.id;
+            if self.enqueue(Write::TaskSection { task_id, section_id }, cx) { self.column = next; self.clamp_selection(); }
+        }
+    }
+    fn archive_task(&mut self, cx: &mut Context<Self>) {
+        if let Some(task_id) = self.selected_task() {
+            let status = if self.db.task(task_id).ok().flatten().is_some_and(|t| t.status == Status::Archive) { Status::Normal } else { Status::Archive };
+            self.enqueue(Write::TaskPatch { task_id, patch: TaskPatch::Status(status) }, cx);
+        }
+    }
+    fn archive_notification(&mut self, cx: &mut Context<Self>) {
+        let id = if self.screen == Screen::Inbox { self.selection_id() }
+            else { self.inbox.iter().find(|n| n.task_id == Some(self.options.task)).map(|n| n.id) };
+        if let Some(notification_id) = id { self.enqueue(Write::InboxArchive { notification_id }, cx); }
+    }
+    fn bulk_archive(&mut self, tasks: bool, cx: &mut Context<Self>) {
+        for id in self.interaction.bulk.iter().copied().collect::<Vec<_>>() {
+            let write = if tasks { Write::TaskPatch { task_id:id, patch:TaskPatch::Status(Status::Archive) } }
+                else { Write::InboxArchive { notification_id:id } };
+            if !self.enqueue(write, cx) { return; }
+        }
+        self.interaction.bulk.clear();
+    }
+    fn playlist_step(&mut self, delta: isize, cx: &mut Context<Self>) {
+        let Some(index) = self.interaction.playlist.iter().position(|&id| id == self.options.task) else { return; };
+        let next = index.saturating_add_signed(delta);
+        if let Some(&id) = self.interaction.playlist.get(next) {
+            if id != self.options.task { self.open_task(id, cx); }
+        } else if self.previous == Screen::Inbox { self.switch(Screen::Inbox, cx); }
+    }
+    fn copy_task(&mut self, action: Action, cx: &mut Context<Self>) {
+        let task = self.selected_task().and_then(|id| self.db.task(id).ok().flatten());
+        let Some(task) = task else { return; };
+        let id = task.ticket_number.clone().unwrap_or_else(|| task.id.to_string());
+        let Some(index) = task.extra.get("uniqueIndex").and_then(|v| v.as_i64()) else {
+            self.error = Some("The cached task has no private URL; sync the task first".into()); return;
+        };
+        let url = format!("https://app.hypertask.ai/detail/project-{}/{index}", task.project_id);
+        let text = match action {
+            Action::CopyId => id,
+            Action::CopyTitleId => format!("{} | {}", id.to_uppercase(), task.title),
+            Action::CopyTitleUrl => format!("{} | {} | {url}", id.to_uppercase(), task.title),
+            _ => url,
+        };
+        cx.write_to_clipboard(ClipboardItem::new_string(text));
+    }
+    pub(super) fn edit_description(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.screen != Screen::Task { return; }
+        self.interaction.description.update(cx, |input, cx| input.set_content(self.description.text.clone(), cx));
+        self.editing = Editing::Description;
+        self.description_anchor.scroll_to(window, cx);
+        window.focus(&self.interaction.description.focus_handle(cx), cx);
+        cx.notify();
+    }
+
+    fn show_modal(&mut self, modal: Modal, window: &mut Window, cx: &mut Context<Self>) {
+        if modal != Modal::Commands && self.selected_task().is_none() { return; }
+        self.interaction.query.update(cx, |input, cx| input.set_content(String::new(), cx));
+        self.interaction.modal = Some(modal);
+        self.interaction.choice = 0;
+        self.interaction.modal_scroll.set_offset(point(px(0.), px(0.)));
+        window.focus(&self.interaction.query.focus_handle(cx), cx);
+        cx.notify();
+    }
+    fn close_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.interaction.modal = None;
+        let focus = match self.editing {
+            Editing::Comment => self.comment_input.focus_handle(cx),
+            Editing::Title => self.title_input.focus_handle(cx),
+            Editing::Description => self.interaction.description.focus_handle(cx),
+            Editing::None => self.focus.clone(),
+        };
+        window.focus(&focus, cx);
+        cx.notify();
+    }
+    fn choices(&self, cx: &App) -> Vec<Choice> {
+        let query: &str = self.interaction.query.read(cx).content.as_ref();
+        match self.interaction.modal {
+            Some(Modal::Commands) => {
+                let commands = command_center::commands(self.screen, self.selected_task().is_some());
+                command_center::filter(&commands, query).into_iter().map(|c| Choice { name:c.name.into(), action:ChoiceAction::Command(c.action) }).collect()
+            }
+            Some(Modal::Column) => self.columns.iter().map(|c| Choice { name:c.title.clone(), action:ChoiceAction::Column(c.id) }).collect(),
+            Some(Modal::Priority) => ["No Priority", "Urgent", "High", "Medium", "Low"].iter().enumerate().map(|(i, name)| Choice { name:(*name).into(), action:ChoiceAction::Priority(i as u8) }).collect(),
+            Some(Modal::Size) => [(0,"No size"),(2,"XS"),(3,"S"),(4,"M"),(5,"L"),(6,"XL")].iter().map(|&(i, name)| Choice { name:name.into(), action:ChoiceAction::Size(i) }).collect(),
+            Some(Modal::DueDate) => [("Today",0),("Tomorrow",1),("Next week",7),("No due date",-1)].iter().map(|&(name, days)| Choice { name:name.into(), action:ChoiceAction::DueDate(days) }).collect(),
+            Some(Modal::Delete) => vec![Choice { name:"Delete task".into(), action:ChoiceAction::Delete }],
+            None => vec![],
+        }.into_iter().filter(|c| self.interaction.modal == Some(Modal::Commands) || c.name.to_lowercase().contains(&query.to_lowercase())).collect()
+    }
+    fn run_choice(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let choice = self.choices(cx).get(self.interaction.choice).cloned();
+        let Some(choice) = choice else { return; };
+        self.close_modal(window, cx);
+        match choice.action {
+            ChoiceAction::Command(CommandAction::Shortcut(action)) => self.run_shortcut(action, window, cx),
+            ChoiceAction::Command(CommandAction::Theme(theme)) => { self.options.theme = theme; self.colors = theme.colors(); self.reload(); cx.notify(); }
+            _ => {
+                let Some(task_id) = self.selected_task() else { return; };
+                let write = match choice.action {
+                    ChoiceAction::Column(section_id) => Write::TaskSection { task_id, section_id },
+                    ChoiceAction::Priority(i) => Write::TaskPatch { task_id, patch:TaskPatch::Priority(i) },
+                    ChoiceAction::Size(i) => Write::TaskPatch { task_id, patch:TaskPatch::Estimate(i) },
+                    ChoiceAction::DueDate(days) => {
+                        let date = (days >= 0).then(|| (chrono::Utc::now().date_naive() + chrono::Duration::days(days)).and_hms_opt(0,0,0).unwrap().and_utc().to_rfc3339());
+                        Write::TaskPatch { task_id, patch:TaskPatch::DueDate(date) }
+                    }
+                    ChoiceAction::Delete => Write::TaskPatch { task_id, patch:TaskPatch::Status(Status::Deleted) },
+                    ChoiceAction::Command(_) => unreachable!(),
+                };
+                self.enqueue(write, cx);
+            }
+        }
+    }
+
+    pub(super) fn interaction_overlay(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
+        let Some(modal) = self.interaction.modal else { return div().into_any_element(); };
+        let t = self.colors;
+        let background = match self.options.theme { ThemeName::Graphite => 0x2c2f36, ThemeName::Amoled => 0x141414, _ => 0xffffff };
+        let query: &str = self.interaction.query.read(cx).content.as_ref();
+        let commands = command_center::commands(self.screen, self.selected_task().is_some());
+        let filtered = command_center::filter(&commands, query);
+        let choices = self.choices(cx);
+        let mut last_group = String::new();
+        let mut list = div().id("command-results").max_h(px(364.)).overflow_y_scroll().track_scroll(&self.interaction.modal_scroll).pb(px(6.));
+        for (i, choice) in choices.into_iter().enumerate() {
+            let group = if modal == Modal::Commands && !query.trim().is_empty() { "Results" }
+                else if modal == Modal::Commands { filtered[i].group }
+                else { match modal { Modal::Column => "Move task to column", Modal::Priority => "Set priority", Modal::Size => "Set task size", Modal::DueDate => "Set due date", Modal::Delete => "Delete task?", Modal::Commands => unreachable!() } };
+            if group != last_group {
+                last_group = group.into();
+                list = list.child(div().px(px(16.)).pt(px(10.)).pb(px(4.)).text_size(px(11.)).font_weight(FontWeight::SEMIBOLD).text_color(color(t.muted)).child(group.to_uppercase()));
+            }
+            let keys = if modal == Modal::Commands { filtered[i].keys } else { "" };
+            list = list.child(div().id(("command-choice",i)).h(px(36.)).mx(px(6.)).px(px(12.)).rounded(px(2.)).flex().items_center().gap(px(12.)).cursor_pointer().text_size(px(13.)).when(i == self.interaction.choice, |d| d.bg(color(t.hover)))
+                .hover(|d| d.bg(color(t.hover)))
+                .on_mouse_move(cx.listener(move |this, _, _, cx| { if this.interaction.choice != i { this.interaction.choice = i; cx.notify(); } }))
+                .on_click(cx.listener(move |this, _, window, cx| { cx.stop_propagation(); this.interaction.choice = i; this.run_choice(window, cx); }))
+                .child(icon("chevron-right", t.muted, 14.))
+                .child(div().flex_1().child(choice.name.clone()))
+                .child(div().text_size(px(11.)).text_color(color(t.muted)).child(keys))
+                .layout_key(&self.layout, format!("command.choice.{i}"), Some(choice.name)));
+        }
+        div().absolute().size_full().top_0().left_0().bg(rgba(0x00000080)).flex().justify_center()
+            .on_mouse_down(MouseButton::Left, cx.listener(|_, _, _, cx| cx.stop_propagation()))
+            .on_click(cx.listener(|this, _, window, cx| this.close_modal(window, cx)))
+            .child(div().id("command-center").absolute().top(px(f32::from(window.viewport_size().height) * 0.24)).w(px(560.)).rounded(px(5.)).bg(color(background)).shadow(shadow()).overflow_hidden().flex().flex_col()
+                .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
+                .child(div().h(px(44.)).px(px(16.)).border_b_1().border_color(color(t.border)).flex().items_center().gap(px(10.))
+                    .child(icon("search", t.muted, 13.))
+                    .child(div().flex_1().child(self.interaction.query.clone()).layout_key(&self.layout, "command.input", None)))
+                .child(list)
+                .child(div().px(px(16.)).py(px(8.)).border_t_1().border_color(color(t.border)).text_size(px(11.)).text_color(color(t.muted)).child("↑↓ navigate       ↵ select       esc close"))
+                .layout_key(&self.layout, "command.center", None))
+            .into_any_element()
+    }
+}

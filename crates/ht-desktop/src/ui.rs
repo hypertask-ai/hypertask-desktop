@@ -43,7 +43,13 @@ enum Editing {
     None,
     Title,
     Comment,
+    Description,
 }
+
+#[path = "interactions.rs"]
+mod interactions;
+#[path = "comments.rs"]
+mod comments;
 
 pub struct Desktop {
     pub focus: FocusHandle,
@@ -75,6 +81,7 @@ pub struct Desktop {
     editing: Editing,
     title_input: Entity<TextInput>,
     comment_input: Entity<TextInput>,
+    interaction: interactions::Interaction,
     moving: bool,
     footer: bool,
     ready_scheduled: bool,
@@ -161,6 +168,7 @@ impl Desktop {
             editing: Editing::None,
             title_input,
             comment_input,
+            interaction: interactions::Interaction::new(cx),
             moving: false,
             footer: true,
             ready_scheduled: false,
@@ -413,6 +421,7 @@ impl Desktop {
     }
 
     fn open_task(&mut self, id: i64, cx: &mut Context<Self>) {
+        self.remember_playlist();
         self.previous = self.screen;
         if self.options.task != id {
             self.comment_input
@@ -456,9 +465,9 @@ impl Desktop {
         cx.notify();
     }
 
-    fn save_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    fn save_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let Some(task_id) = self.selected_task() else {
-            return;
+            return false;
         };
         let write = match self.editing {
             Editing::Title => Write::TaskTitle {
@@ -475,142 +484,25 @@ impl Desktop {
                     .replace('<', "&lt;")
                     .replace('>', "&gt;"),
             },
-            Editing::None => return,
+            Editing::Description => Write::TaskPatch {
+                task_id,
+                patch: ht_core::TaskPatch::Description(self.interaction.description.read(cx).content.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")),
+            },
+            Editing::None => return false,
         };
         if self.enqueue(write, cx) {
             self.editing = Editing::None;
             self.comment_input
                 .update(cx, |input, cx| input.reset(window, cx));
             window.focus(&self.focus, cx);
+            true
+        } else {
+            false
         }
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
-        let key = event.keystroke.key.as_str();
-        let ctrl = event.keystroke.modifiers.control || event.keystroke.modifiers.platform;
-        if self.editing != Editing::None {
-            if key == "escape" {
-                self.editing = Editing::None;
-                window.focus(&self.focus, cx);
-                cx.notify();
-            } else if key == "enter" && (self.editing == Editing::Title || ctrl) {
-                self.save_edit(window, cx);
-            }
-            return;
-        }
-        match key {
-            "j" | "down" => {
-                self.selected = self.selected.saturating_add(1);
-                self.clamp_selection();
-            }
-            "k" | "up" => self.selected = self.selected.saturating_sub(1),
-            "tab" => match self.screen {
-                Screen::Inbox => {
-                    let count = self.splits.len();
-                    if count > 0 {
-                        self.split = (self.split
-                            + if event.keystroke.modifiers.shift {
-                                count - 1
-                            } else {
-                                1
-                            })
-                            % count;
-                        self.selected = 0;
-                        self.filter_inbox();
-                    }
-                }
-                Screen::Board => {
-                    let count = self.columns.len();
-                    if count > 0 {
-                        self.column = (self.column
-                            + if event.keystroke.modifiers.shift {
-                                count - 1
-                            } else {
-                                1
-                            })
-                            % count;
-                        self.selected = 0;
-                        self.clamp_selection();
-                        self.board_scroll.scroll_to_item(self.column);
-                    }
-                }
-                Screen::Task => self.moving = !self.moving,
-            },
-            "enter" => {
-                if self.screen != Screen::Task {
-                    if let Some(id) = self.selected_task() {
-                        self.open_task(id, cx);
-                    }
-                } else {
-                    self.edit_title(window, cx);
-                }
-            }
-            "escape" => {
-                if self.moving {
-                    self.moving = false;
-                } else if self.screen == Screen::Task {
-                    self.switch(self.previous, cx);
-                }
-            }
-            "e" if self.screen == Screen::Inbox && !ctrl => {
-                if let Some(&i) = self.filtered.get(self.selected) {
-                    self.enqueue(
-                        Write::InboxArchive {
-                            notification_id: self.inbox[i].id,
-                        },
-                        cx,
-                    );
-                }
-            }
-            "m" if self.screen == Screen::Task => {
-                if ctrl {
-                    self.edit_comment(window, cx);
-                } else {
-                    self.moving = !self.moving;
-                }
-            }
-            "d" if ctrl && self.screen == Screen::Task => {
-                self.description_anchor.scroll_to(window, cx)
-            }
-            "h" | "l" if event.keystroke.modifiers.shift && self.screen == Screen::Board => {
-                if let Some(task_id) = self.selected_task() {
-                    let index = if key == "h" {
-                        self.column.saturating_sub(1)
-                    } else {
-                        (self.column + 1).min(self.columns.len().saturating_sub(1))
-                    };
-                    if let Some(c) = self.columns.get(index) {
-                        let id = c.id;
-                        if self.enqueue(
-                            Write::TaskSection {
-                                task_id,
-                                section_id: id,
-                            },
-                            cx,
-                        ) {
-                            self.column = index;
-                        }
-                    }
-                }
-            }
-            _ => return,
-        }
-        if self.screen == Screen::Task && matches!(key, "j" | "k" | "up" | "down") {
-            if let Some(anchor) = self.comment_anchors.get(self.selected) {
-                anchor.scroll_to(window, cx);
-            }
-        }
-        if self.screen == Screen::Inbox {
-            self.inbox_scroll
-                .scroll_to_item(self.selected, ScrollStrategy::Nearest);
-        }
-        if self.screen == Screen::Board {
-            if let Some(list) = self.column_lists.get(self.column) {
-                list.scroll_to_reveal_item(self.selected);
-            }
-        }
-        cx.stop_propagation();
-        cx.notify();
+        self.interaction_key(event, window, cx);
     }
 
     fn rail(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -1750,27 +1642,19 @@ impl Desktop {
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
                             .child(self.creator.clone()).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
-                        .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(!self.description.text.trim().is_empty(), |d| d.child(self.description.element())).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
+                        .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.interaction.description.clone())).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
                             .child(div().flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add sub-tasks"))
                             .child(div().ml(px(16.)).flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add page"))
                             .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
-                    .child(div().id("comment-composer").anchor_scroll(Some(self.composer_anchor.clone())).h(px(if self.options.theme == ThemeName::Porcelain { 152. } else { 154. })).pt(px(19.)).pb(px(if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled) { 27. } else { 25. })).pl(px(19.)).pr(px(16.)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).bg(color(t.comment)).border_1().border_color(color(t.border)).shadow_md().flex().flex_col()
-                        .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
-                        .child(div().text_size(px(14.)).line_height(px(21.)).child(self.comment_input.clone()).layout_key(&self.layout, "task.composer.input", None))
-                        .child(div().flex_1())
-                        .child(div().flex().items_center().text_size(px(14.)).line_height(px(21.)).text_color(color(0x95999e)).font_weight(FontWeight::SEMIBOLD)
-                            .child(div().flex().items_center().child("Send + ").child(icon("send-archive", 0x696b6e, 14.)))
-                            .child(div().id("send-comment").ml(px(24.)).cursor_pointer().on_click(cx.listener(|this, _, window, cx| { cx.stop_propagation(); this.editing = Editing::Comment; this.save_edit(window, cx); })).child("Send").layout_key(&self.layout, "task.composer.send", None))
-                            .child(div().flex_1()).child(div().text_size(px(16.)).font_weight(FontWeight::NORMAL).text_color(color(0xc668ff)).child("ai"))
-                            .child(div().ml(px(8.)).child(icon("paperclip", 0x999a9d, 16.))).child(div().ml(px(10.)).child(icon("mic", 0x999a9d, 18.))).child(div().ml(px(3.)).child(icon("chevron-down", 0x999a9d, 14.)))).layout_key(&self.layout, "task.composer", None))
                     .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| {
                         div().id(("comment", i)).anchor_scroll(Some(self.comment_anchors[i].clone())).p(px(20.)).bg(color(t.comment)).border_1().border_color(color(t.border)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow(shadow()).flex().flex_col().gap(px(12.))
                             .child(div().flex().text_color(color(t.muted)).child(div().child(comment_author(&comment.extra)).layout_key(&self.layout, format!("task.comment.{i}.author"), Some(comment_author(&comment.extra)))).child(div().flex_1()).child(short_date(&comment.created_at)))
                             .child(div().line_height(px(21.)).child(body.element()).layout_key(&self.layout, format!("task.comment.{i}.body"), Some(body.text.to_string())))
                             .layout_key(&self.layout, format!("task.comment.{i}"), None)
-                    })))
+                    }))
+                    .child(self.comment_composer(cx)))
                 .child(properties)))
             .into_any_element()
     }
@@ -2068,6 +1952,12 @@ impl Render for Desktop {
                 "composer_focused": self.comment_input.focus_handle(cx).is_focused(window),
                 "root_focused": self.focus.is_focused(window),
                 "comment_text": self.comment_input.read(cx).content.as_ref(),
+                "command_open": self.interaction.modal == Some(interactions::Modal::Commands),
+                "modal": self.interaction.modal.map(|m| format!("{m:?}").to_lowercase()),
+                "command_selected": self.interaction.choice,
+                "query": self.interaction.query.read(cx).content.as_ref(),
+                "bulk_count": self.interaction.bulk.len(),
+                "task_part": self.interaction.task_part,
             }));
         }
         if !self.ready_scheduled {
@@ -2104,7 +1994,14 @@ impl Render for Desktop {
             .text_color(color(t.text))
             .bg(color(t.page))
             .track_focus(&self.focus)
-            .on_key_down(cx.listener(Self::key_down))
+            .relative()
+            .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
+                if this.interaction.modal.is_none() {
+                    this.editing = Editing::None;
+                    window.focus(&this.focus, cx);
+                }
+            }))
+            .capture_key_down(cx.listener(Self::key_down))
             .child(
                 div()
                     .flex_1()
@@ -2142,6 +2039,7 @@ impl Render for Desktop {
                     )
                     .layout_key(&self.layout, "rightpanel", None),
             ))
+            .child(self.interaction_overlay(window, cx))
             .into_any_element()
     }
 }
