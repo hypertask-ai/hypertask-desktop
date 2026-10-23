@@ -20,7 +20,11 @@ jobs:
       - uses: actions/checkout@v4
       - name: Linux packages
         if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y libasound2-dev libfontconfig-dev libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libxkbcommon-dev libvulkan-dev libssl-dev libzstd-dev clang cmake xvfb xauth mesa-vulkan-drivers
+        run: |
+          # The Azure mirror stalls large Vulkan downloads on hosted runners.
+          sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
+          sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libasound2-dev libfontconfig-dev libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libxkbcommon-dev libvulkan-dev libssl-dev libzstd-dev clang cmake xvfb xauth mesa-vulkan-drivers
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --release
