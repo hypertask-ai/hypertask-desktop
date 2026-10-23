@@ -1225,7 +1225,7 @@ impl Desktop {
             .unwrap_or("Board");
         let count: usize = self.columns.iter().map(|c| c.cards.len()).sum();
         let board_width =
-            (f32::from(window.viewport_size().width) - 48. - AI_CHAT_PANEL_WIDTH).max(0.);
+            (f32::from(window.viewport_size().width) - 48. - ai_chat_panel_width()).max(0.);
         let column_width = ((board_width * 0.97
             - 16. * self.columns.len().saturating_sub(1) as f32)
             / self.columns.len().max(1) as f32)
@@ -2045,7 +2045,12 @@ impl Desktop {
     }
 }
 
+const AI_CHAT_PANEL_SHOWN: bool = false;
 const AI_CHAT_PANEL_WIDTH: f32 = 420.;
+
+fn ai_chat_panel_width() -> f32 {
+    if AI_CHAT_PANEL_SHOWN { AI_CHAT_PANEL_WIDTH } else { 0. }
+}
 
 impl Render for Desktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2110,7 +2115,7 @@ impl Render for Desktop {
                     )
                     .layout_key(&self.layout, "main", None),
             )
-            .child(
+            .when(AI_CHAT_PANEL_SHOWN, |d| d.child(
                 div()
                     .w(px(AI_CHAT_PANEL_WIDTH))
                     .flex_shrink_0()
@@ -2123,7 +2128,7 @@ impl Render for Desktop {
                             .border_color(color(t.rail_border)),
                     )
                     .layout_key(&self.layout, "rightpanel", None),
-            )
+            ))
             .into_any_element()
     }
 }
