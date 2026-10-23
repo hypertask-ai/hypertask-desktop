@@ -1,5 +1,6 @@
 -- Controlled additions to each fresh, isolated parity.db copy, never to a shared DB.
 -- The live parity capture has no labels/members and an empty second column.
+CREATE TABLE IF NOT EXISTS kv(key TEXT PRIMARY KEY, value TEXT NOT NULL);
 INSERT OR IGNORE INTO kv(key,value) VALUES('members:7283','[{"id":7381,"displayName":"Behavior fixture member","email":"behavior@example.invalid"}]');
 INSERT OR IGNORE INTO Label(id,projectId,value,raw_json) VALUES('behavior-7381',7283,'Behavior fixture tag','{"id":"behavior-7381","projectId":7283,"name":"Behavior fixture tag","value":"Behavior fixture tag"}');
 INSERT OR IGNORE INTO Task(id,title,projectId,status,sectionId,section,updatedAt,raw_json)

@@ -471,6 +471,7 @@ impl Desktop {
             return false;
         };
         let comment = self.editing == Editing::Comment;
+        if comment && self.comment_input.read(cx).content.trim().is_empty() { return false; }
         let write = match self.editing {
             Editing::Title => Write::TaskTitle {
                 task_id,
@@ -1919,6 +1920,7 @@ impl Render for Desktop {
             let task = self.selected_task().and_then(|id| self.db.task(id).ok().flatten());
             let count = match self.screen { Screen::Inbox => self.filtered.len(), Screen::Board => self.columns.get(self.column).map_or(0, |c| c.cards.len()), Screen::Task => 0 };
             crate::behavior::snapshot(window, path, capture, self.screen, self.options.theme, serde_json::json!({
+                "error": self.error,
                 "theme": format!("{:?}", self.options.theme).to_lowercase(),
                 "selection_count": count, "last_index": count.saturating_sub(1),
                 "inbox_count": self.inbox.len(), "composer_index": self.comments.len() + 1,
@@ -1966,6 +1968,7 @@ impl Render for Desktop {
                     .dump_layout
                     .clone()
                     .zip(self.layout.clone())
+                    .filter(|_| !self.options.background)
                     .map(|(path, capture)| (path, capture, self.screen, self.options.theme)),
             );
         }

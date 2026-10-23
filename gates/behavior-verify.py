@@ -82,6 +82,10 @@ for case in cases:
             elif step['op'] == 'expect-change':
                 snapshot = load(out / f"{name}-{step['name']}.behavior.json")
                 assert snapshot['state'][step['field']] != before['state'][step['field']], step
+            elif step['op'] == 'expect-element':
+                snapshot = load(out / f"{name}-{step['name']}.behavior.json")
+                element = next(e for e in snapshot['elements'] if e['key'] == step['key'])
+                assert element['text'] == step['value'], step
         db = out / result['database']
         assert db.is_file(), 'missing isolated database'
         # Read-only CLI invocation: do not silently create a missing SQLite database.

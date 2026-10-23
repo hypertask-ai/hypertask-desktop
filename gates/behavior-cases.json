@@ -2370,5 +2370,147 @@
         "value": "inbox"
       }
     ]
+  },
+  {
+    "id": "command-cached-board",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "type",
+        "value": "MyBoard"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "board",
+        "field": "board_id",
+        "value": 7280
+      }
+    ]
+  },
+  {
+    "id": "command-frecency",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "type",
+        "value": "go to inbox"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "inbox",
+        "field": "screen",
+        "value": "inbox"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "expect-element",
+        "name": "frequent",
+        "key": "command.choice.0",
+        "value": "Go to inbox"
+      },
+      {
+        "op": "type",
+        "value": "go to inbox"
+      },
+      {
+        "op": "expect",
+        "name": "dedup",
+        "field": "choice_count",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      }
+    ]
+  },
+  {
+    "id": "comment-draft-survives-title-save",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "type",
+        "value": "retained draft"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "key",
+        "value": "F2"
+      },
+      {
+        "op": "type",
+        "value": "behavior preserved draft"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "expect",
+        "name": "retained",
+        "field": "comment_text",
+        "value": "retained draft"
+      }
+    ],
+    "mutation": {
+      "kind": "task_title",
+      "title": "behavior preserved draft"
+    }
+  },
+  {
+    "id": "comment-empty-send",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Enter"
+      },
+      {
+        "op": "expect",
+        "name": "empty",
+        "field": "comment_text",
+        "value": ""
+      },
+      {
+        "op": "expect",
+        "name": "no-error",
+        "field": "error",
+        "value": null
+      }
+    ]
   }
 ]

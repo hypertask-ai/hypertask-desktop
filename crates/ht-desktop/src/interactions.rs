@@ -1114,9 +1114,9 @@ impl Desktop {
                                             .text_size(px(11.))
                                             .font_weight(FontWeight::MEDIUM)
                                             .child(if cfg!(target_os = "macos") && key == "CTRL" {
-                                                "CMD"
+                                                "CMD".to_owned()
                                             } else {
-                                                key
+                                                key.to_owned()
                                             })
                                             .into_any_element()
                                     }

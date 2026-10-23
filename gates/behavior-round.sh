@@ -38,7 +38,8 @@ count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "
 for ((skip=0; skip<count; skip+=4)); do
   lh shell "powershell -NoProfile -ExecutionPolicy Bypass -File '$W\behavior-input.ps1' -CaseFile '$W\behavior-cases.json' -Skip $skip -Take 4" --timeout 110 | tr -d '\r' | tee -a "$out/input.txt"
 done
-lh shell "Compress-Archive -Path '$W\*.json','$W\*.db','$W\*.stdout','$W\*.stderr','$W\*-clipboard.txt' -DestinationPath '$W\evidence.zip' -Force" > /dev/null
+lh write "$W\sha.txt" "$sha" > /dev/null
+lh shell "\$files = Get-ChildItem '$W' -File | Where-Object { \$_.Extension -in '.json','.db','.stdout','.stderr','.txt','.sql','.ps1' }; Compress-Archive -LiteralPath \$files.FullName -DestinationPath '$W\evidence.zip' -Force" > /dev/null
 lh shell "[Convert]::ToBase64String([IO.File]::ReadAllBytes('$W\evidence.zip'))" | tr -d '\r\n' | base64 -d > "$out/evidence.zip"
 (cd "$out" && unzip -o -q evidence.zip)
 python3 "$G/behavior-verify.py" "$G/behavior-cases.json" "$out" | tee "$out/results.txt"

@@ -61,14 +61,18 @@ function Wait-Change([string]$file, [int]$timeout = 1200) {
 function Read-Json([string]$path) {
   # A writer may be completing its write when the file notification arrives.
   for ($attempt = 0; $attempt -lt 8; $attempt++) {
-    try { return Get-Content -Raw $path | ConvertFrom-Json } catch { Wait-Change $path 100 }
+    try {
+      $stream = New-Object IO.FileStream $path, ([IO.FileMode]::Open), ([IO.FileAccess]::Read), ([IO.FileShare]::ReadWrite -bor [IO.FileShare]::Delete)
+      $reader = New-Object IO.StreamReader $stream
+      try { return $reader.ReadToEnd() | ConvertFrom-Json } finally { $reader.Dispose() }
+    } catch { Wait-Change $path 100 }
   }
   throw "Cannot read JSON: $path"
 }
 function Assert-That($condition, [string]$message) { if (!$condition) { throw $message } }
 function Snapshot([string]$name) {
   $state = Read-Json "$w\$script:id.behavior.json"
-  Copy-Item "$w\$script:id.json" "$w\$script:id-$name.json" -Force
+  (Read-Json "$w\$script:id.json") | ConvertTo-Json -Depth 50 | Set-Content "$w\$script:id-$name.json" -Encoding UTF8
   $state | ConvertTo-Json -Depth 30 | Set-Content "$w\$script:id-$name.behavior.json" -Encoding UTF8
   return $state
 }
@@ -210,6 +214,11 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
           $current = Snapshot $step.name
           Assert-That ($current.state.($step.field) -ne $before.state.($step.field)) "$($step.field) did not change"
         }
+        'expect-element' {
+          $current = Snapshot $step.name
+          $element = @($current.elements | Where-Object key -eq $step.key)[0]
+          Assert-That ($null -ne $element -and $element.text -eq $step.value) "Element $($step.key) did not show $($step.value)"
+        }
         default { throw "Unknown operation $($step.op)" }
       }
       Assert-That ([BehaviorInput]::GetForegroundWindow() -ne $h) 'Test copy stole foreground focus'
@@ -218,8 +227,9 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
     if ($case.clipboard) {
       $expected = Clipboard-Expected $case.clipboard $before.state
       $actual = [Windows.Forms.Clipboard]::GetText()
+      $known = @('id','title-id','url','title-url') | ForEach-Object { Clipboard-Expected $_ $before.state }
+      if ($actual -cin $known) { $ownClipboardSequence = [BehaviorInput]::GetClipboardSequenceNumber() }
       Assert-That ($actual -ceq $expected) 'Clipboard does not match selected task'
-      $ownClipboardSequence = [BehaviorInput]::GetClipboardSequenceNumber()
       $actual | Set-Content "$w\$id-clipboard.txt" -Encoding UTF8 -NoNewline
     }
     Assert-That ([BehaviorInput]::GetForegroundWindow() -ne $h) 'Test copy stole foreground focus'
