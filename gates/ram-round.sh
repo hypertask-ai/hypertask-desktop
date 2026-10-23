@@ -27,7 +27,7 @@ got=$(lh shell "(Get-FileHash '$W\ht-ram.exe').Hash" | tr -d '\r' | awk 'NF { la
 [ "$want" = "$got" ] || { echo 'UPLOAD_HASH_MISMATCH'; exit 1; }
 lh shell "Remove-Item '$W\ram.json' -EA 0; powershell -NoProfile -ExecutionPolicy Bypass -File '$W\ram-measure.ps1' 2>&1" --timeout 110 | tr -d '\r' | tee "$out/laptop.txt"
 for file in ram.json inbox.json board.json task.json inbox.png board.png task.png; do
-  lh shell "[Convert]::ToBase64String([IO.File]::ReadAllBytes('$W\$file'))" | tr -d '\r\n' | base64 -d > "$out/$file"
+  lh shell "[Convert]::ToBase64String([IO.File]::ReadAllBytes('${W}/${file}'))" | tr -d '\r\n' | base64 -d > "$out/$file"
 done
 printf '%s\n' "$sha" > "$out/sha.txt"
 python3 - "$out" "$want" <<'PY'

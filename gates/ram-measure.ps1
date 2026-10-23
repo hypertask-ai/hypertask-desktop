@@ -15,13 +15,16 @@ public class RamWindow {
     [DllImport("user32.dll")] public static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
     [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
     [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int GetClassName(IntPtr h, System.Text.StringBuilder name, int count);
     public static IntPtr FindWindow(int pid) {
         IntPtr result = IntPtr.Zero;
         long largest = 0;
         EnumWindows(delegate(IntPtr h, IntPtr ignored) {
             uint owner; Rect r;
             GetWindowThreadProcessId(h, out owner);
-            if (owner == pid && IsWindowVisible(h) && GetClientRect(h, out r)) {
+            var name = new System.Text.StringBuilder(256);
+            GetClassName(h, name, name.Capacity);
+            if (owner == pid && name.ToString() == "Zed::Window" && IsWindowVisible(h) && GetClientRect(h, out r)) {
                 long area = (long)r.Right * r.Bottom;
                 if (area > largest) { largest = area; result = h; }
             }
@@ -58,7 +61,8 @@ foreach ($round in 1..3) {
             Start-Sleep -Seconds 8
             $p.Refresh()
             if ($p.HasExited) { throw "$screen run $round exited" }
-            if (-not [RamWindow]::IsZoomed($h)) { throw "$screen is not maximized" }
+            $h = [RamWindow]::FindWindow($p.Id)
+            if (-not [RamWindow]::IsZoomed($h)) { throw "$screen is not maximized (pid=$($p.Id) hwnd=$h)" }
             $dpi = [RamWindow]::GetDpiForWindow($h)
             if ($dpi -ne 96) { throw "Expected 100% scaling, got DPI $dpi" }
             if (-not (Test-Path $dump)) { throw "No layout for $screen" }
