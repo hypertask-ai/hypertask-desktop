@@ -1699,7 +1699,8 @@ fn report_live_objects(device: &ID3D11Device) -> Result<()> {
     Ok(())
 }
 
-const BUFFER_COUNT: usize = 3;
+// Flip-model swap chains require two buffers; a third retains another full window texture.
+const BUFFER_COUNT: usize = 2;
 
 pub(crate) mod shader_resources {
     use anyhow::Result;
