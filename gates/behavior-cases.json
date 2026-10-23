@@ -1,11 +1,234 @@
 [
-  {"id":"comment-mouse","screen":"task","steps":[{"op":"click","value":"task.composer.input"},{"op":"expect","name":"focused","field":"composer_focused","value":true},{"op":"type","value":"behavior mouse & <comment>"},{"op":"expect","name":"typed","field":"comment_text","value":"behavior mouse & <comment>"},{"op":"click","value":"task.composer.send"}],"mutation":{"kind":"task_comment","text":"behavior mouse &amp; &lt;comment&gt;","task_id":60253}},
-  {"id":"comment-keyboard","screen":"task","steps":[{"op":"key","value":"Ctrl+M"},{"op":"expect","name":"focused","field":"composer_focused","value":true},{"op":"type","value":"behavior keyboard"},{"op":"key","value":"Ctrl+Enter"}],"mutation":{"kind":"task_comment","text":"behavior keyboard","task_id":60253}},
-  {"id":"inbox-j-k","screen":"inbox","steps":[{"op":"key","value":"J"},{"op":"expect","name":"down","field":"selected","value":1},{"op":"key","value":"K"},{"op":"expect","name":"up","field":"selected","value":0}]},
-  {"id":"inbox-click-then-j","screen":"inbox","steps":[{"op":"click","value":"inbox.tab.0"},{"op":"key","value":"J"},{"op":"expect","name":"down","field":"selected","value":1}]},
-  {"id":"board-j-k","screen":"board","steps":[{"op":"key","value":"J"},{"op":"expect","name":"down","field":"selected","value":1},{"op":"key","value":"K"},{"op":"expect","name":"up","field":"selected","value":0}]},
-  {"id":"board-tab","screen":"board","steps":[{"op":"key","value":"Tab"},{"op":"expect","name":"next","field":"column","value":1},{"op":"key","value":"Shift+Tab"},{"op":"expect","name":"previous","field":"column","value":0}]},
-  {"id":"open-back","screen":"board","steps":[{"op":"key","value":"Enter"},{"op":"expect","name":"opened","field":"screen","value":"task"},{"op":"key","value":"Esc"},{"op":"expect","name":"back","field":"screen","value":"board"}]},
-  {"id":"inbox-archive-task","screen":"inbox","steps":[{"op":"key","value":"Ctrl+E"}],"mutation":{"kind":"task_patch","status":"Archive"}},
-  {"id":"command-open-close","screen":"board","steps":[{"op":"key","value":"Ctrl+K"},{"op":"expect","name":"open","field":"command_open","value":true},{"op":"key","value":"Esc"},{"op":"expect","name":"closed","field":"command_open","value":false}]}
+  {
+    "id": "comment-mouse",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "click",
+        "value": "task.composer.input"
+      },
+      {
+        "op": "expect",
+        "name": "focused",
+        "field": "composer_focused",
+        "value": true
+      },
+      {
+        "op": "type",
+        "value": "behavior mouse & <comment>"
+      },
+      {
+        "op": "expect",
+        "name": "typed",
+        "field": "comment_text",
+        "value": "behavior mouse & <comment>"
+      },
+      {
+        "op": "click",
+        "value": "task.composer.send"
+      }
+    ],
+    "mutation": {
+      "kind": "task_comment",
+      "text": "behavior mouse &amp; &lt;comment&gt;",
+      "task_id": 60253
+    }
+  },
+  {
+    "id": "comment-keyboard",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "expect",
+        "name": "focused",
+        "field": "composer_focused",
+        "value": true
+      },
+      {
+        "op": "type",
+        "value": "behavior keyboard"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_comment",
+      "text": "behavior keyboard",
+      "task_id": 60253
+    }
+  },
+  {
+    "id": "inbox-j-k",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "expect",
+        "name": "down",
+        "field": "selected",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "K"
+      },
+      {
+        "op": "expect",
+        "name": "up",
+        "field": "selected",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "inbox-click-then-j",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "expect",
+        "name": "down",
+        "field": "selected",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "id": "board-j-k",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "expect",
+        "name": "down",
+        "field": "selected",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "K"
+      },
+      {
+        "op": "expect",
+        "name": "up",
+        "field": "selected",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "board-tab",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Tab"
+      },
+      {
+        "op": "expect",
+        "name": "next",
+        "field": "column",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "Shift+Tab"
+      },
+      {
+        "op": "expect",
+        "name": "previous",
+        "field": "column",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "open-back",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "opened",
+        "field": "screen",
+        "value": "task"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "back",
+        "field": "screen",
+        "value": "board"
+      }
+    ]
+  },
+  {
+    "id": "inbox-archive-task",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+E"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "status": "Archive"
+    }
+  },
+  {
+    "id": "command-open-close",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "expect",
+        "name": "open",
+        "field": "command_open",
+        "value": true
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "command_open",
+        "value": false
+      }
+    ]
+  }
 ]

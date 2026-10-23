@@ -6,7 +6,12 @@ import sys
 
 cases = json.loads(Path(sys.argv[1]).read_text())
 out = Path(sys.argv[2])
-results = {r['id']: r for r in json.loads((out / 'results.json').read_text(encoding='utf-8-sig'))}
+results = {}
+for file in sorted(out.glob('results-*.json')):
+    batch = json.loads(file.read_text(encoding='utf-8-sig'))
+    for result in batch if isinstance(batch, list) else [batch]:
+        assert result['id'] not in results, 'duplicate case result'
+        results[result['id']] = result
 failed = 0
 for case in cases:
     name = case['id']

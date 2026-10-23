@@ -24,12 +24,15 @@ want=$(sha256sum "$out/ht-desktop.exe" | cut -d' ' -f1 | tr a-f A-F)
 got=$(lh shell "(Get-FileHash '$W\ht-behavior.exe').Hash" | tr -d '\r' | awk 'NF { last=$0 } END { print last }')
 [ "$want" = "$got" ] || { echo "UPLOAD_HASH_MISMATCH"; exit 1; }
 for file in behavior-input.ps1 behavior-cases.json; do
-  lh write "$W\$file" "$(cat "$G/$file")" > /dev/null
+  lh write "${W}\\${file}" "$(cat "$G/$file")" > /dev/null
 done
 lh shell "Remove-Item '$W\*.json','$W\*.db-wal','$W\*.db-shm' -EA 0;" > /dev/null
 # Restore cases after clearing old evidence, preventing a stale PASS from a previous binary.
 lh write "$W\behavior-cases.json" "$(cat "$G/behavior-cases.json")" > /dev/null
-lh shell "powershell -NoProfile -ExecutionPolicy Bypass -File '$W\behavior-input.ps1' -CaseFile '$W\behavior-cases.json'" --timeout 110 | tr -d '\r' | tee "$out/input.txt"
+count=$(python3 -c 'import json,sys; print(len(json.load(open(sys.argv[1]))))' "$G/behavior-cases.json")
+for ((skip=0; skip<count; skip+=8)); do
+  lh shell "powershell -NoProfile -ExecutionPolicy Bypass -File '$W\behavior-input.ps1' -CaseFile '$W\behavior-cases.json' -Skip $skip -Take 8" --timeout 110 | tr -d '\r' | tee -a "$out/input.txt"
+done
 lh shell "Compress-Archive -Path '$W\*.json','$W\*.db','$W\*.stdout','$W\*.stderr' -DestinationPath '$W\evidence.zip' -Force" > /dev/null
 lh shell "[Convert]::ToBase64String([IO.File]::ReadAllBytes('$W\evidence.zip'))" | tr -d '\r\n' | base64 -d > "$out/evidence.zip"
 (cd "$out" && unzip -o -q evidence.zip)

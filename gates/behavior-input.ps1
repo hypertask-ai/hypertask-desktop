@@ -1,4 +1,4 @@
-param([string]$CaseFile = "$PSScriptRoot\cases.json")
+param([string]$CaseFile = "$PSScriptRoot\cases.json", [int]$Skip = 0, [int]$Take = 8)
 $ErrorActionPreference = 'Stop'
 $w = 'C:\Users\valen\AppData\Local\Temp\htbehavior'
 if ($PSScriptRoot -ne $w) { throw 'Runner must live in htbehavior' }
@@ -78,6 +78,7 @@ function Type-Text([string]$text) {
 }
 function Click([string]$key) {
   $s = Read-Json "$w\$script:id.behavior.json"
+  if ($key -eq "inbox.tab.last") { $key = ($s.elements | Where-Object { $_.key -match "^inbox.tab.[0-9]+$" } | Sort-Object { [int]($_.key.Split(".")[-1]) } | Select-Object -Last 1).key }
   $e = @($s.elements | Where-Object key -eq $key)[0]
   Assert-That ($null -ne $e) "Missing measured element $key"
   $scale = [BehaviorInput]::GetDpiForWindow($script:h) / 96.0
@@ -89,7 +90,7 @@ function Click([string]$key) {
   Wait-Change "$w\$script:id.behavior.json"
 }
 $results = @()
-foreach ($case in (Read-Json $CaseFile)) {
+foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Take)) {
   $script:id = $case.id
   if ($id -notmatch '^[a-z0-9-]+$') { throw 'Unsafe case id' }
   $p = $null; $failure = $null
@@ -97,7 +98,7 @@ foreach ($case in (Read-Json $CaseFile)) {
     Copy-Item "$w\parity.db" "$w\$id.db" -Force
     $foreground = [BehaviorInput]::GetForegroundWindow()
     $p = Start-Process "$w\ht-behavior.exe" -PassThru -ArgumentList '--db', "$w\$id.db", '--offline', '--background', '--board', '7283', '--task', '60253', '--theme', 'graphite', '--screen', $case.screen, '--dump-layout', "$w\$id.json" -RedirectStandardOutput "$w\$id.stdout" -RedirectStandardError "$w\$id.stderr"
-    $null = $p.WaitForInputIdle(15000)
+    if (!(Test-Path "$w\$id.behavior.json")) { Wait-Change "$w\$id.behavior.json" 15000 }
     $script:h = [BehaviorInput]::Find($p.Id)
     Assert-That ($h -ne [IntPtr]::Zero) 'Test HWND not found'
     # Bottom of Z-order, shown without activation; never attach to the owner's input queue.
@@ -132,4 +133,4 @@ foreach ($case in (Read-Json $CaseFile)) {
   $results += $result
   if ($failure) { "FAIL $id $failure" } else { "INPUT_OK $id (SQLite assertions pending on VPS)" }
 }
-$results | ConvertTo-Json -Depth 10 | Set-Content "$w\results.json" -Encoding UTF8
+$results | ConvertTo-Json -Depth 10 | Set-Content "$w\results-$Skip.json" -Encoding UTF8

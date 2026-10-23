@@ -998,6 +998,7 @@ impl Desktop {
             );
         }
         div()
+            .id("interaction-backdrop")
             .absolute()
             .size_full()
             .top_0()
