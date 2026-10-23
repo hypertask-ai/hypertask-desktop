@@ -470,6 +470,7 @@ impl Desktop {
         let Some(task_id) = self.selected_task() else {
             return false;
         };
+        let comment = self.editing == Editing::Comment;
         let write = match self.editing {
             Editing::Title => Write::TaskTitle {
                 task_id,
@@ -493,8 +494,9 @@ impl Desktop {
         };
         if self.enqueue(write, cx) {
             self.editing = Editing::None;
-            self.comment_input
-                .update(cx, |input, cx| input.reset(window, cx));
+            if comment {
+                self.comment_input.update(cx, |input, cx| input.reset(window, cx));
+            }
             window.focus(&self.focus, cx);
             true
         } else {

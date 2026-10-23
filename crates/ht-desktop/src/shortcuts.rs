@@ -58,7 +58,14 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
     }
     if editor {
         return match (k, ctrl, m.shift, m.alt) {
-            ("enter", true, stay, complete) => Some(Action::Save { stay, complete }),
+            ("enter", true, true, true) => Some(Action::Save {
+                stay: true,
+                complete: true,
+            }),
+            ("enter", true, stay, false) => Some(Action::Save {
+                stay,
+                complete: false,
+            }),
             (",", true, true, false) => Some(Action::DiscardDraft),
             _ => None,
         };
@@ -75,13 +82,15 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         ("i", true, true, false) => Some(Action::CopyId),
         (";" | ":", true, true, false) => Some(Action::CopyUrl),
         (";" | "," | ":", true, false, false) => Some(Action::CopyTitleUrl),
-        ("d", true, false, false) if screen == Screen::Task => Some(Action::Description),
+        ("d", true, false, false) if screen == Screen::Task && m.control => {
+            Some(Action::Description)
+        }
         ("a", true, all_splits, false) if screen != Screen::Task => {
             Some(Action::SelectAll { all_splits })
         }
         ("e", false, true, false) if screen == Screen::Inbox => Some(Action::BulkArchive),
-        ("h" | "left", false, true, false) => Some(Action::MoveLeft),
-        ("l" | "right", false, true, false) => Some(Action::MoveRight),
+        ("h" | "left", false, true, false) if screen != Screen::Inbox => Some(Action::MoveLeft),
+        ("l" | "right", false, true, false) if screen != Screen::Inbox => Some(Action::MoveRight),
         ("3" | "#", false, true, false) | ("#", false, false, false) => Some(Action::Delete),
         ("tab", false, false, false) => Some(Action::NextColumn),
         ("tab", false, true, false) => Some(Action::PreviousColumn),
@@ -114,7 +123,7 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
 
 pub fn sequence(key: &str, shifted: bool, screen: Screen) -> Option<Action> {
     match key {
-        "g" => Some(if shifted { Action::Last } else { Action::First }),
+        "g" if screen != Screen::Task => Some(if shifted { Action::Last } else { Action::First }),
         "i" => Some(Action::Inbox),
         "b" => Some(Action::Board),
         "t" if matches!(screen, Screen::Inbox | Screen::Task) => Some(Action::Board),
@@ -217,13 +226,23 @@ mod tests {
             ] {
                 assert_eq!(
                     key(chord, screen, false),
-                    Some(action),
+                    if screen == Screen::Inbox && matches!(action, MoveLeft | MoveRight) {
+                        None
+                    } else {
+                        Some(action)
+                    },
                     "{chord} {screen:?}"
                 );
                 assert_eq!(key(chord, screen, true), None, "editor must own {chord}");
             }
-            assert_eq!(sequence("g", false, screen), Some(First));
-            assert_eq!(sequence("g", true, screen), Some(Last));
+            assert_eq!(
+                sequence("g", false, screen),
+                (screen != Screen::Task).then_some(First)
+            );
+            assert_eq!(
+                sequence("g", true, screen),
+                (screen != Screen::Task).then_some(Last)
+            );
             assert_eq!(sequence("i", false, screen), Some(Inbox));
             assert_eq!(sequence("b", false, screen), Some(Board));
             assert_eq!(sequence("x", false, screen), None);

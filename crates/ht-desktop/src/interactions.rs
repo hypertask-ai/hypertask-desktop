@@ -236,7 +236,7 @@ impl Desktop {
             Save { stay, complete } => {
                 let comment = self.editing == Editing::Comment;
                 let saved = self.save_edit(window, cx);
-                if saved && comment && self.previous == Screen::Inbox && !stay {
+                if saved && comment && self.previous == Screen::Inbox && (!stay || complete) {
                     if complete {
                         self.archive_task(cx);
                     }
@@ -347,7 +347,7 @@ impl Desktop {
             }
             ArchiveNotification => {
                 self.archive_notification(cx);
-                if self.screen == Screen::Task {
+                if self.screen == Screen::Task && self.previous == Screen::Inbox {
                     self.playlist_step(1, cx);
                 }
             }
@@ -982,13 +982,37 @@ impl Desktop {
                         this.interaction.choice = i;
                         this.run_choice(window, cx);
                     }))
-                    .child(icon("chevron-right", t.muted, 14.))
                     .child(div().flex_1().child(choice.name.clone()))
                     .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(color(t.muted))
-                            .child(keys),
+                        div().flex().items_center().gap(px(3.)).children(
+                            keys.split(' ')
+                                .filter(|key| {
+                                    !keys.is_empty() && (!key.is_empty() || keys.contains("  "))
+                                })
+                                .map(|key| {
+                                    if key.is_empty() {
+                                        div()
+                                            .text_size(px(11.))
+                                            .text_color(color(t.muted))
+                                            .child("then")
+                                            .into_any_element()
+                                    } else {
+                                        div()
+                                            .px(px(5.))
+                                            .py(px(2.))
+                                            .rounded(px(2.))
+                                            .bg(color(t.active))
+                                            .text_size(px(11.))
+                                            .font_weight(FontWeight::MEDIUM)
+                                            .child(if cfg!(target_os = "macos") && key == "CTRL" {
+                                                "CMD"
+                                            } else {
+                                                key
+                                            })
+                                            .into_any_element()
+                                    }
+                                }),
+                        ),
                     )
                     .layout_key(
                         &self.layout,

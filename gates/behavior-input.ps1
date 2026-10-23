@@ -75,7 +75,7 @@ function Snapshot([string]$name) {
 function Key([string]$chord) {
   $parts = $chord.Split('+'); $last = $parts[-1]
   $mods = @(); if ($parts -contains 'Ctrl') { $mods += 17 }; if ($parts -contains 'Shift') { $mods += 16 }; if ($parts -contains 'Alt') { $mods += 18 }
-  $special = @{ Enter=13; Esc=27; Tab=9; Down=40; Up=38; Left=37; Right=39; F2=113; Home=36; End=35; Backspace=8; Delete=46 }
+  $special = @{ Enter=13; Esc=27; Tab=9; Down=40; Up=38; Left=37; Right=39; F2=113; Home=36; End=35; Backspace=8; Delete=46; ";"=186; ","=188; "."=190; "/"=191 }
   $vk = if ($special.ContainsKey($last)) { $special[$last] } elseif ($last.Length -eq 1) { [int][char]$last.ToUpper() } else { throw "Unknown key $chord" }
   [BehaviorInput]::Begin($script:h, [int[]]$mods)
   try { [BehaviorInput]::Key($script:h, $vk); Wait-Change "$w\$script:id.behavior.json" } finally { [BehaviorInput]::End($script:h, [int[]]$mods) }
@@ -155,6 +155,8 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
   try {
     if ($case.clipboard) { $clipboardBackup = Clipboard-Backup }
     Copy-Item "$w\parity.db" "$w\$id.db" -Force
+    & sqlite3.exe "$w\$id.db" ".read '$w/behavior-seed.sql'"
+    Assert-That ($LASTEXITCODE -eq 0) 'Cannot seed isolated behavior fixture' 
     $foreground = [BehaviorInput]::GetForegroundWindow()
     $p = Start-Process "$w\ht-behavior.exe" -PassThru -ArgumentList '--db', "$w\$id.db", '--offline', '--background', '--board', '7283', '--task', '60253', '--theme', 'graphite', '--screen', $case.screen, '--dump-layout', "$w\$id.json" -RedirectStandardOutput "$w\$id.stdout" -RedirectStandardError "$w\$id.stderr"
     $null = $p.WaitForInputIdle(1000)

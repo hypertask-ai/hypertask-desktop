@@ -28,7 +28,7 @@ if [ "$want" != "$got" ]; then
   got=$(lh shell "(Get-FileHash '$W\ht-behavior.exe').Hash" | tr -d '\r' | awk 'NF { last=$0 } END { print last }')
 fi
 [ "$want" = "$got" ] || { echo "UPLOAD_HASH_MISMATCH"; exit 1; }
-for file in behavior-input.ps1 behavior-cases.json; do
+for file in behavior-input.ps1 behavior-cases.json behavior-seed.sql; do
   lh write "${W}\\${file}" "$(cat "$G/$file")" > /dev/null
 done
 lh shell "Remove-Item '$W\*.json','$W\*.db-wal','$W\*.db-shm' -EA 0; exit 0" > /dev/null
