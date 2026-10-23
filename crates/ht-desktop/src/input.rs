@@ -500,14 +500,18 @@ impl TextLayout {
     }
 }
 
-fn line_ranges(text: &str, width: Pixels, multiline: bool, window: &Window) -> Vec<Range<usize>> {
+fn line_ranges(
+    text: &str,
+    width: Pixels,
+    multiline: bool,
+    font: gpui::Font,
+    font_size: Pixels,
+    window: &Window,
+) -> Vec<Range<usize>> {
     if !multiline {
         return vec![0..text.len()];
     }
-    let style = window.text_style();
-    let mut wrapper = window
-        .text_system()
-        .line_wrapper(style.font(), style.font_size.to_pixels(window.rem_size()));
+    let mut wrapper = window.text_system().line_wrapper(font, font_size);
     let mut ranges = vec![];
     let mut offset = 0;
     for line in text.split('\n') {
@@ -572,13 +576,17 @@ impl Element for TextElement {
             style.size.height = window.line_height().into();
             return (window.request_layout(style, [], cx), ());
         }
+        let text_style = window.text_style();
+        let font = text_style.font();
+        let font_size = text_style.font_size.to_pixels(window.rem_size());
+        let line_height = window.line_height();
         let id = window.request_measured_layout(style, move |known, available, window, _cx| {
             let width = known.width.unwrap_or_else(|| match available.width {
                 AvailableSpace::Definite(width) => width,
                 _ => px(380.),
             });
-            let rows = line_ranges(&text, width, true, window).len();
-            size(width, window.line_height() * rows as f32)
+            let rows = line_ranges(&text, width, true, font.clone(), font_size, window).len();
+            size(width, line_height * rows as f32)
         });
         (id, ())
     }
@@ -609,9 +617,16 @@ impl Element for TextElement {
         };
         let mut selections = vec![];
         let mut cursor = None;
-        for (row, range) in line_ranges(&display, bounds.size.width, input.multiline, window)
-            .into_iter()
-            .enumerate()
+        for (row, range) in line_ranges(
+            &display,
+            bounds.size.width,
+            input.multiline,
+            style.font(),
+            font_size,
+            window,
+        )
+        .into_iter()
+        .enumerate()
         {
             let offset = range.start;
             let text = &display[range];
@@ -848,5 +863,43 @@ impl TextInput {
         self.content = text.into();
         self.marked_range = None;
         cx.notify();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[gpui::test]
+    fn multiline_composer_wraps_and_preserves_utf8_geometry(cx: &mut gpui::TestAppContext) {
+        let text = format!("{}\n\nSecond é🙂", "long text é🙂 ".repeat(100));
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(text.clone(), "", gpui::black(), cx).multiline()
+        });
+        cx.run_until_parked();
+        view.update_in(cx, |input, window, cx| {
+            let layout = input
+                .last_layout
+                .as_ref()
+                .expect("multiline input was painted");
+            assert!(
+                layout.lines.len() > text.split('\n').count(),
+                "long lines must soft-wrap"
+            );
+            for (line, &offset) in layout.lines.iter().zip(&layout.offsets) {
+                assert!(text.is_char_boundary(offset));
+                assert_eq!(&text[offset..offset + line.text.len()], line.text.as_ref());
+            }
+            let bounds = input.last_bounds.unwrap();
+            let start = text.find("Second").unwrap();
+            let range = input.range_to_utf16(&(start..text.len()));
+            let rectangle = input
+                .bounds_for_range(range.clone(), bounds, window, cx)
+                .unwrap();
+            assert!(rectangle.top() > bounds.top());
+            input.set_selected_text_range(range, window, cx);
+            input.replace_text_in_range(None, "Replacement 漢", window, cx);
+            assert!(input.content.ends_with("\n\nReplacement 漢"));
+        });
     }
 }

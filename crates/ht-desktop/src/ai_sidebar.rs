@@ -128,6 +128,8 @@ struct ActiveTurn {
 pub struct AiSidebar {
     colors: Theme,
     input: Entity<TextInput>,
+    input_scroll: ScrollHandle,
+    _input_subscription: gpui::Subscription,
     focus: FocusHandle,
     previous_focus: Option<FocusHandle>,
     client: Option<Client>,
@@ -161,6 +163,17 @@ impl AiSidebar {
             )
             .multiline()
         });
+        let input_scroll = ScrollHandle::new();
+        let scroll = input_scroll.clone();
+        let mut draft = String::new();
+        let input_subscription = cx.observe(&input, move |_, input, cx| {
+            let content = input.read(cx).content.to_string();
+            if content != draft {
+                draft = content;
+                scroll.scroll_to_bottom();
+                cx.notify();
+            }
+        });
         cx.spawn_in(window, async move |view, cx| {
             loop {
                 cx.background_executor()
@@ -175,6 +188,8 @@ impl AiSidebar {
         Self {
             colors,
             input,
+            input_scroll,
+            _input_subscription: input_subscription,
             focus: cx.focus_handle(),
             previous_focus: Some(workspace_focus),
             client: token.and_then(|t| Client::new(t).ok()),
@@ -772,6 +787,7 @@ impl Render for AiSidebar {
             .child(
                 div()
                     .id("ai-composer-input")
+                    .track_scroll(&self.input_scroll)
                     .min_h(px(40.))
                     .max_h(px(160.))
                     .overflow_y_scroll()
