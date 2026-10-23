@@ -231,7 +231,17 @@ fn run() -> Result<()> {
     Ok(())
 }
 
+#[cfg(windows)]
+fn follow_windows_display_scaling() {
+    use windows::Win32::UI::HiDpi::{
+        DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
+    };
+    unsafe { SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2) }.ok();
+}
+
 fn main() {
+    #[cfg(windows)]
+    follow_windows_display_scaling();
     if let Err(error) = run() {
         eprintln!("Hypertask: {error}");
         std::process::exit(1);
