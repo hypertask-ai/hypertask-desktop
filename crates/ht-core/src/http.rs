@@ -98,10 +98,23 @@ impl Http {
     }
 
     pub fn json_request(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
-        ensure!(matches!(method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE"), "unsupported HTTP method");
+        ensure!(
+            matches!(method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE"),
+            "unsupported HTTP method"
+        );
         let response = self.request(method, path, body, None)?;
-        if !(200..300).contains(&response.status) || response.body.get("success") == Some(&Value::Bool(false)) {
-            anyhow::bail!("{}", response.body.get("message").or_else(|| response.body.get("error")).and_then(Value::as_str).unwrap_or("Request failed"));
+        if !(200..300).contains(&response.status)
+            || response.body.get("success") == Some(&Value::Bool(false))
+        {
+            anyhow::bail!(
+                "{}",
+                response
+                    .body
+                    .get("message")
+                    .or_else(|| response.body.get("error"))
+                    .and_then(Value::as_str)
+                    .unwrap_or("Request failed")
+            );
         }
         Ok(response.body)
     }
@@ -200,4 +213,64 @@ pub(crate) fn successful(response: Response) -> Result<Value> {
         "API response was not successful"
     );
     Ok(response.body)
+}
+
+#[cfg(test)]
+mod shell_tests {
+    use super::*;
+    use std::{
+        io::{Read, Write},
+        net::TcpListener,
+        thread,
+    };
+
+    #[test]
+    fn shell_json_methods_send_bearer_and_preserve_server_errors() {
+        for method in ["GET", "POST", "PUT", "PATCH", "DELETE"] {
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let address = listener.local_addr().unwrap();
+            let expected = method.to_owned();
+            let server = thread::spawn(move || {
+                let (mut stream, _) = listener.accept().unwrap();
+                stream
+                    .set_read_timeout(Some(Duration::from_secs(5)))
+                    .unwrap();
+                let mut request = vec![];
+                let mut buffer = [0; 4096];
+                loop {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                    if request.windows(4).any(|w| w == b"\r\n\r\n") {
+                        break;
+                    }
+                }
+                let request = String::from_utf8(request).unwrap();
+                assert!(
+                    request.starts_with(&format!("{expected} /user/profile HTTP/1.1\r\n")),
+                    "{request}"
+                );
+                assert!(
+                    request
+                        .to_lowercase()
+                        .contains("authorization: bearer fixture-secret\r\n")
+                );
+                let body = r#"{"success":true,"user":{"displayName":"Saved"}}"#;
+                write!(stream, "HTTP/1.1 200 OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}", body.len(), body).unwrap();
+            });
+            let http =
+                Http::with_base(&format!("http://{address}"), "fixture-secret".into()).unwrap();
+            let result = http
+                .json_request(
+                    method,
+                    "/user/profile",
+                    (method != "GET")
+                        .then(|| serde_json::json!({"displayName": "Saved"}))
+                        .as_ref(),
+                )
+                .unwrap();
+            assert_eq!(result["user"]["displayName"], "Saved");
+            server.join().unwrap();
+        }
+    }
 }

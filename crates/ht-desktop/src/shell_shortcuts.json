@@ -1,0 +1,1338 @@
+[
+  {
+    "group": "App shell surfaces",
+    "label": "Inbox",
+    "keys": [
+      "1"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Board",
+    "keys": [
+      "2"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Table",
+    "keys": [
+      "3"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Calendar",
+    "keys": [
+      "4"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Toggle AI chat",
+    "keys": [
+      "5"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Toggle AI chat (alternative)",
+    "keys": [
+      "]"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Search",
+    "keys": [
+      "6"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Running timers",
+    "keys": [
+      "7"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Collapse / expand sidebar",
+    "keys": [
+      "["
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Shortcuts",
+    "keys": [
+      "?"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Settings",
+    "keys": [
+      "\\"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Search",
+    "keys": [
+      "/"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Set priority",
+    "keys": [
+      "P"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Set task size",
+    "keys": [
+      "S"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Add tags",
+    "keys": [
+      "T"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Archive",
+    "keys": [
+      "E"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Move focus down",
+    "keys": [
+      "J"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Move focus up",
+    "keys": [
+      "K"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Move focus",
+    "keys": [
+      "←",
+      "⭡",
+      "⭣",
+      "→"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Open Hypertask Command",
+    "keys": [
+      "CTRL",
+      "K"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Undo latest action",
+    "keys": [
+      "CTRL",
+      "Z"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Use snippet",
+    "keys": [
+      ";"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Show or hide archived tasks",
+    "keys": [
+      "G",
+      null,
+      "X"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Exit (go back)",
+    "keys": [
+      "ESC"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Archive task or comment",
+    "keys": [
+      "CTRL",
+      "E"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Delete task",
+    "keys": [
+      "#"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to task board",
+    "keys": [
+      "G",
+      null,
+      "B"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to inbox archives",
+    "keys": [
+      "G",
+      null,
+      "R"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to running timers",
+    "keys": [
+      "G",
+      null,
+      "T"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to reminders",
+    "keys": [
+      "G",
+      null,
+      "H"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to trash",
+    "keys": [
+      "G",
+      null,
+      "#"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to all tasks",
+    "keys": [
+      "G",
+      null,
+      "A"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to my tasks",
+    "keys": [
+      "G",
+      null,
+      "M"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to inbox",
+    "keys": [
+      "G",
+      null,
+      "I"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to snippets",
+    "keys": [
+      "G",
+      null,
+      ";"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to archived tasks",
+    "keys": [
+      "G",
+      null,
+      "E"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to starred",
+    "keys": [
+      "G",
+      null,
+      "S"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to pinned",
+    "keys": [
+      "G",
+      null,
+      "P"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to drafts",
+    "keys": [
+      "G",
+      null,
+      "D"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to scheduled tasks",
+    "keys": [
+      "G",
+      null,
+      "U"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Go to calendar",
+    "keys": [
+      "G",
+      null,
+      "C"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Cycle focus forward",
+    "keys": [
+      "TAB"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Cycle focus backward",
+    "keys": [
+      "SHIFT",
+      "TAB"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Switch boards",
+    "keys": [
+      "ALT",
+      "0-9"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Switch Kanban boards",
+    "keys": [
+      "CTRL",
+      "B"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Set due date",
+    "keys": [
+      "D"
+    ]
+  },
+  {
+    "group": "Global Shortcuts",
+    "label": "Move task to a different board",
+    "keys": [
+      "SHIFT",
+      "M"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Add task",
+    "keys": [
+      "C"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Add task with AI Task Writer",
+    "keys": [
+      "CTRL",
+      "J"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Add sub-task",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "+"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Add task at top",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "C"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Add task at bottom",
+    "keys": [
+      "SHIFT",
+      "C"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Open task",
+    "keys": [
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Move focus to top",
+    "keys": [
+      "gg"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Move focus to bottom",
+    "keys": [
+      "GG"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Move task down",
+    "keys": [
+      "SHIFT",
+      "J",
+      "⭣"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Move task up",
+    "keys": [
+      "SHIFT",
+      "K",
+      "⭡"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Move task right",
+    "keys": [
+      "SHIFT",
+      "L",
+      "→"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Move task left",
+    "keys": [
+      "SHIFT",
+      "H",
+      "←"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Move task to the left",
+    "keys": [
+      "SHIFT",
+      "H",
+      "←"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Sort Kanban board",
+    "keys": [
+      "SHIFT",
+      "S"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Add a sort level (table column)",
+    "keys": [
+      "SHIFT",
+      "CLICK"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Toggle table layout",
+    "keys": [
+      "SHIFT",
+      "T"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Match any / all values (inside a filter's list)",
+    "keys": [
+      "←",
+      "→"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Show task options",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "+"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Move task to the right",
+    "keys": [
+      "SHIFT",
+      "L",
+      "→"
+    ]
+  },
+  {
+    "group": "Board",
+    "label": "Assign a user",
+    "keys": [
+      "A"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Activate description/comment or reply to comment",
+    "keys": [
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Send comment and advance in Inbox",
+    "keys": [
+      "CTRL",
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Send comment and stay on task",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Write with AI",
+    "keys": [
+      "CTRL",
+      "J"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Assign a user",
+    "keys": [
+      "A"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Blocked by person",
+    "keys": [
+      "SHIFT",
+      "B"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Start / stop timer",
+    "keys": [
+      "W"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Log time",
+    "keys": [
+      "B"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Add a comment",
+    "keys": [
+      "CTRL",
+      "M"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Suggest reply with AI",
+    "keys": [
+      "SHIFT",
+      "R"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Switch boards",
+    "keys": [
+      "ALT",
+      "0-9"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Expand summary",
+    "keys": [
+      "I"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Expand single comment",
+    "keys": [
+      "O"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Expand all comments",
+    "keys": [
+      "SHIFT",
+      "O"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Toggle agent log",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "H"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "View all links",
+    "keys": [
+      "CTRL",
+      "O"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Write Comment",
+    "keys": [
+      "CTRL",
+      "M"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Edit Description",
+    "keys": [
+      "CTRL",
+      "D"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Edit Title",
+    "keys": [
+      "F2"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Delete comment",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "3"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Paste as plain text",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "V"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "View all sub-tasks",
+    "keys": [
+      "CTRL",
+      "O"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Share task",
+    "keys": [
+      "CTRL",
+      "S"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Show task options",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "+"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Private share link (URL only)",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      ";"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Private share link (Title + URL)",
+    "keys": [
+      "CTRL",
+      ";"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Public share link (URL only)",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "."
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Public share link (Title + URL)",
+    "keys": [
+      "CTRL",
+      "."
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Copy task ID",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "I"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Copy task title and ID",
+    "keys": [
+      "CTRL",
+      "I"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Star task",
+    "keys": [
+      "ALT",
+      "S"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Star comment",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "S"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Pin comment",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "P"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Follow task",
+    "keys": [
+      "F"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Unfollow task",
+    "keys": [
+      "ALT",
+      "F"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Speech to text",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "D"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Dictate and Improve",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "F"
+    ]
+  },
+  {
+    "group": "Task View",
+    "label": "Discard draft",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      ","
+    ]
+  },
+  {
+    "group": "Saving new task",
+    "label": "Save",
+    "keys": [
+      "CTRL",
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Saving new task",
+    "label": "Save and close",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Saving new task",
+    "label": "Save and create new task",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "SHIFT",
+      "ENTER"
+    ]
+  },
+  {
+    "group": "AI Chat",
+    "label": "Toggle AI chat",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "?"
+    ]
+  },
+  {
+    "group": "AI Chat",
+    "label": "Reset session",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "O"
+    ]
+  },
+  {
+    "group": "AI Chat",
+    "label": "Switch focus: AI chat / workspace",
+    "keys": [
+      "CTRL",
+      "Q"
+    ]
+  },
+  {
+    "group": "AI Chat",
+    "label": "Send message",
+    "keys": [
+      "Enter"
+    ]
+  },
+  {
+    "group": "Agent Chat",
+    "label": "Next agent",
+    "keys": [
+      "ALT",
+      "⭣"
+    ]
+  },
+  {
+    "group": "Agent Chat",
+    "label": "Previous agent",
+    "keys": [
+      "ALT",
+      "⭡"
+    ]
+  },
+  {
+    "group": "Agent Chat",
+    "label": "Send message",
+    "keys": [
+      "CTRL",
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Agent Chat",
+    "label": "Open all links in latest reply",
+    "keys": [
+      "CTRL",
+      "O"
+    ]
+  },
+  {
+    "group": "Agent Chat",
+    "label": "Search tasks to reference",
+    "keys": [
+      "@"
+    ]
+  },
+  {
+    "group": "Agent Chat",
+    "label": "Next team (any page)",
+    "keys": [
+      "ALT",
+      "SHIFT",
+      "⭣"
+    ]
+  },
+  {
+    "group": "Agent Chat",
+    "label": "Previous team (any page)",
+    "keys": [
+      "ALT",
+      "SHIFT",
+      "⭡"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Tiptap menu",
+    "keys": [
+      "/"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Add Video Embed",
+    "keys": [
+      "CTRL",
+      "Y"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Autocomplete sentence",
+    "keys": [
+      "2xTAB"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Add a line break",
+    "keys": [
+      "SHIFT",
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Italicize",
+    "keys": [
+      "CTRL",
+      "I"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Underline",
+    "keys": [
+      "CTRL",
+      "U"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Quote",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "B"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Highlight",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "H"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Code",
+    "keys": [
+      "CTRL",
+      "E"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Bullet list",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "8"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Undo",
+    "keys": [
+      "CTRL",
+      "Z"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Redo",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "Z"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Apply normal text style",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "0"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Apply heading style 1",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "1"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Apply heading style 2",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "2"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Apply heading style 3",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "3"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Apply heading style 4",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "4"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Apply heading style 5",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "5"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Apply heading style 6",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "6"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Code block",
+    "keys": [
+      "CTRL",
+      "ALT",
+      "SHIFT",
+      "C"
+    ]
+  },
+  {
+    "group": "Format",
+    "label": "Code",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "C"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Select ALL",
+    "keys": [
+      "CTRL",
+      "SHIFT",
+      "A"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Select all from current split",
+    "keys": [
+      "CTRL",
+      "A"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Select message",
+    "keys": [
+      "X"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Bulk Archive",
+    "keys": [
+      "SHIFT",
+      "E"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Bulk Reminder",
+    "keys": [
+      "SHIFT",
+      "H"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Archive",
+    "keys": [
+      "E"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Open task",
+    "keys": [
+      "ENTER"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Move focus down",
+    "keys": [
+      "J"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Move focus up",
+    "keys": [
+      "K"
+    ]
+  },
+  {
+    "group": "Inbox",
+    "label": "Archive task",
+    "keys": [
+      "CTRL",
+      "E"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Add task",
+    "keys": [
+      "C"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Update due date",
+    "keys": [
+      "D"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Next month/week",
+    "keys": [
+      "I"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Previous month/week",
+    "keys": [
+      "U"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Month view",
+    "keys": [
+      "M"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Week view",
+    "keys": [
+      "W"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Day view",
+    "keys": [
+      "SHIFT",
+      "D"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Focus on today",
+    "keys": [
+      "T"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Focus on next day",
+    "keys": [
+      "TAB"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Focus on yesterday",
+    "keys": [
+      "SHIFT",
+      "TAB"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Toggle through project filters",
+    "keys": [
+      "CTRL",
+      "[",
+      "]"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Select project from filters",
+    "keys": [
+      "SPACE"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Filter tasks",
+    "keys": [
+      "SHIFT",
+      "F"
+    ]
+  },
+  {
+    "group": "Calendar",
+    "label": "Save calendar view",
+    "keys": [
+      "SHIFT",
+      "V"
+    ]
+  },
+  {
+    "group": "Unarchive View (g -> e)",
+    "label": "Unarchive task",
+    "keys": [
+      "CTRL",
+      "E"
+    ]
+  },
+  {
+    "group": "Unarchive View (g -> e)",
+    "label": "Delete task",
+    "keys": [
+      "#"
+    ]
+  }
+]

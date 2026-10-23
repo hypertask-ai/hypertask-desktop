@@ -203,6 +203,7 @@ impl Desktop {
             _ai_sidebar_subscription: ai_sidebar_subscription,
         };
         view.reload();
+        view.init_shell(window, cx);
         view.request_sync();
         if !view.options.offline && view.signin.is_interactive() {
             cx.spawn_in(window, async move |view, cx| {
@@ -2041,6 +2042,7 @@ impl Render for Desktop {
             Screen::Board => self.board_screen(window, cx).into_any_element(),
             Screen::Task => self.task_screen(cx),
         };
+        let body = self.shell_body(body);
         let t = self.colors;
         div()
             .size_full()
@@ -2093,6 +2095,7 @@ impl Render for Desktop {
                         .layout_key(&self.layout, "rightpanel", None),
                 )
             })
+            .child(self.shell_reopen(cx))
             .child(self.shell_overlay(window, cx))
             .child(self.interaction_overlay(window, cx))
             .child(self.comment_overlay(cx))

@@ -155,6 +155,21 @@ pub struct AiSidebar {
 }
 
 impl AiSidebar {
+    pub fn expand(&mut self, cx: &mut Context<Self>) {
+        self.collapsed = false;
+        cx.notify();
+    }
+
+    pub fn set_theme(&mut self, colors: Theme, cx: &mut Context<Self>) {
+        self.colors = colors;
+        for chat in &mut self.chats {
+            for message in &mut chat.messages {
+                message.rich = markdown(&message.message.content, colors);
+            }
+        }
+        cx.notify();
+    }
+
     pub fn new(
         colors: Theme,
         token: Option<String>,
