@@ -78,10 +78,33 @@ impl TurnIds {
     }
 }
 
-#[derive(Clone, Debug, Serialize, PartialEq)]
+#[derive(Clone, Debug, Deserialize, Serialize, PartialEq)]
 pub struct Message {
     pub role: String,
     pub content: String,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct Session {
+    pub id: String,
+    pub title: Option<String>,
+    pub messages: Vec<Message>,
+}
+
+// The legacy endpoint returns every transcript. Parse directly from the reader on a worker,
+// not ureq::into_json (10 MiB limit) or a second, unbounded in-memory JSON tree.
+const MAX_HISTORY_BYTES: u64 = 256 * 1024 * 1024;
+
+fn parse_sessions(reader: impl Read) -> Result<Vec<Session>> {
+    #[derive(Deserialize)]
+    struct History {
+        success: bool,
+        sessions: Vec<Session>,
+    }
+    let data: History = serde_json::from_reader(reader.take(MAX_HISTORY_BYTES))
+        .context("Could not load AI history (invalid or larger than 256 MiB)")?;
+    ensure!(data.success, "Server refused AI history");
+    Ok(data.sessions)
 }
 
 #[derive(Clone, Debug, Default, Serialize, PartialEq)]
@@ -255,6 +278,9 @@ impl Client {
             .send_json(body)
         {
             Ok(response) => Ok(response),
+            Err(ureq::Error::Status(409, response)) if path == "/api/ai/chat/cancel" => {
+                Ok(response)
+            }
             Err(ureq::Error::Status(status, response)) => {
                 let mut body = String::new();
                 response
@@ -299,12 +325,34 @@ impl Client {
         }
     }
 
+    /// Fetch only when history opens, off the render thread.
+    pub fn sessions(&self) -> Result<Vec<Session>> {
+        let response = match self.agent
+            .get(&format!("{}/api/ai-chat/all-sessions", self.base))
+            .set("Authorization", &format!("Bearer {}", self.token))
+            .set("Accept", "application/json")
+            .call()
+        {
+            Ok(response) => response,
+            Err(ureq::Error::Status(status, response)) => {
+                let mut body = String::new();
+                response.into_reader().take(64 * 1024).read_to_string(&mut body)?;
+                bail!("{}", refusal(status, &body));
+            }
+            Err(error) => bail!("AI history request failed: {error}"),
+        };
+        parse_sessions(response.into_reader())
+    }
+
     pub fn cancel(&self, ids: &TurnIds) -> Result<()> {
         let response = self.post(
             "/api/ai/chat/cancel",
             &serde_json::to_value(ids)?,
             "application/json",
         )?;
+        if response.status() == 409 {
+            return Ok(()); // The stream is already idle, not a failed Stop.
+        }
         let data: Value = response.into_json()?;
         ensure!(
             data["success"] == true,
@@ -499,6 +547,8 @@ mod tests {
         assert!(headers.contains("authorization: bearer desktop-mcp-token\r\n"));
         assert!(headers.contains("accept: text/event-stream\r\n"));
         assert!(headers.contains("content-type: application/json\r\n"));
+        assert!(!headers.contains("x-hypertask-sidebar-project"));
+        assert!(!headers.contains("cookie:"));
         assert_eq!(received, body);
 
         let (base, server) = self::server(
@@ -562,6 +612,67 @@ mod tests {
         }
         assert!(Client::with_base("http://example.com", "token".into()).is_err());
         assert!(Client::new("bad\r\ntoken".into()).is_err());
+    }
+
+    #[test]
+    fn idle_cancel_is_success_but_other_refusals_preserve_server_message() {
+        for (status, body, ok) in [
+            ("409 Conflict", r#"{"error":"Stream already idle"}"#, true),
+            ("403 Forbidden", r#"{"message":"Access denied"}"#, false),
+        ] {
+            let (base, server) = server(status, "application/json", body);
+            let result = Client::with_base(&base, "token".into()).unwrap()
+                .cancel(&TurnIds::new(session_id()));
+            if ok {
+                result.unwrap();
+            } else {
+                assert!(result.unwrap_err().to_string().contains("Access denied"));
+            }
+            server.join().unwrap();
+        }
+    }
+
+    #[test]
+    fn history_accepts_all_1517_transcripts_beyond_ureq_json_limit() {
+        let content = "é".repeat(4096);
+        let sessions: Vec<_> = (0..1517).map(|i| json!({
+            "id": format!("session-{i}"), "title": null,
+            "messages": [{"role":"assistant", "content":content}],
+            "ignoredAttachments": [1,2,3]
+        })).collect();
+        let bytes = serde_json::to_vec(&json!({"success":true,"sessions":sessions})).unwrap();
+        assert!(bytes.len() > 10 * 1024 * 1024);
+        let parsed = parse_sessions(bytes.as_slice()).unwrap();
+        assert_eq!(parsed.len(), 1517);
+        assert_eq!(parsed[1516].messages[0].content, content);
+        assert!(parse_sessions(&b"{\"success\":true,\"sessions\":["[..]).is_err());
+        assert!(parse_sessions(&b"{\"success\":false,\"sessions\":[]}"[..]).is_err());
+    }
+
+    #[test]
+    fn write_live_request_fixture() {
+        let ids = TurnIds {
+            session_id: "73810000-0000-4000-8000-000000000001".into(),
+            assistant_message_id: "73810000-0000-4000-8000-000000000002".into(),
+            stream_id: "73810000-0000-4000-8000-000000000003".into(),
+        };
+        let body = request(
+            "Reply with exactly: Native AI sidebar is live.",
+            &ids,
+            "73810000-0000-4000-8000-000000000004",
+            MODELS[0],
+            &DefaultContext {
+                surface: "inbox".into(),
+                surface_path: "/inbox".into(),
+                ..Default::default()
+            },
+            None,
+            &[],
+        );
+        let path = std::path::Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../target/ai-live-request.json");
+        std::fs::create_dir_all(path.parent().unwrap()).unwrap();
+        std::fs::write(path, serde_json::to_vec_pretty(&body).unwrap()).unwrap();
     }
 
     #[test]
