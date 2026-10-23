@@ -19,7 +19,7 @@ def expected(value, state, before):
     if not isinstance(value, str) or not value.startswith('$'):
         return value
     return {'$last': state.get('last_index'), '$count': state.get('selection_count'),
-            '$all': state.get('inbox_count'), '$composer': state.get('composer_index'),
+            '$board-count': state.get('board_count'), '$all': state.get('inbox_count'), '$composer': state.get('composer_index'),
             '$before.task_id': before.get('task_id')}[value]
 
 def mutation_value(value, state):
@@ -97,14 +97,26 @@ for case in cases:
             'SELECT id,kind,payload_json,status,attempts FROM mutation_queue ORDER BY id'
         ], text=True) or '[]')
         (out / f'{name}-queue.json').write_text(json.dumps(rows, indent=2) + '\n')
+        if case.get('each_board_task'):
+            original = out / f'{name}-before.db'
+            assert original.is_file(), 'missing independent before database'
+            ids = json.loads(subprocess.check_output(['sqlite3','-readonly','-json',str(original),f"SELECT id FROM Task WHERE projectId={int(before['state']['project_id'])} AND status='Normal' AND sectionId IN (SELECT id FROM Section WHERE projectId={int(before['state']['project_id'])} AND deleted=0 AND visibility=1)"],text=True))
+            expected_ids = {r['id'] for r in ids}
+            assert len(rows) == len(expected_ids) and expected_ids, (rows, ids)
+            assert {json.loads(r['payload_json'])['task_id'] for r in rows} == expected_ids, rows
+            for row in rows:
+                assert mutation_matches(row, case['each_board_task'], before['state']), row
+                assert row['status'] == 'pending' and row['attempts'] == 0, row
         mutations = [case[k] for k in ['mutation', 'also_mutation'] if k in case] + case.get('also_mutations', [])
         for mutation in mutations:
             matches = [r for r in rows if mutation_matches(r, mutation, before['state'])]
             assert len(matches) == 1, f'expected one {mutation}, queue={rows}'
+            if mutation['kind'].startswith('task_') and 'task_id' not in mutation:
+                assert json.loads(matches[0]['payload_json'])['task_id'] == case.get('target_task_id', before['state']['task_id']), 'write targeted a different task'
             assert matches[0]['attempts'] == 0 and matches[0]['status'] == 'pending', matches
-        if not mutations:
+        if not mutations and not case.get('each_board_task'):
             assert not rows, f'navigation unexpectedly wrote mutations: {rows}'
-        else:
+        elif mutations:
             assert len(rows) == len(mutations), f'unexpected extra or missing writes: {rows}'
         if case.get('clipboard'):
             raw = json.loads(subprocess.check_output(['sqlite3','-readonly',str(db),f"SELECT raw_json FROM Task WHERE id={int(before['state']['task_id'])}"],text=True))
@@ -112,7 +124,7 @@ for case in cases:
             url = f"https://app.hypertask.ai/detail/project-{raw['projectId']}/{raw['uniqueIndex']}"
             want = {'id':ticket, 'title-id':f"{ticket.upper()} | {raw['title']}", 'url':url, 'title-url':f"{ticket.upper()} | {raw['title']} | {url}"}[case['clipboard']]
             assert (out / f'{name}-clipboard.txt').read_text(encoding='utf-8-sig') == want, 'clipboard differs from cached task'
-        print(f'PASS {name}' + (' sqlite mutation verified' if mutations else ' clipboard verified' if case.get('clipboard') else ' layout effect verified'))
+        print(f'PASS {name}' + (' sqlite mutation verified' if mutations or case.get('each_board_task') else ' clipboard verified' if case.get('clipboard') else ' layout effect verified'))
     except (AssertionError, KeyError, OSError, ValueError, subprocess.CalledProcessError) as error:
         failed += 1
         print(f'FAIL {name}: {error}')

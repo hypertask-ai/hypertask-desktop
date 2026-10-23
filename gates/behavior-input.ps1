@@ -55,6 +55,27 @@ public class BehaviorInput {
     }
     process.Refresh(); return process.HasExited;
   }
+  delegate void WinEventProc(IntPtr hook, uint ev, IntPtr h, int obj, int child, uint thread, uint time);
+  [DllImport("user32.dll")] static extern IntPtr SetWinEventHook(uint min, uint max, IntPtr module, WinEventProc callback, uint process, uint thread, uint flags);
+  [DllImport("user32.dll")] static extern bool UnhookWinEvent(IntPtr hook);
+  public static IntPtr WaitForWindow(System.Diagnostics.Process process, int timeout) {
+    Message message; PeekMessage(out message, IntPtr.Zero, 0, 0, 0);
+    WinEventProc callback = (hook, ev, h, obj, child, thread, time) => {};
+    IntPtr hookHandle = SetWinEventHook(0x8000, 0x8002, IntPtr.Zero, callback, (uint)process.Id, 0, 0);
+    var timer = System.Diagnostics.Stopwatch.StartNew();
+    var handles = new[] { process.Handle };
+    try {
+      while (timer.ElapsedMilliseconds < timeout) {
+        IntPtr found = Find((uint)process.Id);
+        if (found != IntPtr.Zero) return found;
+        uint left = (uint)Math.Max(0, timeout - timer.ElapsedMilliseconds);
+        uint result = MsgWaitForMultipleObjectsEx(1, handles, left, 0x04FF, 4);
+        if (result == 0 || result == 258) return IntPtr.Zero;
+        while (PeekMessage(out message, IntPtr.Zero, 0, 0, 1)) { TranslateMessage(ref message); DispatchMessage(ref message); }
+      }
+      return IntPtr.Zero;
+    } finally { if (hookHandle != IntPtr.Zero) UnhookWinEvent(hookHandle); GC.KeepAlive(callback); }
+  }
   public delegate bool EnumProc(IntPtr h, IntPtr p);
   [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder text, int length);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr p);
@@ -187,6 +208,7 @@ function Expected($value, $current, $before) {
   switch ($value) {
     '$last' { return $current.state.last_index }
     '$count' { return $current.state.selection_count }
+    '$board-count' { return $current.state.board_count }
     '$all' { return $current.state.inbox_count }
     '$composer' { return $current.state.composer_index }
     '$before.task_id' { return $before.state.task_id }
@@ -222,17 +244,18 @@ $results = @()
 foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Take)) {
   $script:id = $case.id
   $script:inputLog = @()
+  $caseTimer = [Diagnostics.Stopwatch]::StartNew()
   if ($id -notmatch '^[a-z0-9-]+$') { throw 'Unsafe case id' }
   $p = $null; $failure = $null; $clipboardBackup = $null; $ownClipboardSequence = $null
   try {
     if ($case.clipboard) { $clipboardBackup = Clipboard-Backup }
     Copy-Item "$w\parity.db" "$w\$id.db" -Force
     & sqlite3.exe "$w\$id.db" ".read '$w/behavior-seed.sql'"
-    Assert-That ($LASTEXITCODE -eq 0) 'Cannot seed isolated behavior fixture' 
+    Assert-That ($LASTEXITCODE -eq 0) 'Cannot seed isolated behavior fixture'
+    Copy-Item "$w\$id.db" "$w\$id-before.db" -Force 
     $foreground = [BehaviorInput]::GetForegroundWindow()
     $p = Start-Process "$w\ht-behavior.exe" -PassThru -ArgumentList '--db', "$w\$id.db", '--offline', '--background', '--board', '7283', '--task', '60253', '--theme', 'graphite', '--screen', $case.screen, '--dump-layout', "$w\$id.json" -RedirectStandardOutput "$w\$id.stdout" -RedirectStandardError "$w\$id.stderr"
-    $null = $p.WaitForInputIdle(1000)
-    $script:h = [BehaviorInput]::Find($p.Id)
+    $script:h = [BehaviorInput]::WaitForWindow($p, 15000)
     Assert-That ($h -ne [IntPtr]::Zero) 'Test HWND not found'
     # Offscreen at the bottom of Z-order, shown without activation; never attach to the owner's input queue.
     $null = [BehaviorInput]::SetWindowPos($h, [IntPtr]1, -16000, 0, 1440, 940, 0x10 -bor 0x40)
@@ -307,12 +330,13 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
     if ($null -ne $clipboardBackup -and $null -ne $ownClipboardSequence -and [BehaviorInput]::GetClipboardSequenceNumber() -eq $ownClipboardSequence) { [Windows.Forms.Clipboard]::SetDataObject($clipboardBackup, $true) }
     if ($p -and !$p.HasExited) {
       # Graceful close checkpoints SQLite; forced termination is an infrastructure failure.
-      [BehaviorInput]::Post($script:h, 0x10, 0, 0)
-      if (![BehaviorInput]::WaitForExit($p, 10000)) { Stop-Process -Id $p.Id -Force; $failure = 'Test copy failed to exit gracefully' }
+      if ($script:h -eq [IntPtr]::Zero) { $script:h = [BehaviorInput]::WaitForWindow($p, 1000) }
+      if ($script:h -ne [IntPtr]::Zero) { [BehaviorInput]::Post($script:h, 0x10, 0, 0) }
+      if (![BehaviorInput]::WaitForExit($p, 10000)) { Stop-Process -Id $p.Id -Force; $failure = "$failure Test copy failed to exit gracefully".Trim() }
     }
   }
   $script:inputLog | ConvertTo-Json -Depth 10 | Set-Content "$w\$id-input-log.json" -Encoding UTF8
-  $result = [pscustomobject]@{ id=$id; passed=($null -eq $failure); error=$failure; database="$id.db" }
+  $result = [pscustomobject]@{ id=$id; passed=($null -eq $failure); error=$failure; database="$id.db"; elapsedMs=$caseTimer.ElapsedMilliseconds }
   $results += $result
   if ($failure) { "FAIL $id $failure" } else { "INPUT_OK $id (SQLite assertions pending on VPS)" }
 }

@@ -1939,6 +1939,7 @@ impl Render for Desktop {
                 "error": self.error,
                 "theme": format!("{:?}", self.options.theme).to_lowercase(),
                 "selection_count": count, "last_index": count.saturating_sub(1),
+                "board_count": self.columns.iter().map(|c| c.cards.len()).sum::<usize>(),
                 "inbox_count": self.inbox.len(), "composer_index": self.comments.len() + 1,
                 "choice_count": self.choices(cx).len(),
                 "key_events": self.interaction.key_events, "last_key": self.interaction.last_key,

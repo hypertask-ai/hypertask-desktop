@@ -421,7 +421,7 @@
         "op": "expect",
         "name": "selected",
         "field": "bulk_count",
-        "value": "$count"
+        "value": "$board-count"
       },
       {
         "op": "key",
@@ -1190,7 +1190,8 @@
     ],
     "mutation": {
       "kind": "task_section"
-    }
+    },
+    "target_task_id": 7381001
   },
   {
     "id": "board-move-left",
@@ -1213,7 +1214,8 @@
     ],
     "mutation": {
       "kind": "task_section"
-    }
+    },
+    "target_task_id": 7381001
   },
   {
     "id": "board-archive",
@@ -2755,6 +2757,118 @@
       "kind": "task_patch",
       "description": "behavior mouse description",
       "content_type": "html"
+    }
+  },
+  {
+    "id": "board-bulk-archive",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "expect",
+        "name": "all",
+        "field": "bulk_count",
+        "value": "$board-count"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+E"
+      }
+    ],
+    "each_board_task": {
+      "kind": "task_patch",
+      "status": "Archive"
+    }
+  },
+  {
+    "id": "board-bulk-move",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "expect",
+        "name": "all",
+        "field": "bulk_count",
+        "value": "$board-count"
+      },
+      {
+        "op": "key",
+        "value": "M"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "each_board_task": {
+      "kind": "task_section",
+      "sectionId": "$column-1"
+    }
+  },
+  {
+    "id": "board-bulk-assign",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "expect",
+        "name": "all",
+        "field": "bulk_count",
+        "value": "$board-count"
+      },
+      {
+        "op": "key",
+        "value": "A"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "each_board_task": {
+      "kind": "task_patch",
+      "assignee": "$assigned"
+    }
+  },
+  {
+    "id": "board-bulk-tags",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "expect",
+        "name": "all",
+        "field": "bulk_count",
+        "value": "$board-count"
+      },
+      {
+        "op": "key",
+        "value": "T"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "each_board_task": {
+      "kind": "task_patch",
+      "labels": "$labels"
     }
   }
 ]
