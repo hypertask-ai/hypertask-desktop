@@ -102,7 +102,7 @@ impl Desktop {
             self.interaction.key_events += 1;
             self.interaction.last_key = key.key.clone();
             self.interaction.last_ctrl = ctrl;
-            self.interaction.last_shift = key.modifiers.shift;
+            self.interaction.last_shift = shortcuts::shifted(key);
             cx.notify();
         }
         if key.key == "k" && ctrl && !key.modifiers.shift && !key.modifiers.alt {

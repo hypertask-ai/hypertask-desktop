@@ -87,7 +87,7 @@ function Key([string]$chord) {
       $deadline = [DateTime]::UtcNow.AddSeconds(5)
       do {
         $state = (Read-Json "$w\$script:id.behavior.json").state
-        $want = switch ($last) { 'Esc' { 'escape' }; ';' { if ($mods -contains 16) { ';',':' } else { ';' } }; '3' { if ($mods -contains 16) { '3','#' } else { '3' } }; default { $last.ToLower() } }
+        $want = switch ($last) { 'Esc' { 'escape' }; ';' { if ($mods -contains 16) { ';',':' } else { ';' } }; ',' { if ($mods -contains 16) { ',','<' } else { ',' } }; '3' { if ($mods -contains 16) { '3','#' } else { '3' } }; default { $last.ToLower() } }
         $ack = $state.key_events -gt $beforeKey -and $state.last_key -in $want -and $state.last_ctrl -eq ($mods -contains 17) -and $state.last_shift -eq ($mods -contains 16)
         if ($ack) { break }
         $left = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds

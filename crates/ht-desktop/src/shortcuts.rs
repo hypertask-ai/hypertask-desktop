@@ -45,19 +45,31 @@ pub enum Action {
     DiscardDraft,
 }
 
+// GPUI consumes Shift for OEM/digit keys on Windows, leaving the shifted character.
+pub fn shifted(key: &Keystroke) -> bool {
+    key.modifiers.shift || matches!(key.key.as_str(), "#" | ":" | "<" | ">")
+}
+
 /// Match exact modifiers: editor text and browser/OS chords must never fall through to J/K/E.
 pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> {
-    let k = key.key.as_str();
+    let k = match key.key.as_str() {
+        "#" => "3",
+        ":" => ";",
+        "<" => ",",
+        ">" => ".",
+        k => k,
+    };
+    let shift = shifted(key);
     let m = key.modifiers;
     let ctrl = m.control || m.platform;
-    if ctrl && !m.alt && !m.shift && k == "k" {
+    if ctrl && !m.alt && !shift && k == "k" {
         return Some(Action::Commands);
     }
-    if k == "escape" && !ctrl && !m.alt && !m.shift {
+    if k == "escape" && !ctrl && !m.alt && !shift {
         return Some(Action::Back);
     }
     if editor {
-        return match (k, ctrl, m.shift, m.alt) {
+        return match (k, ctrl, shift, m.alt) {
             ("enter", true, true, true) => Some(Action::Save {
                 stay: true,
                 complete: true,
@@ -70,7 +82,7 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
             _ => None,
         };
     }
-    match (k, ctrl, m.shift, m.alt) {
+    match (k, ctrl, shift, m.alt) {
         ("m", true, false, false) => Some(Action::Comment),
         ("e", true, false, false) => Some(Action::Archive),
         ("f", true, false, false) if screen != Screen::Task => Some(Action::LocalSearch),
@@ -273,5 +285,18 @@ mod tests {
             key("ctrl-shift-a", Screen::Inbox, false),
             Some(SelectAll { all_splits: true })
         );
+    }
+    #[test]
+    fn windows_shifted_punctuation_retains_physical_chord() {
+        for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
+            assert_eq!(key("#", screen, false), Some(Action::Delete));
+            assert_eq!(key("ctrl-:", screen, false), Some(Action::CopyUrl));
+            assert_eq!(key("ctrl-<", screen, true), Some(Action::DiscardDraft));
+            assert_eq!(key("ctrl-;", screen, false), Some(Action::CopyTitleUrl));
+            assert_eq!(key("ctrl-:", screen, true), None);
+            assert_eq!(key("ctrl-alt-enter", screen, true), None);
+        }
+        assert_eq!(key("cmd-d", Screen::Task, false), None);
+        assert_eq!(key("shift-h", Screen::Inbox, false), None);
     }
 }
