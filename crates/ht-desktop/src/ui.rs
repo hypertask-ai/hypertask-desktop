@@ -116,6 +116,9 @@ impl Desktop {
                 cx,
             )
         });
+        if options.background {
+            cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
+        }
         let (mut signin, secret) = SignIn::start(options.offline);
         let worker = secret.and_then(|secret| Self::start_worker(&options, &mut signin, secret));
         let auto_board = !options.offline && !options.board_given && signin.is_interactive();
@@ -2057,7 +2060,7 @@ impl Render for Desktop {
         if let Some(layout) = &self.layout {
             layout.borrow_mut().begin(self.split);
         }
-        if let Some((path, capture)) = self.options.dump_layout.clone().zip(self.layout.clone()) {
+        if self.options.background && let Some((path, capture)) = self.options.dump_layout.clone().zip(self.layout.clone()) {
             crate::behavior::snapshot(window, path, capture, self.screen, self.options.theme, serde_json::json!({
                 "screen": format!("{:?}", self.screen).to_lowercase(),
                 "selected": self.selected, "column": self.column, "split": self.split,
