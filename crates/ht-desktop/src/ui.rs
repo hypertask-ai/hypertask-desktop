@@ -1745,7 +1745,7 @@ impl Desktop {
             .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
 
                 .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
-                    .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.options.theme == ThemeName::Graphite { 0x363b44 } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
+                    .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(t.border)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
                             .child(self.creator.clone()).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
@@ -1865,11 +1865,7 @@ impl Desktop {
             }))
             .bg(color(t.comment))
             .border_1()
-            .border_color(color(if self.options.theme == ThemeName::Graphite {
-                0x363b44
-            } else {
-                t.border
-            }))
+            .border_color(color(t.border))
             .map(|d| {
                 if self.options.theme == ThemeName::Dia {
                     d.shadow(vec![gpui::BoxShadow {
@@ -2120,7 +2116,12 @@ impl Render for Desktop {
                     .flex_shrink_0()
                     .h_full()
                     .bg(color(t.detail))
-                    .child(div().size_full().border_l_1().border_color(color(0x434343)))
+                    .child(
+                        div()
+                            .size_full()
+                            .border_l_1()
+                            .border_color(color(t.rail_border)),
+                    )
                     .layout_key(&self.layout, "rightpanel", None),
             )
             .into_any_element()
