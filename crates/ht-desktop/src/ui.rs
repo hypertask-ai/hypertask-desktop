@@ -1830,6 +1830,7 @@ impl Desktop {
                     .unwrap_or_else(|| "No tags".into()),
             ),
         ];
+        let row_count = rows.len();
         div()
             .w(px(312.))
             .flex_shrink_0()
@@ -1876,7 +1877,7 @@ impl Desktop {
                             24.
                         },
                     ))
-                    .mb(px(if i + 1 < rows.len() { 24. } else { 0. }))
+                    .mb(px(if i + 1 < row_count { 24. } else { 0. }))
                     .flex()
                     .items_start()
                     .gap(px(20.))
