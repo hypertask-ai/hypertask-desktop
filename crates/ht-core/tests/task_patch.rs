@@ -31,11 +31,11 @@ fn typed_patches_are_optimistic_durable_and_use_authenticated_task_update() {
         let mut db = Db::open(file.path()).unwrap();
         db.apply_task(&json!({"id":1,"title":"Initial","projectId":15,"status":"Normal"})).unwrap();
         let id = db.enqueue(Write::TaskPatch { task_id:1, patch }, 100).unwrap();
-        assert_eq!(db.raw("Task", &json!(1)).unwrap().unwrap()[field], expected);
+        assert_eq!(serde_json::to_value(db.task(1).unwrap().unwrap()).unwrap()[field], expected);
         drop(db);
         let mut db = Db::open(file.path()).unwrap();
         assert_eq!(db.mutations().unwrap()[0].payload_json, request);
-        assert_eq!(db.raw("Task", &json!(1)).unwrap().unwrap()[field], expected);
+        assert_eq!(serde_json::to_value(db.task(1).unwrap().unwrap()).unwrap()[field], expected);
         assert_eq!(db.drain_once(&mut Server { expected:request }, 101).unwrap(), Drain::Applied(id));
         assert!(db.mutations().unwrap().is_empty());
         assert_eq!(db.task(1).unwrap().unwrap().title, "Server");
