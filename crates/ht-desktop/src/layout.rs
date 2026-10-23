@@ -164,7 +164,6 @@ impl LayoutElement {
             .style
             .background
             .as_ref()
-            .and_then(|bg| bg.as_ref())
             .and_then(|bg| bg.color())
             .and_then(|bg| bg.as_solid())
             .filter(|c| !c.is_transparent())
