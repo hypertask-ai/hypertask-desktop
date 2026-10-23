@@ -21,8 +21,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-const AI_CHAT_PANEL_WIDTH: f32 = 420.;
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
     Inbox,
@@ -2046,6 +2044,8 @@ impl Desktop {
             )
     }
 }
+
+const AI_CHAT_PANEL_WIDTH: f32 = 420.;
 
 impl Render for Desktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
