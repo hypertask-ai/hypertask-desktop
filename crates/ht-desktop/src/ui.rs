@@ -17,6 +17,8 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
+const AI_CHAT_PANEL_WIDTH: f32 = 420.;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
     Inbox,
@@ -1875,10 +1877,7 @@ impl Render for Desktop {
             .child(self.rail(cx))
             .child(
                 div()
-                    .when(self.screen != Screen::Inbox, |d| {
-                        d.w(px(972.)).flex_shrink_0()
-                    })
-                    .when(self.screen == Screen::Inbox, |d| d.flex_1())
+                    .flex_1()
                     .h_full()
                     .min_w_0()
                     .flex()
@@ -1893,7 +1892,8 @@ impl Render for Desktop {
             .when(self.screen != Screen::Inbox, |d| {
                 d.child(
                     div()
-                        .flex_1()
+                        .w(px(AI_CHAT_PANEL_WIDTH))
+                        .flex_shrink_0()
                         .h_full()
                         .bg(color(if self.screen == Screen::Task {
                             t.detail

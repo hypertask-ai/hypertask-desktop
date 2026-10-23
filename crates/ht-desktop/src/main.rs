@@ -188,10 +188,17 @@ fn run() -> Result<()> {
             let window = cx
                 .open_window(
                     WindowOptions {
-                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
-                            point(px(origin_x), px(0.)),
-                            size(px(1440.), px(900.)),
-                        ))),
+                        window_bounds: Some({
+                            let bounds = Bounds::new(
+                                point(px(origin_x), px(0.)),
+                                size(px(1440.), px(900.)),
+                            );
+                            if cfg!(windows) {
+                                WindowBounds::Maximized(bounds)
+                            } else {
+                                WindowBounds::Windowed(bounds)
+                            }
+                        }),
                         titlebar: Some(TitlebarOptions {
                             title: Some("Hypertask".into()),
                             appears_transparent: false,

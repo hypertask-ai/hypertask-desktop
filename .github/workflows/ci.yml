@@ -32,6 +32,13 @@ jobs:
           name: hypertask-desktop-windows
           path: target/release/ht-desktop.exe
           retention-days: 14
+      - name: Upload Linux app
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: hypertask-desktop-linux
+          path: target/release/ht-desktop
+          retention-days: 14
       - name: Upload Mac app (Apple Silicon)
         if: runner.os == 'macOS'
         uses: actions/upload-artifact@v4
