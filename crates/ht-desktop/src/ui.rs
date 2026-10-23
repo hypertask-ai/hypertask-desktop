@@ -1599,7 +1599,14 @@ impl Desktop {
                                 .layout_key(
                                     &self.layout,
                                     format!("board.card.{index}.meta"),
-                                    Some(format!("{} {}", task.comment_count, task.assignee_count)),
+                                    Some(
+                                        [task.comment_count, task.assignee_count]
+                                            .into_iter()
+                                            .filter(|count| *count > 0)
+                                            .map(|count| count.to_string())
+                                            .collect::<Vec<_>>()
+                                            .join(" "),
+                                    ),
                                 ),
                         )
                     })

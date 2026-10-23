@@ -63,7 +63,8 @@ def validate(path, screen, theme):
         assert missing >= {"rightpanel"}, dump
         assert elements["inbox.tab.active"]["x"] == elements["inbox.tab.0"]["x"]
     if screen == "board":
-        required -= {"board.card.0.badge", "board.card.0.label", "board.card.0.meta"}
+        assert elements["board.card.0.badge"]["text"] == "In inbox", elements["board.card.0.badge"]
+        assert elements["board.card.0.meta"]["text"] == "2", elements["board.card.0.meta"]
     assert required <= elements.keys(), f"unmeasured native elements: {required - elements.keys()}"
     assert elements["rail"]["x"] == 0 and elements["rail"]["w"] == 48, elements["rail"]
     assert elements["main"]["x"] == 48, elements["main"]
@@ -90,6 +91,18 @@ with tempfile.TemporaryDirectory(prefix="ht-layout-") as tmp:
             notification = json.loads(raw)
             notification["computedSplit"] = "Important"
             conn.execute("UPDATE Notification SET raw_json=? WHERE id=?", (json.dumps(notification), notification_id))
+        section_id, section_title = conn.execute("SELECT id,section_title FROM Section WHERE projectId=15 AND deleted=0 AND visibility=1 ORDER BY ranking,id LIMIT 1").fetchone()
+        tasks = [json.loads(row[0]) for row in conn.execute("SELECT raw_json FROM Task WHERE projectId=15 AND status='Normal' ORDER BY updatedAt DESC,id ASC")]
+        card = next(task for task in tasks if task.get("sectionId") == section_id or (task.get("sectionId") is None and task.get("section") == section_title))
+        card["commentCount"] = 2
+        card["assigneeCount"] = 0
+        card["labels"] = [{"name": "Layout coverage"}]
+        conn.execute("UPDATE Task SET raw_json=? WHERE id=?", (json.dumps(card), card["id"]))
+        notification_id, raw = notifications[0]
+        notification = json.loads(raw)
+        notification["computedSplit"] = "Important"
+        notification["taskId"] = card["id"]
+        conn.execute("UPDATE Notification SET raw_json=?,taskId=? WHERE id=?", (json.dumps(notification), card["id"], notification_id))
     errors = []
     for theme in ["porcelain", "graphite", "amoled", "dia"]:
         for screen in KEYS:
