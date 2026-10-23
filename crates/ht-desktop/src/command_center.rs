@@ -133,6 +133,20 @@ fn task_commands(
             DueDate,
         ),
         (
+            "assignUser",
+            "Assign task",
+            "A",
+            "assign user person member responsibility",
+            Assign,
+        ),
+        (
+            "labelmodal",
+            "Set tags",
+            "T",
+            "tags labels categories",
+            Tags,
+        ),
+        (
             "estimateModal",
             "Set task size",
             "S",

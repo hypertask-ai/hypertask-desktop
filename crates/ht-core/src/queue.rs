@@ -7,11 +7,25 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Write {
-    TaskTitle { task_id: i64, title: String },
-    TaskSection { task_id: i64, section_id: i64 },
-    TaskComment { task_id: i64, text: String },
-    TaskPatch { task_id: i64, patch: crate::TaskPatch },
-    InboxArchive { notification_id: i64 },
+    TaskTitle {
+        task_id: i64,
+        title: String,
+    },
+    TaskSection {
+        task_id: i64,
+        section_id: i64,
+    },
+    TaskComment {
+        task_id: i64,
+        text: String,
+    },
+    TaskPatch {
+        task_id: i64,
+        patch: crate::TaskPatch,
+    },
+    InboxArchive {
+        notification_id: i64,
+    },
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -100,8 +114,41 @@ impl Db {
                 self.upsert_task(&task)?;
             }
             "task_patch" => {
-                let mut task = self.raw("Task", &payload["task_id"])?.context("task is not cached")?;
+                let mut task = self
+                    .raw("Task", &payload["task_id"])?
+                    .context("task is not cached")?;
                 crate::task_patch::optimistic(&mut task, payload);
+                let project = task["projectId"].as_i64().context("missing project id")?;
+                if let Some(ids) = payload["labels"].as_array() {
+                    let labels = self.project_labels(project)?;
+                    let selected = ids
+                        .iter()
+                        .map(|id| {
+                            labels
+                                .iter()
+                                .find(|l| &l["id"] == id)
+                                .cloned()
+                                .context("label is not cached in this board")
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    task["labelCount"] = json!(selected.len());
+                    task["labels"] = json!(selected);
+                }
+                if let Some(ids) = payload["assignee"].as_array() {
+                    let members = self.project_members(project)?;
+                    let selected = ids
+                        .iter()
+                        .map(|id| {
+                            members
+                                .iter()
+                                .find(|m| &m["id"] == id)
+                                .cloned()
+                                .context("member is not cached in this board")
+                        })
+                        .collect::<Result<Vec<_>>>()?;
+                    task["assigneeCount"] = json!(selected.len());
+                    task["assignees"] = json!(selected);
+                }
                 self.upsert_task(&task)?;
             }
             "task_comment" => {

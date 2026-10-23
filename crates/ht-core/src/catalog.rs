@@ -37,3 +37,60 @@ impl Db {
         self.json_rows("SELECT raw_json FROM Project ORDER BY title,id", [])
     }
 }
+
+impl Db {
+    pub fn project_labels(&self, project: i64) -> Result<Vec<Value>> {
+        self.json_rows(
+            "SELECT raw_json FROM Label WHERE projectId=? ORDER BY value,id",
+            [project],
+        )
+    }
+
+    pub fn project_members(&self, project: i64) -> Result<Vec<Value>> {
+        if let Some(json) = self.kv_get(&format!("members:{project}"))? {
+            return Ok(serde_json::from_str(&json)?);
+        }
+        let mut members = std::collections::BTreeMap::new();
+        for task in self.json_rows(
+            "SELECT raw_json FROM Task WHERE projectId=? ORDER BY id",
+            [project],
+        )? {
+            for member in task["assignees"].as_array().into_iter().flatten() {
+                if let Some(id) = member["id"].as_i64() {
+                    members.insert(id, member.clone());
+                }
+            }
+        }
+        Ok(members.into_values().collect())
+    }
+}
+
+impl<T: crate::Transport> crate::Sync<T> {
+    pub fn catalog(&mut self, project: i64) -> Result<()> {
+        let members = crate::http::successful(
+            self.transport
+                .get(&format!("/projects/{project}/members"))?,
+        )?;
+        let labels =
+            crate::http::successful(self.transport.get(&format!("/projects/{project}/labels"))?)?;
+        anyhow::ensure!(
+            members["projectId"] == project && labels["projectId"] == project,
+            "catalog returned another board"
+        );
+        let members = crate::db::array(&members, "members")?;
+        let labels = crate::db::array(&labels, "labels")?;
+        self.db.transaction(|db| {
+            db.kv_set(
+                &format!("members:{project}"),
+                &serde_json::to_string(members)?,
+            )?;
+            for label in labels {
+                let mut label = label.clone();
+                label["projectId"] = serde_json::json!(project);
+                label["value"] = label["name"].clone();
+                db.upsert("Label", &label)?;
+            }
+            Ok(())
+        })
+    }
+}

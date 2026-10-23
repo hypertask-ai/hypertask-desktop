@@ -15,6 +15,8 @@ pub(super) enum Modal {
     Boards,
     Column,
     Priority,
+    Assign,
+    Tags,
     Size,
     DueDate,
     Delete,
@@ -29,6 +31,8 @@ enum ChoiceAction {
     Command(CommandAction),
     Column(i64),
     Priority(u8),
+    Assignee(i64),
+    Label(usize),
     Size(u8),
     DueDate(i64),
     Task(i64),
@@ -376,6 +380,8 @@ impl Desktop {
             }
             BulkArchive => self.bulk_archive(false, cx),
             MoveColumn => self.show_modal(Modal::Column, window, cx),
+            Assign => self.show_modal(Modal::Assign, window, cx),
+            Tags => self.show_modal(Modal::Tags, window, cx),
             Priority => self.show_modal(Modal::Priority, window, cx),
             Size => self.show_modal(Modal::Size, window, cx),
             DueDate => self.show_modal(Modal::DueDate, window, cx),
@@ -597,6 +603,15 @@ impl Desktop {
         {
             return;
         }
+        if matches!(modal, Modal::Assign | Modal::Tags) {
+            if let Some(worker) = &self.worker {
+                let project = self
+                    .selected_task()
+                    .and_then(|id| self.db.task(id).ok().flatten())
+                    .map_or(self.options.board, |t| t.project_id);
+                let _ = worker.handle().sync_catalog(project);
+            }
+        }
         self.interaction
             .query
             .update(cx, |input, cx| input.set_content(String::new(), cx));
@@ -672,6 +687,44 @@ impl Desktop {
                     action: ChoiceAction::Column(c.id),
                 })
                 .collect(),
+            Some(Modal::Assign | Modal::Tags) => {
+                let Some(task) = self
+                    .selected_task()
+                    .and_then(|id| self.db.task(id).ok().flatten())
+                else {
+                    return vec![];
+                };
+                if self.interaction.modal == Some(Modal::Assign) {
+                    self.db
+                        .project_members(task.project_id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .filter_map(|m| {
+                            Some(Choice {
+                                name: m["displayName"]
+                                    .as_str()
+                                    .filter(|s| !s.is_empty())
+                                    .or(m["email"].as_str())?
+                                    .into(),
+                                action: ChoiceAction::Assignee(m["id"].as_i64()?),
+                            })
+                        })
+                        .collect()
+                } else {
+                    self.db
+                        .project_labels(task.project_id)
+                        .unwrap_or_default()
+                        .into_iter()
+                        .enumerate()
+                        .filter_map(|(i, l)| {
+                            Some(Choice {
+                                name: l["name"].as_str().or(l["value"].as_str())?.into(),
+                                action: ChoiceAction::Label(i),
+                            })
+                        })
+                        .collect()
+                }
+            }
             Some(Modal::Priority) => ["No Priority", "Urgent", "High", "Medium", "Low"]
                 .iter()
                 .enumerate()
@@ -714,8 +767,10 @@ impl Desktop {
         }
         .into_iter()
         .filter(|c| {
-            self.interaction.modal == Some(Modal::Commands)
-                || c.name.to_lowercase().contains(&query.to_lowercase())
+            matches!(
+                self.interaction.modal,
+                Some(Modal::Commands | Modal::Search | Modal::LocalSearch)
+            ) || c.name.to_lowercase().contains(&query.to_lowercase())
         })
         .collect()
     }
@@ -755,6 +810,56 @@ impl Desktop {
                         task_id,
                         section_id,
                     },
+                    ChoiceAction::Assignee(id) => {
+                        let Some(task) = self.db.task(task_id).ok().flatten() else {
+                            return;
+                        };
+                        let mut ids: Vec<_> = task
+                            .extra
+                            .get("assignees")
+                            .unwrap_or(&serde_json::Value::Null)
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|m| m["id"].as_i64())
+                            .collect();
+                        if ids.contains(&id) {
+                            ids.retain(|v| *v != id);
+                        } else {
+                            ids.push(id);
+                        }
+                        Write::TaskPatch {
+                            task_id,
+                            patch: TaskPatch::Assignees(ids),
+                        }
+                    }
+                    ChoiceAction::Label(index) => {
+                        let Some(task) = self.db.task(task_id).ok().flatten() else {
+                            return;
+                        };
+                        let labels = self.db.project_labels(task.project_id).unwrap_or_default();
+                        let Some(id) = labels.get(index).and_then(|l| l["id"].as_str()) else {
+                            return;
+                        };
+                        let mut ids: Vec<_> = task
+                            .extra
+                            .get("labels")
+                            .unwrap_or(&serde_json::Value::Null)
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .filter_map(|l| l["id"].as_str().map(str::to_owned))
+                            .collect();
+                        if ids.iter().any(|v| v == id) {
+                            ids.retain(|v| v != id);
+                        } else {
+                            ids.push(id.to_owned());
+                        }
+                        Write::TaskPatch {
+                            task_id,
+                            patch: TaskPatch::Labels(ids),
+                        }
+                    }
                     ChoiceAction::Priority(i) => Write::TaskPatch {
                         task_id,
                         patch: TaskPatch::Priority(i),
@@ -825,6 +930,8 @@ impl Desktop {
                     Modal::LocalSearch => "Search this view",
                     Modal::Boards => "Switch boards",
                     Modal::Column => "Move task to column",
+                    Modal::Assign => "Assign task",
+                    Modal::Tags => "Set tags",
                     Modal::Priority => "Set priority",
                     Modal::Size => "Set task size",
                     Modal::DueDate => "Set due date",

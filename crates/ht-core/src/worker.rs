@@ -19,6 +19,7 @@ pub struct Worker {
 
 enum Command {
     Board(i64),
+    Catalog(i64),
     Task(i64),
     Inbox,
     Event(String),
@@ -29,6 +30,9 @@ enum Command {
 impl WorkerHandle {
     pub fn sync_board(&self, id: i64) -> Result<()> {
         Ok(self.sender.send(Command::Board(id))?)
+    }
+    pub fn sync_catalog(&self, id: i64) -> Result<()> {
+        Ok(self.sender.send(Command::Catalog(id))?)
     }
     pub fn sync_task(&self, id: i64) -> Result<()> {
         Ok(self.sender.send(Command::Task(id))?)
@@ -70,6 +74,7 @@ impl Worker {
                                 sync.projects()?;
                                 sync.board(id)?;
                             }
+                            Some(Command::Catalog(id)) => sync.catalog(id)?,
                             Some(Command::Task(id)) => {
                                 task = Some(id);
                                 sync.task(id)?;
