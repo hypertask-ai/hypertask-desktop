@@ -5,6 +5,6 @@
   "drafts": {"success": true, "drafts": [{"id": 1, "taskId": 1, "draftType": "description", "text": "<p>Unpublished description</p>"}, {"id": 2, "taskId": 1, "draftType": "comment", "text": "<p>Unpublished comment</p>"}]},
   "emptyDrafts": {"success": true, "drafts": []},
   "comments": {"success": true, "comments": [{"id": 1, "text": "<p>Example comment</p>", "commentText": "Example comment", "createdAt": "2026-10-19T12:00:00Z", "creator": {"id": 7, "displayName": "Example Person"}, "agent": null, "agent_display_name": "Retired Example Agent"}], "total": 1},
-  "inbox": {"success": true, "user_notifications": [{"id": 1, "taskId": 1, "status": "Normal", "archivedAt": null, "createdAt": "2026-10-19T12:00:00Z", "seen": false, "fromUser": {"displayName": "Example Person"}, "task": {"id": 1, "title": "Server renamed task", "ticketNumber": "EX-1", "status": "Normal"}}]},
+  "inbox": {"success": true, "user_notifications": [{"id": 1, "taskId": 1, "status": "Normal", "archivedAt": null, "createdAt": "2026-10-19T12:00:00Z", "seen": false, "fromUser": {"displayName": "Example Person"}, "task": {"id": 1, "title": "Server renamed task", "updatedAt": "2026-10-20T12:00:00Z", "ticketNumber": "EX-1", "status": "Normal"}}]},
   "webSummary": {"Task_Summary": [{"content": "## Summary\n- **Example** saved summary. [1]"}]}
 }

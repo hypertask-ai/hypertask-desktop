@@ -273,12 +273,20 @@ impl<T: Transport> Sync<T> {
                 db.upsert("Notification", item)?;
                 if let Some(id) = item["taskId"].as_i64() {
                     if let Some(mut task) = db.raw("Task", &json!(id))? {
-                        for key in ["title", "ticketNumber", "status"] {
-                            if let Some(value) = item["task"].get(key) {
-                                task[key] = value.clone();
+                        let incoming_time = item["task"]["updatedAt"]
+                            .as_str()
+                            .map(parse_time)
+                            .transpose()?;
+                        let cached_time = task["updatedAt"].as_str().map(parse_time).transpose()?;
+                        // An embedded notification snapshot can lag a task refetch.
+                        if incoming_time.is_some() && incoming_time >= cached_time {
+                            for key in ["title", "ticketNumber", "status", "updatedAt"] {
+                                if let Some(value) = item["task"].get(key) {
+                                    task[key] = value.clone();
+                                }
                             }
+                            db.upsert_task(&task)?;
                         }
-                        db.upsert_task(&task)?;
                     }
                 }
             }

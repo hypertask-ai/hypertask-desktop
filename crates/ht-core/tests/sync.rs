@@ -564,3 +564,29 @@ fn inbox_sender_uses_recent_actors_and_null_agent_does_not_shadow_person() {
         Some("Example Person, Example Agent")
     );
 }
+
+#[test]
+fn inbox_stale_or_undated_snapshots_cannot_regress_an_authoritative_task() {
+    let f = fidelity();
+    for date in [None, Some("2026-10-18T12:00:00Z")] {
+        let mut response = f["inbox"].clone();
+        response["user_notifications"][0]["task"]["title"] = json!("Stale notification title");
+        match date {
+            Some(date) => response["user_notifications"][0]["task"]["updatedAt"] = json!(date),
+            None => {
+                response["user_notifications"][0]["task"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("updatedAt");
+            }
+        }
+        let mut sync = Sync::new(Db::memory().unwrap(), Script::new(vec![response]));
+        sync.db.apply_response(&f["detail"]).unwrap();
+        sync.inbox().unwrap();
+        assert_eq!(
+            sync.db.task(1).unwrap().unwrap().title,
+            "Synthetic fidelity task"
+        );
+        assert_eq!(sync.db.inbox().unwrap()[0].title, "Synthetic fidelity task");
+    }
+}

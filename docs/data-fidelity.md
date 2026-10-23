@@ -40,9 +40,10 @@ builds and the layout contract on GitHub, not the VPS.
 - **Comment authors:** honor durable `agent_display_name` (including “Private
   agent”) before agent/user rows. Null or nameless agent rows cannot hide a real
   person; deleted-agent attribution is not incorrectly replaced by its owner.
-- **Inbox:** fresh nested server task titles/status/tickets update cached tasks
-  before pending edits are reapplied, preventing the SQLite join from showing
-  an obsolete title. Rows now render available due date, priority, size and
+- **Inbox:** timestamped, non-older nested server task titles/status/tickets
+  update cached tasks before pending edits are reapplied, preventing the SQLite
+  join from showing an obsolete title without regressing newer task refetches.
+  Missing timestamps cannot overwrite authoritative task data. Rows now render available due date, priority, size and
   task-label metadata from the inbox API, including the web's three-label cap.
   Sender names follow the web's recent-actor grouping and null-agent fallback;
   unread counts and available comment previews are no longer dropped.
