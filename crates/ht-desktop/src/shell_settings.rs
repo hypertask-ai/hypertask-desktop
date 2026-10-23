@@ -5,6 +5,7 @@ use std::{collections::BTreeMap, sync::mpsc};
 #[derive(Clone, Debug)]
 struct Request {
     serial: u64,
+    invite: bool,
     method: &'static str,
     path: String,
     body: Option<Value>,
@@ -29,6 +30,8 @@ pub(super) struct Settings {
     editing: Option<i64>,
     delete: Option<i64>,
     lifecycle: Option<&'static str>,
+    integration: usize,
+    bearer_config: bool,
     preview: Vec<Value>,
     selected_slugs: std::collections::BTreeSet<String>,
     #[cfg(test)]
@@ -67,6 +70,8 @@ impl Settings {
             editing: None,
             delete: None,
             lifecycle: None,
+            integration: 0,
+            bearer_config: false,
             preview: vec![],
             selected_slugs: Default::default(),
             #[cfg(test)]
@@ -430,7 +435,7 @@ impl Desktop {
             "shortcuts" => self.shortcut_settings(cx),
             "webhooks" => self.webhook_settings(cx),
             "learn" => self.learn_settings(cx),
-            "mcp" => div().flex().flex_col().gap(px(12.)).child("SERVER").child("Use this URL from any MCP client.").child(self.code_row("mcp-server", "https://mcp.hypertask.ai/mcp", cx)).child(self.settings_link("Read the MCP docs", "https://docs.hypertask.ai/mcp")).into_any_element(),
+            "mcp" => self.mcp_settings(cx),
             "general" => self.profile_settings(cx),
             "board-general" => self.lifecycle_settings(cx),
             "board-ai" => self.instruction_settings(cx),
@@ -563,6 +568,7 @@ impl Desktop {
     ) {
         self.shell.settings_state.serial += 1;
         let request = Request {
+            invite: self.shell.invite && method == "POST" && path.ends_with("/members"),
             serial: self.shell.settings_state.serial,
             method,
             path,
@@ -684,6 +690,10 @@ impl Desktop {
                     .collect();
             }
             Ok(value) => {
+                if request.invite {
+                    self.invite_next(window, cx);
+                    return;
+                }
                 if request.path == "/projects/archive" {
                     if let Some(project) = self
                         .db
@@ -1961,5 +1971,162 @@ mod mutation_tests {
             )
         })
         .unwrap();
+    }
+}
+
+#[path = "shell_invite.rs"]
+mod invite;
+
+impl Desktop {
+    fn mcp_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+        let registry: Value =
+            serde_json::from_str(include_str!("shell_mcp.json")).expect("web MCP registry");
+        let integrations = registry["integrations"].as_array().unwrap();
+        let selected = &integrations[self.shell.settings_state.integration];
+        let bearer = self.shell.settings_state.bearer_config;
+        let config = if bearer {
+            self.shell.token.as_ref().map_or_else(|| "Please generate a token first".into(), |token| {
+                match selected["id"].as_str().unwrap() {
+                    "chatgpt" | "lovable" => token.clone(),
+                    "codex" => format!("export HYPERTASK_TOKEN={}\ncodex mcp add hypertask --url https://mcp.hypertask.ai/mcp --bearer-token-env-var HYPERTASK_TOKEN", serde_json::json!(token)),
+                    "vscode" => serde_json::to_string_pretty(&serde_json::json!({"servers": {"hypertask-mcp": {"type": "http", "url": "https://mcp.hypertask.ai/mcp", "headers": {"Authorization": format!("Bearer {token}")}}}})).unwrap(),
+                    _ => serde_json::to_string_pretty(&serde_json::json!({"mcpServers": {"hypertask-mcp": {"url": "https://mcp.hypertask.ai/mcp", "headers": {"Authorization": format!("Bearer {token}")}}}})).unwrap(),
+                }
+            })
+        } else {
+            selected["command"].as_str().unwrap().to_owned()
+        };
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(24.))
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child("SERVER")
+                    .child("Use this URL from any MCP client.")
+                    .child(self.code_row("mcp-server", "https://mcp.hypertask.ai/mcp", cx)),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(12.))
+                    .child("CONNECT")
+                    .child(div().flex().flex_wrap().gap(px(8.)).children(
+                        integrations.iter().enumerate().map(|(i, item)| {
+                            let label = item["label"].as_str().unwrap().to_owned();
+                            div()
+                                .id(("mcp-integration", i))
+                                .p(px(8.))
+                                .rounded(px(5.))
+                                .cursor_pointer()
+                                .when(i == self.shell.settings_state.integration, |d| {
+                                    d.bg(color(self.colors.active))
+                                })
+                                .child(label.clone())
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.shell.settings_state.integration = i;
+                                    cx.notify();
+                                }))
+                                .layout_key(
+                                    &self.layout,
+                                    format!("settings.mcp.integration.{i}"),
+                                    Some(label),
+                                )
+                        }),
+                    ))
+                    .child(format!(
+                        "Connect with {}",
+                        selected["label"].as_str().unwrap()
+                    ))
+                    .child(
+                        selected[if bearer { "bearerHint" } else { "hint" }]
+                            .as_str()
+                            .unwrap()
+                            .to_owned(),
+                    )
+                    .child(
+                        div()
+                            .id("mcp-config")
+                            .p(px(8.))
+                            .cursor_pointer()
+                            .child(if bearer && self.shell.token.is_some() {
+                                "••••••••".to_owned()
+                            } else {
+                                config.clone()
+                            })
+                            .on_click(move |_, _, cx| {
+                                cx.write_to_clipboard(ClipboardItem::new_string(config.clone()))
+                            })
+                            .layout_key(&self.layout, "settings.mcp.config", None),
+                    )
+                    .child(
+                        self.settings_action(
+                            "mcp-auth-mode",
+                            if bearer {
+                                "Use client command"
+                            } else {
+                                "Use bearer token"
+                            },
+                        )
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.shell.settings_state.bearer_config =
+                                !this.shell.settings_state.bearer_config;
+                            cx.notify();
+                        }))
+                        .layout_key(
+                            &self.layout,
+                            "settings.mcp.auth-mode",
+                            None,
+                        ),
+                    ),
+            )
+            .child(
+                div()
+                    .flex()
+                    .flex_col()
+                    .gap(px(4.))
+                    .child("AVAILABLE TOOLS")
+                    .children(registry["tools"].as_array().unwrap().iter().map(|tool| {
+                        div()
+                            .p(px(8.))
+                            .flex()
+                            .justify_between()
+                            .child(tool["name"].as_str().unwrap().to_owned())
+                            .child(tool["description"].as_str().unwrap().to_owned())
+                    })),
+            )
+            .child(self.settings_link("Read the MCP docs", "https://docs.hypertask.ai/mcp"))
+            .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod mcp_tests {
+    use super::*;
+    use crate::ui::shell::tests::{click, measured, setup};
+    #[gpui::test]
+    fn settings_mcp_clients_copy_source_commands_and_bearer_unavailable_state(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.tab.connect");
+        click(view, &mut cx, "settings.mcp.integration.2");
+        click(view, &mut cx, "settings.mcp.config");
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().unwrap(),
+            "codex mcp add hypertask --url https://mcp.hypertask.ai/mcp"
+        );
+        click(view, &mut cx, "settings.mcp.auth-mode");
+        click(view, &mut cx, "settings.mcp.config");
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().unwrap(),
+            "Please generate a token first"
+        );
+        measured(view, &mut cx, "settings.title");
     }
 }

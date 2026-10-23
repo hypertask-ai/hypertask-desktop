@@ -1,0 +1,111 @@
+{
+  "integrations": [
+    {
+      "id": "claude",
+      "label": "Claude Desktop/Web",
+      "command": "https://mcp.hypertask.ai/mcp",
+      "hint": "In Claude, go to Settings → Connectors → Add custom connector and paste this URL. Click Connect and approve — no token needed.",
+      "bearerHint": "Paste into MCP settings and restart your client."
+    },
+    {
+      "id": "claude-code",
+      "label": "Claude Code",
+      "command": "claude mcp add --transport http hypertask-mcp https://mcp.hypertask.ai/mcp",
+      "hint": "Run this command in your terminal, then use /mcp in Claude Code to authenticate.",
+      "bearerHint": "Paste into MCP settings and restart your client."
+    },
+    {
+      "id": "codex",
+      "label": "Codex",
+      "command": "codex mcp add hypertask --url https://mcp.hypertask.ai/mcp",
+      "hint": "Run this in your terminal, then run codex mcp login hypertask to authenticate.",
+      "bearerHint": "Export your token as an env var, then register the server against it."
+    },
+    {
+      "id": "cursor",
+      "label": "Cursor",
+      "command": "{\n  \"mcpServers\": {\n    \"hypertask-mcp\": {\n      \"url\": \"https://mcp.hypertask.ai/mcp\"\n    }\n  }\n}",
+      "hint": "Add to Cursor MCP settings. Then run /mcp in Cursor to authenticate.",
+      "bearerHint": "Paste into MCP settings and restart your client."
+    },
+    {
+      "id": "vscode",
+      "label": "VS Code",
+      "command": "{\n  \"servers\": {\n    \"hypertask-mcp\": {\n      \"type\": \"http\",\n      \"url\": \"https://mcp.hypertask.ai/mcp\"\n    }\n  }\n}",
+      "hint": "Run MCP: Open User Configuration (Ctrl+Shift+P) or add to .vscode/mcp.json. Paste the config, then restart VS Code. Requires VS Code 1.99+.",
+      "bearerHint": "Use the bearer token config below. VS Code will prompt for the token on first connect."
+    },
+    {
+      "id": "chatgpt",
+      "label": "ChatGPT",
+      "command": "https://mcp.hypertask.ai/mcp",
+      "hint": "Workspace admins: Settings → Apps & Connectors → Create. Add this MCP server URL. Requires ChatGPT Business, Enterprise, or Edu plan. Enable Developer mode in Permissions first.",
+      "bearerHint": "When creating the app, choose Bearer token auth and paste your token."
+    },
+    {
+      "id": "lovable",
+      "label": "Lovable",
+      "command": "https://mcp.hypertask.ai/mcp",
+      "hint": "Go to Settings → Connectors → Personal connectors → New MCP server. Enter the URL above. Choose Bearer token auth and paste your token. Requires a paid Lovable plan.",
+      "bearerHint": "Paste your token when adding the server. Lovable will store it securely."
+    }
+  ],
+  "tools": [
+    {
+      "name": "Create Task",
+      "description": "Title, description, priority, estimate, section"
+    },
+    {
+      "name": "Update Task",
+      "description": "Title, priority, labels, status, followers"
+    },
+    {
+      "name": "List Tasks",
+      "description": "15+ filters, sorting, pagination"
+    },
+    {
+      "name": "Search Tasks",
+      "description": "By name, description, or ticket number"
+    },
+    {
+      "name": "Add Comment",
+      "description": "With @mentions and notifications"
+    },
+    {
+      "name": "Manage Sections",
+      "description": "List, create, update, delete columns"
+    },
+    {
+      "name": "Move Task",
+      "description": "Move task to different board or section"
+    },
+    {
+      "name": "Assign User",
+      "description": "Assign or unassign users to tasks"
+    },
+    {
+      "name": "List Project Members",
+      "description": "Resolve @mentions and assign users"
+    },
+    {
+      "name": "Get Inbox",
+      "description": "List inbox items and activity"
+    },
+    {
+      "name": "Archive Inbox",
+      "description": "Archive inbox items"
+    },
+    {
+      "name": "List Projects",
+      "description": "List boards and projects"
+    },
+    {
+      "name": "List Sections",
+      "description": "List columns for a project"
+    },
+    {
+      "name": "User Context",
+      "description": "Get current user and accessible projects"
+    }
+  ]
+}

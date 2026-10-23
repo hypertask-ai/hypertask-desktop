@@ -245,6 +245,25 @@ mod shell_tests {
                         break;
                     }
                 }
+                let header_end = request.windows(4).position(|w| w == b"\r\n\r\n").unwrap() + 4;
+                let headers = String::from_utf8(request[..header_end].to_vec()).unwrap();
+                let content_length = headers
+                    .lines()
+                    .find_map(|line| {
+                        let (key, value) = line.split_once(':')?;
+                        key.eq_ignore_ascii_case("content-length")
+                            .then(|| value.trim().parse::<usize>().unwrap())
+                    })
+                    .unwrap_or(0);
+                while request.len() < header_end + content_length {
+                    let count = stream.read(&mut buffer).unwrap();
+                    assert!(count > 0);
+                    request.extend_from_slice(&buffer[..count]);
+                }
+                if expected != "GET" {
+                    let body: Value = serde_json::from_slice(&request[header_end..]).unwrap();
+                    assert_eq!(body["displayName"], "Saved");
+                }
                 let request = String::from_utf8(request).unwrap();
                 assert!(
                     request.starts_with(&format!("{expected} /user/profile HTTP/1.1\r\n")),

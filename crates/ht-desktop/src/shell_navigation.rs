@@ -9,8 +9,20 @@ pub(super) enum Destination {
 }
 
 impl Desktop {
-    pub(super) fn navigate_table(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn navigate_board(&mut self, cx: &mut Context<Self>) {
+        if self.screen == Screen::Task
+            && let Some(task) = self.db.task(self.options.task).ok().flatten()
+        {
+            self.options.board = task.project_id;
+            let _ = self
+                .db
+                .kv_set("last_board", &self.options.board.to_string());
+        }
         self.switch(Screen::Board, cx);
+    }
+
+    pub(super) fn navigate_table(&mut self, cx: &mut Context<Self>) {
+        self.navigate_board(cx);
         self.shell.destination = Destination::Table;
         cx.notify();
     }

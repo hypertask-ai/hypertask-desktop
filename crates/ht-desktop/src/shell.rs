@@ -1,11 +1,11 @@
 use super::*;
-use crate::shortcuts::Action;
 use gpui::MouseButton;
 use navigation::Destination;
 use serde_json::Value;
 
 pub(super) struct Shell {
     expanded: bool,
+    hovered: Option<usize>,
     pub ai_open: bool,
     boards: bool,
     pub settings: bool,
@@ -21,6 +21,9 @@ pub(super) struct Shell {
     search_input: Entity<TextInput>,
     search_board: Option<i64>,
     shortcuts: bool,
+    invite: bool,
+    invite_input: Entity<TextInput>,
+    invite_emails: std::collections::VecDeque<String>,
     feedback: bool,
     feedback_kind: &'static str,
     feedback_notify: bool,
@@ -40,6 +43,9 @@ impl Shell {
             cx.notify();
         })
         .detach();
+        let invite_input = cx
+            .new(|cx| TextInput::new(String::new(), "Email, comma separated", color(0x8e9093), cx));
+        cx.observe(&invite_input, |_, _, cx| cx.notify()).detach();
         let search_input =
             cx.new(|cx| TextInput::new(String::new(), "Search", color(0x8e9093), cx));
         cx.observe(&search_input, |_, _, cx| cx.notify()).detach();
@@ -59,11 +65,15 @@ impl Shell {
             search_input,
             search_board: None,
             shortcuts: false,
+            invite: false,
+            invite_input,
+            invite_emails: Default::default(),
             feedback: false,
             feedback_kind: "Bug",
             feedback_notify: true,
             feedback_error: false,
             feedback_input,
+            hovered: None,
             expanded: db.kv_get("appShellRailExpanded").ok().flatten().as_deref() == Some("true"),
             ai_open: true,
             boards: false,
@@ -131,6 +141,19 @@ impl Desktop {
         let key = &event.keystroke;
         let m = key.modifiers;
         let ctrl = m.control || m.platform;
+        if self.shell.invite {
+            match key.key.as_str() {
+                "escape" => {
+                    self.shell.invite = false;
+                    window.focus(&self.focus, cx);
+                    cx.notify();
+                }
+                "enter" => self.send_invites(window, cx),
+                _ => return true,
+            }
+            cx.stop_propagation();
+            return true;
+        }
         if self.shell.feedback {
             match (key.key.as_str(), ctrl) {
                 ("escape", false) => {
@@ -208,10 +231,11 @@ impl Desktop {
         }
         match (key.key.as_str(), ctrl, m.shift, m.alt) {
             ("[", false, false, false) => self.toggle_rail(cx),
-            ("5" | "]", false, false, false) | ("/" | "?", true, true, false) => {
-                self.toggle_ai(window, cx)
-            }
+            ("5" | "]", false, false, false)
+            | ("/" | "?", true, true, false)
+            | ("?", true, false, false) => self.toggle_ai(window, cx),
             ("?", false, _, false) => self.open_shortcuts(window, cx),
+            ("2", false, false, false) => self.navigate_board(cx),
             ("3", false, false, false) => self.navigate_table(cx),
             ("/" | "6", false, false, false) => self.navigate_search(window, cx),
             ("b", true, false, false) => self.toggle_boards(window, cx),
@@ -225,8 +249,39 @@ impl Desktop {
     pub(super) fn rail(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = self.colors;
         let wide = self.shell.expanded;
-        let button = |i: usize, name: &'static str, label: &'static str, selected: bool| {
+        let button = |i: usize,
+                      name: &'static str,
+                      label: &'static str,
+                      selected: bool,
+                      cx: &mut Context<Self>| {
+            let (tooltip, key) = match i {
+                1 => (
+                    "Switch board",
+                    if cfg!(target_os = "macos") {
+                        "Cmd+B"
+                    } else {
+                        "Ctrl+B"
+                    },
+                ),
+                2 => ("Go to inbox", "1"),
+                3 => ("Board layout", "2"),
+                4 => ("Table layout", "3"),
+                5 => ("Go to calendar", "4"),
+                6 => ("AI Chat", "5"),
+                7 => ("Search", "6"),
+                8 => ("Agents", ""),
+                9 => ("Invite team members", ""),
+                10 => ("Latest updates", ""),
+                11 => ("Send feedback", ""),
+                _ => ("Settings", "\\"),
+            };
             div()
+                .id(("rail-button", i))
+                .relative()
+                .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
+                    this.shell.hovered = hovered.then_some(i);
+                    cx.notify();
+                }))
                 .w(px(if wide { 116. } else { 36. }))
                 .h(px(34.))
                 .flex()
@@ -239,6 +294,40 @@ impl Desktop {
                 .when(selected, |d| d.bg(color(t.hover)))
                 .child(icon(name, if selected { t.text } else { t.muted }, 18.))
                 .when(wide, |d| d.child(label))
+                .when(i == 2 && self.inbox.iter().any(|n| !n.seen), |d| {
+                    d.child(
+                        div()
+                            .absolute()
+                            .left(px(if wide { 25. } else { 24. }))
+                            .top(px(6.))
+                            .size(px(6.))
+                            .rounded_full()
+                            .bg(color(0x51a4f1))
+                            .layout_key(&self.layout, "rail.inbox-unseen", None),
+                    )
+                })
+                .when(self.shell.hovered == Some(i), |d| {
+                    d.child(
+                        div()
+                            .absolute()
+                            .left(px(if wide { 136. } else { 54. }))
+                            .bottom(px(-8.))
+                            .px(px(8.))
+                            .py(px(6.))
+                            .rounded(px(5.))
+                            .border_1()
+                            .border_color(color(t.border))
+                            .bg(color(t.card))
+                            .whitespace_nowrap()
+                            .text_color(color(t.text))
+                            .child(format!("{tooltip}   {key}"))
+                            .layout_key(
+                                &self.layout,
+                                "rail.tooltip",
+                                Some(format!("{tooltip}   {key}")),
+                            ),
+                    )
+                })
                 .layout_key(&self.layout, format!("rail.icon.{i}"), Some(label.into()))
         };
         div()
@@ -279,7 +368,7 @@ impl Desktop {
                     .id("rail-boards")
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_boards(window, cx)))
-                    .child(button(1, "panel-left", "Boards", self.shell.boards)),
+                    .child(button(1, "panel-left", "Boards", self.shell.boards, cx)),
             )
             .child(div().h(px(12.)).flex_shrink_0())
             .child(
@@ -287,7 +376,13 @@ impl Desktop {
                     .id("rail-inbox")
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.switch(Screen::Inbox, cx)))
-                    .child(button(2, "inbox", "Inbox", self.screen == Screen::Inbox)),
+                    .child(button(
+                        2,
+                        "inbox",
+                        "Inbox",
+                        self.screen == Screen::Inbox,
+                        cx,
+                    )),
             )
             .child(div().h(px(4.)))
             .child(
@@ -296,7 +391,7 @@ impl Desktop {
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.shell.agents = false;
-                        this.run_shortcut(Action::Board, window, cx);
+                        this.navigate_board(cx);
                     }))
                     .child(button(
                         3,
@@ -321,7 +416,7 @@ impl Desktop {
             .child(
                 div()
                     .mt(px(4.))
-                    .child(button(5, "calendar", "Calendar", false)),
+                    .child(button(5, "calendar", "Calendar", false, cx)),
             )
             .child(
                 div()
@@ -329,7 +424,7 @@ impl Desktop {
                     .mt(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_ai(window, cx)))
-                    .child(button(6, "sparkles", "AI Chat", false)),
+                    .child(button(6, "sparkles", "AI Chat", false, cx)),
             )
             .child(
                 div()
@@ -337,7 +432,7 @@ impl Desktop {
                     .mt(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.navigate_search(window, cx)))
-                    .child(button(7, "search", "Search", false)),
+                    .child(button(7, "search", "Search", false, cx)),
             )
             .child(div().flex_1())
             .child(
@@ -351,21 +446,28 @@ impl Desktop {
                         window.focus(&this.focus, cx);
                         cx.notify();
                     }))
-                    .child(button(8, "bot", "Agents", self.shell.agents)),
+                    .child(button(8, "bot", "Agents", self.shell.agents, cx)),
+            )
+            .child(
+                div()
+                    .id("rail-invite")
+                    .mb(px(4.))
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, window, cx| this.open_invite(window, cx)))
+                    .child(button(9, "user-plus", "Invite", false, cx)),
             )
             .child(
                 div()
                     .mb(px(4.))
-                    .child(button(9, "user-plus", "Invite", false)),
+                    .child(button(10, "rocket", "News", false, cx)),
             )
-            .child(div().mb(px(4.)).child(button(10, "rocket", "News", false)))
             .child(
                 div()
                     .id("rail-feedback")
                     .mb(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.open_feedback(window, cx)))
-                    .child(button(11, "message-circle", "Feedback", false)),
+                    .child(button(11, "message-circle", "Feedback", false, cx)),
             )
             .child(
                 div()
@@ -373,7 +475,7 @@ impl Desktop {
                     .mb(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.open_settings(window, cx)))
-                    .child(button(12, "settings", "Settings", false)),
+                    .child(button(12, "settings", "Settings", false, cx)),
             )
             .layout_key(&self.layout, "rail", None)
     }
@@ -385,6 +487,7 @@ impl Desktop {
             .projects()
             .unwrap_or_default()
             .into_iter()
+            .filter(|b| b["status"].as_str().is_none_or(|status| status == "Normal"))
             .filter(|b| {
                 b["title"]
                     .as_str()
@@ -425,6 +528,9 @@ impl Desktop {
     }
 
     pub(super) fn shell_overlay(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.shell.invite {
+            return self.invite_overlay(cx);
+        }
         if self.shell.feedback {
             return self.feedback_overlay(cx);
         }
@@ -1116,5 +1222,63 @@ impl Desktop {
             .feedback_input
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.clear_settings_identity(cx);
+    }
+}
+
+#[cfg(test)]
+mod rail_detail_tests {
+    use super::tests::{click, draw, measured, setup};
+    use super::*;
+    #[gpui::test]
+    fn rail_hover_shows_web_destination_and_platform_shortcut(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        let bounds = measured(view, &mut cx, "rail.icon.1");
+        cx.simulate_mouse_move(
+            point(
+                px(bounds["x"].as_f64().unwrap() as f32 + 10.),
+                px(bounds["y"].as_f64().unwrap() as f32 + 10.),
+            ),
+            None,
+            Default::default(),
+        );
+        let tooltip = measured(view, &mut cx, "rail.tooltip");
+        assert_eq!(
+            tooltip["text"],
+            if cfg!(target_os = "macos") {
+                "Switch board   Cmd+B"
+            } else {
+                "Switch board   Ctrl+B"
+            }
+        );
+        click(view, &mut cx, "rail.icon.0");
+        let bounds = measured(view, &mut cx, "rail.icon.1");
+        cx.simulate_mouse_move(
+            point(
+                px(bounds["x"].as_f64().unwrap() as f32 + 10.),
+                px(bounds["y"].as_f64().unwrap() as f32 + 10.),
+            ),
+            None,
+            Default::default(),
+        );
+        assert_eq!(
+            measured(view, &mut cx, "rail.tooltip")["text"],
+            tooltip["text"]
+        );
+    }
+
+    #[gpui::test]
+    fn inbox_rail_click_displays_unseen_dot_and_active_state(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx, |this, _, _| {
+            this.db.apply_response(&serde_json::json!({"success": true, "notifications": [{"id": 77, "taskId": 101, "seen": false, "status": "Normal", "createdAt": "2026-10-01T00:00:00Z"}]})).unwrap();
+            this.reload();
+        }).unwrap();
+        click(view, &mut cx, "rail.icon.2");
+        assert_eq!(
+            measured(view, &mut cx, "rail.inbox-unseen")["bg"],
+            "#51a4f1"
+        );
+        assert!(!measured(view, &mut cx, "rail.icon.2")["bg"].is_null());
+        draw(view, &mut cx);
     }
 }
