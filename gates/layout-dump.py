@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import re
 import selectors
+import sqlite3
 import subprocess
 import tempfile
 
@@ -59,7 +60,6 @@ def validate(path, screen, theme):
         assert element["text"] is None or len(element["text"]) <= 40, element
     required = COMMON - {"rightpanel"} | KEYS[screen]
     if screen == "inbox":
-        required -= {f"inbox.tab.{i}" for i in range(2, 6)}
         assert missing >= {"rightpanel"}, dump
         assert elements["inbox.tab.active"]["x"] == elements["inbox.tab.0"]["x"]
     if screen == "board":
@@ -83,13 +83,25 @@ OUT.mkdir(parents=True, exist_ok=True)
 with tempfile.TemporaryDirectory(prefix="ht-layout-") as tmp:
     db = str(Path(tmp) / "local.db")
     subprocess.run([ROOT / "target/release/ht-core-cli", "--db", db, "import-fixtures", ROOT / "fixtures/demo"], check=True)
+    with sqlite3.connect(db) as conn:
+        notifications = conn.execute("SELECT n.id,n.raw_json FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC LIMIT 5").fetchall()
+        assert len(notifications) == 5, "fixture must exercise all five inbox rows"
+        for notification_id, raw in notifications:
+            notification = json.loads(raw)
+            notification["computedSplit"] = "Important"
+            conn.execute("UPDATE Notification SET raw_json=? WHERE id=?", (json.dumps(notification), notification_id))
+    errors = []
     for theme in ["porcelain", "graphite", "amoled", "dia"]:
         for screen in KEYS:
             path = OUT / f"{screen}-{theme}.json"
             args = [str(APP), "--db", db, "--offline", "--screen", screen, "--board", "15", "--task", "58006", "--theme", theme, "--dump-layout", str(path)]
             result = subprocess.run([*args, "--exit-after-ready"], env=ENV, capture_output=True, text=True, timeout=60)
             assert result.returncode == 0 and "READY" in result.stdout, result
-            validate(path, screen, theme)
+            try:
+                validate(path, screen, theme)
+            except AssertionError as error:
+                errors.append(f"{screen}/{theme}: {error}")
+                print(errors[-1], flush=True)
     path = OUT / "held.json"
     args = [str(APP), "--db", db, "--offline", "--theme", "graphite", "--dump-layout", str(path)]
     with subprocess.Popen(args, env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as app:
@@ -105,4 +117,5 @@ with tempfile.TemporaryDirectory(prefix="ht-layout-") as tmp:
             app.communicate(timeout=10)
     invalid = subprocess.run([*args[:-1], str(Path(tmp) / "absent/layout.json"), "--exit-after-ready"], env=ENV, capture_output=True, text=True, timeout=60)
     assert invalid.returncode != 0 and "layout dump failed" in invalid.stderr, invalid
+    assert not errors, "\n".join(errors)
 print("LAYOUT_DUMP_OK: all screens, all themes, hold, exit and write failure", flush=True)
