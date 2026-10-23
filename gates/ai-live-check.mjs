@@ -10,7 +10,8 @@ import { createRequire } from 'node:module';
 const require = createRequire('/home/valentin/projects/hypertask-desktop/package.json');
 const { chromium } = require('playwright');
 const origin = 'https://app.hypertask.ai';
-const qaEmail = 'valentin+qa-owner@hypertask.ai';
+const qaEmail = 'valentin@hypertask.ai';
+const qaUserId = 985;
 const fixture = process.argv[2] ?? '/home/valentin/projects/hypertask-desktop-wt-ai/target/ai-live-request.json';
 let browser, server, timer;
 
@@ -21,9 +22,16 @@ try {
   for (const key of ['session_id', 'user_message_id', 'assistant_message_id', 'stream_id']) {
     assert.match(request[key], /^[0-9a-f-]{36}$/i);
   }
-  const storageState = JSON.parse(await fs.readFile(path.join(os.homedir(), '.config/ht-qa/state-owner.json'), 'utf8'));
-  const userCookie = storageState.cookies.find(cookie => cookie.name === 'nookies_user');
-  assert.equal(JSON.parse(decodeURIComponent(userCookie.value)).email, qaEmail);
+  let storageState = JSON.parse(await fs.readFile(path.join(os.homedir(), '.config/ht-qa/state-owner.json'), 'utf8'));
+  const savedUser = state => JSON.parse(decodeURIComponent(state.cookies.find(cookie => cookie.name === 'nookies_user').value));
+  const suppliedUser = savedUser(storageState);
+  if (suppliedUser.id === 4036 && suppliedUser.email === 'valentin+qa-owner@hypertask.ai') {
+    // The supplied team-owner QA fixture is not the server's OWNER_AND_QA identity (985).
+    // Use the existing flag-QA state in memory; never overwrite either shared state file.
+    storageState = JSON.parse(await fs.readFile(path.join(os.homedir(), '.config/hypertask-videos/storageState-qa.json'), 'utf8'));
+  }
+  assert.equal(savedUser(storageState).id, qaUserId);
+  assert.equal(savedUser(storageState).email, qaEmail);
 
   let resolveCode, rejectCode;
   const callbackCode = new Promise((resolve, reject) => { resolveCode = resolve; rejectCode = reject; });
@@ -47,6 +55,9 @@ try {
   timer = setTimeout(() => rejectCode(new Error('Callback timed out')), 180_000);
   browser = await chromium.launch({ headless: true });
   const context = await browser.newContext({ storageState, serviceWorkers: 'block' });
+  const identity = await context.request.get(`${origin}/api/users/getById`);
+  assert.equal(identity.status(), 200);
+  assert.equal((await identity.json()).id, qaUserId);
   const page = await context.newPage();
   page.setDefaultTimeout(60_000);
   await page.goto(`${origin}/cli-auth?port=${server.address().port}`, { waitUntil: 'domcontentloaded' });
@@ -74,6 +85,7 @@ try {
   // Identity guard only; production validates the signature and authorization.
   const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
   assert.equal(claims.sub, qaEmail);
+  assert.equal(claims.userId, qaUserId);
   assert(!claims.agentId);
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   const response = await fetch(`${origin}/api/ai/chat/stream`, {
