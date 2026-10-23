@@ -28,6 +28,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --release
+      - name: Upload Rust AI request fixture
+        if: runner.os == 'Linux'
+        uses: actions/upload-artifact@v4
+        with:
+          name: ai-live-request
+          path: target/ai-live-request.json
+          if-no-files-found: error
       - run: cargo build --release -p ht-desktop -p ht-core
       - name: Layout dump contract
         if: runner.os == 'Linux'

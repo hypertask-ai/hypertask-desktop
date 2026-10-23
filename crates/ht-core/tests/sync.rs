@@ -292,6 +292,29 @@ fn bearer_snapshots_clear_removed_optional_fields_without_erasing_partial_update
 }
 
 #[test]
+fn optional_ai_summary_survives_partial_updates_but_detail_absence_clears_it() {
+    let f = fidelity();
+    let mut present = f["detail"].clone();
+    present["tasks"][0]["ai_summary"] = json!({
+        "content":"A saved AI summary", "updated_at":"2026-10-23T00:00:00Z"
+    });
+    let mut null = f["detail"].clone();
+    null["tasks"][0]["ai_summary"] = Value::Null;
+    let mut sync = Sync::new(Db::memory().unwrap(), Script::new(vec![
+        present.clone(), null, present, f["detail"].clone(),
+    ]));
+    sync.task(1).unwrap();
+    sync.db.apply_task(&json!({"id":1,"title":"partial","projectId":15,"status":"Normal"})).unwrap();
+    assert_eq!(sync.db.task(1).unwrap().unwrap().extra["ai_summary"]["content"], "A saved AI summary");
+    sync.task(1).unwrap();
+    assert!(sync.db.task(1).unwrap().unwrap().extra["ai_summary"].is_null());
+    sync.task(1).unwrap();
+    assert!(sync.db.task(1).unwrap().unwrap().extra["ai_summary"].is_object());
+    sync.task(1).unwrap();
+    assert!(sync.db.task(1).unwrap().unwrap().extra["ai_summary"].is_null());
+}
+
+#[test]
 fn draft_flags_are_server_owned_and_empty_snapshots_remove_markers() {
     let f = fidelity();
     let mut sync = Sync::new(

@@ -26,6 +26,11 @@ use windows_numerics::Vector2;
 use crate::*;
 use gpui::*;
 
+#[implement()]
+struct FontData {
+    _bytes: Cow<'static, [u8]>,
+}
+
 #[derive(Debug)]
 struct FontInfo {
     font_family_h: HSTRING,
@@ -363,29 +368,21 @@ impl DirectWriteState {
         fonts: Vec<Cow<'static, [u8]>>,
     ) -> Result<()> {
         for font_data in fonts {
-            match font_data {
-                Cow::Borrowed(data) => unsafe {
-                    let font_file = components
-                        .in_memory_loader
-                        .CreateInMemoryFontFileReference(
-                            &components.factory,
-                            data.as_ptr().cast(),
-                            data.len() as _,
-                            None,
-                        )?;
-                    components.builder.AddFontFile(&font_file)?;
-                },
-                Cow::Owned(data) => unsafe {
-                    let font_file = components
-                        .in_memory_loader
-                        .CreateInMemoryFontFileReference(
-                            &components.factory,
-                            data.as_ptr().cast(),
-                            data.len() as _,
-                            None,
-                        )?;
-                    components.builder.AddFontFile(&font_file)?;
-                },
+            let data = font_data.as_ptr();
+            let len = font_data.len().try_into().context("Font data exceeds 4 GiB")?;
+            // With no owner DirectWrite copies the bytes. Its COM reference keeps
+            // this immutable allocation alive instead, including for owned fonts.
+            let owner: IUnknown = FontData { _bytes: font_data }.into();
+            unsafe {
+                let font_file = components
+                    .in_memory_loader
+                    .CreateInMemoryFontFileReference(
+                        &components.factory,
+                        data.cast(),
+                        len,
+                        &owner,
+                    )?;
+                components.builder.AddFontFile(&font_file)?;
             }
         }
         let set = unsafe { components.builder.CreateFontSet()? };
@@ -1976,6 +1973,43 @@ mod tests {
         D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
     };
     use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
+
+    #[test]
+    fn custom_font_stream_retains_original_borrowed_and_owned_bytes() -> Result<()> {
+        use std::{borrow::Cow, ptr};
+
+        const BYTES: &[u8] = include_bytes!("../../../crates/ht-desktop/assets/fonts/Inter.ttf");
+        for bytes in [Cow::Borrowed(BYTES), Cow::Owned(BYTES.to_vec())] {
+            let original = bytes.as_ptr();
+            let system = DirectWriteTextSystem::new(None)?;
+            system.add_fonts(vec![bytes])?;
+            let stream = unsafe {
+                let state = system.state.read();
+                let file = state
+                    .custom_font_collection
+                    .GetFontSet()?
+                    .GetFontFaceReference(0)?
+                    .GetFontFile()?;
+                let mut key = ptr::null_mut();
+                let mut key_len = 0;
+                file.GetReferenceKey(&mut key, &mut key_len)?;
+                file.GetLoader()?.CreateStreamFromKey(key, key_len)?
+            };
+            drop(system);
+            unsafe {
+                let mut fragment = ptr::null_mut();
+                let mut context = ptr::null_mut();
+                stream.ReadFileFragment(&mut fragment, 0, BYTES.len() as u64, &mut context)?;
+                let actual = std::slice::from_raw_parts(fragment.cast::<u8>(), BYTES.len());
+                let same_allocation = fragment.cast_const().cast::<u8>() == original;
+                let same_bytes = actual == BYTES;
+                stream.ReleaseFileFragment(context);
+                assert!(same_allocation, "DirectWrite copied the font bytes");
+                assert!(same_bytes, "font bytes did not outlive the text system");
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn test_cluster_map() {

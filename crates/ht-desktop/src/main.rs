@@ -1,13 +1,14 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod ai_sidebar;
 mod behavior;
 mod command_center;
 mod footer;
-mod shortcuts;
 mod input;
 mod layout;
 mod memory;
 mod rich_text;
+mod shortcuts;
 mod signin;
 mod store;
 mod theme;
@@ -27,6 +28,7 @@ pub struct Options {
     pub db: PathBuf,
     pub offline: bool,
     pub background: bool,
+    pub ai_sidebar: bool,
     pub screen: Screen,
     pub board: i64,
     pub board_given: bool,
@@ -46,6 +48,7 @@ impl Options {
                 .join("Hypertask/local.db"),
             offline: false,
             background: false,
+            ai_sidebar: false,
             screen: Screen::Inbox,
             board: 15,
             board_given: false,
@@ -61,6 +64,7 @@ impl Options {
             match arg.as_str() {
                 "--offline" => result.offline = true,
                 "--background" => result.background = true,
+                "--ai-sidebar" => result.ai_sidebar = true,
                 "--hold-after-ready" => (),
                 "--exit-after-ready" => result.exit_after_ready = true,
                 "--dump-layout" => {
@@ -102,7 +106,10 @@ impl Options {
             !(result.exit_after_ready && result.bench_input > 0),
             "choose --exit-after-ready or --bench-input"
         );
-        anyhow::ensure!(!result.background || (result.offline && result.dump_layout.is_some()), "--background requires --offline and --dump-layout");
+        anyhow::ensure!(
+            !result.background || (result.offline && result.dump_layout.is_some()),
+            "--background requires --offline and --dump-layout"
+        );
         Ok(result)
     }
 }
@@ -154,7 +161,8 @@ impl AssetSource for Assets {
             "arrow-right",
             "corner-left-up",
             "ai-sparkles",
-            "send-archive"
+            "send-archive",
+            "square-pen"
         ))
     }
     fn list(&self, _: &str) -> Result<Vec<SharedString>> {
@@ -321,6 +329,12 @@ mod tests {
         assert!(exit.exit_after_ready);
         assert_eq!(exit.dump_layout, Some(PathBuf::from("layout.json")));
         assert!(opts.offline);
+        assert!(!Options::parse([]).unwrap().ai_sidebar);
+        assert!(
+            Options::parse(["--ai-sidebar".to_owned()])
+                .unwrap()
+                .ai_sidebar
+        );
         assert!(opts.print_memory);
         assert!(!Options::parse([]).unwrap().print_memory);
         assert_eq!(opts.bench_input, 300);

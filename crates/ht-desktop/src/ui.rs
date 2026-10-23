@@ -1,5 +1,6 @@
 use crate::{
     Options,
+    ai_sidebar::{AiSidebar, Scope},
     input::TextInput,
     layout::{Capture, LayoutDump, LayoutKey},
     rich_text::RichText,
@@ -46,10 +47,10 @@ enum Editing {
     Description,
 }
 
-#[path = "interactions.rs"]
-mod interactions;
 #[path = "comments.rs"]
 mod comments;
+#[path = "interactions.rs"]
+mod interactions;
 
 pub struct Desktop {
     pub focus: FocusHandle,
@@ -90,6 +91,8 @@ pub struct Desktop {
     worker: Option<Worker>,
     signin: SignIn,
     auto_board: bool,
+    ai_sidebar: Option<Entity<AiSidebar>>,
+    _ai_sidebar_subscription: Option<gpui::Subscription>,
 }
 
 fn icon(name: &'static str, tint: u32, width: f32) -> impl IntoElement + Styled + use<> {
@@ -127,7 +130,14 @@ impl Desktop {
             cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
             cx.observe(&title_input, |_, _, cx| cx.notify()).detach();
         }
+        let focus = cx.focus_handle();
         let (mut signin, secret) = SignIn::start(options.offline);
+        let ai_sidebar = (AI_CHAT_PANEL_SHOWN || options.ai_sidebar).then(|| {
+            cx.new(|cx| AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx))
+        });
+        let ai_sidebar_subscription = ai_sidebar
+            .as_ref()
+            .map(|sidebar| cx.observe(sidebar, |_, _, cx| cx.notify()));
         let worker = secret.and_then(|secret| Self::start_worker(&options, &mut signin, secret));
         let auto_board = !options.offline && !options.board_given && signin.is_interactive();
         let mut options = options;
@@ -136,7 +146,7 @@ impl Desktop {
         }
         let detail_scroll = ScrollHandle::new();
         let mut view = Self {
-            focus: cx.focus_handle(),
+            focus,
             screen: options.screen,
             previous: Screen::Board,
             layout: options
@@ -177,6 +187,8 @@ impl Desktop {
             worker,
             signin,
             auto_board,
+            ai_sidebar,
+            _ai_sidebar_subscription: ai_sidebar_subscription,
         };
         view.reload();
         view.request_sync();
@@ -240,11 +252,19 @@ impl Desktop {
         match self.signin.poll() {
             Event::Idle => return,
             Event::Expired => {
+                if let Some(sidebar) = &self.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.set_token(None, cx));
+                }
                 if let Some(worker) = self.worker.take() {
                     std::thread::spawn(move || drop(worker));
                 }
             }
             Event::SignedIn(secret) => {
+                if let Some(sidebar) = &self.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| {
+                        sidebar.set_token(Some(secret.clone()), cx)
+                    });
+                }
                 self.worker = Self::start_worker(&self.options, &mut self.signin, secret);
                 self.screen = Screen::Inbox;
                 self.selected = 0;
@@ -423,7 +443,9 @@ impl Desktop {
 
     fn open_task(&mut self, id: i64, cx: &mut Context<Self>) {
         self.remember_playlist();
-        if self.screen != Screen::Task { self.previous = self.screen; }
+        if self.screen != Screen::Task {
+            self.previous = self.screen;
+        }
         if self.options.task != id {
             self.comment_input
                 .update(cx, |input, cx| input.set_content(String::new(), cx));
@@ -450,7 +472,10 @@ impl Desktop {
     }
 
     fn edit_title(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
+        if let Some(task) = self
+            .selected_task()
+            .and_then(|id| self.db.task(id).ok().flatten())
+        {
             self.title_input
                 .update(cx, |input, cx| input.set_content(task.title, cx));
             self.editing = Editing::Title;
@@ -471,7 +496,9 @@ impl Desktop {
             return false;
         };
         let comment = self.editing == Editing::Comment;
-        if comment && self.comment_input.read(cx).content.trim().is_empty() { return false; }
+        if comment && self.comment_input.read(cx).content.trim().is_empty() {
+            return false;
+        }
         let write = match self.editing {
             Editing::Title => Write::TaskTitle {
                 task_id,
@@ -489,14 +516,23 @@ impl Desktop {
             },
             Editing::Description => Write::TaskPatch {
                 task_id,
-                patch: ht_core::TaskPatch::Description(self.interaction.description.read(cx).content.replace('&', "&amp;").replace('<', "&lt;").replace('>', "&gt;")),
+                patch: ht_core::TaskPatch::Description(
+                    self.interaction
+                        .description
+                        .read(cx)
+                        .content
+                        .replace('&', "&amp;")
+                        .replace('<', "&lt;")
+                        .replace('>', "&gt;"),
+                ),
             },
             Editing::None => return false,
         };
         if self.enqueue(write, cx) {
             self.editing = Editing::None;
             if comment {
-                self.comment_input.update(cx, |input, cx| input.reset(window, cx));
+                self.comment_input
+                    .update(cx, |input, cx| input.reset(window, cx));
             }
             window.focus(&self.focus, cx);
             true
@@ -506,6 +542,15 @@ impl Desktop {
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(sidebar) = &self.ai_sidebar {
+            if event.keystroke.modifiers.control && event.keystroke.key == "q" {
+                sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
+                return;
+            }
+            if sidebar.read(cx).has_focus(window, cx) {
+                return;
+            }
+        }
         self.interaction_key(event, window, cx);
     }
 
@@ -922,12 +967,18 @@ impl Desktop {
         let n = &self.inbox[self.filtered[row]];
         let t = self.colors;
         let id = n.id;
-        let kind = n.raw_json.pointer("/comment/text").and_then(|v| v.as_str())
+        let kind = n
+            .raw_json
+            .pointer("/comment/text")
+            .and_then(|v| v.as_str())
             .map(|html| RichText::parse(html, t).text.to_string())
             .filter(|text| !text.trim().is_empty())
             .unwrap_or_else(|| notification_label(n.raw_json["type"].as_str().unwrap_or("")));
         let source = n.source.clone().unwrap_or_default();
-        let source = match n.raw_json["unreadCount"].as_u64().filter(|count| *count > 0) {
+        let source = match n.raw_json["unreadCount"]
+            .as_u64()
+            .filter(|count| *count > 0)
+        {
             Some(count) => format!("{source} ({count})"),
             None => source,
         };
@@ -942,20 +993,25 @@ impl Desktop {
             .pl(px(48.))
             .pr(px(48.))
             .cursor_pointer()
-            .when(row == self.selected || self.interaction.bulk.contains(&id), |d| {
-                d.border_color(color(if self.options.theme == ThemeName::Porcelain {
-                    0x9a9daa
-                } else {
-                    t.accent
-                }))
-                .bg(color(if self.options.theme == ThemeName::Porcelain {
-                    0xe2e2e6
-                } else if self.options.theme == ThemeName::Dia {
-                    t.active
-                } else {
-                    t.footer
-                }))
-            })
+            .when(
+                row == self.selected || self.interaction.bulk.contains(&id),
+                |d| {
+                    d.border_color(color(if self.options.theme == ThemeName::Porcelain {
+                        0x9a9daa
+                    } else {
+                        t.accent
+                    }))
+                    .bg(color(
+                        if self.options.theme == ThemeName::Porcelain {
+                            0xe2e2e6
+                        } else if self.options.theme == ThemeName::Dia {
+                            t.active
+                        } else {
+                            t.footer
+                        },
+                    ))
+                },
+            )
             .hover(|d| d.bg(color(t.hover)))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = row;
@@ -988,18 +1044,11 @@ impl Desktop {
                                     .rounded_full()
                                     .when(!n.seen, |d| d.bg(color(t.accent))),
                             )
-                            .child(
-                                div()
-                                    .truncate()
-                                    .child(source.clone())
-                                    .layout_key(
-                                        &self.layout,
-                                        format!("inbox.row.{row}.author"),
-                                        Some(
-                                            source.clone(),
-                                        ),
-                                    ),
-                            ),
+                            .child(div().truncate().child(source.clone()).layout_key(
+                                &self.layout,
+                                format!("inbox.row.{row}.author"),
+                                Some(source.clone()),
+                            )),
                     )
                     .child(
                         div()
@@ -1058,7 +1107,12 @@ impl Desktop {
                                     ),
                             ),
                     )
-                    .child(div().text_size(px(11.)).text_color(color(t.muted)).child(inbox_metadata(&n.raw_json["task"])))
+                    .child(
+                        div()
+                            .text_size(px(11.))
+                            .text_color(color(t.muted))
+                            .child(inbox_metadata(&n.raw_json["task"])),
+                    )
                     .child(
                         div()
                             .w(px(62.))
@@ -1100,8 +1154,11 @@ impl Desktop {
             .map(|t| t.board_title.as_str())
             .unwrap_or("Board");
         let count: usize = self.columns.iter().map(|c| c.cards.len()).sum();
-        let board_width =
-            (f32::from(window.viewport_size().width) - 48. - ai_chat_panel_width()).max(0.);
+        let sidebar_width = self
+            .ai_sidebar
+            .as_ref()
+            .map_or(0., |sidebar| sidebar.read(cx).width());
+        let board_width = (f32::from(window.viewport_size().width) - 48. - sidebar_width).max(0.);
         let column_width = ((board_width * 0.97
             - 16. * self.columns.len().saturating_sub(1) as f32)
             / self.columns.len().max(1) as f32)
@@ -1315,7 +1372,8 @@ impl Desktop {
             + row;
         let task = &self.columns[column].cards[row];
         let t = self.colors;
-        let active = (self.column == column && self.selected == row) || self.interaction.bulk.contains(&task.id);
+        let active = (self.column == column && self.selected == row)
+            || self.interaction.bulk.contains(&task.id);
         let title = task.title.clone();
         let id = task.id;
         let labels = task
@@ -1478,8 +1536,22 @@ impl Desktop {
                             div()
                                 .text_size(px(13.))
                                 .line_height(px(19.5))
-                                .when(self.editing == Editing::Title && self.column == column && self.selected == row, |d| d.w_full())
-                                .child(if self.editing == Editing::Title && self.column == column && self.selected == row { self.focused_editor(Editing::Title, cx) } else { div().child(title.clone()).into_any_element() })
+                                .when(
+                                    self.editing == Editing::Title
+                                        && self.column == column
+                                        && self.selected == row,
+                                    |d| d.w_full(),
+                                )
+                                .child(
+                                    if self.editing == Editing::Title
+                                        && self.column == column
+                                        && self.selected == row
+                                    {
+                                        self.focused_editor(Editing::Title, cx)
+                                    } else {
+                                        div().child(title.clone()).into_any_element()
+                                    },
+                                )
                                 .layout_key(
                                     &self.layout,
                                     format!("board.card.{index}.title"),
@@ -1487,16 +1559,36 @@ impl Desktop {
                                 ),
                         ),
                     )
-                    .when(priority_name(&task.extra) != "No Priority" || task.due_date.is_some(), |d| {
-                        d.child(div().text_size(px(11.)).text_color(color(t.muted)).child(
-                            [Some(priority_name(&task.extra)).filter(|p| *p != "No Priority").map(str::to_owned),
-                             task.due_date.as_deref().map(short_date)]
-                                .into_iter().flatten().collect::<Vec<_>>().join(" · ")
-                        ))
-                    })
-                    .when(task.extra.get("hasBoardDraft").and_then(|v| v.as_bool()) == Some(true), |d| {
-                        d.child(div().text_size(px(11.)).text_color(color(t.accent)).child("Draft"))
-                    })
+                    .when(
+                        priority_name(&task.extra) != "No Priority" || task.due_date.is_some(),
+                        |d| {
+                            d.child(
+                                div().text_size(px(11.)).text_color(color(t.muted)).child(
+                                    [
+                                        Some(priority_name(&task.extra))
+                                            .filter(|p| *p != "No Priority")
+                                            .map(str::to_owned),
+                                        task.due_date.as_deref().map(short_date),
+                                    ]
+                                    .into_iter()
+                                    .flatten()
+                                    .collect::<Vec<_>>()
+                                    .join(" · "),
+                                ),
+                            )
+                        },
+                    )
+                    .when(
+                        task.extra.get("hasBoardDraft").and_then(|v| v.as_bool()) == Some(true),
+                        |d| {
+                            d.child(
+                                div()
+                                    .text_size(px(11.))
+                                    .text_color(color(t.accent))
+                                    .child("Draft"),
+                            )
+                        },
+                    )
                     .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
                         d.child(
                             div()
@@ -1699,10 +1791,7 @@ impl Desktop {
                     .unwrap_or_else(|| "-".into()),
             ),
             ("Project", task.board_title.clone()),
-            (
-                "Priority",
-                priority_name(&task.extra).into(),
-            ),
+            ("Priority", priority_name(&task.extra).into()),
             (
                 "Task size",
                 task.extra
@@ -1920,57 +2009,67 @@ impl Desktop {
     }
 }
 
-const AI_CHAT_PANEL_SHOWN: bool = false;
-const AI_CHAT_PANEL_WIDTH: f32 = 420.;
-
-fn ai_chat_panel_width() -> f32 {
-    if AI_CHAT_PANEL_SHOWN { AI_CHAT_PANEL_WIDTH } else { 0. }
-}
+const AI_CHAT_PANEL_SHOWN: bool = true;
 
 impl Render for Desktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(layout) = &self.layout {
             layout.borrow_mut().begin(self.split);
         }
-        if self.options.background && let Some((path, capture)) = self.options.dump_layout.clone().zip(self.layout.clone()) {
-            let task = self.selected_task().and_then(|id| self.db.task(id).ok().flatten());
-            let count = match self.screen { Screen::Inbox => self.filtered.len(), Screen::Board => self.columns.get(self.column).map_or(0, |c| c.cards.len()), Screen::Task => 0 };
-            crate::behavior::snapshot(window, path, capture, self.screen, self.options.theme, serde_json::json!({
-                "error": self.error,
-                "theme": format!("{:?}", self.options.theme).to_lowercase(),
-                "selection_count": count, "last_index": count.saturating_sub(1),
-                "board_count": self.columns.iter().map(|c| c.cards.len()).sum::<usize>(),
-                "inbox_count": self.inbox.len(), "composer_index": self.comments.len() + 1,
-                "choice_count": self.choices(cx).len(),
-                "key_events": self.interaction.key_events, "last_key": self.interaction.last_key,
-                "last_ctrl": self.interaction.last_ctrl, "last_shift": self.interaction.last_shift,
-                "column_ids": self.columns.iter().map(|c| c.id).collect::<Vec<_>>(),
-                "task_title": task.as_ref().map(|t| &t.title),
-                "ticket": task.as_ref().and_then(|t| t.ticket_number.as_ref()),
-                "project_id": task.as_ref().map(|t| t.project_id),
-                "board_id": self.options.board,
-                "unique_index": task.as_ref().and_then(|t| t.extra.get("uniqueIndex")),
-                "task_assignees": task.as_ref().and_then(|t| t.extra.get("assignees")),
-                "task_labels": task.as_ref().and_then(|t| t.extra.get("labels")),
-                "first_assignee": task.as_ref().and_then(|t| self.db.project_members(t.project_id).ok()).and_then(|m| m.first().cloned()).and_then(|m| m["id"].as_i64()),
-                "first_label": task.as_ref().and_then(|t| self.db.project_labels(t.project_id).ok()).and_then(|l| l.first().cloned()).and_then(|l| l["id"].as_str().map(str::to_owned)),
-                "screen": format!("{:?}", self.screen).to_lowercase(),
-                "selected": self.selected, "column": self.column, "split": self.split,
-                "task_id": self.selected_task(),
-                "composer_focused": self.comment_input.focus_handle(cx).is_focused(window),
-                "root_focused": self.focus.is_focused(window),
-                "comment_text": self.comment_input.read(cx).content.as_ref(),
-                "title_text": self.title_input.read(cx).content.as_ref(),
-                "description_text": self.interaction.description.read(cx).content.as_ref(),
-                "editing": match self.editing { Editing::None => "none", Editing::Title => "title", Editing::Comment => "comment", Editing::Description => "description" },
-                "footer": crate::footer::hints(self.screen).iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>(),
-                "command_open": self.interaction.modal == Some(interactions::Modal::Commands),
-                "modal": self.interaction.modal.map(|m| format!("{m:?}").to_lowercase()),
-                "command_selected": self.interaction.choice,
-                "query": self.interaction.query.read(cx).content.as_ref(),
-                "bulk_count": self.interaction.bulk.len(),
-                "task_part": self.interaction.task_part,
-            }));
+        if self.options.background
+            && let Some((path, capture)) = self.options.dump_layout.clone().zip(self.layout.clone())
+        {
+            let task = self
+                .selected_task()
+                .and_then(|id| self.db.task(id).ok().flatten());
+            let count = match self.screen {
+                Screen::Inbox => self.filtered.len(),
+                Screen::Board => self.columns.get(self.column).map_or(0, |c| c.cards.len()),
+                Screen::Task => 0,
+            };
+            crate::behavior::snapshot(
+                window,
+                path,
+                capture,
+                self.screen,
+                self.options.theme,
+                serde_json::json!({
+                    "error": self.error,
+                    "theme": format!("{:?}", self.options.theme).to_lowercase(),
+                    "selection_count": count, "last_index": count.saturating_sub(1),
+                    "board_count": self.columns.iter().map(|c| c.cards.len()).sum::<usize>(),
+                    "inbox_count": self.inbox.len(), "composer_index": self.comments.len() + 1,
+                    "choice_count": self.choices(cx).len(),
+                    "key_events": self.interaction.key_events, "last_key": self.interaction.last_key,
+                    "last_ctrl": self.interaction.last_ctrl, "last_shift": self.interaction.last_shift,
+                    "column_ids": self.columns.iter().map(|c| c.id).collect::<Vec<_>>(),
+                    "task_title": task.as_ref().map(|t| &t.title),
+                    "ticket": task.as_ref().and_then(|t| t.ticket_number.as_ref()),
+                    "project_id": task.as_ref().map(|t| t.project_id),
+                    "board_id": self.options.board,
+                    "unique_index": task.as_ref().and_then(|t| t.extra.get("uniqueIndex")),
+                    "task_assignees": task.as_ref().and_then(|t| t.extra.get("assignees")),
+                    "task_labels": task.as_ref().and_then(|t| t.extra.get("labels")),
+                    "first_assignee": task.as_ref().and_then(|t| self.db.project_members(t.project_id).ok()).and_then(|m| m.first().cloned()).and_then(|m| m["id"].as_i64()),
+                    "first_label": task.as_ref().and_then(|t| self.db.project_labels(t.project_id).ok()).and_then(|l| l.first().cloned()).and_then(|l| l["id"].as_str().map(str::to_owned)),
+                    "screen": format!("{:?}", self.screen).to_lowercase(),
+                    "selected": self.selected, "column": self.column, "split": self.split,
+                    "task_id": self.selected_task(),
+                    "composer_focused": self.comment_input.focus_handle(cx).is_focused(window),
+                    "root_focused": self.focus.is_focused(window),
+                    "comment_text": self.comment_input.read(cx).content.as_ref(),
+                    "title_text": self.title_input.read(cx).content.as_ref(),
+                    "description_text": self.interaction.description.read(cx).content.as_ref(),
+                    "editing": match self.editing { Editing::None => "none", Editing::Title => "title", Editing::Comment => "comment", Editing::Description => "description" },
+                    "footer": crate::footer::hints(self.screen).iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>(),
+                    "command_open": self.interaction.modal == Some(interactions::Modal::Commands),
+                    "modal": self.interaction.modal.map(|m| format!("{m:?}").to_lowercase()),
+                    "command_selected": self.interaction.choice,
+                    "query": self.interaction.query.read(cx).content.as_ref(),
+                    "bulk_count": self.interaction.bulk.len(),
+                    "task_part": self.interaction.task_part,
+                }),
+            );
         }
         if !self.ready_scheduled {
             self.ready_scheduled = true;
@@ -1991,6 +2090,13 @@ impl Render for Desktop {
         }
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
+        }
+        if let Some(sidebar) = &self.ai_sidebar {
+            let task = (self.screen != Screen::Board)
+                .then(|| self.selected_task())
+                .flatten();
+            let scope = Scope::load(&self.db, self.screen, self.options.board, task);
+            sidebar.update(cx, |sidebar, cx| sidebar.set_scope(scope, cx));
         }
         let body = match self.screen {
             Screen::Inbox => self.inbox_screen(cx).into_any_element(),
@@ -2038,20 +2144,17 @@ impl Render for Desktop {
                     )
                     .layout_key(&self.layout, "main", None),
             )
-            .when(AI_CHAT_PANEL_SHOWN, |d| d.child(
-                div()
-                    .w(px(AI_CHAT_PANEL_WIDTH))
-                    .flex_shrink_0()
-                    .h_full()
-                    .bg(color(t.detail))
-                    .child(
-                        div()
-                            .size_full()
-                            .border_l_1()
-                            .border_color(color(t.rail_border)),
-                    )
-                    .layout_key(&self.layout, "rightpanel", None),
-            ))
+            .when_some(self.ai_sidebar.clone(), |d, sidebar| {
+                let width = sidebar.read(cx).width();
+                d.child(
+                    div()
+                        .w(px(width))
+                        .flex_shrink_0()
+                        .h_full()
+                        .child(sidebar)
+                        .layout_key(&self.layout, "rightpanel", None),
+                )
+            })
             .child(self.interaction_overlay(window, cx))
             .into_any_element()
     }
@@ -2198,14 +2301,23 @@ fn inbox_date(value: Option<&str>) -> String {
 fn creator_name(extra: &serde_json::Map<String, serde_json::Value>) -> String {
     ["createdBy", "user", "creator"]
         .into_iter()
-        .find_map(|key| extra.get(key).and_then(|v| v["displayName"].as_str().filter(|s| !s.is_empty()).or_else(|| v["email"].as_str())))
+        .find_map(|key| {
+            extra.get(key).and_then(|v| {
+                v["displayName"]
+                    .as_str()
+                    .filter(|s| !s.is_empty())
+                    .or_else(|| v["email"].as_str())
+            })
+        })
         .or_else(|| extra.get("creatorName").and_then(|v| v.as_str()))
         .unwrap_or("Unknown author")
         .to_owned()
 }
 
 fn priority_name(extra: &serde_json::Map<String, serde_json::Value>) -> &str {
-    extra.get("priority").and_then(|v| v.as_str().or_else(|| v["Priority_Value"].as_str()))
+    extra
+        .get("priority")
+        .and_then(|v| v.as_str().or_else(|| v["Priority_Value"].as_str()))
         .unwrap_or("No Priority")
 }
 
@@ -2214,14 +2326,22 @@ fn inbox_metadata(task: &serde_json::Value) -> String {
     if let Some(date) = task["dueDate"].as_str() {
         parts.push(short_date(date));
     }
-    if let Some(priority) = task["priority"].as_str().or_else(|| task["priority"]["Priority_Value"].as_str()) {
+    if let Some(priority) = task["priority"]
+        .as_str()
+        .or_else(|| task["priority"]["Priority_Value"].as_str())
+    {
         parts.push(priority.to_owned());
     }
     if let Some(estimate) = task["estimate"]["estimate_value"].as_str() {
         parts.push(estimate.to_owned());
     }
-    let labels: Vec<_> = task["taskLabels"].as_array().into_iter().flatten()
-        .filter_map(|label| label["label"]["value"].as_str()).filter(|name| !name.is_empty()).collect();
+    let labels: Vec<_> = task["taskLabels"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .filter_map(|label| label["label"]["value"].as_str())
+        .filter(|name| !name.is_empty())
+        .collect();
     parts.extend(labels.iter().take(3).map(|name| (*name).to_owned()));
     if labels.len() > 3 {
         parts.push(format!("+{}", labels.len() - 3));
@@ -2230,13 +2350,17 @@ fn inbox_metadata(task: &serde_json::Value) -> String {
 }
 
 fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    let markdown = extra
-        .get("Task_Summary")
-        .and_then(|v| v.as_array())
-        .and_then(|a| a.first())
-        .and_then(|v| v["content"].as_str())
-        .or_else(|| extra.get("summary").and_then(|v| v.as_str()))
-        .unwrap_or("");
+    let markdown = if let Some(summary) = extra.get("ai_summary") {
+        summary["content"].as_str().unwrap_or("")
+    } else {
+        extra
+            .get("Task_Summary")
+            .and_then(|v| v.as_array())
+            .and_then(|a| a.first())
+            .and_then(|v| v["content"].as_str())
+            .or_else(|| extra.get("summary").and_then(|v| v.as_str()))
+            .unwrap_or("")
+    };
     let first = markdown
         .lines()
         .map(str::trim)
@@ -2264,16 +2388,28 @@ fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
 }
 
 fn comment_author(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    extra.get("agent_display_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
-        .or_else(|| ["agent", "creator", "user"].into_iter().find_map(|key| {
-            extra.get(key).and_then(|v| v["displayName"].as_str().filter(|s| !s.is_empty())
-                .or_else(|| v["email"].as_str()))
-        }))
-        .unwrap_or(if extra.get("pending").and_then(|v| v.as_bool()) == Some(true) {
-            "You · Pending"
-        } else {
-            "Unknown author"
-        }).to_owned()
+    extra
+        .get("agent_display_name")
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
+        .or_else(|| {
+            ["agent", "creator", "user"].into_iter().find_map(|key| {
+                extra.get(key).and_then(|v| {
+                    v["displayName"]
+                        .as_str()
+                        .filter(|s| !s.is_empty())
+                        .or_else(|| v["email"].as_str())
+                })
+            })
+        })
+        .unwrap_or(
+            if extra.get("pending").and_then(|v| v.as_bool()) == Some(true) {
+                "You · Pending"
+            } else {
+                "Unknown author"
+            },
+        )
+        .to_owned()
 }
 
 #[cfg(test)]
@@ -2302,6 +2438,20 @@ mod tests {
     }
 
     #[test]
+    fn optional_mcp_ai_summary_takes_precedence_and_missing_or_null_is_hidden() {
+        for (extra, expected) in [
+            (
+                json!({"ai_summary":{"content":"- **Live** summary", "updated_at":"2026-10-23"}, "summary":"Old"}),
+                "Live summary",
+            ),
+            (json!({"ai_summary":null, "summary":"Old summary"}), ""),
+            (json!({}), ""),
+        ] {
+            assert_eq!(task_summary(extra.as_object().unwrap()), expected);
+        }
+    }
+
+    #[test]
     fn summary_handles_plain_text_and_only_falls_back_for_empty_content() {
         for (extra, expected) in [
             (json!({"summary": "A saved summary"}), "A saved summary"),
@@ -2310,10 +2460,7 @@ mod tests {
                 json!({"Task_Summary": [{"content": "# Heading\n\nPlain `saved` content"}]}),
                 "Plain saved content",
             ),
-            (
-                json!({"Task_Summary": [{"content": " \n "}]}),
-                "",
-            ),
+            (json!({"Task_Summary": [{"content": " \n "}]}), ""),
             (json!({}), ""),
         ] {
             assert_eq!(task_summary(extra.as_object().unwrap()), expected);
@@ -2322,15 +2469,34 @@ mod tests {
 
     #[test]
     fn fidelity_fixture_preserves_priority_creator_summary_and_durable_comment_author() {
-        let f: serde_json::Value = serde_json::from_str(include_str!("../../../fixtures/data-fidelity.json")).unwrap();
+        let f: serde_json::Value =
+            serde_json::from_str(include_str!("../../../fixtures/data-fidelity.json")).unwrap();
         for key in ["list", "detail"] {
-            assert_eq!(priority_name(f[key]["tasks"][0].as_object().unwrap()), "High");
+            assert_eq!(
+                priority_name(f[key]["tasks"][0].as_object().unwrap()),
+                "High"
+            );
         }
-        assert_eq!(creator_name(f["detail"]["tasks"][0].as_object().unwrap()), "Example Creator");
-        assert_eq!(creator_name(f["list"]["tasks"][0].as_object().unwrap()), "Unknown author");
-        assert_eq!(task_summary(f["webSummary"].as_object().unwrap()), "Example saved summary.");
-        assert_eq!(task_summary(f["detail"]["tasks"][0].as_object().unwrap()), "");
-        assert_eq!(comment_author(f["comments"]["comments"][0].as_object().unwrap()), "Retired Example Agent");
+        assert_eq!(
+            creator_name(f["detail"]["tasks"][0].as_object().unwrap()),
+            "Example Creator"
+        );
+        assert_eq!(
+            creator_name(f["list"]["tasks"][0].as_object().unwrap()),
+            "Unknown author"
+        );
+        assert_eq!(
+            task_summary(f["webSummary"].as_object().unwrap()),
+            "Example saved summary."
+        );
+        assert_eq!(
+            task_summary(f["detail"]["tasks"][0].as_object().unwrap()),
+            ""
+        );
+        assert_eq!(
+            comment_author(f["comments"]["comments"][0].as_object().unwrap()),
+            "Retired Example Agent"
+        );
     }
 
     #[test]
@@ -2341,11 +2507,23 @@ mod tests {
         ] {
             assert_eq!(comment_author(extra.as_object().unwrap()), "Example Person");
         }
-        assert_eq!(comment_author(json!({"pending": true}).as_object().unwrap()), "You · Pending");
-        assert_eq!(creator_name(json!({"createdBy": {"email": "creator@example.com"}}).as_object().unwrap()), "creator@example.com");
-        assert_eq!(priority_name(json!({"priority": null}).as_object().unwrap()), "No Priority");
+        assert_eq!(
+            comment_author(json!({"pending": true}).as_object().unwrap()),
+            "You · Pending"
+        );
+        assert_eq!(
+            creator_name(
+                json!({"createdBy": {"email": "creator@example.com"}})
+                    .as_object()
+                    .unwrap()
+            ),
+            "creator@example.com"
+        );
+        assert_eq!(
+            priority_name(json!({"priority": null}).as_object().unwrap()),
+            "No Priority"
+        );
     }
-
 
     #[test]
     fn inbox_metadata_uses_server_shapes_and_web_label_limit() {
@@ -2353,8 +2531,13 @@ mod tests {
             "dueDate": "2026-10-20T12:00:00Z", "taskLabels": [
                 {"label": {"value": "One"}}, {"label": {"value": "Two"}},
                 {"label": {"value": "Three"}}, {"label": {"value": "Four"}}]});
-        assert_eq!(inbox_metadata(&task), "20 Oct · High · S · One · Two · Three · +1");
-        assert_eq!(inbox_metadata(&json!({"priority": null, "dueDate": null})), "");
+        assert_eq!(
+            inbox_metadata(&task),
+            "20 Oct · High · S · One · Two · Three · +1"
+        );
+        assert_eq!(
+            inbox_metadata(&json!({"priority": null, "dueDate": null})),
+            ""
+        );
     }
-
 }

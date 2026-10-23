@@ -1,3 +1,4 @@
+pub mod ai_chat;
 pub mod auth;
 mod catalog;
 pub mod db;
