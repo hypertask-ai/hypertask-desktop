@@ -74,6 +74,7 @@ impl Worker {
                                 task = Some(id);
                                 sync.task(id)?;
                                 sync.comments(id)?;
+                                sync.drafts(id)?;
                             }
                             Some(Command::Inbox) => {
                                 inbox = true;
@@ -90,6 +91,7 @@ impl Worker {
                                 if let Some(id) = task {
                                     sync.task(id)?;
                                     sync.comments(id)?;
+                                    sync.drafts(id)?;
                                 }
                             }
                             _ => (),
@@ -115,6 +117,7 @@ impl Worker {
                             if let Some(id) = task {
                                 sync.task(id)?;
                                 sync.comments(id)?;
+                                sync.drafts(id)?;
                             }
                         }
                         Ok(())

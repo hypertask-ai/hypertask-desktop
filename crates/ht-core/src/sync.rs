@@ -6,7 +6,7 @@ use crate::{
 use anyhow::{Context, bail, ensure};
 use chrono::{DateTime, SecondsFormat, Utc};
 use rusqlite::params;
-use serde_json::json;
+use serde_json::{Value, json};
 
 pub struct Sync<T> {
     pub db: Db,
@@ -63,7 +63,23 @@ impl<T: Transport> Sync<T> {
     pub fn board(&mut self, project_id: i64) -> Result<()> {
         ensure!(project_id > 0, "invalid board id");
         self.sections(project_id)?;
-        self.delta(project_id)
+        self.delta(project_id)?;
+        // List rows omit the creator. Hydrate uncached detail fields in batches,
+        // not one request per card, before an offline task page needs them.
+        let ids = self
+            .db
+            .json_rows(
+                "SELECT raw_json FROM Task WHERE projectId=? AND status='Normal' ORDER BY id",
+                [project_id],
+            )?
+            .into_iter()
+            .filter(|t| t.get("createdBy").is_none())
+            .map(|t| integer(&t, "id"))
+            .collect::<Result<Vec<_>>>()?;
+        for ids in ids.chunks(100) {
+            self.task_details(ids)?;
+        }
+        Ok(())
     }
 
     pub fn delta(&mut self, project_id: i64) -> Result<()> {
@@ -117,7 +133,7 @@ impl<T: Transport> Sync<T> {
                 ensure!(!page.is_empty(), "delta pagination made no progress");
             }
             self.db.transaction(|db| {
-                for task in &tasks { db.upsert_task(task)?; }
+                for task in &tasks { db.upsert_task(&task_snapshot(task, false))?; }
                 db.conn.execute("INSERT INTO sync_state(project_id,status,cursor) VALUES(?,?,?) ON CONFLICT(project_id,status) DO UPDATE SET cursor=excluded.cursor",
                     params![project_id,status,max_seen.map(|t| t.to_rfc3339_opts(SecondsFormat::Millis,true))])?;
                 db.reapply_pending()?;
@@ -128,19 +144,65 @@ impl<T: Transport> Sync<T> {
     }
 
     pub fn task(&mut self, task_id: i64) -> Result<()> {
-        let response = successful(self.transport.get(&format!("/tasks?task_id={task_id}"))?)?;
-        let task = response
-            .get("task")
-            .or_else(|| {
-                response["tasks"]
-                    .as_array()
-                    .and_then(|a| a.iter().find(|t| t["id"] == task_id))
-            })
-            .context("task response missing requested task")?;
-        ensure!(task["id"] == task_id, "task response id mismatch");
+        self.task_details(&[task_id])
+    }
+
+    fn task_details(&mut self, ids: &[i64]) -> Result<()> {
+        let query = ids.iter().map(i64::to_string).collect::<Vec<_>>().join(",");
+        let response = successful(self.transport.get(&format!("/tasks?task_id={query}"))?)?;
+        let tasks = if let Some(task) = response.get("task") {
+            vec![task.clone()]
+        } else {
+            array(&response, "tasks")?.clone()
+        };
+        let returned = tasks
+            .iter()
+            .map(|t| integer(t, "id"))
+            .collect::<Result<std::collections::HashSet<_>>>()?;
+        ensure!(
+            returned.len() == tasks.len()
+                && returned.len() == ids.len()
+                && ids.iter().all(|id| returned.contains(id)),
+            "task response id mismatch"
+        );
         self.db.transaction(|db| {
-            db.upsert_task(task)?;
+            for task in &tasks {
+                db.upsert_task(&task_snapshot(task, true))?;
+            }
             db.reapply_pending()
+        })
+    }
+
+    pub fn drafts(&mut self, task_id: i64) -> Result<()> {
+        let response = successful(self.transport.get(&format!("/drafts?task_id={task_id}"))?)?;
+        let drafts = array(&response, "drafts")?;
+        ensure!(
+            drafts.iter().all(|d| d["taskId"] == task_id),
+            "draft response task mismatch"
+        );
+        let meaningful = |kind: &str| {
+            drafts.iter().any(|draft| {
+                let text = draft["text"].as_str().unwrap_or("").trim();
+                draft["draftType"] == kind
+                    && !text.is_empty()
+                    && text != "<p></p>"
+                    && (kind != "description"
+                        || !matches!(
+                            text,
+                            "<html><head></head><body><p></p></body></html>"
+                                | "<html><head></head><body></body></html>"
+                        ))
+            })
+        };
+        // Only flags are needed for markers; never replace published content
+        // with a draft or infer server drafts from the local mutation queue.
+        self.db.transaction(|db| {
+            let mut task = db
+                .raw("Task", &json!(task_id))?
+                .context("draft task not cached")?;
+            task["hasDescriptionDraft"] = json!(meaningful("description"));
+            task["hasCommentDraft"] = json!(meaningful("comment"));
+            db.upsert("Task", &task)
         })
     }
 
@@ -202,6 +264,16 @@ impl<T: Transport> Sync<T> {
             }
             for item in &incoming {
                 db.upsert("Notification", item)?;
+                if let Some(id) = item["taskId"].as_i64() {
+                    if let Some(mut task) = db.raw("Task", &json!(id))? {
+                        for key in ["title", "ticketNumber", "status"] {
+                            if let Some(value) = item["task"].get(key) {
+                                task[key] = value.clone();
+                            }
+                        }
+                        db.upsert_task(&task)?;
+                    }
+                }
             }
             db.reapply_pending()
         })
@@ -234,4 +306,23 @@ pub fn cursor_minus_second(cursor: &str) -> Result<String> {
         .checked_sub_signed(chrono::Duration::seconds(1))
         .context("cursor underflow")?
         .to_rfc3339_opts(SecondsFormat::Millis, true))
+}
+
+// These endpoints return full snapshots but JSON omits unset optional fields.
+// Keep partial realtime/write responses on the ordinary merge path instead.
+fn task_snapshot(value: &Value, detail: bool) -> Value {
+    let mut task = value.clone();
+    for key in ["priority", "dueDate"] {
+        if task.get(key).is_none() {
+            task[key] = Value::Null;
+        }
+    }
+    if detail {
+        for key in ["createdBy", "estimate", "agent"] {
+            if task.get(key).is_none() {
+                task[key] = Value::Null;
+            }
+        }
+    }
+    task
 }

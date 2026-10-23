@@ -219,3 +219,207 @@ fn inbox_snapshot_hides_remotely_archived_notifications() {
     sync.inbox().unwrap();
     assert!(sync.db.inbox().unwrap().is_empty());
 }
+
+fn fidelity() -> Value {
+    serde_json::from_str(include_str!("../../../fixtures/data-fidelity.json")).unwrap()
+}
+
+#[test]
+fn board_hydrates_creator_and_preserves_detail_across_list_deltas() {
+    let f = fidelity();
+    let mut sync = Sync::new(
+        Db::memory().unwrap(),
+        Script::new(vec![
+            f["sections"].clone(),
+            f["list"].clone(),
+            f["detail"].clone(),
+            f["list"].clone(),
+            page(vec![], 0),
+            page(vec![], 0),
+        ]),
+    );
+    sync.board(15).unwrap();
+    assert_eq!(sync.transport.paths[2], "/tasks?task_id=1");
+    sync.delta(15).unwrap();
+    let task = sync.db.task_detail(1).unwrap().unwrap().task;
+    assert_eq!(task.extra["createdBy"]["displayName"], "Example Creator");
+    assert_eq!(task.extra["priority"], "High");
+    assert_eq!(task.due_date.as_deref(), Some("2026-10-20T12:00:00Z"));
+    assert_eq!(
+        (task.comment_count, task.assignee_count, task.label_count),
+        (3, 2, 1)
+    );
+    assert_eq!(task.extra["labels"][0]["name"], "Example tag");
+    assert_eq!(
+        task.extra["assignees"][1]["agent"]["displayName"],
+        "Example Agent"
+    );
+    assert_eq!(sync.db.board(15).unwrap()[0].cards[0], task);
+}
+
+#[test]
+fn bearer_snapshots_clear_removed_optional_fields_without_erasing_partial_updates() {
+    let f = fidelity();
+    let mut cleared = f["detail"].clone();
+    for key in ["dueDate", "priority", "createdBy"] {
+        cleared["tasks"][0].as_object_mut().unwrap().remove(key);
+    }
+    let mut sync = Sync::new(
+        Db::memory().unwrap(),
+        Script::new(vec![f["detail"].clone(), cleared]),
+    );
+    sync.task(1).unwrap();
+    sync.db
+        .apply_task(&json!({"id":1,"title":"partial","projectId":15,"status":"Normal"}))
+        .unwrap();
+    assert!(sync.db.task(1).unwrap().unwrap().due_date.is_some());
+    sync.task(1).unwrap();
+    let task = sync.db.task(1).unwrap().unwrap();
+    assert!(task.due_date.is_none());
+    assert!(task.extra["priority"].is_null());
+    assert!(task.extra["createdBy"].is_null());
+
+    let mut list = f["list"].clone();
+    list["tasks"][0].as_object_mut().unwrap().remove("dueDate");
+    list["tasks"][0].as_object_mut().unwrap().remove("priority");
+    let mut sync = Sync::new(Db::memory().unwrap(), Script::new(vec![list]));
+    sync.db.apply_response(&f["detail"]).unwrap();
+    sync.delta(15).unwrap();
+    let task = sync.db.task(1).unwrap().unwrap();
+    assert!(task.due_date.is_none());
+    assert!(task.extra["priority"].is_null());
+    assert_eq!(task.extra["createdBy"]["displayName"], "Example Creator");
+}
+
+#[test]
+fn draft_flags_are_server_owned_and_empty_snapshots_remove_markers() {
+    let f = fidelity();
+    let mut sync = Sync::new(
+        Db::memory().unwrap(),
+        Script::new(vec![f["drafts"].clone(), f["emptyDrafts"].clone()]),
+    );
+    sync.db.apply_response(&f["detail"]).unwrap();
+    sync.db
+        .enqueue(
+            ht_core::Write::TaskTitle {
+                task_id: 1,
+                title: "Local title".into(),
+            },
+            1,
+        )
+        .unwrap();
+    sync.drafts(1).unwrap();
+    let task = sync.db.task(1).unwrap().unwrap();
+    assert_eq!(task.extra["hasDescriptionDraft"], true);
+    assert_eq!(task.extra["hasCommentDraft"], true);
+    assert_eq!(task.description, "Published description");
+    assert_eq!(task.title, "Local title");
+    sync.drafts(1).unwrap();
+    let task = sync.db.task(1).unwrap().unwrap();
+    assert_eq!(task.extra["hasDescriptionDraft"], false);
+    assert_eq!(task.extra["hasCommentDraft"], false);
+    assert_eq!(
+        sync.transport.paths,
+        ["/drafts?task_id=1", "/drafts?task_id=1"]
+    );
+}
+
+#[test]
+fn draft_emptiness_matches_use_has_drafts_and_wrong_task_is_rejected() {
+    let f = fidelity();
+    for (kind, text, expected) in [
+        ("description", "", false),
+        ("description", " <p></p> ", false),
+        (
+            "description",
+            "<html><head></head><body><p></p></body></html>",
+            false,
+        ),
+        (
+            "description",
+            "<html><head></head><body></body></html>",
+            false,
+        ),
+        ("description", "<p>Example</p>", true),
+        ("comment", " \n", false),
+        ("comment", "<p></p>", false),
+        ("comment", "<html><head></head><body></body></html>", true),
+        ("comment", "Example", true),
+    ] {
+        let mut sync = Sync::new(
+            Db::memory().unwrap(),
+            Script::new(vec![json!({
+                "success":true,"drafts":[{"taskId":1,"draftType":kind,"text":text}]
+            })]),
+        );
+        sync.db.apply_response(&f["detail"]).unwrap();
+        sync.drafts(1).unwrap();
+        let task = sync.db.task(1).unwrap().unwrap();
+        let key = if kind == "description" {
+            "hasDescriptionDraft"
+        } else {
+            "hasCommentDraft"
+        };
+        assert_eq!(task.extra[key], expected, "{kind}: {text}");
+    }
+    let mut bad = f["drafts"].clone();
+    bad["drafts"][0]["taskId"] = json!(2);
+    let mut sync = Sync::new(Db::memory().unwrap(), Script::new(vec![bad]));
+    sync.db.apply_response(&f["detail"]).unwrap();
+    assert!(sync.drafts(1).is_err());
+    assert!(
+        !sync
+            .db
+            .task(1)
+            .unwrap()
+            .unwrap()
+            .extra
+            .contains_key("hasDescriptionDraft")
+    );
+}
+
+#[test]
+fn detail_mismatches_do_not_pollute_cache() {
+    let f = fidelity();
+    for response in [
+        page(vec![], 0),
+        page(vec![task(2, "Normal", "2026-01-01T00:00:00Z")], 1),
+    ] {
+        let mut sync = Sync::new(Db::memory().unwrap(), Script::new(vec![response]));
+        sync.db.apply_response(&f["detail"]).unwrap();
+        assert!(sync.task(1).is_err());
+        assert_eq!(
+            sync.db.task(1).unwrap().unwrap().extra["createdBy"]["displayName"],
+            "Example Creator"
+        );
+        assert!(sync.db.task(2).unwrap().is_none());
+    }
+}
+
+#[test]
+fn inbox_refresh_updates_cached_titles_but_reapplies_local_edits() {
+    let f = fidelity();
+    let mut sync = Sync::new(
+        Db::memory().unwrap(),
+        Script::new(vec![f["inbox"].clone(), f["inbox"].clone()]),
+    );
+    sync.db.apply_response(&f["detail"]).unwrap();
+    sync.inbox().unwrap();
+    assert_eq!(sync.db.inbox().unwrap()[0].title, "Server renamed task");
+    assert_eq!(
+        sync.db.task(1).unwrap().unwrap().title,
+        "Server renamed task"
+    );
+    sync.db
+        .enqueue(
+            ht_core::Write::TaskTitle {
+                task_id: 1,
+                title: "Local title".into(),
+            },
+            1,
+        )
+        .unwrap();
+    sync.inbox().unwrap();
+    assert_eq!(sync.db.inbox().unwrap()[0].title, "Local title");
+    assert_eq!(sync.db.task(1).unwrap().unwrap().title, "Local title");
+}
