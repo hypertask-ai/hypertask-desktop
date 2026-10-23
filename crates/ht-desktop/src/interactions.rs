@@ -252,8 +252,14 @@ impl Desktop {
                 let comment = self.editing == Editing::Comment;
                 let saved = self.save_edit(window, cx);
                 if saved && comment && self.previous == Screen::Inbox && (!stay || complete) {
-                    if complete {
-                        self.archive_task(cx);
+                    if complete && let Some(task_id) = self.selected_task() {
+                        self.enqueue(
+                            Write::TaskPatch {
+                                task_id,
+                                patch: TaskPatch::Status(Status::Archive),
+                            },
+                            cx,
+                        );
                     }
                     self.archive_notification(cx);
                     self.playlist_step(1, cx);

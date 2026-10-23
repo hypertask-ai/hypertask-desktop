@@ -13,6 +13,7 @@ public class BehaviorInput {
   [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect rect);
   [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
   public delegate bool EnumProc(IntPtr h, IntPtr p);
+  [DllImport("user32.dll", CharSet=CharSet.Unicode)] static extern int GetWindowText(IntPtr h, System.Text.StringBuilder text, int length);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr p);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
   [DllImport("user32.dll")] public static extern IntPtr GetForegroundWindow();
@@ -26,7 +27,7 @@ public class BehaviorInput {
   [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
   public static IntPtr Find(uint pid) {
     IntPtr found = IntPtr.Zero;
-    EnumWindows((h, p) => { uint id; GetWindowThreadProcessId(h, out id); if (id == pid) { found = h; return false; } return true; }, IntPtr.Zero);
+    EnumWindows((h, p) => { uint id; GetWindowThreadProcessId(h, out id); if (id == pid) { var title = new System.Text.StringBuilder(256); GetWindowText(h, title, 256); if (title.ToString() == "Hypertask") { found = h; return false; } } return true; }, IntPtr.Zero);
     return found;
   }
   static byte[] old; static uint target;

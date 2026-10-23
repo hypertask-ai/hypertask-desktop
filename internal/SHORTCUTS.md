@@ -36,7 +36,7 @@ The web help registry is included even when advertised behavior conflicts with h
 | S006 | / | Search | `src/lib/constants/shortcuts.ts:75` | **partial** — cached tasks only; `crates/ht-desktop/src/interactions.rs:180` |
 | S007 | P | Set priority | `src/lib/constants/shortcuts.ts:76` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S008 | S | Set task size | `src/lib/constants/shortcuts.ts:77` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
-| S009 | T | Add tags | `src/lib/constants/shortcuts.ts:78` | **missing** — no native feature/UI/write path yet; hidden from the command center |
+| S009 | T | Add tags | `src/lib/constants/shortcuts.ts:78` | **partial** — cached tag toggling persists through Write; picker closes after one toggle rather than supporting the web multi-select session; `crates/ht-desktop/src/interactions.rs:930` |
 | S010 | Ctrl+K | Open Hypertask Command | `src/lib/constants/shortcuts.ts:83` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S011 | Ctrl+J | Compose task / New Task (feature-flagged) | `src/lib/constants/shortcuts.ts:84` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S012 | Ctrl+Z | Undo latest action | `src/lib/constants/shortcuts.ts:85` | **missing** — no native feature/UI/write path yet; hidden from the command center |
@@ -153,7 +153,7 @@ The web help registry is included even when advertised behavior conflicts with h
 | S108 | E | Edit focused task, NOT archive | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:433` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S109 | S | Set task size | `src/lib/keyboard/taskShortcuts.ts:86` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S110 | P | Set priority | `src/lib/keyboard/taskShortcuts.ts:94` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
-| S111 | T | Set tags | `src/lib/keyboard/taskShortcuts.ts:122` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
+| S111 | T | Set tags | `src/lib/keyboard/taskShortcuts.ts:122` | **partial** — cached tag toggling persists through Write; picker closes after one toggle rather than supporting the web multi-select session; `crates/ht-desktop/src/interactions.rs:930` |
 | S112 | D | Set due date | `src/lib/keyboard/taskShortcuts.ts:113` | **partial** — date presets, not a full date grid; `crates/ht-desktop/src/interactions.rs:180` |
 | S113 | M | Open move-to-column picker | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:586` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S114 | Shift+M | Move to another board | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:609` | **missing** — no native feature/UI/write path yet; hidden from the command center |
@@ -222,7 +222,7 @@ The web help registry is included even when advertised behavior conflicts with h
 | S172 | J | Next task in playlist/inbox, NOT comment scroll | `src/app/detail/[...slug]/taskDetailNavigationKeymap.ts:125` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S173 | K | Previous task in playlist/inbox | `src/app/detail/[...slug]/taskDetailNavigationKeymap.ts:228` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S174 | S | Task size | `src/app/detail/[...slug]/taskDetailNavigationKeymap.ts:13` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
-| S175 | T | Tags | `src/app/detail/[...slug]/taskDetailNavigationKeymap.ts:50` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
+| S175 | T | Tags | `src/app/detail/[...slug]/taskDetailNavigationKeymap.ts:50` | **partial** — cached tag toggling persists through Write; picker closes after one toggle rather than supporting the web multi-select session; `crates/ht-desktop/src/interactions.rs:930` |
 | S176 | P | Priority | `src/app/detail/[...slug]/taskDetailEditingKeymap.ts:281` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S177 | Shift+M | Move to board | `src/app/detail/[...slug]/taskDetailEditingKeymap.ts:40` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S178 | D | Due date | `src/app/detail/[...slug]/taskDetailEditingKeymap.ts:221` | **partial** — date presets, not a full date grid; `crates/ht-desktop/src/interactions.rs:180` |
@@ -711,7 +711,7 @@ Composition/order and availability: `src/components/Modals/commands/HTC/AllComma
 
 ## Measured counts (native implementation, runtime pending)
 
-- 249 direct-shortcut context/action rows: 69 done in source, 23 partial, 157 missing.
+- 249 direct-shortcut context/action rows: 67 done in source, 26 partial, 156 missing.
 - 295 palette definitions: 22 supported entries, 273 definitions hidden. Cached-board navigation entries and persisted usage/frecency scoring are implemented; runtime receipt pending.
 - Behavior suite: 97 isolated laptop cases; the original baseline produced 5 PASS / 4 FAIL at `d63d692` (`/tmp/htbehavior-baseline-complete/results.txt`). Its offscreen mouse injection was subsequently tightened; do not treat the baseline mouse PASS as proof of a visible target.
 - Current acceptance evidence remains pending until the final SHA's CI and laptop round finish. No build, test suite, or app copy runs on the VPS.

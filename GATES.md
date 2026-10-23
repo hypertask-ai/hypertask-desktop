@@ -11,7 +11,7 @@ Scope: isolated Windows behavior harness first, then comments, inbox/board/task/
   EVIDENCE: pending
 
 - [ ] G3: Every requested in-scope shortcut is reconciled against SHORTCUTS.md and actually implemented, with no silently reduced scope.
-  EVIDENCE: UNMET. Source inventory currently records 69 done, 23 partial, 157 missing out of 249 direct context/action rows. Missing capabilities and reasons are explicit in internal/SHORTCUTS.md; hiding an unsupported command is not implementation of its shortcut. This gate must not be marked successful just because the 101 implemented-action cases pass.
+  EVIDENCE: UNMET. Source inventory currently records 67 done, 26 partial, 156 missing out of 249 direct context/action rows. Missing capabilities and reasons are explicit in internal/SHORTCUTS.md; hiding an unsupported command is not implementation of its shortcut. This gate must not be marked successful just because the 101 implemented-action cases pass.
 
 - [ ] G4: Command center uses the web's supported command declaration order/grouping and token/typo filter, keyboard/mouse execution and dismissal; unsupported commands are hidden and explicitly listed, not inert entries.
   EVIDENCE: Source reviewed against AllCommands.ts, taskCommands.ts, navigationCommands.ts, useHTC.tsx, CommandList.tsx and CommandGroup.tsx. 22 supported definitions; 273 hidden definitions listed in internal/SHORTCUTS.md. Native frecency/frequently-used scoring and dynamic cached-board entries are now implemented, with source-derived keycaps and no desktop row icons; runtime/visual proof remains pending. Runtime command cases pending.
