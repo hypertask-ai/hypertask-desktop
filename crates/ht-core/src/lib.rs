@@ -1,4 +1,5 @@
 pub mod auth;
+mod catalog;
 pub mod db;
 pub mod generated;
 pub mod http;

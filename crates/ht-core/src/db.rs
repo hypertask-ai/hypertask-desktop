@@ -422,7 +422,7 @@ pub(crate) fn integer(value: &Value, key: &str) -> Result<i64> {
         .with_context(|| format!("missing integer {key}"))
 }
 
-fn task_view(mut value: Value) -> Result<TaskView> {
+pub(crate) fn task_view(mut value: Value) -> Result<TaskView> {
     if value.get("commentCount").is_none() {
         value["commentCount"] = value.get("totalComments").cloned().unwrap_or(json!(0));
     }

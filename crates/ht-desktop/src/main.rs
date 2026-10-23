@@ -2,6 +2,7 @@
 
 mod behavior;
 mod command_center;
+mod footer;
 mod shortcuts;
 mod input;
 mod layout;

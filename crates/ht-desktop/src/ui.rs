@@ -125,6 +125,7 @@ impl Desktop {
         });
         if options.background {
             cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
+            cx.observe(&title_input, |_, _, cx| cx.notify()).detach();
         }
         let (mut signin, secret) = SignIn::start(options.offline);
         let worker = secret.and_then(|secret| Self::start_worker(&options, &mut signin, secret));
@@ -422,7 +423,7 @@ impl Desktop {
 
     fn open_task(&mut self, id: i64, cx: &mut Context<Self>) {
         self.remember_playlist();
-        self.previous = self.screen;
+        if self.screen != Screen::Task { self.previous = self.screen; }
         if self.options.task != id {
             self.comment_input
                 .update(cx, |input, cx| input.set_content(String::new(), cx));
@@ -577,39 +578,7 @@ impl Desktop {
     }
 
     fn footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let items: &[(&'static str, &'static str)] = match self.screen {
-            Screen::Inbox => &[
-                ("CTRL K", "Command center"),
-                ("J", "Down"),
-                ("K", "Up"),
-                ("Enter", "Open task"),
-                ("TAB", "Cycle inbox splits"),
-                ("E", "Archive"),
-                ("CTRL E", "Mark task as done"),
-            ],
-            Screen::Board => &[
-                ("CTRL K", "Command center"),
-                ("J", "Down"),
-                ("K", "Up"),
-                ("TAB", "Next column"),
-                ("C", "Add task"),
-                ("N / Shift+C", "Quick add"),
-                ("CTRL E", "Archive"),
-                ("CTRL B", "Change Board"),
-                ("/", "Search"),
-            ],
-            Screen::Task => &[
-                ("CTRL K", "Command center"),
-                ("A", "Assign"),
-                ("M", "Change status(move)"),
-                ("P", "Priority"),
-                ("S", "Task size"),
-                ("T", "Tags"),
-                ("CTRL E", "Archive"),
-                ("ESC", "Back"),
-                ("TAB", "Cycle"),
-            ],
-        };
+        let items = crate::footer::hints(self.screen);
         div()
             .text_size(px(14.))
             .line_height(px(21.))
@@ -1952,6 +1921,10 @@ impl Render for Desktop {
                 "composer_focused": self.comment_input.focus_handle(cx).is_focused(window),
                 "root_focused": self.focus.is_focused(window),
                 "comment_text": self.comment_input.read(cx).content.as_ref(),
+                "title_text": self.title_input.read(cx).content.as_ref(),
+                "description_text": self.interaction.description.read(cx).content.as_ref(),
+                "editing": match self.editing { Editing::None => "none", Editing::Title => "title", Editing::Comment => "comment", Editing::Description => "description" },
+                "footer": crate::footer::hints(self.screen).iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>(),
                 "command_open": self.interaction.modal == Some(interactions::Modal::Commands),
                 "modal": self.interaction.modal.map(|m| format!("{m:?}").to_lowercase()),
                 "command_selected": self.interaction.choice,
