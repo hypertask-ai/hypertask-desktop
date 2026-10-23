@@ -205,8 +205,15 @@ impl AiSidebar {
 
     pub fn set_scope(&mut self, scope: Scope, cx: &mut Context<Self>) {
         if self.scope.as_ref() != Some(&scope) {
+            let changed_context = self.scope.as_ref().is_none_or(|old| {
+                old.context.project_id != scope.context.project_id
+                    || old.context.task_id != scope.context.task_id
+                    || old.context.surface != scope.context.surface
+            });
             self.scope = Some(scope);
-            self.include_context = true;
+            if changed_context {
+                self.include_context = true;
+            }
             cx.notify();
         }
     }
@@ -218,7 +225,11 @@ impl AiSidebar {
                 window.focus(previous, cx);
             }
         } else {
-            self.previous_focus = window.focused(cx);
+            if !self.focus.contains_focused(window, cx) {
+                if let Some(previous) = window.focused(cx) {
+                    self.previous_focus = Some(previous);
+                }
+            }
             self.collapsed = false;
             window.focus(&focus, cx);
         }
@@ -887,5 +898,126 @@ mod tests {
         assert!(rendered.text.contains("• first"));
         assert!(rendered.text.contains("link"));
         assert!(!rendered.text.contains("**"));
+    }
+
+    #[test]
+    fn scope_matches_web_board_task_and_inbox_rules() {
+        let mut db = Db::memory().unwrap();
+        db.apply_response(&serde_json::json!({"success":true,
+            "projects":[{"id":123,"title":"Board","teamId":42}],
+            "tasks":[{"id":456,"projectId":123,"title":"Investigate","ticketNumber":"HTPR-123","uniqueIndex":7,"status":"Normal"}]
+        })).unwrap();
+        let board = Scope::load(&db, Screen::Board, 123, None);
+        assert_eq!(board.context.project_id, Some(123));
+        assert_eq!(board.context.task_id, None);
+        assert_eq!(board.team_id.as_deref(), Some("42"));
+        let task = Scope::load(&db, Screen::Task, 999, Some(456));
+        assert_eq!(task.context.project_id, Some(123));
+        assert_eq!(task.context.task_id, Some(456));
+        assert_eq!(task.context.surface_path, "/detail/project-123/7");
+        assert_eq!(task.label, "HTPR-123 Investigate");
+        let inbox = Scope::load(&db, Screen::Inbox, 999, Some(456));
+        assert_eq!(inbox.context.project_id, None);
+        assert_eq!(inbox.context.task_id, Some(456));
+        assert_eq!(inbox.context.surface, "inbox");
+        assert_ne!(inbox.suggestions, task.suggestions);
+    }
+
+    #[gpui::test]
+    fn offline_composer_focus_multiline_and_new_session(cx: &mut gpui::TestAppContext) {
+        let view = cx.add_window(|window, cx| {
+            let workspace = cx.focus_handle();
+            window.focus(&workspace, cx);
+            AiSidebar::new(crate::theme::THEMES[1], None, workspace, window, cx)
+        });
+        view.update(cx, |sidebar, window, cx| {
+            let workspace = sidebar.previous_focus.clone().unwrap();
+            sidebar.focus_composer(window, cx);
+            assert!(sidebar.input.focus_handle(cx).is_focused(window));
+            sidebar
+                .input
+                .update(cx, |input, cx| input.set_content("First".into(), cx));
+            // set_content selects the string, so collapse the selection before inserting.
+            sidebar.input.update(cx, |input, cx| {
+                use gpui::EntityInputHandler;
+                input.set_selected_text_range(5..5, window, cx);
+                input.insert_newline(window, cx);
+                input.replace_text_in_range(None, "Second é🙂", window, cx);
+            });
+            let draft = sidebar.input.read(cx).content.to_string();
+            assert_eq!(draft, "First\nSecond é🙂");
+            sidebar.send(draft.clone(), window, cx);
+            assert!(sidebar.active.is_none());
+            assert!(
+                sidebar.chats[0]
+                    .error
+                    .as_deref()
+                    .unwrap()
+                    .contains("offline")
+            );
+            assert_eq!(sidebar.input.read(cx).content.as_ref(), draft);
+            sidebar.focus_composer(window, cx);
+            assert!(workspace.is_focused(window));
+            let old_id = sidebar.chats[0].id.clone();
+            sidebar.new_chat(window, cx);
+            assert_ne!(old_id, sidebar.chats[sidebar.selected].id);
+            assert!(sidebar.input.read(cx).content.is_empty());
+            assert!(sidebar.chats[sidebar.selected].error.is_none());
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn late_stream_updates_stay_with_the_original_chat_and_preserve_errors(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let view = cx.add_window(|window, cx| {
+            let workspace = cx.focus_handle();
+            AiSidebar::new(crate::theme::THEMES[1], None, workspace, window, cx)
+        });
+        view.update(cx, |sidebar, window, cx| {
+            let (send, updates) = mpsc::sync_channel(64);
+            sidebar.chats[0].messages.push(ChatMessage {
+                message: Message {
+                    role: "assistant".into(),
+                    content: String::new(),
+                },
+                rich: RichText::default(),
+            });
+            sidebar.active = Some(ActiveTurn {
+                ids: TurnIds::new(sidebar.chats[0].id.clone()),
+                chat: 0,
+                assistant: 0,
+                updates,
+                cancel_reply: None,
+                stopping: false,
+                client: Client::new("test-token".into()).unwrap(),
+            });
+            sidebar.new_chat(window, cx);
+            send.send(Update::Event(Event::Content("**Partial** é🙂".into())))
+                .unwrap();
+            send.send(Update::Event(Event::Title("Original reply".into())))
+                .unwrap();
+            send.send(Update::Event(Event::Error("Server refused model".into())))
+                .unwrap();
+            send.send(Update::Event(Event::Done(ai_chat::Done {
+                status: "error".into(),
+                cancelled: false,
+                user_message_persisted: false,
+                assistant_persisted: false,
+            })))
+            .unwrap();
+            sidebar.poll(cx);
+            assert!(sidebar.active.is_none());
+            assert_eq!(sidebar.chats[0].title, "Original reply");
+            assert_eq!(sidebar.chats[0].messages[0].rich.text.trim(), "Partial é🙂");
+            assert_eq!(
+                sidebar.chats[0].error.as_deref(),
+                Some("Server refused model")
+            );
+            assert!(sidebar.chats[sidebar.selected].messages.is_empty());
+            assert!(sidebar.chats[sidebar.selected].error.is_none());
+        })
+        .unwrap();
     }
 }
