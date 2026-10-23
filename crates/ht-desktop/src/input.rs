@@ -29,8 +29,18 @@ actions!(
         Paste,
         Cut,
         Copy,
+        Newline,
+        Undo,
+        Redo,
     ]
 );
+
+#[derive(Clone)]
+struct EditSnapshot {
+    content: SharedString,
+    selection: Range<usize>,
+    reversed: bool,
+}
 
 pub struct TextInput {
     focus_handle: FocusHandle,
@@ -44,9 +54,57 @@ pub struct TextInput {
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
     muted: gpui::Hsla,
+    undo: Vec<EditSnapshot>,
+    redo: Vec<EditSnapshot>,
 }
 
 impl TextInput {
+    fn snapshot(&self) -> EditSnapshot {
+        EditSnapshot {
+            content: self.content.clone(),
+            selection: self.selected_range.clone(),
+            reversed: self.selection_reversed,
+        }
+    }
+
+    fn remember_edit(&mut self) {
+        if self.marked_range.is_none() {
+            self.undo.push(self.snapshot());
+            self.redo.clear();
+        }
+    }
+
+    fn restore_edit(&mut self, redo: bool, window: &mut Window, cx: &mut Context<Self>) {
+        let snapshot = if redo {
+            self.redo.pop()
+        } else {
+            self.undo.pop()
+        };
+        if let Some(snapshot) = snapshot {
+            let current = self.snapshot();
+            if redo {
+                self.undo.push(current);
+            } else {
+                self.redo.push(current);
+            }
+            self.content = snapshot.content;
+            self.selected_range = snapshot.selection;
+            self.selection_reversed = snapshot.reversed;
+            self.marked_range = None;
+            self.last_layout = None;
+            window.notify_text_input_changed(&self.focus_handle);
+            cx.notify();
+        }
+    }
+
+    fn newline(&mut self, _: &Newline, window: &mut Window, cx: &mut Context<Self>) {
+        if self.multiline {
+            self.insert_newline(window, cx);
+        } else {
+            cx.propagate();
+        }
+    }
+
     fn left(&mut self, _: &Left, window: &mut Window, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {
             self.move_to(self.previous_boundary(self.cursor_offset()), window, cx);
@@ -300,6 +358,8 @@ impl TextInput {
     }
 
     pub fn reset(&mut self, window: &Window, cx: &mut Context<Self>) {
+        self.undo.clear();
+        self.redo.clear();
         self.content = "".into();
         self.selected_range = 0..0;
         self.selection_reversed = false;
@@ -386,6 +446,7 @@ impl EntityInputHandler for TextInput {
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
 
+        self.remember_edit();
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
@@ -410,6 +471,7 @@ impl EntityInputHandler for TextInput {
             .or(self.marked_range.clone())
             .unwrap_or(self.selected_range.clone());
 
+        self.remember_edit();
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
@@ -791,6 +853,13 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::paste))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
+            .on_action(cx.listener(Self::newline))
+            .on_action(
+                cx.listener(|this, _: &Undo, window, cx| this.restore_edit(false, window, cx)),
+            )
+            .on_action(
+                cx.listener(|this, _: &Redo, window, cx| this.restore_edit(true, window, cx)),
+            )
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event, window, cx| {
@@ -816,6 +885,12 @@ impl Focusable for TextInput {
 
 pub fn init(cx: &mut App) {
     cx.bind_keys([
+        KeyBinding::new("enter", Newline, Some("TextInput")),
+        KeyBinding::new("shift-enter", Newline, Some("TextInput")),
+        KeyBinding::new("ctrl-z", Undo, Some("TextInput")),
+        KeyBinding::new("ctrl-shift-z", Redo, Some("TextInput")),
+        KeyBinding::new("cmd-z", Undo, Some("TextInput")),
+        KeyBinding::new("cmd-shift-z", Redo, Some("TextInput")),
         KeyBinding::new("backspace", Backspace, Some("TextInput")),
         KeyBinding::new("delete", Delete, Some("TextInput")),
         KeyBinding::new("left", Left, Some("TextInput")),
@@ -852,6 +927,8 @@ impl TextInput {
             last_bounds: None,
             is_selecting: false,
             muted,
+            undo: vec![],
+            redo: vec![],
         }
     }
 
@@ -864,7 +941,15 @@ impl TextInput {
         self.replace_text_in_range(None, "\n", window, cx);
     }
 
+    pub fn append(&mut self, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let end = self.content.len();
+        self.move_to(end, window, cx);
+        self.replace_text_in_range(None, text, window, cx);
+    }
+
     pub fn set_content(&mut self, text: String, cx: &mut Context<Self>) {
+        self.undo.clear();
+        self.redo.clear();
         self.selected_range = 0..text.len();
         self.content = text.into();
         self.marked_range = None;
@@ -875,6 +960,69 @@ impl TextInput {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[gpui::test]
+    fn editor_line_break_undo_redo_keys_preserve_unicode_and_selection(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(init);
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).multiline()
+        });
+        view.update_in(cx, |input, window, cx| {
+            window.focus(&input.focus_handle, cx)
+        });
+        cx.simulate_input("First é🙂");
+        cx.simulate_keystrokes("shift-enter");
+        cx.simulate_input("Second");
+        view.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "First é🙂\nSecond")
+        });
+        cx.simulate_keystrokes("ctrl-z");
+        view.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "First é🙂\n")
+        });
+        cx.simulate_keystrokes("ctrl-shift-z");
+        view.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "First é🙂\nSecond")
+        });
+        cx.simulate_keystrokes("ctrl-a");
+        cx.simulate_input("Replacement");
+        cx.simulate_keystrokes("ctrl-z");
+        view.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "First é🙂\nSecond");
+            assert_eq!(input.selected_range, 0..input.content.len());
+        });
+        cx.simulate_input("New branch");
+        cx.simulate_keystrokes("ctrl-shift-z");
+        view.read_with(cx, |input, _| {
+            assert_eq!(input.content.as_ref(), "New branch")
+        });
+    }
+
+    #[gpui::test]
+    fn editor_ime_composition_is_one_undo_and_loaded_drafts_reset_history(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).multiline()
+        });
+        view.update_in(cx, |input, window, cx| {
+            input.replace_and_mark_text_in_range(None, "h", None, window, cx);
+            input.replace_and_mark_text_in_range(None, "漢", None, window, cx);
+            input.replace_text_in_range(None, "漢字", window, cx);
+            input.restore_edit(false, window, cx);
+            assert!(input.content.is_empty());
+            input.restore_edit(true, window, cx);
+            assert_eq!(input.content.as_ref(), "漢字");
+            input.set_content("Other task".into(), cx);
+            input.restore_edit(false, window, cx);
+            assert_eq!(input.content.as_ref(), "Other task");
+            input.reset(window, cx);
+            input.restore_edit(false, window, cx);
+            assert!(input.content.is_empty());
+        });
+    }
 
     #[gpui::test]
     fn multiline_composer_wraps_and_preserves_utf8_geometry(cx: &mut gpui::TestAppContext) {
@@ -908,7 +1056,11 @@ mod tests {
             assert!(input.content.ends_with("\n\nReplacement 漢"));
             input.move_to(0, window, cx);
             input.vertical(1, window, cx);
-            assert_eq!(input.cursor_offset(), 0, "ignore stale layout after editing");
+            assert_eq!(
+                input.cursor_offset(),
+                0,
+                "ignore stale layout after editing"
+            );
             input.set_content(String::new(), cx);
             input.vertical(1, window, cx);
             assert_eq!(input.cursor_offset(), 0, "an empty draft has no next row");

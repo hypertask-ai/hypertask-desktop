@@ -19,6 +19,11 @@ pub enum Write {
         task_id: i64,
         text: String,
     },
+    CommentAction {
+        task_id: i64,
+        comment_id: i64,
+        change: crate::CommentWrite,
+    },
     TaskPatch {
         task_id: i64,
         patch: crate::TaskPatch,
@@ -78,6 +83,17 @@ impl Db {
                     ensure!(!text.trim().is_empty(), "comment must not be empty");
                     ensure!(db.task(*task_id)?.is_some(), "task is not cached");
                     (format!("task:{task_id}"), "task_comment", json!({"task_id":task_id,"text":text}))
+                }
+                Write::CommentAction { task_id, comment_id, change } => {
+                    change.validate()?;
+                    ensure!(*comment_id > 0, "pending comments cannot be changed");
+                    let before = db.raw("Comment", &json!(comment_id))?.context("comment is not cached")?;
+                    ensure!(before["taskId"] == *task_id && before["activity"].is_null(), "not a comment in this task");
+                    let user_id = db.current_user_id().context("sync your account before changing comments")?;
+                    if matches!(change, crate::CommentWrite::Edit { .. } | crate::CommentWrite::Delete) {
+                        ensure!(before["creatorId"] == user_id, "you can only change your own comments");
+                    }
+                    (format!("comment:{comment_id}"), "comment_action", json!({"task_id":task_id,"comment_id":comment_id,"change":change,"before":before,"user_id":user_id}))
                 }
                 Write::TaskPatch { task_id, patch } => {
                     ensure!(db.task(*task_id)?.is_some(), "task is not cached");
@@ -151,6 +167,7 @@ impl Db {
                 }
                 self.upsert_task(&task)?;
             }
+            "comment_action" => self.optimistic_comment_action(payload)?,
             "task_comment" => {
                 let timestamp = chrono::DateTime::from_timestamp(now, 0)
                     .context("invalid timestamp")?
@@ -281,9 +298,21 @@ impl Db {
                 json!({"task_id":row.payload_json["task_id"],"text":row.payload_json["text"],"kind":"qa"}),
             ),
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
+            "comment_action" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
-        let response = transport.post(path, &body, &row.client_id);
+        let response = if row.kind == "comment_action" {
+            let change: crate::CommentWrite =
+                serde_json::from_value(row.payload_json["change"].clone())?;
+            let (method, path, body) = change.request(
+                row.payload_json["comment_id"]
+                    .as_i64()
+                    .context("missing comment id")?,
+            );
+            transport.mutate(method, &path, &body, &row.client_id)
+        } else {
+            transport.post(path, &body, &row.client_id)
+        };
         let result = match response {
             Ok(Response { status, body }) if (200..300).contains(&status) => {
                 match ensure_success(&body)
@@ -302,6 +331,11 @@ impl Db {
             db.conn.execute("UPDATE mutation_queue SET status=?,last_error=?,next_attempt_at=?,lease_until=NULL WHERE id=? AND attempts=?",
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
+                if row.kind == "comment_action" {
+                    db.upsert_comment(row.payload_json["task_id"].as_i64().context("missing task id")?, &row.payload_json["before"])?;
+                    db.request_refetch("comments", row.payload_json["task_id"].as_i64().unwrap())?;
+                    db.reapply_pending()?;
+                }
                 if row.kind == "task_comment" {
                     db.conn.execute("DELETE FROM Comment WHERE id=?", [-row.id])?;
                     db.request_refetch("comments", row.payload_json["task_id"].as_i64().context("missing task id")?)?;
@@ -323,6 +357,7 @@ impl Db {
             let active: bool = db.conn.query_row("SELECT EXISTS(SELECT 1 FROM mutation_queue WHERE id=? AND attempts=? AND status='inflight')", params![row.id,row.attempts], |r| r.get(0))?;
             if !active { return Ok(()); }
             match row.kind.as_str() {
+                "comment_action" => db.resolve_comment_action(&row.payload_json, body)?,
                 "task_title" | "task_section" | "task_patch" => {
                     let task = body.get("task").or_else(|| body["tasks"].as_array().and_then(|v| v.iter().find(|t| t["id"] == row.payload_json["task_id"]))).context("mutation response missing task")?;
                     ensure!(task["id"] == row.payload_json["task_id"], "mutation returned another task");

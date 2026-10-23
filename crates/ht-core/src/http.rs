@@ -32,6 +32,19 @@ impl std::fmt::Display for TransportError {
 impl std::error::Error for TransportError {}
 
 pub trait Transport: Send + 'static {
+    fn mutate(
+        &mut self,
+        method: &str,
+        path: &str,
+        body: &Value,
+        client_id: &str,
+    ) -> std::result::Result<Response, TransportError> {
+        if method == "POST" {
+            self.post(path, body, client_id)
+        } else {
+            Err(TransportError::InvalidResponse)
+        }
+    }
     fn get(&mut self, path: &str) -> std::result::Result<Response, TransportError>;
     fn post(
         &mut self,
@@ -145,6 +158,15 @@ impl Http {
 }
 
 impl Transport for Http {
+    fn mutate(
+        &mut self,
+        method: &str,
+        path: &str,
+        body: &Value,
+        client_id: &str,
+    ) -> std::result::Result<Response, TransportError> {
+        self.request(method, path, Some(body), Some(client_id))
+    }
     fn get(&mut self, path: &str) -> std::result::Result<Response, TransportError> {
         self.request("GET", path, None, None)
     }

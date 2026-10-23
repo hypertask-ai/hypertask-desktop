@@ -1,6 +1,7 @@
 pub mod ai_chat;
 pub mod auth;
 mod catalog;
+mod comment_write;
 pub mod db;
 pub mod generated;
 pub mod http;
@@ -10,6 +11,7 @@ pub mod sync;
 mod task_patch;
 pub mod worker;
 
+pub use comment_write::CommentWrite;
 pub use db::{BoardColumn, CommentView, Db, InboxItem, TaskDetail, TaskView};
 pub use http::{Http, Transport};
 pub use queue::{Drain, Write};
