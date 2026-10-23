@@ -58,21 +58,28 @@ def validate(path, screen, theme):
         for field in ["fontSize", "fontWeight", "lineHeight", "radius"]:
             assert element[field] is None or isinstance(element[field], (int, float)), element
         assert element["text"] is None or len(element["text"]) <= 40, element
-    required = COMMON - {"rightpanel"} | KEYS[screen]
+    required = COMMON | KEYS[screen]
     if screen == "inbox":
-        assert missing >= {"rightpanel"}, dump
         assert elements["inbox.tab.active"]["x"] == elements["inbox.tab.0"]["x"]
     if screen == "board":
         assert elements["board.card.0.badge"]["text"] == "In inbox", elements["board.card.0.badge"]
         assert elements["board.card.0.meta"]["text"] == "2", elements["board.card.0.meta"]
     assert required <= elements.keys(), f"unmeasured native elements: {required - elements.keys()}"
     assert elements["rail"]["x"] == 0 and elements["rail"]["w"] == 48, elements["rail"]
-    assert elements["main"]["x"] == 48, elements["main"]
+    assert elements["main"]["x"] == 0 and elements["main"]["w"] == 1020, elements["main"]
+    assert elements["rightpanel"]["x"] == 1020 and elements["rightpanel"]["w"] == 420, elements["rightpanel"]
+    assert elements["rightpanel"]["text"] is None, elements["rightpanel"]
+    if screen == "board":
+        assert elements["board.header"]["h"] == 56, elements["board.header"]
+        assert elements["board.column.0"]["y"] == 72, elements["board.column.0"]
+    if screen == "inbox":
+        assert elements["inbox.tab.0"]["h"] == 32, elements["inbox.tab.0"]
+        assert elements["inbox.tab.0"]["fontWeight"] == 400, elements["inbox.tab.0"]
     if theme == "graphite":
         assert elements["rail"]["bg"] == "#1a1d21", elements["rail"]
         if screen == "board":
             assert elements["board.title"]["fontSize"] == 14, elements["board.title"]
-            assert elements["board.title"]["fontWeight"] == 700, elements["board.title"]
+            assert elements["board.title"]["fontWeight"] == 600, elements["board.title"]
         if screen == "task":
             assert elements["task.title"]["fontSize"] == 24, elements["task.title"]
             assert elements["task.title"]["fontWeight"] == 700, elements["task.title"]
