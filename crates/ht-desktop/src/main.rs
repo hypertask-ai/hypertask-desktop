@@ -1,5 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod behavior;
 mod input;
 mod layout;
 mod memory;
@@ -22,6 +23,7 @@ use ui::{Desktop, Screen};
 pub struct Options {
     pub db: PathBuf,
     pub offline: bool,
+    pub background: bool,
     pub screen: Screen,
     pub board: i64,
     pub board_given: bool,
@@ -40,6 +42,7 @@ impl Options {
                 .context("OS app-data directory is unavailable")?
                 .join("Hypertask/local.db"),
             offline: false,
+            background: false,
             screen: Screen::Inbox,
             board: 15,
             board_given: false,
@@ -54,6 +57,7 @@ impl Options {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--offline" => result.offline = true,
+                "--background" => result.background = true,
                 "--hold-after-ready" => (),
                 "--exit-after-ready" => result.exit_after_ready = true,
                 "--dump-layout" => {
@@ -95,6 +99,7 @@ impl Options {
             !(result.exit_after_ready && result.bench_input > 0),
             "choose --exit-after-ready or --bench-input"
         );
+        anyhow::ensure!(!result.background || (result.offline && result.dump_layout.is_some()), "--background requires --offline and --dump-layout");
         Ok(result)
     }
 }
@@ -192,18 +197,21 @@ fn run() -> Result<()> {
             } else {
                 0.
             };
+            let background = options.background;
             let window = cx
                 .open_window(
                     WindowOptions {
                         window_bounds: Some({
                             let bounds =
                                 Bounds::new(point(px(origin_x), px(0.)), size(px(1440.), px(900.)));
-                            if cfg!(windows) {
+                            if cfg!(windows) && !background {
                                 WindowBounds::Maximized(bounds)
                             } else {
                                 WindowBounds::Windowed(bounds)
                             }
                         }),
+                        focus: !background,
+                        show: !background,
                         titlebar: Some(TitlebarOptions {
                             title: Some("Hypertask".into()),
                             appears_transparent: false,
@@ -226,7 +234,9 @@ fn run() -> Result<()> {
                 }
             })
             .detach();
-            cx.activate(true);
+            if !background {
+                cx.activate(true);
+            }
         });
     Ok(())
 }

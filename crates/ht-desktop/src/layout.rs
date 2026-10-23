@@ -42,6 +42,10 @@ impl LayoutDump {
         })
     }
 
+    pub fn interaction_elements(&self) -> Vec<Value> {
+        self.elements.values().cloned().collect()
+    }
+
     pub fn write(
         &self,
         path: &Path,

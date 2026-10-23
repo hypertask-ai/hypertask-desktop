@@ -1755,11 +1755,11 @@ impl Desktop {
                             .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
                     .child(div().id("comment-composer").anchor_scroll(Some(self.composer_anchor.clone())).h(px(if self.options.theme == ThemeName::Porcelain { 152. } else { 154. })).pt(px(19.)).pb(px(if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled) { 27. } else { 25. })).pl(px(19.)).pr(px(16.)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).bg(color(t.comment)).border_1().border_color(color(t.border)).shadow_md().flex().flex_col()
                         .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
-                        .child(div().text_size(px(14.)).line_height(px(21.)).child(self.comment_input.clone()))
+                        .child(div().text_size(px(14.)).line_height(px(21.)).child(self.comment_input.clone()).layout_key(&self.layout, "task.composer.input", None))
                         .child(div().flex_1())
                         .child(div().flex().items_center().text_size(px(14.)).line_height(px(21.)).text_color(color(0x95999e)).font_weight(FontWeight::SEMIBOLD)
                             .child(div().flex().items_center().child("Send + ").child(icon("send-archive", 0x696b6e, 14.)))
-                            .child(div().id("send-comment").ml(px(24.)).cursor_pointer().on_click(cx.listener(|this, _, window, cx| { cx.stop_propagation(); this.editing = Editing::Comment; this.save_edit(window, cx); })).child("Send"))
+                            .child(div().id("send-comment").ml(px(24.)).cursor_pointer().on_click(cx.listener(|this, _, window, cx| { cx.stop_propagation(); this.editing = Editing::Comment; this.save_edit(window, cx); })).child("Send").layout_key(&self.layout, "task.composer.send", None))
                             .child(div().flex_1()).child(div().text_size(px(16.)).font_weight(FontWeight::NORMAL).text_color(color(0xc668ff)).child("ai"))
                             .child(div().ml(px(8.)).child(icon("paperclip", 0x999a9d, 16.))).child(div().ml(px(10.)).child(icon("mic", 0x999a9d, 18.))).child(div().ml(px(3.)).child(icon("chevron-down", 0x999a9d, 14.)))).layout_key(&self.layout, "task.composer", None))
                     .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| {
@@ -2056,6 +2056,16 @@ impl Render for Desktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         if let Some(layout) = &self.layout {
             layout.borrow_mut().begin(self.split);
+        }
+        if let Some((path, capture)) = self.options.dump_layout.clone().zip(self.layout.clone()) {
+            crate::behavior::snapshot(window, path, capture, self.screen, self.options.theme, serde_json::json!({
+                "screen": format!("{:?}", self.screen).to_lowercase(),
+                "selected": self.selected, "column": self.column, "split": self.split,
+                "task_id": self.selected_task(),
+                "composer_focused": self.comment_input.focus_handle(cx).is_focused(window),
+                "root_focused": self.focus.is_focused(window),
+                "comment_text": self.comment_input.read(cx).content.as_ref(),
+            }));
         }
         if !self.ready_scheduled {
             self.ready_scheduled = true;
