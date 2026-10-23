@@ -28,6 +28,7 @@ pub(super) struct Settings {
     import_url: Entity<TextInput>,
     editing: Option<i64>,
     delete: Option<i64>,
+    lifecycle: Option<&'static str>,
     preview: Vec<Value>,
     selected_slugs: std::collections::BTreeSet<String>,
     #[cfg(test)]
@@ -38,9 +39,7 @@ impl Settings {
         let search =
             cx.new(|cx| TextInput::new(String::new(), "Search settings", color(0x8e9093), cx));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
-        let draft = cx.new(|cx| {
-            TextInput::new(String::new(), "Display name", color(0x8e9093), cx).multiline()
-        });
+        let draft = cx.new(|cx| TextInput::new(String::new(), "Display name", color(0x8e9093), cx));
         let import_url = cx.new(|cx| {
             TextInput::new(
                 String::new(),
@@ -67,6 +66,7 @@ impl Settings {
             import_url,
             editing: None,
             delete: None,
+            lifecycle: None,
             preview: vec![],
             selected_slugs: Default::default(),
             #[cfg(test)]
@@ -79,6 +79,7 @@ const SECTIONS: &[(&str, &str, &str)] = &[
     ("profile", "general", "General"),
     ("profile", "appearance", "Appearance"),
     ("team", "skills", "Skills"),
+    ("board", "board-general", "General"),
     ("board", "board-members", "Members"),
     ("board", "board-ai", "Custom instructions"),
     ("board", "board-skills", "Skills"),
@@ -431,6 +432,7 @@ impl Desktop {
             "learn" => self.learn_settings(cx),
             "mcp" => div().flex().flex_col().gap(px(12.)).child("SERVER").child("Use this URL from any MCP client.").child(self.code_row("mcp-server", "https://mcp.hypertask.ai/mcp", cx)).child(self.settings_link("Read the MCP docs", "https://docs.hypertask.ai/mcp")).into_any_element(),
             "general" => self.profile_settings(cx),
+            "board-general" => self.lifecycle_settings(cx),
             "board-ai" => self.instruction_settings(cx),
             "board-members" => self.member_settings(),
             "board-files" => self.file_settings(),
@@ -501,6 +503,33 @@ impl Desktop {
             .settings_state
             .draft
             .update(cx, |input, cx| input.set_content(String::new(), cx));
+        let (placeholder, multiline) = match section {
+            "board-ai" => ("e.g. Keep the responses concise", true),
+            "skills" | "board-skills" => (
+                "---\nname: minimalist-review\ndescription: Review a decision.\nargument-hint: [describe your decision]\n---\nYour skill prompt...",
+                true,
+            ),
+            _ => ("Display name", false),
+        };
+        self.shell
+            .settings_state
+            .draft
+            .update(cx, |input, cx| input.configure(placeholder, multiline, cx));
+        self.shell
+            .settings_state
+            .import_url
+            .update(cx, |input, cx| {
+                input.set_content(String::new(), cx);
+                input.configure(
+                    if section == "shortcuts" {
+                        "Search shortcuts"
+                    } else {
+                        "https://github.com/owner/repository"
+                    },
+                    false,
+                    cx,
+                );
+            });
         self.load_settings(window, cx);
         cx.notify();
     }
@@ -508,7 +537,7 @@ impl Desktop {
     fn settings_path(&self) -> Option<String> {
         let s = &self.shell.settings_state;
         match s.section {
-            "general" => Some("/user/context".into()),
+            "general" | "board-general" => Some("/user/context".into()),
             "board-ai" | "board-files" => Some(format!("/projects/{}/instructions", s.board)),
             "board-members" => Some(format!("/projects/{}/members", s.board)),
             "webhooks" => Some(format!("/webhooks?project_id={}", s.board)),
@@ -655,6 +684,25 @@ impl Desktop {
                     .collect();
             }
             Ok(value) => {
+                if request.path == "/projects/archive" {
+                    if let Some(project) = self
+                        .db
+                        .projects()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|p| p["id"] == request.board)
+                    {
+                        let mut project = project;
+                        project["status"] = request.body.as_ref().unwrap()["status"].clone();
+                        let _ = self.db.apply_response(
+                            &serde_json::json!({"success": true, "projects": [project]}),
+                        );
+                    }
+                    self.shell.settings_state.lifecycle = None;
+                    self.close_settings(window, cx);
+                    self.switch(Screen::Inbox, cx);
+                    return;
+                }
                 if request.section == "webhooks" {
                     if let Some(secret) = value["secret"].as_str() {
                         s.webhooks.secret = Some(secret.to_owned());
@@ -698,6 +746,18 @@ impl Desktop {
             .child("PROFILE")
             .child(
                 div()
+                    .id("profile-name-row")
+                    .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                        if this
+                            .shell
+                            .settings_state
+                            .draft
+                            .focus_handle(cx)
+                            .is_focused(window)
+                        {
+                            this.save_profile(window, cx);
+                        }
+                    }))
                     .flex()
                     .items_center()
                     .gap(px(16.))
@@ -1275,7 +1335,7 @@ mod tests {
     use crate::ui::shell::tests::{click, draw, measured, setup};
     use gpui::TestAppContext;
 
-    fn reply(
+    pub(super) fn reply(
         view: gpui::WindowHandle<Desktop>,
         cx: &mut gpui::VisualTestContext,
         result: Value,
@@ -1692,6 +1752,213 @@ mod more_tests {
                     .iter()
                     .any(|e| e["key"] == "footer")
             );
+        })
+        .unwrap();
+    }
+}
+
+impl Desktop {
+    fn lifecycle_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+        let board = self
+            .db
+            .projects()
+            .unwrap_or_default()
+            .into_iter()
+            .find(|p| p["id"] == self.shell.settings_state.board);
+        let Some(board) = board else {
+            return div().into_any_element();
+        };
+        let title = board["title"].as_str().unwrap_or("");
+        let owner = self.settings_value()["user"]["id"]
+            .as_i64()
+            .is_some_and(|id| board["ownerId"] == id);
+        div().flex().flex_col().gap(px(12.)).child("BOARD MANAGEMENT")
+            .when(owner, |d| d.child(self.settings_action("archive-board", "Archive board")
+                .on_click(cx.listener(|this, _, _, cx| { this.shell.settings_state.lifecycle = Some("Archive"); cx.notify(); }))
+                .layout_key(&self.layout, "settings.board.archive", Some("Archive board".into())))
+                .child("Hide this board and its tasks until you restore it."))
+            .when(self.shell.settings_state.lifecycle == Some("Archive"), |d| d.child(div().flex().flex_col().gap(px(8.))
+                .child(format!("Archive \"{title}\"? It moves to Archived and its favorite slot is cleared."))
+                .child(self.settings_action("confirm-archive-board", "Archive board").on_click(cx.listener(|this, _, window, cx| {
+                    this.settings_request("POST", "/projects/archive".into(), Some(serde_json::json!({"project_id": this.shell.settings_state.board, "status": "Archive"})), window, cx);
+                })).layout_key(&self.layout, "settings.board.confirm-archive", None))
+                .child(self.settings_action("cancel-archive-board", "Cancel").on_click(cx.listener(|this, _, _, cx| { this.shell.settings_state.lifecycle = None; cx.notify(); }))
+                    .layout_key(&self.layout, "settings.board.cancel-archive", None))))
+            .into_any_element()
+    }
+}
+
+impl Desktop {
+    pub(in super::super) fn clear_settings_identity(&mut self, cx: &mut Context<Self>) {
+        let s = &mut self.shell.settings_state;
+        s.data.clear();
+        s.pending = None;
+        s.error = None;
+        s.message = None;
+        s.preview.clear();
+        s.webhooks.secret = None;
+        s.draft
+            .update(cx, |input, cx| input.set_content(String::new(), cx));
+        s.import_url
+            .update(cx, |input, cx| input.set_content(String::new(), cx));
+    }
+}
+
+#[cfg(test)]
+mod mutation_tests {
+    use super::tests::reply;
+    use super::*;
+    use crate::ui::shell::tests::{click, measured, setup};
+    use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn settings_create_skill_and_import_only_selected_preview(cx: &mut TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.tab.team");
+        reply(view, &mut cx, serde_json::json!({"skills": []}));
+        click(view, &mut cx, "settings.skill.markdown");
+        cx.simulate_input("---\nname: New skill\n---\nReview carefully");
+        view.update(&mut cx, |this, _, _| {
+            this.shell.settings_state.scroll.scroll_to_bottom()
+        })
+        .unwrap();
+        click(view, &mut cx, "settings.skill.save");
+        let request = reply(view, &mut cx, serde_json::json!({"success": true}));
+        assert_eq!(request.method, "POST");
+        assert_eq!(request.body.as_ref().unwrap()["scope"], "user");
+        assert!(
+            request.body.unwrap()["markdown"]
+                .as_str()
+                .unwrap()
+                .contains("Review carefully")
+        );
+        reply(
+            view,
+            &mut cx,
+            serde_json::json!({"skills": [{"id": 43, "userId": 1, "projectId": null, "name": "New skill", "slug": "new-skill", "body": "Review carefully", "enabled": true}]}),
+        );
+        view.update(&mut cx, |this, _, _| {
+            this.shell
+                .settings_state
+                .scroll
+                .set_offset(point(px(0.), px(0.)))
+        })
+        .unwrap();
+        click(view, &mut cx, "settings.skill.import-url");
+        cx.simulate_input("https://github.com/example/skills");
+        click(view, &mut cx, "settings.skill.preview");
+        reply(
+            view,
+            &mut cx,
+            serde_json::json!({"skills": [{"slug": "keep", "name": "Keep"}, {"slug": "skip", "name": "Skip"}]}),
+        );
+        click(view, &mut cx, "settings.skill.preview.skip");
+        click(view, &mut cx, "settings.skill.import");
+        let request = reply(view, &mut cx, serde_json::json!({"success": true}));
+        assert_eq!(request.path, "/skills/import");
+        assert_eq!(request.body.unwrap()["slugs"], serde_json::json!(["keep"]));
+    }
+
+    #[gpui::test]
+    fn settings_webhooks_create_secret_copy_test_and_delete_confirmation(cx: &mut TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.tab.connect");
+        click(view, &mut cx, "settings.nav.webhooks");
+        reply(view, &mut cx, serde_json::json!({"subscriptions": []}));
+        click(view, &mut cx, "settings.webhook.url");
+        cx.simulate_input("https://example.com/hypertask");
+        view.update(&mut cx, |this, _, _| {
+            this.shell.settings_state.scroll.scroll_to_bottom()
+        })
+        .unwrap();
+        click(view, &mut cx, "settings.webhook.event.comment.mention");
+        click(view, &mut cx, "settings.webhook.add");
+        let request = reply(
+            view,
+            &mut cx,
+            serde_json::json!({"success": true, "secret": "whsec_fixture"}),
+        );
+        assert_eq!(request.path, "/webhooks");
+        let body = request.body.unwrap();
+        assert_eq!(body["project_id"], 15);
+        assert!(
+            !body["events"]
+                .as_array()
+                .unwrap()
+                .contains(&serde_json::json!("comment.mention"))
+        );
+        let endpoint = serde_json::json!({"id": "wh1", "url": "https://example.com/hypertask", "events": ["task.created"], "secretHint": "...ture"});
+        reply(
+            view,
+            &mut cx,
+            serde_json::json!({"subscriptions": [endpoint.clone()]}),
+        );
+        view.update(&mut cx, |this, _, _| {
+            this.shell
+                .settings_state
+                .scroll
+                .set_offset(point(px(0.), px(0.)))
+        })
+        .unwrap();
+        click(view, &mut cx, "settings.webhook.secret");
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().unwrap(),
+            "whsec_fixture"
+        );
+        click(view, &mut cx, "settings.webhook.wh1.test");
+        let request = reply(
+            view,
+            &mut cx,
+            serde_json::json!({"success": true, "delivered": true}),
+        );
+        assert_eq!(request.path, "/webhooks/wh1/test");
+        reply(
+            view,
+            &mut cx,
+            serde_json::json!({"subscriptions": [endpoint.clone()]}),
+        );
+        click(view, &mut cx, "settings.webhook.wh1.delete");
+        click(view, &mut cx, "settings.webhook.cancel-delete");
+        measured(view, &mut cx, "settings.webhook.wh1");
+        click(view, &mut cx, "settings.webhook.wh1.delete");
+        click(view, &mut cx, "settings.webhook.confirm-delete");
+        let request = reply(view, &mut cx, serde_json::json!({"success": true}));
+        assert_eq!(request.method, "DELETE");
+        assert_eq!(request.path, "/webhooks?id=wh1");
+    }
+
+    #[gpui::test]
+    fn settings_archive_board_requires_confirmation_and_updates_cache_after_success(
+        cx: &mut TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.tab.board");
+        click(view, &mut cx, "settings.nav.board-general");
+        reply(view, &mut cx, serde_json::json!({"user": {"id": 1}}));
+        click(view, &mut cx, "settings.board.archive");
+        click(view, &mut cx, "settings.board.cancel-archive");
+        view.read_with(&cx, |this, _| {
+            assert!(this.shell.settings_state.pending.is_none())
+        })
+        .unwrap();
+        click(view, &mut cx, "settings.board.archive");
+        click(view, &mut cx, "settings.board.confirm-archive");
+        let request = reply(view, &mut cx, serde_json::json!({"success": true}));
+        assert_eq!(request.body.unwrap()["status"], "Archive");
+        measured(view, &mut cx, "inbox.tabs");
+        view.read_with(&cx, |this, _| {
+            assert_eq!(
+                this.db
+                    .projects()
+                    .unwrap()
+                    .iter()
+                    .find(|p| p["id"] == 15)
+                    .unwrap()["status"],
+                "Archive"
+            )
         })
         .unwrap();
     }

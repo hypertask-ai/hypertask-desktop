@@ -265,7 +265,7 @@ impl Desktop {
         match self.signin.poll() {
             Event::Idle => return,
             Event::Expired => {
-                self.shell.set_token(None);
+                self.set_shell_token(None, cx);
                 if let Some(sidebar) = &self.ai_sidebar {
                     sidebar.update(cx, |sidebar, cx| sidebar.set_token(None, cx));
                 }
@@ -274,7 +274,7 @@ impl Desktop {
                 }
             }
             Event::SignedIn(secret) => {
-                self.shell.set_token(Some(secret.clone()));
+                self.set_shell_token(Some(secret.clone()), cx);
                 if let Some(sidebar) = &self.ai_sidebar {
                     sidebar.update(cx, |sidebar, cx| {
                         sidebar.set_token(Some(secret.clone()), cx)
@@ -450,6 +450,7 @@ impl Desktop {
                 .db
                 .kv_set("last_board", &self.options.board.to_string());
         }
+        self.shell.reset_destination();
         self.screen = screen;
         self.selected = 0;
         self.editing = Editing::None;
@@ -1098,8 +1099,9 @@ impl Desktop {
         let sidebar_width = self
             .ai_sidebar
             .as_ref()
+            .filter(|_| self.shell.ai_open)
             .map_or(0., |sidebar| sidebar.read(cx).width());
-        let board_width = (f32::from(window.viewport_size().width) - 48. - sidebar_width).max(0.);
+        let board_width = (f32::from(window.viewport_size().width) - self.shell.width() - sidebar_width).max(0.);
         let column_width = ((board_width * 0.97
             - 16. * self.columns.len().saturating_sub(1) as f32)
             / self.columns.len().max(1) as f32)
@@ -2042,7 +2044,7 @@ impl Render for Desktop {
             Screen::Board => self.board_screen(window, cx).into_any_element(),
             Screen::Task => self.task_screen(cx),
         };
-        let body = self.shell_body(body);
+        let body = self.shell_body(body, cx);
         let t = self.colors;
         div()
             .size_full()

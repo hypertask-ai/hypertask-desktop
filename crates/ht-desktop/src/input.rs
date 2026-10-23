@@ -959,6 +959,13 @@ impl TextInput {
         self.replace_text_in_range(None, text, window, cx);
     }
 
+    pub fn configure(&mut self, placeholder: &str, multiline: bool, cx: &mut Context<Self>) {
+        self.placeholder = placeholder.to_owned().into();
+        self.multiline = multiline;
+        self.editor_newlines = multiline;
+        cx.notify();
+    }
+
     pub fn set_content(&mut self, text: String, cx: &mut Context<Self>) {
         self.undo.clear();
         self.redo.clear();

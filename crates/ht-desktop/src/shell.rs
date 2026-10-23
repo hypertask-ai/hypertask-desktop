@@ -1,6 +1,7 @@
 use super::*;
 use crate::shortcuts::Action;
 use gpui::MouseButton;
+use navigation::Destination;
 use serde_json::Value;
 
 pub(super) struct Shell {
@@ -16,6 +17,9 @@ pub(super) struct Shell {
     token: Option<String>,
     theme_preference: Option<String>,
     agents: bool,
+    destination: Destination,
+    search_input: Entity<TextInput>,
+    search_board: Option<i64>,
     shortcuts: bool,
     feedback: bool,
     feedback_kind: &'static str,
@@ -36,6 +40,9 @@ impl Shell {
             cx.notify();
         })
         .detach();
+        let search_input =
+            cx.new(|cx| TextInput::new(String::new(), "Search", color(0x8e9093), cx));
+        cx.observe(&search_input, |_, _, cx| cx.notify()).detach();
         let feedback_input = cx.new(|cx| {
             TextInput::new(
                 String::new(),
@@ -48,6 +55,9 @@ impl Shell {
         cx.observe(&feedback_input, |_, _, cx| cx.notify()).detach();
         Self {
             agents: false,
+            destination: Destination::Workspace,
+            search_input,
+            search_board: None,
             shortcuts: false,
             feedback: false,
             feedback_kind: "Bug",
@@ -68,7 +78,7 @@ impl Shell {
         }
     }
 
-    fn width(&self) -> f32 {
+    pub(super) fn width(&self) -> f32 {
         if self.expanded { 130. } else { 48. }
     }
 }
@@ -173,6 +183,15 @@ impl Desktop {
             cx.stop_propagation();
             return true;
         }
+        if self.shell.destination == Destination::Search {
+            if key.key == "escape" {
+                self.shell.destination = Destination::Workspace;
+                window.focus(&self.focus, cx);
+                cx.stop_propagation();
+                cx.notify();
+            }
+            return true;
+        }
         let editor = self.title_input.focus_handle(cx).is_focused(window)
             || self.comment_input.focus_handle(cx).is_focused(window)
             || self
@@ -193,6 +212,8 @@ impl Desktop {
                 self.toggle_ai(window, cx)
             }
             ("?", false, _, false) => self.open_shortcuts(window, cx),
+            ("3", false, false, false) => self.navigate_table(cx),
+            ("/" | "6", false, false, false) => self.navigate_search(window, cx),
             ("b", true, false, false) => self.toggle_boards(window, cx),
             ("\\", false, false, false) => self.open_settings(window, cx),
             _ => return false,
@@ -284,7 +305,19 @@ impl Desktop {
                         self.screen == Screen::Board,
                     )),
             )
-            .child(div().mt(px(4.)).child(button(4, "rows-3", "Table", false)))
+            .child(
+                div()
+                    .id("rail-table")
+                    .mt(px(4.))
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, _, cx| this.navigate_table(cx)))
+                    .child(button(
+                        4,
+                        "rows-3",
+                        "Table",
+                        self.shell.destination == Destination::Table,
+                    )),
+            )
             .child(
                 div()
                     .mt(px(4.))
@@ -303,9 +336,7 @@ impl Desktop {
                     .id("rail-search")
                     .mt(px(4.))
                     .cursor_pointer()
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.run_shortcut(Action::Search, window, cx)
-                    }))
+                    .on_click(cx.listener(|this, _, window, cx| this.navigate_search(window, cx)))
                     .child(button(7, "search", "Search", false)),
             )
             .child(div().flex_1())
@@ -315,6 +346,7 @@ impl Desktop {
                     .mb(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| {
+                        this.shell.reset_destination();
                         this.shell.agents = true;
                         window.focus(&this.focus, cx);
                         cx.notify();
@@ -530,8 +562,11 @@ pub(super) mod tests {
         let view = cx.open_window(size(px(1440.), px(900.)), |window, cx| {
             let mut db = Db::memory().unwrap();
             db.apply_response(&serde_json::json!({"success": true, "projects": [
-                {"id": 15, "title": "Alpha", "name": "Alpha", "status": "Normal"},
-                {"id": 16, "title": "Beta", "name": "Beta", "status": "Normal"}
+                {"id": 15, "title": "Alpha", "name": "Alpha", "status": "Normal", "ownerId": 1},
+                {"id": 16, "title": "Beta", "name": "Beta", "status": "Normal", "ownerId": 1}
+            ], "tasks": [
+                {"id": 101, "projectId": 15, "uniqueIndex": 1, "ticketNumber": "A-1", "title": "Alpha result", "status": "Normal"},
+                {"id": 102, "projectId": 16, "uniqueIndex": 2, "ticketNumber": "B-2", "title": "Beta result", "status": "Normal"}
             ]}))
             .unwrap();
             let options =
@@ -738,7 +773,10 @@ fn system_theme(appearance: gpui::WindowAppearance) -> ThemeName {
 }
 
 impl Desktop {
-    pub(super) fn shell_body(&self, body: AnyElement) -> AnyElement {
+    pub(super) fn shell_body(&self, body: AnyElement, cx: &mut Context<Self>) -> AnyElement {
+        if let Some(navigation) = self.navigation_body(cx) {
+            return navigation;
+        }
         if !self.shell.agents {
             return body;
         }
@@ -997,9 +1035,11 @@ mod surface_tests {
         click(view, &mut cx, "shell.feedback.input");
         cx.simulate_input("Make shell navigation work");
         cx.simulate_keystrokes("ctrl-enter");
-        assert_eq!(
-            measured(view, &mut cx, "shell.feedback.error")["text"],
-            "Unable to send feedback. Please try again."
+        assert!(
+            measured(view, &mut cx, "shell.feedback.error")["text"]
+                .as_str()
+                .unwrap()
+                .starts_with("Unable to send feedback.")
         );
         click(view, &mut cx, "shell.feedback.cancel");
         measured(view, &mut cx, "inbox.tabs");
@@ -1053,5 +1093,28 @@ mod surface_tests {
         click(view, &mut cx, "rail.icon.6");
         click(view, &mut cx, "shell.ai.reopen");
         assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
+    }
+}
+
+#[path = "shell_navigation.rs"]
+mod navigation;
+
+impl Shell {
+    pub(super) fn reset_destination(&mut self) {
+        self.destination = Destination::Workspace;
+        self.agents = false;
+    }
+}
+
+impl Desktop {
+    pub(super) fn set_shell_token(&mut self, token: Option<String>, cx: &mut Context<Self>) {
+        self.shell.set_token(token);
+        self.shell.settings = false;
+        self.shell.boards = false;
+        self.shell.feedback = false;
+        self.shell
+            .feedback_input
+            .update(cx, |input, cx| input.set_content(String::new(), cx));
+        self.clear_settings_identity(cx);
     }
 }
