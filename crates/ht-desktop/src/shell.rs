@@ -404,17 +404,19 @@ impl Desktop {
         }
         let t = self.colors;
         div()
+            .id("boards-backdrop")
+            .bg(rgba(0x00000040))
             .absolute()
+            .size_full()
             .inset_0()
-            .on_mouse_down(
-                MouseButton::Left,
-                cx.listener(|this, _, window, cx| {
-                    this.toggle_boards(window, cx);
-                }),
-            )
             .child(
                 div()
                     .id("boards-flyout")
+                    .on_mouse_down_out(cx.listener(|this, _, window, cx| {
+                        if this.shell.boards {
+                            this.toggle_boards(window, cx);
+                        }
+                    }))
                     .absolute()
                     .left(px(self.shell.width() + 8.))
                     .top_0()
@@ -680,6 +682,7 @@ pub(super) mod tests {
 
 impl Desktop {
     pub(super) fn init_shell(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.footer = self.db.kv_get("showQuickTips").ok().flatten().as_deref() != Some("false");
         if let Some(preference) = self.shell.theme_preference.clone() {
             let theme = if preference == "system" {
                 system_theme(window.appearance())
@@ -847,6 +850,13 @@ impl Desktop {
                     ))
                     .child(
                         div()
+                            .id("feedback-textarea")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    window.focus(&this.shell.feedback_input.focus_handle(cx), cx)
+                                }),
+                            )
                             .min_h(px(180.))
                             .px(px(16.))
                             .py(px(12.))
@@ -950,5 +960,98 @@ impl Desktop {
                     .layout_key(&self.layout, "shell.shortcuts", None),
             )
             .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod surface_tests {
+    use super::tests::{click, draw, measured, setup};
+    use super::*;
+    use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn shell_agents_shows_web_auth_error_and_inbox_returns(cx: &mut TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.8");
+        assert_eq!(
+            measured(view, &mut cx, "shell.agents.title")["text"],
+            "Agents"
+        );
+        assert_eq!(
+            measured(view, &mut cx, "shell.agents.error")["text"],
+            "Unauthorized"
+        );
+        click(view, &mut cx, "rail.icon.2");
+        measured(view, &mut cx, "inbox.tabs");
+    }
+
+    #[gpui::test]
+    fn shell_feedback_kind_input_send_error_and_cancel_preserve_route(cx: &mut TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.11");
+        assert_eq!(
+            measured(view, &mut cx, "shell.feedback.title")["text"],
+            "Send feedback"
+        );
+        click(view, &mut cx, "shell.feedback.kind.Idea");
+        click(view, &mut cx, "shell.feedback.input");
+        cx.simulate_input("Make shell navigation work");
+        cx.simulate_keystrokes("ctrl-enter");
+        assert_eq!(
+            measured(view, &mut cx, "shell.feedback.error")["text"],
+            "Unable to send feedback. Please try again."
+        );
+        click(view, &mut cx, "shell.feedback.cancel");
+        measured(view, &mut cx, "inbox.tabs");
+        view.read_with(&cx, |this, _| assert_eq!(this.shell.feedback_kind, "Idea"))
+            .unwrap();
+    }
+
+    #[gpui::test]
+    fn shell_question_opens_searchable_shortcut_sidebar_and_escape_preserves_task(
+        cx: &mut TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        draw(view, &mut cx);
+        cx.simulate_keystrokes("?");
+        assert_eq!(measured(view, &mut cx, "shell.shortcuts")["w"], 374.4);
+        cx.simulate_input("comment");
+        draw(view, &mut cx);
+        view.read_with(&cx, |this, _| {
+            let rows = this
+                .layout
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .interaction_elements();
+            let rows: Vec<_> = rows
+                .iter()
+                .filter(|e| {
+                    e["key"]
+                        .as_str()
+                        .unwrap_or("")
+                        .starts_with("settings.shortcut.")
+                })
+                .collect();
+            assert!(!rows.is_empty());
+            assert!(rows.iter().all(|e| {
+                e["text"]
+                    .as_str()
+                    .unwrap()
+                    .to_lowercase()
+                    .contains("comment")
+            }));
+        })
+        .unwrap();
+        cx.simulate_keystrokes("escape");
+        measured(view, &mut cx, "inbox.tabs");
+    }
+
+    #[gpui::test]
+    fn shell_hidden_ai_reopen_chevron_restores_panel(cx: &mut TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.6");
+        click(view, &mut cx, "shell.ai.reopen");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
     }
 }

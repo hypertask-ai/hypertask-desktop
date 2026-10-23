@@ -13,6 +13,7 @@ struct Request {
 }
 
 pub(super) struct Settings {
+    webhooks: webhooks::Webhooks,
     section: &'static str,
     search: Entity<TextInput>,
     scroll: ScrollHandle,
@@ -51,6 +52,7 @@ impl Settings {
         cx.observe(&draft, |_, _, cx| cx.notify()).detach();
         cx.observe(&import_url, |_, _, cx| cx.notify()).detach();
         Self {
+            webhooks: webhooks::Webhooks::new(cx),
             section: "general",
             search,
             scroll: ScrollHandle::new(),
@@ -81,9 +83,12 @@ const SECTIONS: &[(&str, &str, &str)] = &[
     ("board", "board-ai", "Custom instructions"),
     ("board", "board-skills", "Skills"),
     ("board", "board-files", "Files"),
+    ("connect", "mcp", "MCP"),
+    ("connect", "webhooks", "Webhooks"),
     ("connect", "cli", "CLI"),
     ("connect", "api", "REST API"),
     ("help", "shortcuts", "Shortcuts"),
+    ("help", "learn", "Learn Hypertask"),
 ];
 const LINKS: &[(&str, &str)] = &[
     ("Changelog", "https://docs.hypertask.ai/changelog"),
@@ -289,7 +294,7 @@ impl Desktop {
                                         ("profile", "Profile", "general"),
                                         ("team", "Team", "skills"),
                                         ("board", "Board", "board-members"),
-                                        ("connect", "Connect", "cli"),
+                                        ("connect", "Connect", "mcp"),
                                         ("help", "Help", "shortcuts"),
                                     ]
                                     .map(
@@ -387,9 +392,7 @@ impl Desktop {
             .py(px(8.))
             .cursor_pointer()
             .child(label)
-            .on_click(move |_, _, _| {
-                let _ = open::that_detached(url);
-            })
+            .on_click(move |_, _, cx| cx.open_url(url))
             .layout_key(
                 &self.layout,
                 format!("settings.link.{label}"),
@@ -424,6 +427,9 @@ impl Desktop {
         let t = self.colors;
         match self.shell.settings_state.section {
             "shortcuts" => self.shortcut_settings(cx),
+            "webhooks" => self.webhook_settings(cx),
+            "learn" => self.learn_settings(cx),
+            "mcp" => div().flex().flex_col().gap(px(12.)).child("SERVER").child("Use this URL from any MCP client.").child(self.code_row("mcp-server", "https://mcp.hypertask.ai/mcp", cx)).child(self.settings_link("Read the MCP docs", "https://docs.hypertask.ai/mcp")).into_any_element(),
             "general" => self.profile_settings(cx),
             "board-ai" => self.instruction_settings(cx),
             "board-members" => self.member_settings(),
@@ -490,6 +496,7 @@ impl Desktop {
         self.shell.settings_state.editing = None;
         self.shell.settings_state.delete = None;
         self.shell.settings_state.preview.clear();
+        self.shell.settings_state.webhooks.secret = None;
         self.shell
             .settings_state
             .draft
@@ -504,6 +511,7 @@ impl Desktop {
             "general" => Some("/user/context".into()),
             "board-ai" | "board-files" => Some(format!("/projects/{}/instructions", s.board)),
             "board-members" => Some(format!("/projects/{}/members", s.board)),
+            "webhooks" => Some(format!("/webhooks?project_id={}", s.board)),
             "skills" => Some("/skills".into()),
             "board-skills" => Some(format!("/skills?project_id={}", s.board)),
             _ => None,
@@ -646,7 +654,12 @@ impl Desktop {
                     .filter_map(|v| v["slug"].as_str().map(str::to_owned))
                     .collect();
             }
-            Ok(_) => {
+            Ok(value) => {
+                if request.section == "webhooks" {
+                    if let Some(secret) = value["secret"].as_str() {
+                        s.webhooks.secret = Some(secret.to_owned());
+                    }
+                }
                 s.editing = None;
                 s.delete = None;
                 s.preview.clear();
@@ -744,6 +757,13 @@ impl Desktop {
             .child(format!("Guide AI behavior for {title}."))
             .child(
                 div()
+                    .id("instructions-textarea")
+                    .on_mouse_down(
+                        MouseButton::Left,
+                        cx.listener(|this, _, window, cx| {
+                            window.focus(&this.shell.settings_state.draft.focus_handle(cx), cx)
+                        }),
+                    )
                     .min_h(px(220.))
                     .p(px(8.))
                     .border_1()
@@ -829,9 +849,9 @@ impl Desktop {
                     .to_owned();
                 div().child(name).cursor_pointer().on_mouse_down(
                     MouseButton::Left,
-                    move |_, _, _| {
+                    move |_, _, cx| {
                         if url.starts_with("https://") {
-                            let _ = open::that_detached(&url);
+                            cx.open_url(&url);
                         }
                     },
                 )
@@ -1137,6 +1157,16 @@ impl Desktop {
                     })
                     .child(
                         div()
+                            .id("skill-textarea")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, window, cx| {
+                                    window.focus(
+                                        &this.shell.settings_state.draft.focus_handle(cx),
+                                        cx,
+                                    )
+                                }),
+                            )
                             .min_h(px(220.))
                             .p(px(12.))
                             .border_1()
@@ -1450,18 +1480,17 @@ impl Desktop {
         for (i, row) in rows.into_iter().enumerate() {
             let heading = row["group"].as_str().unwrap_or("");
             let label = row["label"].as_str().unwrap_or("");
-            let keys = row["keys"]
-                .as_array()
-                .unwrap()
-                .iter()
-                .map(|key| match key.as_str() {
-                    Some("CTRL") if cfg!(target_os = "macos") => "CMD",
-                    Some("ALT") if cfg!(target_os = "macos") => "OPT",
-                    Some(value) => value,
-                    None => "then",
-                })
-                .collect::<Vec<_>>()
-                .join("  ");
+            let keys = row[if cfg!(target_os = "macos") {
+                "macKeys"
+            } else {
+                "keys"
+            }]
+            .as_array()
+            .unwrap()
+            .iter()
+            .map(|key| key.as_str().unwrap_or("then"))
+            .collect::<Vec<_>>()
+            .join("  ");
             if !query.trim().is_empty()
                 && !format!("{heading} {label} {keys}")
                     .to_lowercase()
@@ -1538,5 +1567,132 @@ impl Desktop {
             .import_url
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         window.focus(&self.shell.settings_state.import_url.focus_handle(cx), cx);
+    }
+}
+
+#[path = "shell_webhooks.rs"]
+mod webhooks;
+
+impl Desktop {
+    fn learn_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+        div().flex().flex_col().gap(px(12.)).child("GUIDES")
+            .children([
+                ("Tutorial Videos", "Watch short walkthroughs of core Hypertask workflows.", "https://www.youtube.com/playlist?list=PLb7ZrOwcC7l2Du0sq2-fj4uJG7N0vjxmQ"),
+                ("MCP Guide", "Connect AI assistants to your workspace with MCP.", "https://help.hypertask.ai/help/how-to-connect-ai-agents-to-hypertask-with-mcp"),
+                ("Book Coaching", "Book a one-to-one session for hands-on product help.", "https://calendar.superhuman.com/book/11SzDGi12vkuEu8gf0/icPzJ"),
+                ("Help Center", "Find answers to common setup and workflow questions.", "https://help.hypertask.ai/"),
+                ("Docs", "Browse technical guides for Hypertask integrations and APIs.", "https://docs.hypertask.ai/"),
+                ("Custom fields", "Add board-specific properties like ICE score, channel, or launch date.", "https://docs.hypertask.ai/features/custom-fields/"),
+            ].map(|(title, description, url)| div().flex().flex_col().gap(px(4.)).child(self.settings_link(title, url)).child(description)))
+            .child("TIPS")
+            .child(div().id("quick-tips").p(px(8.)).cursor_pointer().child(if self.footer { "Quick Tips    ✓" } else { "Quick Tips" })
+                .on_click(cx.listener(|this, _, _, cx| {
+                    this.footer = !this.footer;
+                    if let Err(error) = this.db.kv_set("showQuickTips", if this.footer { "true" } else { "false" }) { this.shell.settings_state.error = Some(error.to_string()); }
+                    cx.notify();
+                })).layout_key(&self.layout, "settings.quick-tips", Some("Quick Tips".into())))
+            .into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod more_tests {
+    use super::*;
+    use crate::ui::shell::tests::{click, draw, measured, setup};
+    use gpui::TestAppContext;
+
+    #[gpui::test]
+    fn settings_appearance_and_follow_system_change_visible_theme_and_persist(
+        cx: &mut TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.nav.appearance");
+        for (i, theme) in [
+            (1, ThemeName::Porcelain),
+            (2, ThemeName::Graphite),
+            (3, ThemeName::Amoled),
+            (4, ThemeName::Dia),
+        ] {
+            click(view, &mut cx, &format!("settings.theme.{i}"));
+            let title = measured(view, &mut cx, "settings.title");
+            assert_eq!(title["color"], format!("#{:06x}", theme.colors().text));
+            view.read_with(&cx, |this, _| assert_eq!(this.options.theme, theme))
+                .unwrap();
+        }
+        click(view, &mut cx, "settings.theme.0");
+        view.update(&mut cx, |this, window, _| {
+            assert_eq!(this.options.theme, system_theme(window.appearance()));
+            assert_eq!(this.db.kv_get("theme").unwrap().as_deref(), Some("system"));
+        })
+        .unwrap();
+        assert!(!measured(view, &mut cx, "settings.theme.0")["bg"].is_null());
+    }
+
+    #[gpui::test]
+    fn settings_help_links_and_cli_api_copy_use_web_targets(cx: &mut TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.tab.help");
+        for &(label, url) in LINKS {
+            click(view, &mut cx, &format!("settings.link.{label}"));
+            assert_eq!(cx.opened_url().as_deref(), Some(url));
+        }
+        click(view, &mut cx, "settings.link.Contact us");
+        assert_eq!(cx.opened_url().as_deref(), Some("mailto:help@hypertask.ai"));
+        click(view, &mut cx, "settings.tab.connect");
+        click(view, &mut cx, "settings.copy.mcp-server");
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().unwrap(),
+            "https://mcp.hypertask.ai/mcp"
+        );
+        click(view, &mut cx, "settings.nav.cli");
+        for (id, value) in [("install", INSTALL), ("login", LOGIN)] {
+            click(view, &mut cx, &format!("settings.copy.{id}"));
+            assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), value);
+        }
+        click(view, &mut cx, "settings.nav.api");
+        for (id, value) in [("base-url", API), ("example", EXAMPLE)] {
+            click(view, &mut cx, &format!("settings.copy.{id}"));
+            assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), value);
+        }
+    }
+
+    #[gpui::test]
+    fn settings_learning_links_and_quick_tips_are_reachable(cx: &mut TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.tab.help");
+        click(view, &mut cx, "settings.nav.learn");
+        click(view, &mut cx, "settings.link.Help Center");
+        assert_eq!(
+            cx.opened_url().as_deref(),
+            Some("https://help.hypertask.ai/")
+        );
+        view.update(&mut cx, |this, _, _| {
+            this.shell.settings_state.scroll.scroll_to_bottom()
+        })
+        .unwrap();
+        click(view, &mut cx, "settings.quick-tips");
+        click(view, &mut cx, "settings.back");
+        draw(view, &mut cx);
+        view.read_with(&cx, |this, _| {
+            assert!(!this.footer);
+            assert_eq!(
+                this.db.kv_get("showQuickTips").unwrap().as_deref(),
+                Some("false")
+            );
+            assert!(
+                !this
+                    .layout
+                    .as_ref()
+                    .unwrap()
+                    .borrow()
+                    .interaction_elements()
+                    .iter()
+                    .any(|e| e["key"] == "footer")
+            );
+        })
+        .unwrap();
     }
 }

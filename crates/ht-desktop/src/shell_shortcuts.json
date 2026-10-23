@@ -4,12 +4,18 @@
     "label": "Inbox",
     "keys": [
       "1"
+    ],
+    "macKeys": [
+      "1"
     ]
   },
   {
     "group": "App shell surfaces",
     "label": "Board",
     "keys": [
+      "2"
+    ],
+    "macKeys": [
       "2"
     ]
   },
@@ -18,12 +24,18 @@
     "label": "Table",
     "keys": [
       "3"
+    ],
+    "macKeys": [
+      "3"
     ]
   },
   {
     "group": "App shell surfaces",
     "label": "Calendar",
     "keys": [
+      "4"
+    ],
+    "macKeys": [
       "4"
     ]
   },
@@ -32,12 +44,18 @@
     "label": "Toggle AI chat",
     "keys": [
       "5"
+    ],
+    "macKeys": [
+      "5"
     ]
   },
   {
     "group": "App shell surfaces",
     "label": "Toggle AI chat (alternative)",
     "keys": [
+      "]"
+    ],
+    "macKeys": [
       "]"
     ]
   },
@@ -46,12 +64,18 @@
     "label": "Search",
     "keys": [
       "6"
+    ],
+    "macKeys": [
+      "6"
     ]
   },
   {
     "group": "App shell surfaces",
     "label": "Running timers",
     "keys": [
+      "7"
+    ],
+    "macKeys": [
       "7"
     ]
   },
@@ -60,12 +84,18 @@
     "label": "Collapse / expand sidebar",
     "keys": [
       "["
+    ],
+    "macKeys": [
+      "["
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Shortcuts",
     "keys": [
+      "?"
+    ],
+    "macKeys": [
       "?"
     ]
   },
@@ -74,12 +104,18 @@
     "label": "Settings",
     "keys": [
       "\\"
+    ],
+    "macKeys": [
+      "\\"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Search",
     "keys": [
+      "/"
+    ],
+    "macKeys": [
       "/"
     ]
   },
@@ -88,12 +124,18 @@
     "label": "Set priority",
     "keys": [
       "P"
+    ],
+    "macKeys": [
+      "P"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Set task size",
     "keys": [
+      "S"
+    ],
+    "macKeys": [
       "S"
     ]
   },
@@ -102,12 +144,18 @@
     "label": "Add tags",
     "keys": [
       "T"
+    ],
+    "macKeys": [
+      "T"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Archive",
     "keys": [
+      "E"
+    ],
+    "macKeys": [
       "E"
     ]
   },
@@ -116,6 +164,9 @@
     "label": "Move focus down",
     "keys": [
       "J"
+    ],
+    "macKeys": [
+      "J"
     ]
   },
   {
@@ -123,12 +174,21 @@
     "label": "Move focus up",
     "keys": [
       "K"
+    ],
+    "macKeys": [
+      "K"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Move focus",
     "keys": [
+      "←",
+      "⭡",
+      "⭣",
+      "→"
+    ],
+    "macKeys": [
       "←",
       "⭡",
       "⭣",
@@ -141,6 +201,10 @@
     "keys": [
       "CTRL",
       "K"
+    ],
+    "macKeys": [
+      "CMD",
+      "K"
     ]
   },
   {
@@ -149,12 +213,19 @@
     "keys": [
       "CTRL",
       "Z"
+    ],
+    "macKeys": [
+      "CMD",
+      "Z"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Use snippet",
     "keys": [
+      ";"
+    ],
+    "macKeys": [
       ";"
     ]
   },
@@ -165,12 +236,20 @@
       "G",
       null,
       "X"
+    ],
+    "macKeys": [
+      "G",
+      null,
+      "X"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Exit (go back)",
     "keys": [
+      "ESC"
+    ],
+    "macKeys": [
       "ESC"
     ]
   },
@@ -180,6 +259,10 @@
     "keys": [
       "CTRL",
       "E"
+    ],
+    "macKeys": [
+      "CMD",
+      "E"
     ]
   },
   {
@@ -187,12 +270,20 @@
     "label": "Delete task",
     "keys": [
       "#"
+    ],
+    "macKeys": [
+      "#"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Go to task board",
     "keys": [
+      "G",
+      null,
+      "B"
+    ],
+    "macKeys": [
       "G",
       null,
       "B"
@@ -205,12 +296,22 @@
       "G",
       null,
       "R"
+    ],
+    "macKeys": [
+      "G",
+      null,
+      "R"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Go to running timers",
     "keys": [
+      "G",
+      null,
+      "T"
+    ],
+    "macKeys": [
       "G",
       null,
       "T"
@@ -223,12 +324,22 @@
       "G",
       null,
       "H"
+    ],
+    "macKeys": [
+      "G",
+      null,
+      "H"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Go to trash",
     "keys": [
+      "G",
+      null,
+      "#"
+    ],
+    "macKeys": [
       "G",
       null,
       "#"
@@ -241,12 +352,22 @@
       "G",
       null,
       "A"
+    ],
+    "macKeys": [
+      "G",
+      null,
+      "A"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Go to my tasks",
     "keys": [
+      "G",
+      null,
+      "M"
+    ],
+    "macKeys": [
       "G",
       null,
       "M"
@@ -259,12 +380,22 @@
       "G",
       null,
       "I"
+    ],
+    "macKeys": [
+      "G",
+      null,
+      "I"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Go to snippets",
     "keys": [
+      "G",
+      null,
+      ";"
+    ],
+    "macKeys": [
       "G",
       null,
       ";"
@@ -277,12 +408,22 @@
       "G",
       null,
       "E"
+    ],
+    "macKeys": [
+      "G",
+      null,
+      "E"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Go to starred",
     "keys": [
+      "G",
+      null,
+      "S"
+    ],
+    "macKeys": [
       "G",
       null,
       "S"
@@ -295,12 +436,22 @@
       "G",
       null,
       "P"
+    ],
+    "macKeys": [
+      "G",
+      null,
+      "P"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Go to drafts",
     "keys": [
+      "G",
+      null,
+      "D"
+    ],
+    "macKeys": [
       "G",
       null,
       "D"
@@ -313,12 +464,22 @@
       "G",
       null,
       "U"
+    ],
+    "macKeys": [
+      "G",
+      null,
+      "U"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Go to calendar",
     "keys": [
+      "G",
+      null,
+      "C"
+    ],
+    "macKeys": [
       "G",
       null,
       "C"
@@ -329,12 +490,19 @@
     "label": "Cycle focus forward",
     "keys": [
       "TAB"
+    ],
+    "macKeys": [
+      "TAB"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Cycle focus backward",
     "keys": [
+      "SHIFT",
+      "TAB"
+    ],
+    "macKeys": [
       "SHIFT",
       "TAB"
     ]
@@ -345,6 +513,10 @@
     "keys": [
       "ALT",
       "0-9"
+    ],
+    "macKeys": [
+      "CTRL",
+      "0-9"
     ]
   },
   {
@@ -353,12 +525,19 @@
     "keys": [
       "CTRL",
       "B"
+    ],
+    "macKeys": [
+      "CMD",
+      "B"
     ]
   },
   {
     "group": "Global Shortcuts",
     "label": "Set due date",
     "keys": [
+      "D"
+    ],
+    "macKeys": [
       "D"
     ]
   },
@@ -368,12 +547,19 @@
     "keys": [
       "SHIFT",
       "M"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "M"
     ]
   },
   {
     "group": "Board",
     "label": "Add task",
     "keys": [
+      "C"
+    ],
+    "macKeys": [
       "C"
     ]
   },
@@ -383,6 +569,10 @@
     "keys": [
       "CTRL",
       "J"
+    ],
+    "macKeys": [
+      "CMD",
+      "J"
     ]
   },
   {
@@ -390,6 +580,11 @@
     "label": "Add sub-task",
     "keys": [
       "CTRL",
+      "SHIFT",
+      "+"
+    ],
+    "macKeys": [
+      "CMD",
       "SHIFT",
       "+"
     ]
@@ -401,12 +596,21 @@
       "CTRL",
       "SHIFT",
       "C"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "C"
     ]
   },
   {
     "group": "Board",
     "label": "Add task at bottom",
     "keys": [
+      "SHIFT",
+      "C"
+    ],
+    "macKeys": [
       "SHIFT",
       "C"
     ]
@@ -416,12 +620,18 @@
     "label": "Open task",
     "keys": [
       "ENTER"
+    ],
+    "macKeys": [
+      "ENTER"
     ]
   },
   {
     "group": "Board",
     "label": "Move focus to top",
     "keys": [
+      "gg"
+    ],
+    "macKeys": [
       "gg"
     ]
   },
@@ -430,12 +640,20 @@
     "label": "Move focus to bottom",
     "keys": [
       "GG"
+    ],
+    "macKeys": [
+      "GG"
     ]
   },
   {
     "group": "Board",
     "label": "Move task down",
     "keys": [
+      "SHIFT",
+      "J",
+      "⭣"
+    ],
+    "macKeys": [
       "SHIFT",
       "J",
       "⭣"
@@ -448,12 +666,22 @@
       "SHIFT",
       "K",
       "⭡"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "K",
+      "⭡"
     ]
   },
   {
     "group": "Board",
     "label": "Move task right",
     "keys": [
+      "SHIFT",
+      "L",
+      "→"
+    ],
+    "macKeys": [
       "SHIFT",
       "L",
       "→"
@@ -466,12 +694,22 @@
       "SHIFT",
       "H",
       "←"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "H",
+      "←"
     ]
   },
   {
     "group": "Board",
     "label": "Move task to the left",
     "keys": [
+      "SHIFT",
+      "H",
+      "←"
+    ],
+    "macKeys": [
       "SHIFT",
       "H",
       "←"
@@ -483,12 +721,20 @@
     "keys": [
       "SHIFT",
       "S"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "S"
     ]
   },
   {
     "group": "Board",
     "label": "Add a sort level (table column)",
     "keys": [
+      "SHIFT",
+      "CLICK"
+    ],
+    "macKeys": [
       "SHIFT",
       "CLICK"
     ]
@@ -499,12 +745,20 @@
     "keys": [
       "SHIFT",
       "T"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "T"
     ]
   },
   {
     "group": "Board",
     "label": "Match any / all values (inside a filter's list)",
     "keys": [
+      "←",
+      "→"
+    ],
+    "macKeys": [
       "←",
       "→"
     ]
@@ -516,12 +770,22 @@
       "CTRL",
       "SHIFT",
       "+"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "+"
     ]
   },
   {
     "group": "Board",
     "label": "Move task to the right",
     "keys": [
+      "SHIFT",
+      "L",
+      "→"
+    ],
+    "macKeys": [
       "SHIFT",
       "L",
       "→"
@@ -532,12 +796,18 @@
     "label": "Assign a user",
     "keys": [
       "A"
+    ],
+    "macKeys": [
+      "A"
     ]
   },
   {
     "group": "Task View",
     "label": "Activate description/comment or reply to comment",
     "keys": [
+      "ENTER"
+    ],
+    "macKeys": [
       "ENTER"
     ]
   },
@@ -546,6 +816,10 @@
     "label": "Send comment and advance in Inbox",
     "keys": [
       "CTRL",
+      "ENTER"
+    ],
+    "macKeys": [
+      "CMD",
       "ENTER"
     ]
   },
@@ -556,6 +830,11 @@
       "CTRL",
       "SHIFT",
       "ENTER"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "ENTER"
     ]
   },
   {
@@ -564,12 +843,19 @@
     "keys": [
       "CTRL",
       "J"
+    ],
+    "macKeys": [
+      "CMD",
+      "J"
     ]
   },
   {
     "group": "Task View",
     "label": "Assign a user",
     "keys": [
+      "A"
+    ],
+    "macKeys": [
       "A"
     ]
   },
@@ -579,6 +865,10 @@
     "keys": [
       "SHIFT",
       "B"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "B"
     ]
   },
   {
@@ -586,12 +876,18 @@
     "label": "Start / stop timer",
     "keys": [
       "W"
+    ],
+    "macKeys": [
+      "W"
     ]
   },
   {
     "group": "Task View",
     "label": "Log time",
     "keys": [
+      "B"
+    ],
+    "macKeys": [
       "B"
     ]
   },
@@ -601,12 +897,20 @@
     "keys": [
       "CTRL",
       "M"
+    ],
+    "macKeys": [
+      "CMD",
+      "M"
     ]
   },
   {
     "group": "Task View",
     "label": "Suggest reply with AI",
     "keys": [
+      "SHIFT",
+      "R"
+    ],
+    "macKeys": [
       "SHIFT",
       "R"
     ]
@@ -617,12 +921,19 @@
     "keys": [
       "ALT",
       "0-9"
+    ],
+    "macKeys": [
+      "CTRL",
+      "0-9"
     ]
   },
   {
     "group": "Task View",
     "label": "Expand summary",
     "keys": [
+      "I"
+    ],
+    "macKeys": [
       "I"
     ]
   },
@@ -631,12 +942,19 @@
     "label": "Expand single comment",
     "keys": [
       "O"
+    ],
+    "macKeys": [
+      "O"
     ]
   },
   {
     "group": "Task View",
     "label": "Expand all comments",
     "keys": [
+      "SHIFT",
+      "O"
+    ],
+    "macKeys": [
       "SHIFT",
       "O"
     ]
@@ -648,6 +966,11 @@
       "CTRL",
       "SHIFT",
       "H"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "H"
     ]
   },
   {
@@ -655,6 +978,10 @@
     "label": "View all links",
     "keys": [
       "CTRL",
+      "O"
+    ],
+    "macKeys": [
+      "CMD",
       "O"
     ]
   },
@@ -664,12 +991,20 @@
     "keys": [
       "CTRL",
       "M"
+    ],
+    "macKeys": [
+      "CMD",
+      "M"
     ]
   },
   {
     "group": "Task View",
     "label": "Edit Description",
     "keys": [
+      "CTRL",
+      "D"
+    ],
+    "macKeys": [
       "CTRL",
       "D"
     ]
@@ -679,12 +1014,20 @@
     "label": "Edit Title",
     "keys": [
       "F2"
+    ],
+    "macKeys": [
+      "F2"
     ]
   },
   {
     "group": "Task View",
     "label": "Delete comment",
     "keys": [
+      "CTRL",
+      "SHIFT",
+      "3"
+    ],
+    "macKeys": [
       "CTRL",
       "SHIFT",
       "3"
@@ -697,12 +1040,21 @@
       "CTRL",
       "SHIFT",
       "V"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "V"
     ]
   },
   {
     "group": "Task View",
     "label": "View all sub-tasks",
     "keys": [
+      "CTRL",
+      "O"
+    ],
+    "macKeys": [
       "CTRL",
       "O"
     ]
@@ -713,6 +1065,10 @@
     "keys": [
       "CTRL",
       "S"
+    ],
+    "macKeys": [
+      "CMD",
+      "S"
     ]
   },
   {
@@ -720,6 +1076,11 @@
     "label": "Show task options",
     "keys": [
       "CTRL",
+      "SHIFT",
+      "+"
+    ],
+    "macKeys": [
+      "CMD",
       "SHIFT",
       "+"
     ]
@@ -731,6 +1092,11 @@
       "CTRL",
       "SHIFT",
       ";"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      ";"
     ]
   },
   {
@@ -738,6 +1104,10 @@
     "label": "Private share link (Title + URL)",
     "keys": [
       "CTRL",
+      ";"
+    ],
+    "macKeys": [
+      "CMD",
       ";"
     ]
   },
@@ -748,6 +1118,11 @@
       "CTRL",
       "SHIFT",
       "."
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "."
     ]
   },
   {
@@ -755,6 +1130,10 @@
     "label": "Public share link (Title + URL)",
     "keys": [
       "CTRL",
+      "."
+    ],
+    "macKeys": [
+      "CMD",
       "."
     ]
   },
@@ -765,6 +1144,11 @@
       "CTRL",
       "SHIFT",
       "I"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "I"
     ]
   },
   {
@@ -772,6 +1156,10 @@
     "label": "Copy task title and ID",
     "keys": [
       "CTRL",
+      "I"
+    ],
+    "macKeys": [
+      "CMD",
       "I"
     ]
   },
@@ -781,12 +1169,21 @@
     "keys": [
       "ALT",
       "S"
+    ],
+    "macKeys": [
+      "ALT",
+      "S"
     ]
   },
   {
     "group": "Task View",
     "label": "Star comment",
     "keys": [
+      "CTRL",
+      "SHIFT",
+      "S"
+    ],
+    "macKeys": [
       "CTRL",
       "SHIFT",
       "S"
@@ -799,6 +1196,11 @@
       "CTRL",
       "SHIFT",
       "P"
+    ],
+    "macKeys": [
+      "CTRL",
+      "SHIFT",
+      "P"
     ]
   },
   {
@@ -806,12 +1208,19 @@
     "label": "Follow task",
     "keys": [
       "F"
+    ],
+    "macKeys": [
+      "F"
     ]
   },
   {
     "group": "Task View",
     "label": "Unfollow task",
     "keys": [
+      "ALT",
+      "F"
+    ],
+    "macKeys": [
       "ALT",
       "F"
     ]
@@ -823,6 +1232,11 @@
       "CTRL",
       "SHIFT",
       "D"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "D"
     ]
   },
   {
@@ -830,6 +1244,11 @@
     "label": "Dictate and Improve",
     "keys": [
       "CTRL",
+      "SHIFT",
+      "F"
+    ],
+    "macKeys": [
+      "CMD",
       "SHIFT",
       "F"
     ]
@@ -841,6 +1260,11 @@
       "CTRL",
       "SHIFT",
       ","
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      ","
     ]
   },
   {
@@ -848,6 +1272,10 @@
     "label": "Save",
     "keys": [
       "CTRL",
+      "ENTER"
+    ],
+    "macKeys": [
+      "CMD",
       "ENTER"
     ]
   },
@@ -857,6 +1285,11 @@
     "keys": [
       "CTRL",
       "ALT",
+      "ENTER"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
       "ENTER"
     ]
   },
@@ -868,6 +1301,12 @@
       "ALT",
       "SHIFT",
       "ENTER"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
+      "SHIFT",
+      "ENTER"
     ]
   },
   {
@@ -875,6 +1314,11 @@
     "label": "Toggle AI chat",
     "keys": [
       "CTRL",
+      "SHIFT",
+      "?"
+    ],
+    "macKeys": [
+      "CMD",
       "SHIFT",
       "?"
     ]
@@ -886,12 +1330,21 @@
       "CTRL",
       "SHIFT",
       "O"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "O"
     ]
   },
   {
     "group": "AI Chat",
     "label": "Switch focus: AI chat / workspace",
     "keys": [
+      "CTRL",
+      "Q"
+    ],
+    "macKeys": [
       "CTRL",
       "Q"
     ]
@@ -901,6 +1354,9 @@
     "label": "Send message",
     "keys": [
       "Enter"
+    ],
+    "macKeys": [
+      "Enter"
     ]
   },
   {
@@ -908,6 +1364,10 @@
     "label": "Next agent",
     "keys": [
       "ALT",
+      "⭣"
+    ],
+    "macKeys": [
+      "OPT",
       "⭣"
     ]
   },
@@ -917,6 +1377,10 @@
     "keys": [
       "ALT",
       "⭡"
+    ],
+    "macKeys": [
+      "OPT",
+      "⭡"
     ]
   },
   {
@@ -924,6 +1388,10 @@
     "label": "Send message",
     "keys": [
       "CTRL",
+      "ENTER"
+    ],
+    "macKeys": [
+      "CMD",
       "ENTER"
     ]
   },
@@ -933,12 +1401,19 @@
     "keys": [
       "CTRL",
       "O"
+    ],
+    "macKeys": [
+      "CTRL",
+      "O"
     ]
   },
   {
     "group": "Agent Chat",
     "label": "Search tasks to reference",
     "keys": [
+      "@"
+    ],
+    "macKeys": [
       "@"
     ]
   },
@@ -947,6 +1422,11 @@
     "label": "Next team (any page)",
     "keys": [
       "ALT",
+      "SHIFT",
+      "⭣"
+    ],
+    "macKeys": [
+      "OPT",
       "SHIFT",
       "⭣"
     ]
@@ -958,12 +1438,20 @@
       "ALT",
       "SHIFT",
       "⭡"
+    ],
+    "macKeys": [
+      "OPT",
+      "SHIFT",
+      "⭡"
     ]
   },
   {
     "group": "Format",
     "label": "Tiptap menu",
     "keys": [
+      "/"
+    ],
+    "macKeys": [
       "/"
     ]
   },
@@ -973,6 +1461,10 @@
     "keys": [
       "CTRL",
       "Y"
+    ],
+    "macKeys": [
+      "CMD",
+      "Y"
     ]
   },
   {
@@ -980,12 +1472,19 @@
     "label": "Autocomplete sentence",
     "keys": [
       "2xTAB"
+    ],
+    "macKeys": [
+      "2xTAB"
     ]
   },
   {
     "group": "Format",
     "label": "Add a line break",
     "keys": [
+      "SHIFT",
+      "ENTER"
+    ],
+    "macKeys": [
       "SHIFT",
       "ENTER"
     ]
@@ -996,6 +1495,10 @@
     "keys": [
       "CTRL",
       "I"
+    ],
+    "macKeys": [
+      "CMD",
+      "I"
     ]
   },
   {
@@ -1004,6 +1507,10 @@
     "keys": [
       "CTRL",
       "U"
+    ],
+    "macKeys": [
+      "CMD",
+      "U"
     ]
   },
   {
@@ -1011,6 +1518,11 @@
     "label": "Quote",
     "keys": [
       "CTRL",
+      "SHIFT",
+      "B"
+    ],
+    "macKeys": [
+      "CMD",
       "SHIFT",
       "B"
     ]
@@ -1022,6 +1534,11 @@
       "CTRL",
       "SHIFT",
       "H"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "H"
     ]
   },
   {
@@ -1029,6 +1546,10 @@
     "label": "Code",
     "keys": [
       "CTRL",
+      "E"
+    ],
+    "macKeys": [
+      "CMD",
       "E"
     ]
   },
@@ -1039,6 +1560,11 @@
       "CTRL",
       "SHIFT",
       "8"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "8"
     ]
   },
   {
@@ -1047,6 +1573,10 @@
     "keys": [
       "CTRL",
       "Z"
+    ],
+    "macKeys": [
+      "CMD",
+      "Z"
     ]
   },
   {
@@ -1054,6 +1584,11 @@
     "label": "Redo",
     "keys": [
       "CTRL",
+      "SHIFT",
+      "Z"
+    ],
+    "macKeys": [
+      "CMD",
       "SHIFT",
       "Z"
     ]
@@ -1065,6 +1600,11 @@
       "CTRL",
       "ALT",
       "0"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
+      "0"
     ]
   },
   {
@@ -1073,6 +1613,11 @@
     "keys": [
       "CTRL",
       "ALT",
+      "1"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
       "1"
     ]
   },
@@ -1083,6 +1628,11 @@
       "CTRL",
       "ALT",
       "2"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
+      "2"
     ]
   },
   {
@@ -1091,6 +1641,11 @@
     "keys": [
       "CTRL",
       "ALT",
+      "3"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
       "3"
     ]
   },
@@ -1101,6 +1656,11 @@
       "CTRL",
       "ALT",
       "4"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
+      "4"
     ]
   },
   {
@@ -1110,6 +1670,11 @@
       "CTRL",
       "ALT",
       "5"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
+      "5"
     ]
   },
   {
@@ -1118,6 +1683,11 @@
     "keys": [
       "CTRL",
       "ALT",
+      "6"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
       "6"
     ]
   },
@@ -1129,6 +1699,12 @@
       "ALT",
       "SHIFT",
       "C"
+    ],
+    "macKeys": [
+      "CMD",
+      "OPT",
+      "SHIFT",
+      "C"
     ]
   },
   {
@@ -1136,6 +1712,11 @@
     "label": "Code",
     "keys": [
       "CTRL",
+      "SHIFT",
+      "C"
+    ],
+    "macKeys": [
+      "CMD",
       "SHIFT",
       "C"
     ]
@@ -1147,6 +1728,11 @@
       "CTRL",
       "SHIFT",
       "A"
+    ],
+    "macKeys": [
+      "CMD",
+      "SHIFT",
+      "A"
     ]
   },
   {
@@ -1155,6 +1741,10 @@
     "keys": [
       "CTRL",
       "A"
+    ],
+    "macKeys": [
+      "CMD",
+      "A"
     ]
   },
   {
@@ -1162,12 +1752,19 @@
     "label": "Select message",
     "keys": [
       "X"
+    ],
+    "macKeys": [
+      "X"
     ]
   },
   {
     "group": "Inbox",
     "label": "Bulk Archive",
     "keys": [
+      "SHIFT",
+      "E"
+    ],
+    "macKeys": [
       "SHIFT",
       "E"
     ]
@@ -1178,12 +1775,19 @@
     "keys": [
       "SHIFT",
       "H"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "H"
     ]
   },
   {
     "group": "Inbox",
     "label": "Archive",
     "keys": [
+      "E"
+    ],
+    "macKeys": [
       "E"
     ]
   },
@@ -1192,6 +1796,9 @@
     "label": "Open task",
     "keys": [
       "ENTER"
+    ],
+    "macKeys": [
+      "ENTER"
     ]
   },
   {
@@ -1199,12 +1806,18 @@
     "label": "Move focus down",
     "keys": [
       "J"
+    ],
+    "macKeys": [
+      "J"
     ]
   },
   {
     "group": "Inbox",
     "label": "Move focus up",
     "keys": [
+      "K"
+    ],
+    "macKeys": [
       "K"
     ]
   },
@@ -1214,12 +1827,19 @@
     "keys": [
       "CTRL",
       "E"
+    ],
+    "macKeys": [
+      "CMD",
+      "E"
     ]
   },
   {
     "group": "Calendar",
     "label": "Add task",
     "keys": [
+      "C"
+    ],
+    "macKeys": [
       "C"
     ]
   },
@@ -1228,12 +1848,18 @@
     "label": "Update due date",
     "keys": [
       "D"
+    ],
+    "macKeys": [
+      "D"
     ]
   },
   {
     "group": "Calendar",
     "label": "Next month/week",
     "keys": [
+      "I"
+    ],
+    "macKeys": [
       "I"
     ]
   },
@@ -1242,6 +1868,9 @@
     "label": "Previous month/week",
     "keys": [
       "U"
+    ],
+    "macKeys": [
+      "U"
     ]
   },
   {
@@ -1249,12 +1878,18 @@
     "label": "Month view",
     "keys": [
       "M"
+    ],
+    "macKeys": [
+      "M"
     ]
   },
   {
     "group": "Calendar",
     "label": "Week view",
     "keys": [
+      "W"
+    ],
+    "macKeys": [
       "W"
     ]
   },
@@ -1264,12 +1899,19 @@
     "keys": [
       "SHIFT",
       "D"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "D"
     ]
   },
   {
     "group": "Calendar",
     "label": "Focus on today",
     "keys": [
+      "T"
+    ],
+    "macKeys": [
       "T"
     ]
   },
@@ -1278,12 +1920,19 @@
     "label": "Focus on next day",
     "keys": [
       "TAB"
+    ],
+    "macKeys": [
+      "TAB"
     ]
   },
   {
     "group": "Calendar",
     "label": "Focus on yesterday",
     "keys": [
+      "SHIFT",
+      "TAB"
+    ],
+    "macKeys": [
       "SHIFT",
       "TAB"
     ]
@@ -1295,6 +1944,11 @@
       "CTRL",
       "[",
       "]"
+    ],
+    "macKeys": [
+      "CMD",
+      "[",
+      "]"
     ]
   },
   {
@@ -1302,12 +1956,19 @@
     "label": "Select project from filters",
     "keys": [
       "SPACE"
+    ],
+    "macKeys": [
+      "SPACE"
     ]
   },
   {
     "group": "Calendar",
     "label": "Filter tasks",
     "keys": [
+      "SHIFT",
+      "F"
+    ],
+    "macKeys": [
       "SHIFT",
       "F"
     ]
@@ -1318,6 +1979,10 @@
     "keys": [
       "SHIFT",
       "V"
+    ],
+    "macKeys": [
+      "SHIFT",
+      "V"
     ]
   },
   {
@@ -1326,12 +1991,19 @@
     "keys": [
       "CTRL",
       "E"
+    ],
+    "macKeys": [
+      "CMD",
+      "E"
     ]
   },
   {
     "group": "Unarchive View (g -> e)",
     "label": "Delete task",
     "keys": [
+      "#"
+    ],
+    "macKeys": [
       "#"
     ]
   }
