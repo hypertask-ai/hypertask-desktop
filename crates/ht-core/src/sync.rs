@@ -202,6 +202,13 @@ impl<T: Transport> Sync<T> {
                 .context("draft task not cached")?;
             task["hasDescriptionDraft"] = json!(meaningful("description"));
             task["hasCommentDraft"] = json!(meaningful("comment"));
+            // Board badges use getUserDrafts, whose comment filter does not trim.
+            task["hasBoardDraft"] = json!(drafts.iter().any(|d| {
+                d["draftType"] == "comment"
+                    && d["text"]
+                        .as_str()
+                        .is_some_and(|text| !text.is_empty() && text != "<p></p>")
+            }));
             db.upsert("Task", &task)
         })
     }

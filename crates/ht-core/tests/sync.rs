@@ -312,12 +312,14 @@ fn draft_flags_are_server_owned_and_empty_snapshots_remove_markers() {
     let task = sync.db.task(1).unwrap().unwrap();
     assert_eq!(task.extra["hasDescriptionDraft"], true);
     assert_eq!(task.extra["hasCommentDraft"], true);
+    assert_eq!(task.extra["hasBoardDraft"], true);
     assert_eq!(task.description, "Published description");
     assert_eq!(task.title, "Local title");
     sync.drafts(1).unwrap();
     let task = sync.db.task(1).unwrap().unwrap();
     assert_eq!(task.extra["hasDescriptionDraft"], false);
     assert_eq!(task.extra["hasCommentDraft"], false);
+    assert_eq!(task.extra["hasBoardDraft"], false);
     assert_eq!(
         sync.transport.paths,
         ["/drafts?task_id=1", "/drafts?task_id=1"]
@@ -361,6 +363,10 @@ fn draft_emptiness_matches_use_has_drafts_and_wrong_task_is_rejected() {
             "hasCommentDraft"
         };
         assert_eq!(task.extra[key], expected, "{kind}: {text}");
+        assert_eq!(
+            task.extra["hasBoardDraft"],
+            kind == "comment" && !text.is_empty() && text != "<p></p>"
+        );
     }
     let mut bad = f["drafts"].clone();
     bad["drafts"][0]["taskId"] = json!(2);
@@ -422,4 +428,112 @@ fn inbox_refresh_updates_cached_titles_but_reapplies_local_edits() {
     sync.inbox().unwrap();
     assert_eq!(sync.db.inbox().unwrap()[0].title, "Local title");
     assert_eq!(sync.db.task(1).unwrap().unwrap().title, "Local title");
+}
+
+#[test]
+fn creator_hydration_batches_at_one_hundred_and_does_not_refetch_cached_creators() {
+    let f = fidelity();
+    let tasks: Vec<_> = (1..=101)
+        .map(|id| {
+            let mut task = f["list"]["tasks"][0].clone();
+            task["id"] = json!(id);
+            task
+        })
+        .collect();
+    let details: Vec<_> = tasks
+        .iter()
+        .map(|task| {
+            let mut task = task.clone();
+            task["createdBy"] = f["detail"]["tasks"][0]["createdBy"].clone();
+            task
+        })
+        .collect();
+    let mut sync = Sync::new(
+        Db::memory().unwrap(),
+        Script::new(vec![
+            f["sections"].clone(),
+            page(tasks[..100].to_vec(), 101),
+            page(tasks[100..].to_vec(), 101),
+            page(details[..100].to_vec(), 100),
+            page(details[100..].to_vec(), 1),
+            f["sections"].clone(),
+            page(vec![], 0),
+            page(vec![], 0),
+            page(vec![], 0),
+        ]),
+    );
+    sync.board(15).unwrap();
+    assert_eq!(
+        query(&sync.transport.paths[3])["task_id"]
+            .split(',')
+            .count(),
+        100
+    );
+    assert_eq!(query(&sync.transport.paths[4])["task_id"], "101");
+    sync.board(15).unwrap();
+    assert_eq!(sync.transport.paths.len(), 9);
+    assert_eq!(sync.db.board(15).unwrap()[0].cards.len(), 101);
+}
+
+#[test]
+fn worker_refreshes_board_drafts_progressively_without_opening_task_pages() {
+    use std::{sync::mpsc, time::Duration};
+    struct Server {
+        send: mpsc::Sender<i64>,
+        fixture: Value,
+    }
+    impl Transport for Server {
+        fn get(&mut self, path: &str) -> std::result::Result<Response, TransportError> {
+            let f = &self.fixture;
+            let body = if path.starts_with("/projects?") {
+                json!({"success":true,"projects":[],"total":0})
+            } else if path.starts_with("/projects/15/sections?") {
+                f["sections"].clone()
+            } else if path.starts_with("/drafts?") {
+                let id: i64 = query(path)["task_id"].parse().unwrap();
+                self.send.send(id).unwrap();
+                json!({"success":true,"drafts":[{"id":id,"taskId":id,"draftType":"comment","text":"Example draft"}]})
+            } else {
+                let key = if query(path).contains_key("task_id") {
+                    "detail"
+                } else {
+                    "list"
+                };
+                let mut response = f[key].clone();
+                let mut second = response["tasks"][0].clone();
+                second["id"] = json!(2);
+                response["tasks"].as_array_mut().unwrap().push(second);
+                response["total"] = json!(2);
+                response
+            };
+            Ok(Response { status: 200, body })
+        }
+        fn post(
+            &mut self,
+            _: &str,
+            _: &Value,
+            _: &str,
+        ) -> std::result::Result<Response, TransportError> {
+            unreachable!()
+        }
+    }
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let (send, receive) = mpsc::channel();
+    let worker = ht_core::Worker::start(
+        file.path(),
+        Server {
+            send,
+            fixture: fidelity(),
+        },
+    )
+    .unwrap();
+    worker.handle().sync_board(15).unwrap();
+    let first = receive.recv_timeout(Duration::from_secs(10)).unwrap();
+    let second = receive.recv_timeout(Duration::from_secs(10)).unwrap();
+    assert_ne!(first, second);
+    drop(worker);
+    let db = Db::open(file.path()).unwrap();
+    for id in [1, 2] {
+        assert_eq!(db.task(id).unwrap().unwrap().extra["hasBoardDraft"], true);
+    }
 }

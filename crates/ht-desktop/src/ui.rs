@@ -1183,6 +1183,7 @@ impl Desktop {
                                     ),
                             ),
                     )
+                    .child(div().text_size(px(11.)).text_color(color(t.muted)).child(inbox_metadata(&n.raw_json["task"])))
                     .child(
                         div()
                             .w(px(62.))
@@ -1616,6 +1617,9 @@ impl Desktop {
                              task.due_date.as_deref().map(short_date)]
                                 .into_iter().flatten().collect::<Vec<_>>().join(" · ")
                         ))
+                    })
+                    .when(task.extra.get("hasBoardDraft").and_then(|v| v.as_bool()) == Some(true), |d| {
+                        d.child(div().text_size(px(11.)).text_color(color(t.accent)).child("Draft"))
                     })
                     .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
                         d.child(
@@ -2276,7 +2280,7 @@ fn inbox_date(value: Option<&str>) -> String {
 }
 
 fn creator_name(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    ["user", "createdBy", "creator"]
+    ["createdBy", "user", "creator"]
         .into_iter()
         .find_map(|key| extra.get(key).and_then(|v| v["displayName"].as_str().filter(|s| !s.is_empty()).or_else(|| v["email"].as_str())))
         .or_else(|| extra.get("creatorName").and_then(|v| v.as_str()))
@@ -2287,6 +2291,26 @@ fn creator_name(extra: &serde_json::Map<String, serde_json::Value>) -> String {
 fn priority_name(extra: &serde_json::Map<String, serde_json::Value>) -> &str {
     extra.get("priority").and_then(|v| v.as_str().or_else(|| v["Priority_Value"].as_str()))
         .unwrap_or("No Priority")
+}
+
+fn inbox_metadata(task: &serde_json::Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(date) = task["dueDate"].as_str() {
+        parts.push(short_date(date));
+    }
+    if let Some(priority) = task["priority"].as_str().or_else(|| task["priority"]["Priority_Value"].as_str()) {
+        parts.push(priority.to_owned());
+    }
+    if let Some(estimate) = task["estimate"]["estimate_value"].as_str() {
+        parts.push(estimate.to_owned());
+    }
+    let labels: Vec<_> = task["taskLabels"].as_array().into_iter().flatten()
+        .filter_map(|label| label["label"]["value"].as_str()).filter(|name| !name.is_empty()).collect();
+    parts.extend(labels.iter().take(3).map(|name| (*name).to_owned()));
+    if labels.len() > 3 {
+        parts.push(format!("+{}", labels.len() - 3));
+    }
+    parts.join(" · ")
 }
 
 fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
@@ -2404,6 +2428,17 @@ mod tests {
         assert_eq!(comment_author(json!({"pending": true}).as_object().unwrap()), "You · Pending");
         assert_eq!(creator_name(json!({"createdBy": {"email": "creator@example.com"}}).as_object().unwrap()), "creator@example.com");
         assert_eq!(priority_name(json!({"priority": null}).as_object().unwrap()), "No Priority");
+    }
+
+
+    #[test]
+    fn inbox_metadata_uses_server_shapes_and_web_label_limit() {
+        let task = json!({"priority": {"Priority_Value": "High"}, "estimate": {"estimate_value": "S"},
+            "dueDate": "2026-10-20T12:00:00Z", "taskLabels": [
+                {"label": {"value": "One"}}, {"label": {"value": "Two"}},
+                {"label": {"value": "Three"}}, {"label": {"value": "Four"}}]});
+        assert_eq!(inbox_metadata(&task), "20 Oct · High · S · One · Two · Three · +1");
+        assert_eq!(inbox_metadata(&json!({"priority": null, "dueDate": null})), "");
     }
 
 }
