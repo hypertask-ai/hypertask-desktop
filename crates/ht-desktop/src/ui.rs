@@ -22,7 +22,6 @@ use std::{
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
     Inbox,
@@ -86,6 +85,7 @@ pub struct Desktop {
     signin: SignIn,
     auto_board: bool,
     ai_sidebar: Option<Entity<AiSidebar>>,
+    _ai_sidebar_subscription: Option<gpui::Subscription>,
 }
 
 fn icon(name: &'static str, tint: u32, width: f32) -> impl IntoElement + Styled + use<> {
@@ -123,6 +123,8 @@ impl Desktop {
         let (mut signin, secret) = SignIn::start(options.offline);
         let ai_sidebar = (AI_CHAT_PANEL_SHOWN || options.ai_sidebar)
             .then(|| cx.new(|cx| AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx)));
+        let ai_sidebar_subscription = ai_sidebar.as_ref()
+            .map(|sidebar| cx.observe(sidebar, |_, _, cx| cx.notify()));
         let worker = secret.and_then(|secret| Self::start_worker(&options, &mut signin, secret));
         let auto_board = !options.offline && !options.board_given && signin.is_interactive();
         let mut options = options;
@@ -172,6 +174,7 @@ impl Desktop {
             signin,
             auto_board,
             ai_sidebar,
+            _ai_sidebar_subscription: ai_sidebar_subscription,
         };
         view.reload();
         view.request_sync();
@@ -1255,8 +1258,9 @@ impl Desktop {
             .map(|t| t.board_title.as_str())
             .unwrap_or("Board");
         let count: usize = self.columns.iter().map(|c| c.cards.len()).sum();
-        let board_width =
-            (f32::from(window.viewport_size().width) - 48. - self.ai_sidebar.as_ref().map_or(0., |sidebar| sidebar.read(cx).width())).max(0.);
+        let sidebar_width = self.ai_sidebar.as_ref()
+            .map_or(0., |sidebar| sidebar.read(cx).width());
+        let board_width = (f32::from(window.viewport_size().width) - 48. - sidebar_width).max(0.);
         let column_width = ((board_width * 0.97
             - 16. * self.columns.len().saturating_sub(1) as f32)
             / self.columns.len().max(1) as f32)
@@ -2110,7 +2114,8 @@ impl Render for Desktop {
             return self.sign_in_panel(cx).into_any_element();
         }
         if let Some(sidebar) = &self.ai_sidebar {
-            let task = (self.screen != Screen::Board).then(|| self.selected_task()).flatten();
+            let task = (self.screen != Screen::Board)
+                .then(|| self.selected_task()).flatten();
             let scope = Scope::load(&self.db, self.screen, self.options.board, task);
             sidebar.update(cx, |sidebar, cx| sidebar.set_scope(scope, cx));
         }
@@ -2155,8 +2160,10 @@ impl Render for Desktop {
             )
             .when_some(self.ai_sidebar.clone(), |d, sidebar| {
                 let width = sidebar.read(cx).width();
-                d.child(div().w(px(width)).flex_shrink_0().h_full().child(sidebar)
-                    .layout_key(&self.layout, "rightpanel", None))
+                d.child(
+                    div().w(px(width)).flex_shrink_0().h_full().child(sidebar)
+                        .layout_key(&self.layout, "rightpanel", None),
+                )
             })
             .into_any_element()
     }

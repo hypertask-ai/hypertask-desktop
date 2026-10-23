@@ -73,7 +73,8 @@ try {
   assert.equal(typeof token, 'string');
   // Identity guard only; production validates the signature and authorization.
   const claims = JSON.parse(Buffer.from(token.split('.')[1], 'base64url').toString('utf8'));
-  assert.equal(claims.email, qaEmail);
+  assert.equal(claims.sub, qaEmail);
+  assert(!claims.agentId);
   const headers = { Authorization: `Bearer ${token}`, 'Content-Type': 'application/json' };
   const response = await fetch(`${origin}/api/ai/chat/stream`, {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(310_000),

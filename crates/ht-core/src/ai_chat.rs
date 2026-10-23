@@ -518,7 +518,12 @@ mod tests {
             let mut body = vec![0; length];
             reader.read_exact(&mut body).unwrap();
             socket.write_all(response.as_bytes()).unwrap();
-            (headers, serde_json::from_slice(&body).unwrap())
+            let body = if body.is_empty() {
+                Value::Null
+            } else {
+                serde_json::from_slice(&body).unwrap()
+            };
+            (headers, body)
         });
         (base, handle)
     }
@@ -635,6 +640,37 @@ mod tests {
             }
             server.join().unwrap();
         }
+    }
+
+    #[test]
+    fn history_uses_bearer_only_get_and_preserves_server_refusals() {
+        let (base, server) = server(
+            "200 OK",
+            "application/json",
+            r#"{"success":true,"sessions":[{"id":"saved","title":"Saved","messages":[{"role":"human","content":"Hi"}]}]}"#,
+        );
+        let sessions = Client::with_base(&base, "human-token".into())
+            .unwrap()
+            .sessions()
+            .unwrap();
+        assert_eq!(sessions[0].messages[0].content, "Hi");
+        let (headers, _) = server.join().unwrap();
+        assert!(headers.starts_with("GET /api/ai-chat/all-sessions HTTP/1.1\r\n"));
+        let headers = headers.to_ascii_lowercase();
+        assert!(headers.contains("authorization: bearer human-token\r\n"));
+        assert!(!headers.contains("x-hypertask-sidebar-project"));
+        assert!(!headers.contains("cookie:"));
+        let (base, server) = self::server(
+            "403 Forbidden",
+            "application/json",
+            r#"{"message":"History denied"}"#,
+        );
+        let error = Client::with_base(&base, "token".into())
+            .unwrap()
+            .sessions()
+            .unwrap_err();
+        assert_eq!(error.to_string(), "HTTP 403: History denied");
+        server.join().unwrap();
     }
 
     #[test]
