@@ -718,6 +718,8 @@ impl Desktop {
             ],
         };
         div()
+            .text_size(px(14.))
+            .line_height(px(21.))
             .h(px(37.))
             .w_full()
             .flex_shrink_0()
@@ -885,21 +887,38 @@ impl Desktop {
                     this.filter_inbox();
                     cx.notify();
                 }))
-                .child(name.clone())
                 .child(
                     div()
-                        .text_size(px(11.))
-                        .font_weight(FontWeight::NORMAL)
-                        .text_color(color(
-                            if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled)
-                            {
-                                0xd1d5dc
-                            } else {
-                                0x4b5563
-                            },
-                        ))
-                        .child(count.to_string()),
+                        .flex()
+                        .items_baseline()
+                        .gap(px(4.))
+                        .font_weight(if i == self.split {
+                            FontWeight::SEMIBOLD
+                        } else {
+                            FontWeight::NORMAL
+                        })
+                        .text_color(color(if i == self.split { 0xf3f4f6 } else { t.muted }))
+                        .child(name.clone())
+                        .child(
+                            div()
+                                .text_size(px(11.))
+                                .font_weight(FontWeight::NORMAL)
+                                .text_color(color(
+                                    if matches!(
+                                        self.options.theme,
+                                        ThemeName::Graphite | ThemeName::Amoled
+                                    ) {
+                                        0xd1d5dc
+                                    } else {
+                                        0x4b5563
+                                    },
+                                ))
+                                .child(count.to_string()),
+                        ),
                 )
+                .when(i + 1 == self.splits.len(), |d| {
+                    d.child(div().px(px(4.)).child(icon("settings", t.muted, 14.)))
+                })
                 .layout_key(
                     &self.layout,
                     format!("inbox.tab.{i}"),
@@ -931,6 +950,7 @@ impl Desktop {
                             .pt(px(24.))
                             .pb(px(24.))
                             .flex()
+                            .gap(px(9.))
                             .child(
                                 div()
                                     .flex_1()
@@ -940,7 +960,8 @@ impl Desktop {
                                     .gap(px(9.))
                                     .children(tabs)
                                     .layout_key(&self.layout, "inbox.tabs", None),
-                            ),
+                            )
+                            .child(div()),
                     )
                     .child(
                         div()
@@ -1129,6 +1150,7 @@ impl Desktop {
                                             .flex_shrink_0()
                                             .text_color(color(0x999a9d))
                                             .text_size(px(11.))
+                                            .line_height(px(16.5))
                                             .child(n.ticket_number.clone().unwrap_or_default())
                                             .child(" ")
                                             .layout_key(
@@ -1710,22 +1732,24 @@ impl Desktop {
             ThemeName::Amoled => 0x0c0c0c,
             _ => 0xffffff,
         };
-        div().id("task-scroll").track_scroll(&self.detail_scroll).overflow_y_scroll().flex_1().min_h_0().bg(color(t.page)).flex().flex_col().items_center()
+        div().id("task-scroll").track_scroll(&self.detail_scroll).overflow_y_scroll().flex_1().min_h_0().bg(color(t.page)).flex().flex_col().items_center().relative()
+            .child(div().id("task-back").absolute().left(px(23.)).top(px(51.)).cursor_pointer().on_click(cx.listener(|this, _, _, cx| this.switch(this.previous, cx))).child(icon("arrow-left", t.muted, 18.)))
+            .child(div().absolute().left(px(12.)).top(px(88.)).w(px(40.)).h(px(68.)).rounded_full().bg(color(navigation_color)).shadow(shadow()).flex().flex_col().justify_center().items_center().gap(px(10.)).text_color(color(t.muted)).children(["chevron-up", "chevron-down"].into_iter().map(|name| div().opacity(0.4).child(icon(name, t.muted, 18.)))))
             .child(div().w_full().max_w(px(1136.)).min_h_full().bg(color(t.detail)).flex().flex_col()
             .child(div().flex_shrink_0().pt(px(36.)).pl(px(82.)).pr(px(64.)).pb(px(8.)).relative()
-                .child(div().id("task-back").absolute().left(px(23.)).top(px(51.)).cursor_pointer().on_click(cx.listener(|this, _, _, cx| this.switch(this.previous, cx))).child(icon("arrow-left", t.muted, 18.)))
+
                 .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(36.)).min_h(px(37.)).child(title)
                     .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).pt(px(10.25)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
                         .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(icon("layers", 0x696b6e, 16.))))
                 .child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone())).layout_key(&self.layout, "task.header", None))
             .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
-                .child(div().absolute().left(px(12.)).top(px(-36.)).w(px(40.)).h(px(68.)).rounded_full().bg(color(navigation_color)).shadow(shadow()).flex().flex_col().justify_center().items_center().gap(px(10.)).text_color(color(t.muted)).children(["chevron-up", "chevron-down"].into_iter().map(|name| div().opacity(0.4).child(icon(name, t.muted, 18.)))))
+
                 .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
                     .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.options.theme == ThemeName::Graphite { 0x363b44 } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
                             .child(self.creator.clone()).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
-                        .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.description.text.trim().is_empty(), |d| d.child(div().text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(!self.description.text.trim().is_empty(), |d| d.child(self.description.element())).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
+                        .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(!self.description.text.trim().is_empty(), |d| d.child(self.description.element())).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
                             .child(div().flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add sub-tasks"))
@@ -1733,9 +1757,9 @@ impl Desktop {
                             .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
                     .child(div().id("comment-composer").anchor_scroll(Some(self.composer_anchor.clone())).h(px(if self.options.theme == ThemeName::Porcelain { 152. } else { 154. })).pt(px(19.)).pb(px(if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled) { 27. } else { 25. })).pl(px(19.)).pr(px(16.)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).bg(color(t.comment)).border_1().border_color(color(t.border)).shadow_md().flex().flex_col()
                         .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
-                        .child(self.comment_input.clone())
+                        .child(div().text_size(px(14.)).line_height(px(21.)).child(self.comment_input.clone()))
                         .child(div().flex_1())
-                        .child(div().flex().items_center().text_color(color(0x95999e)).font_weight(FontWeight::SEMIBOLD)
+                        .child(div().flex().items_center().text_size(px(14.)).line_height(px(21.)).text_color(color(0x95999e)).font_weight(FontWeight::SEMIBOLD)
                             .child(div().flex().items_center().child("Send + ").child(icon("send-archive", 0x696b6e, 14.)))
                             .child(div().id("send-comment").ml(px(24.)).cursor_pointer().on_click(cx.listener(|this, _, window, cx| { cx.stop_propagation(); this.editing = Editing::Comment; this.save_edit(window, cx); })).child("Send"))
                             .child(div().flex_1()).child(div().text_size(px(16.)).font_weight(FontWeight::NORMAL).text_color(color(0xc668ff)).child("ai"))
