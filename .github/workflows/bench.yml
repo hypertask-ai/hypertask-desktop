@@ -1,0 +1,37 @@
+name: Bench
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+concurrency:
+  group: bench-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  bench:
+    name: bench-macos-gpu
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - run: brew install hyperfine
+      - run: npm ci
+      - name: Budgets
+        run: |
+          set +e
+          for gate in cold-start frame-time memory; do
+            node gates/$gate.mjs 2>&1 | grep -v -E '^\s+(Compiling|Downloaded|Downloading)' | tee -a bench.txt
+            echo "exit $gate=${PIPESTATUS[0]}" | tee -a bench.txt
+          done
+          sysctl -n machdep.cpu.brand_string | tee -a bench.txt
+          system_profiler SPDisplaysDataType | grep -E 'Chipset|Metal' | tee -a bench.txt
+      - uses: actions/upload-artifact@v4
+        with:
+          name: bench-macos
+          path: bench.txt
+      - name: Fail when a budget fails
+        run: "! grep -E '^exit .*=[1-9]' bench.txt"

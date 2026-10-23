@@ -1,0 +1,9 @@
+{
+  "name": "hypertask-desktop-tools",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "odiff-bin": "^3.2.1",
+    "playwright": "^1.63.0"
+  }
+}

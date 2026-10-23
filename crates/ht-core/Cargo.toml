@@ -1,0 +1,24 @@
+[package]
+name = "ht-core"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[features]
+default = []
+realtime-ws = ["dep:tungstenite"]
+
+[dependencies]
+anyhow = "1"
+chrono = { version = "0.4", default-features = false, features = ["clock", "serde"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+ureq = { version = "2.12", default-features = false, features = ["tls", "json"] }
+uuid = { version = "1", features = ["v4"] }
+url = "2"
+tungstenite = { version = "0.28", optional = true, features = ["rustls-tls-webpki-roots"] }
+
+[dev-dependencies]
+proptest = "1"
+tempfile = "3"

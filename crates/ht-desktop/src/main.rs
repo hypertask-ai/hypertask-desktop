@@ -1,0 +1,294 @@
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
+mod input;
+mod memory;
+mod rich_text;
+mod signin;
+mod store;
+mod theme;
+mod ui;
+
+use anyhow::{Context as _, Result, bail};
+use gpui::{
+    App, AssetSource, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, point,
+    prelude::*, px, size,
+};
+use std::{borrow::Cow, path::PathBuf};
+use theme::ThemeName;
+use ui::{Desktop, Screen};
+
+#[derive(Clone)]
+pub struct Options {
+    pub db: PathBuf,
+    pub offline: bool,
+    pub screen: Screen,
+    pub board: i64,
+    pub board_given: bool,
+    pub task: i64,
+    pub theme: ThemeName,
+    pub exit_after_ready: bool,
+    pub print_memory: bool,
+    pub bench_input: usize,
+}
+
+impl Options {
+    fn parse(args: impl IntoIterator<Item = String>) -> Result<Self> {
+        let mut result = Self {
+            db: dirs::data_dir()
+                .context("OS app-data directory is unavailable")?
+                .join("Hypertask/local.db"),
+            offline: false,
+            screen: Screen::Inbox,
+            board: 15,
+            board_given: false,
+            task: 64897,
+            theme: ThemeName::Porcelain,
+            exit_after_ready: false,
+            print_memory: false,
+            bench_input: 0,
+        };
+        let mut args = args.into_iter();
+        while let Some(arg) = args.next() {
+            match arg.as_str() {
+                "--offline" => result.offline = true,
+                "--hold-after-ready" => (),
+                "--exit-after-ready" => result.exit_after_ready = true,
+                "--print-memory" => result.print_memory = true,
+                "--db" => result.db = args.next().context("--db requires a path")?.into(),
+                "--screen" => {
+                    result.screen = Screen::parse(
+                        &args
+                            .next()
+                            .context("--screen requires inbox, board or task")?,
+                    )?
+                }
+                "--theme" => {
+                    result.theme =
+                        ThemeName::parse(&args.next().context("--theme requires a name")?)?
+                }
+                "--board" => {
+                    result.board_given = true;
+                    result.board = args
+                        .next()
+                        .context("--board requires a project id")?
+                        .parse()?
+                }
+                "--task" => {
+                    result.task = args.next().context("--task requires a task id")?.parse()?
+                }
+                "--bench-input" => {
+                    result.bench_input =
+                        args.next().context("--bench-input requires N")?.parse()?;
+                    anyhow::ensure!(result.bench_input > 0, "--bench-input must be positive");
+                }
+                _ => bail!("unknown option: {arg}"),
+            }
+        }
+        anyhow::ensure!(
+            !(result.exit_after_ready && result.bench_input > 0),
+            "choose --exit-after-ready or --bench-input"
+        );
+        Ok(result)
+    }
+}
+
+struct Assets;
+impl AssetSource for Assets {
+    fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        macro_rules! icons {
+            ($($name:literal),*) => { match path {
+                $($name => Some(Cow::Borrowed(include_bytes!(concat!("../assets/icons/", $name, ".svg")).as_slice())),)*
+                _ => None,
+            }};
+        }
+        Ok(icons!(
+            "inbox",
+            "columns-2",
+            "rows-3",
+            "calendar",
+            "sparkles",
+            "search",
+            "bot",
+            "user-plus",
+            "rocket",
+            "message-circle",
+            "settings",
+            "panel-left",
+            "chevron-right",
+            "chevron-left",
+            "chevron-up",
+            "chevron-down",
+            "arrow-left",
+            "arrow-up-down",
+            "filter",
+            "ellipsis",
+            "plus",
+            "archive",
+            "archive-x",
+            "clock",
+            "circle-check",
+            "layers",
+            "paperclip",
+            "mic",
+            "send",
+            "x",
+            "house",
+            "message-square",
+            "user-round",
+            "tag",
+            "arrow-right",
+            "corner-left-up",
+            "ai-sparkles",
+            "send-archive"
+        ))
+    }
+    fn list(&self, _: &str) -> Result<Vec<SharedString>> {
+        Ok(vec![])
+    }
+}
+
+fn run() -> Result<()> {
+    let options = Options::parse(std::env::args().skip(1))?;
+    if let Some(parent) = options.db.parent().filter(|p| !p.as_os_str().is_empty()) {
+        std::fs::create_dir_all(parent)?;
+    }
+    let db = ht_core::Db::open(&options.db)?;
+    gpui_platform::application()
+        .with_assets(Assets)
+        .run(move |cx: &mut App| {
+            let fonts: Vec<Cow<'static, [u8]>> = vec![
+                Cow::Borrowed(include_bytes!("../assets/fonts/IBMPlexSans-400.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/IBMPlexSans-500.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/IBMPlexSans-600.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/IBMPlexSans-700.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/Inter.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/Inter-500.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/Inter-600.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/Inter-700.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/LiberationMono-Bold.ttf")),
+                Cow::Borrowed(include_bytes!("../assets/fonts/Newsreader-Italic.ttf")),
+            ];
+            cx.text_system()
+                .add_fonts(fonts)
+                .expect("load embedded fonts");
+            input::init(cx);
+            if cfg!(target_os = "linux") {
+                cx.set_text_rendering_mode(gpui::TextRenderingMode::Grayscale);
+            }
+            let origin_x = if cfg!(target_os = "linux")
+                && std::env::var_os("DISPLAY").is_some()
+                && std::env::var("WAYLAND_DISPLAY")
+                    .unwrap_or_default()
+                    .is_empty()
+            {
+                -2.
+            } else {
+                0.
+            };
+            let window = cx
+                .open_window(
+                    WindowOptions {
+                        window_bounds: Some(WindowBounds::Windowed(Bounds::new(
+                            point(px(origin_x), px(0.)),
+                            size(px(1440.), px(900.)),
+                        ))),
+                        titlebar: Some(TitlebarOptions {
+                            title: Some("Hypertask".into()),
+                            appears_transparent: false,
+                            ..Default::default()
+                        }),
+                        window_decorations: Some(WindowDecorations::Server),
+                        inactive_frame_interval: None,
+                        app_id: Some("ai.hypertask.desktop".into()),
+                        ..Default::default()
+                    },
+                    |window, cx| cx.new(|cx| Desktop::new(db, options, window, cx)),
+                )
+                .expect("open native window");
+            window
+                .update(cx, |view, window, cx| window.focus(&view.focus, cx))
+                .expect("focus window");
+            cx.on_window_closed(|cx, _| {
+                if cx.windows().is_empty() {
+                    cx.quit();
+                }
+            })
+            .detach();
+            cx.activate(true);
+        });
+    Ok(())
+}
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("Hypertask: {error}");
+        std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn static_inter_weights_preserve_the_full_character_map() {
+        fn cmap(font: &[u8]) -> &[u8] {
+            let count = u16::from_be_bytes(font[4..6].try_into().unwrap()) as usize;
+            for table in font[12..12 + count * 16].chunks_exact(16) {
+                if &table[..4] == b"cmap" {
+                    let offset = u32::from_be_bytes(table[8..12].try_into().unwrap()) as usize;
+                    let length = u32::from_be_bytes(table[12..16].try_into().unwrap()) as usize;
+                    return &font[offset..offset + length];
+                }
+            }
+            panic!("font has no character map");
+        }
+        let original = cmap(include_bytes!("../assets/fonts/Inter.ttf"));
+        for face in [
+            include_bytes!("../assets/fonts/Inter-500.ttf").as_slice(),
+            include_bytes!("../assets/fonts/Inter-600.ttf").as_slice(),
+            include_bytes!("../assets/fonts/Inter-700.ttf").as_slice(),
+        ] {
+            assert_eq!(cmap(face), original, "retain the full Inter character map");
+        }
+    }
+
+    #[test]
+    fn cli_validates_all_contract_flags() {
+        let opts = Options::parse(
+            [
+                "--db",
+                "/tmp/test.db",
+                "--offline",
+                "--screen",
+                "board",
+                "--board",
+                "15",
+                "--task",
+                "58006",
+                "--theme",
+                "dia",
+                "--hold-after-ready",
+                "--print-memory",
+                "--bench-input",
+                "300",
+            ]
+            .map(str::to_owned),
+        )
+        .unwrap();
+        assert!(opts.offline);
+        assert!(opts.print_memory);
+        assert!(!Options::parse([]).unwrap().print_memory);
+        assert_eq!(opts.bench_input, 300);
+        assert_eq!(opts.theme, ThemeName::Dia);
+        for args in [
+            vec!["--screen", "nope"],
+            vec!["--db"],
+            vec!["--theme", "blue"],
+            vec!["--bench-input", "0"],
+            vec!["--unknown"],
+            vec!["--exit-after-ready", "--bench-input", "3"],
+        ] {
+            assert!(Options::parse(args.into_iter().map(str::to_owned)).is_err());
+        }
+    }
+}

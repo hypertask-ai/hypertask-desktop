@@ -1,0 +1,31 @@
+#[cfg(windows)]
+pub fn print() -> anyhow::Result<()> {
+    use anyhow::Context as _;
+    use windows::Win32::System::{
+        ProcessStatus::{GetProcessMemoryInfo, PROCESS_MEMORY_COUNTERS, PROCESS_MEMORY_COUNTERS_EX},
+        Threading::GetCurrentProcess,
+    };
+
+    let mut counters = PROCESS_MEMORY_COUNTERS_EX::default();
+    let size = std::mem::size_of::<PROCESS_MEMORY_COUNTERS_EX>() as u32;
+    counters.cb = size;
+    unsafe {
+        GetProcessMemoryInfo(
+            GetCurrentProcess(),
+            (&mut counters as *mut PROCESS_MEMORY_COUNTERS_EX).cast::<PROCESS_MEMORY_COUNTERS>(),
+            size,
+        )
+    }
+    .context("GetProcessMemoryInfo")?;
+    println!(
+        "MEMORY private_mb={:.2} working_set_mb={:.2}",
+        counters.PrivateUsage as f64 / 1_048_576.0,
+        counters.WorkingSetSize as f64 / 1_048_576.0,
+    );
+    Ok(())
+}
+
+#[cfg(not(windows))]
+pub fn print() -> anyhow::Result<()> {
+    Ok(())
+}

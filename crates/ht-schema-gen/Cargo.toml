@@ -1,0 +1,5 @@
+[package]
+name = "ht-schema-gen"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
