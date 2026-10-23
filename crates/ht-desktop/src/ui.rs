@@ -1,19 +1,23 @@
 use crate::{
     Options,
     input::TextInput,
+    layout::{Capture, LayoutDump, LayoutKey},
     rich_text::RichText,
     signin::{Event, Phase, SignIn},
     theme::{Theme, ThemeName, color},
 };
 use gpui::{
-    AnyElement, App, Context, Div, Entity, FocusHandle, Focusable, FontWeight, KeyDownEvent,
-    Keystroke, ListAlignment, ListState, PlatformInput, ScrollAnchor, ScrollHandle, ScrollStrategy,
-    SharedString, Stateful, UniformListScrollHandle, Window, div, list, point, prelude::*, px,
-    rgba, svg, uniform_list,
+    AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, KeyDownEvent, Keystroke,
+    ListAlignment, ListState, PlatformInput, ScrollAnchor, ScrollHandle, ScrollStrategy,
+    SharedString, UniformListScrollHandle, Window, div, list, point, prelude::*, px, rgba, svg,
+    uniform_list,
 };
 use ht_core::{BoardColumn, Db, InboxItem, TaskDetail, TaskView, Worker, Write};
 use std::{
+    cell::RefCell,
     io::Write as _,
+    path::PathBuf,
+    rc::Rc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
 
@@ -76,13 +80,14 @@ pub struct Desktop {
     moving: bool,
     footer: bool,
     ready_scheduled: bool,
+    layout: Capture,
     error: Option<String>,
     worker: Option<Worker>,
     signin: SignIn,
     auto_board: bool,
 }
 
-fn icon(name: &'static str, tint: u32, width: f32) -> impl IntoElement + use<> {
+fn icon(name: &'static str, tint: u32, width: f32) -> impl IntoElement + Styled + use<> {
     svg()
         .path(name)
         .size(px(width))
@@ -125,6 +130,10 @@ impl Desktop {
             focus: cx.focus_handle(),
             screen: options.screen,
             previous: Screen::Board,
+            layout: options
+                .dump_layout
+                .as_ref()
+                .map(|_| Rc::new(RefCell::new(LayoutDump::default()))),
             options,
             db,
             colors,
@@ -167,10 +176,7 @@ impl Desktop {
                     cx.background_executor()
                         .timer(Duration::from_millis(300))
                         .await;
-                    if view
-                        .update(cx, |this, cx| this.poll_signin(cx))
-                        .is_err()
-                    {
+                    if view.update(cx, |this, cx| this.poll_signin(cx)).is_err() {
                         break;
                     }
                 }
@@ -392,7 +398,9 @@ impl Desktop {
     fn switch(&mut self, screen: Screen, cx: &mut Context<Self>) {
         if self.auto_board && screen == Screen::Board {
             Self::resolve_board(&self.db, &mut self.options);
-            let _ = self.db.kv_set("last_board", &self.options.board.to_string());
+            let _ = self
+                .db
+                .kv_set("last_board", &self.options.board.to_string());
         }
         self.screen = screen;
         self.selected = 0;
@@ -606,7 +614,7 @@ impl Desktop {
 
     fn rail(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.colors;
-        let button = |name: &'static str, selected: bool| {
+        let button = |i: usize, name: &'static str, selected: bool| {
             div()
                 .w(px(36.))
                 .h(px(34.))
@@ -615,7 +623,11 @@ impl Desktop {
                 .justify_center()
                 .rounded(px(5.))
                 .when(selected, |d| d.bg(color(t.hover)))
-                .child(icon(name, t.muted, 18.))
+                .child(icon(name, t.muted, 18.).layout_key(
+                    &self.layout,
+                    format!("rail.icon.{i}"),
+                    None,
+                ))
         };
         div()
             .w(px(48.))
@@ -629,22 +641,17 @@ impl Desktop {
             .items_center()
             .pt(px(8.))
             .pb(px(8.))
-            .child(
-                div()
-                    .h(px(20.))
-                    .mb(px(4.))
-                    .flex()
-                    .items_center()
-                    .child(icon("chevron-right", t.muted, 16.)),
-            )
-            .child(button("panel-left", false))
+            .child(div().h(px(20.)).mb(px(4.)).flex().items_center().child(
+                icon("chevron-right", t.muted, 16.).layout_key(&self.layout, "rail.icon.0", None),
+            ))
+            .child(button(1, "panel-left", false))
             .child(div().h(px(16.)))
             .child(
                 div()
                     .id("rail-inbox")
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.switch(Screen::Inbox, cx)))
-                    .child(button("inbox", self.screen == Screen::Inbox)),
+                    .child(button(2, "inbox", self.screen == Screen::Inbox)),
             )
             .child(div().h(px(4.)))
             .child(
@@ -652,19 +659,22 @@ impl Desktop {
                     .id("rail-board")
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.switch(Screen::Board, cx)))
-                    .child(button("columns-2", self.screen == Screen::Board)),
+                    .child(button(3, "columns-2", self.screen == Screen::Board)),
             )
             .children(
                 ["rows-3", "calendar", "sparkles", "search"]
                     .into_iter()
-                    .map(|name| div().mt(px(4.)).child(button(name, false))),
+                    .enumerate()
+                    .map(|(i, name)| div().mt(px(4.)).child(button(i + 4, name, false))),
             )
             .child(div().flex_1())
             .children(
                 ["bot", "user-plus", "rocket", "message-circle", "settings"]
                     .into_iter()
-                    .map(|name| div().mb(px(4.)).child(button(name, false))),
+                    .enumerate()
+                    .map(|(i, name)| div().mb(px(4.)).child(button(i + 8, name, false))),
             )
+            .layout_key(&self.layout, "rail", None)
     }
 
     fn footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -772,7 +782,18 @@ impl Desktop {
                                 ),
                             )
                             .child(label)
-                    })),
+                    }))
+                    .layout_key(
+                        &self.layout,
+                        "footer.text",
+                        Some(
+                            items
+                                .iter()
+                                .map(|(key, label)| format!("{key} {label}"))
+                                .collect::<Vec<_>>()
+                                .join(" "),
+                        ),
+                    ),
             )
             .child(
                 div()
@@ -830,6 +851,7 @@ impl Desktop {
                     }))
                     .child(icon("x", self.colors.text, 18.)),
             )
+            .layout_key(&self.layout, "footer", None)
     }
 
     fn inbox_screen(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -848,14 +870,13 @@ impl Desktop {
                 .gap(px(4.))
                 .font_weight(FontWeight::MEDIUM)
                 .when(i == self.split, |d| {
-                    d.text_color(color(if matches!(
-                            self.options.theme,
-                            ThemeName::Graphite | ThemeName::Amoled
-                        ) {
+                    d.text_color(color(
+                        if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled) {
                             0xf3f4f6
                         } else {
                             0x111827
-                        }))
+                        },
+                    ))
                 })
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.split = i;
@@ -868,15 +889,20 @@ impl Desktop {
                     div()
                         .text_size(px(11.))
                         .font_weight(FontWeight::NORMAL)
-                        .text_color(color(if matches!(
-                            self.options.theme,
-                            ThemeName::Graphite | ThemeName::Amoled
-                        ) {
-                            0xd1d5db
-                        } else {
-                            0x4b5563
-                        }))
+                        .text_color(color(
+                            if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled)
+                            {
+                                0xd1d5db
+                            } else {
+                                0x4b5563
+                            },
+                        ))
                         .child(count.to_string()),
+                )
+                .layout_key(
+                    &self.layout,
+                    format!("inbox.tab.{i}"),
+                    Some(format!("{name} {count}")),
                 )
         });
         div()
@@ -905,7 +931,8 @@ impl Desktop {
                             .flex()
                             .items_center()
                             .child(icon("chevron-left", t.muted, 16.)),
-                    ),
+                    )
+                    .layout_key(&self.layout, "inbox.tabs", None),
             )
             .child(
                 div()
@@ -953,7 +980,16 @@ impl Desktop {
                                 self.filtered
                                     .first()
                                     .map(|&i| self.inbox[i].created_at.as_str()),
-                            )),
+                            ))
+                            .layout_key(
+                                &self.layout,
+                                "inbox.section",
+                                Some(inbox_date(
+                                    self.filtered
+                                        .first()
+                                        .map(|&i| self.inbox[i].created_at.as_str()),
+                                )),
+                            ),
                     )
                     .when(self.filtered.is_empty(), |d| {
                         d.child(
@@ -984,7 +1020,7 @@ impl Desktop {
             )
     }
 
-    fn inbox_row(&self, row: usize, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn inbox_row(&self, row: usize, cx: &mut Context<Self>) -> AnyElement {
         let n = &self.inbox[self.filtered[row]];
         let t = self.colors;
         let id = n.id;
@@ -1008,13 +1044,13 @@ impl Desktop {
                 } else {
                     t.accent
                 }))
-                    .bg(color(if self.options.theme == ThemeName::Porcelain {
-                        0xe2e2e6
-                    } else if self.options.theme == ThemeName::Dia {
-                        t.active
-                    } else {
-                        t.footer
-                    }))
+                .bg(color(if self.options.theme == ThemeName::Porcelain {
+                    0xe2e2e6
+                } else if self.options.theme == ThemeName::Dia {
+                    t.active
+                } else {
+                    t.footer
+                }))
             })
             .hover(|d| d.bg(color(t.hover)))
             .on_click(cx.listener(move |this, _, _, cx| {
@@ -1042,7 +1078,12 @@ impl Desktop {
                     .child(
                         div()
                             .truncate()
-                            .child(n.source.clone().unwrap_or_else(|| "Hypertask".into())),
+                            .child(n.source.clone().unwrap_or_else(|| "Hypertask".into()))
+                            .layout_key(
+                                &self.layout,
+                                format!("inbox.row.{row}.author"),
+                                Some(n.source.clone().unwrap_or_else(|| "Hypertask".into())),
+                            ),
                     ),
             )
             .child(
@@ -1066,9 +1107,24 @@ impl Desktop {
                                     .text_color(color(0x999a9d))
                                     .text_size(px(11.))
                                     .child(n.ticket_number.clone().unwrap_or_default())
-                                    .child(" "),
+                                    .child(" ")
+                                    .layout_key(
+                                        &self.layout,
+                                        format!("inbox.row.{row}.taskid"),
+                                        n.ticket_number.clone(),
+                                    ),
                             )
-                            .child(div().min_w_0().truncate().child(n.title.clone())),
+                            .child(
+                                div()
+                                    .min_w_0()
+                                    .truncate()
+                                    .child(n.title.clone())
+                                    .layout_key(
+                                        &self.layout,
+                                        format!("inbox.row.{row}.title"),
+                                        Some(n.title.clone()),
+                                    ),
+                            ),
                     )
                     .child(
                         div()
@@ -1076,7 +1132,8 @@ impl Desktop {
                             .min_w(px(90.))
                             .text_color(color(0x8e9093))
                             .truncate()
-                            .child(kind),
+                            .child(kind.clone())
+                            .layout_key(&self.layout, format!("inbox.row.{row}.kind"), Some(kind)),
                     ),
             )
             .child(
@@ -1102,8 +1159,10 @@ impl Desktop {
                             }))
                             .child(icon("archive-x", 0x696b6e, 18.)),
                     )
-                    .child(icon("clock", 0x696b6e, 18.)),
+                    .child(icon("clock", 0x696b6e, 18.))
+                    .layout_key(&self.layout, format!("inbox.row.{row}.actions"), None),
             )
+            .layout_key(&self.layout, format!("inbox.row.{row}"), None)
     }
 
     fn board_screen(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -1139,7 +1198,8 @@ impl Desktop {
                     .child(
                         div()
                             .font_weight(FontWeight::BOLD)
-                            .child(title.to_owned()),
+                            .child(title.to_owned())
+                            .layout_key(&self.layout, "board.title", Some(title.to_owned())),
                     )
                     .child(
                         div()
@@ -1154,23 +1214,27 @@ impl Desktop {
                                     0x4b5563
                                 },
                             ))
-                            .child(count.to_string()),
+                            .child(count.to_string())
+                            .layout_key(&self.layout, "board.count", Some(count.to_string())),
                     )
                     .child(div().flex_1())
                     .child(
-                        div().flex().gap(px(8.)).children(
-                            ["filter", "arrow-up-down", "ellipsis"]
-                                .into_iter()
-                                .map(|name| {
+                        div()
+                            .flex()
+                            .gap(px(8.))
+                            .children(["filter", "arrow-up-down", "ellipsis"].into_iter().map(
+                                |name| {
                                     div()
                                         .size(px(32.))
                                         .flex()
                                         .items_center()
                                         .justify_center()
                                         .child(icon(name, t.muted, 18.))
-                                }),
-                        ),
-                    ),
+                                },
+                            ))
+                            .layout_key(&self.layout, "board.toolbar", None),
+                    )
+                    .layout_key(&self.layout, "board.header", None),
             )
             .child(
                 div()
@@ -1235,7 +1299,12 @@ impl Desktop {
                                                     .text_size(px(14.))
                                                     .line_height(px(21.))
                                             })
-                                            .child(c.title.clone()),
+                                            .child(c.title.clone())
+                                            .layout_key(
+                                                &self.layout,
+                                                format!("board.column.{i}.title"),
+                                                Some(c.title.clone()),
+                                            ),
                                     )
                                     .child(
                                         div()
@@ -1252,7 +1321,16 @@ impl Desktop {
                                             .mt(px(2.))
                                             .when(!c.cards.is_empty(), |d| {
                                                 d.child(c.cards.len().to_string())
-                                            }),
+                                            })
+                                            .layout_key(
+                                                &self.layout,
+                                                format!("board.column.{i}.count"),
+                                                Some(if c.cards.is_empty() {
+                                                    String::new()
+                                                } else {
+                                                    c.cards.len().to_string()
+                                                }),
+                                            ),
                                     )
                                     .child(div().flex_1())
                                     .child(
@@ -1277,6 +1355,11 @@ impl Desktop {
                                                     .w(px(2.))
                                                     .h(px(8.))
                                                     .bg(color(t.text)),
+                                            )
+                                            .layout_key(
+                                                &self.layout,
+                                                format!("board.column.{i}.add"),
+                                                None,
                                             ),
                                     ),
                             )
@@ -1290,11 +1373,17 @@ impl Desktop {
                                 .flex_1()
                                 .min_h_0(),
                             )
+                            .layout_key(&self.layout, format!("board.column.{i}"), None)
                     })),
             )
     }
 
-    fn board_card(&self, column: usize, row: usize, cx: &mut Context<Self>) -> Stateful<Div> {
+    fn board_card(&self, column: usize, row: usize, cx: &mut Context<Self>) -> AnyElement {
+        let index = self.columns[..column]
+            .iter()
+            .map(|c| c.cards.len())
+            .sum::<usize>()
+            + row;
         let task = &self.columns[column].cards[row];
         let t = self.colors;
         let active = self.column == column && self.selected == row;
@@ -1412,7 +1501,15 @@ impl Desktop {
                             } else {
                                 t.muted
                             }))
-                            .child(task.ticket_number.clone().unwrap_or_default())
+                            .child(
+                                div()
+                                    .child(task.ticket_number.clone().unwrap_or_default())
+                                    .layout_key(
+                                        &self.layout,
+                                        format!("board.card.{index}.id"),
+                                        task.ticket_number.clone(),
+                                    ),
+                            )
                             .child(div().flex_1())
                             .when(self.inbox.iter().any(|n| n.task_id == Some(id)), |d| {
                                 d.child(
@@ -1438,22 +1535,40 @@ impl Desktop {
                                             },
                                         ))
                                         .font_weight(FontWeight::BOLD)
-                                        .child("In inbox"),
+                                        .child("In inbox")
+                                        .layout_key(
+                                            &self.layout,
+                                            format!("board.card.{index}.badge"),
+                                            Some("In inbox".into()),
+                                        ),
                                 )
                             }),
                     )
-                    .child(div().text_size(px(13.)).line_height(px(20.)).child(title))
-                    .when(task.extra.get("hasDraft").and_then(|v| v.as_bool()) == Some(true), |d| {
-                        d.child(
-                            div()
-                                .h(px(22.))
-                                .text_size(px(11.))
-                                .line_height(px(22.))
-                                .font_weight(FontWeight::MEDIUM)
-                                .text_color(color(0xc2cfa5))
-                                .child("Draft"),
-                        )
-                    })
+                    .child(
+                        div()
+                            .text_size(px(13.))
+                            .line_height(px(20.))
+                            .child(title.clone())
+                            .layout_key(
+                                &self.layout,
+                                format!("board.card.{index}.title"),
+                                Some(title),
+                            ),
+                    )
+                    .when(
+                        task.extra.get("hasDraft").and_then(|v| v.as_bool()) == Some(true),
+                        |d| {
+                            d.child(
+                                div()
+                                    .h(px(22.))
+                                    .text_size(px(11.))
+                                    .line_height(px(22.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(color(0xc2cfa5))
+                                    .child("Draft"),
+                            )
+                        },
+                    )
                     .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
                         d.child(
                             div()
@@ -1480,7 +1595,12 @@ impl Desktop {
                                             .child(icon("user-round", t.muted, 12.))
                                             .child(task.assignee_count.to_string()),
                                     )
-                                }),
+                                })
+                                .layout_key(
+                                    &self.layout,
+                                    format!("board.card.{index}.meta"),
+                                    Some(format!("{} {}", task.comment_count, task.assignee_count)),
+                                ),
                         )
                     })
                     .when_some(labels, |d, labels| {
@@ -1491,7 +1611,8 @@ impl Desktop {
                                     .filter_map(|label| {
                                         label["name"].as_str().or_else(|| label["value"].as_str())
                                     })
-                                    .map(|label| {
+                                    .enumerate()
+                                    .map(|(i, label)| {
                                         div()
                                             .px(px(4.))
                                             .rounded(px(3.))
@@ -1499,11 +1620,22 @@ impl Desktop {
                                             .text_size(px(11.))
                                             .text_color(color(t.muted))
                                             .child(label.to_owned())
+                                            .layout_key(
+                                                &self.layout,
+                                                if i == 0 {
+                                                    format!("board.card.{index}.label")
+                                                } else {
+                                                    format!("board.card.{index}.label.{i}")
+                                                },
+                                                Some(label.to_owned()),
+                                            )
                                     }),
                             ),
                         )
-                    }),
+                    })
+                    .layout_key(&self.layout, format!("board.card.{index}"), None),
             )
+            .into_any_element()
     }
 
     fn task_screen(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -1530,7 +1662,7 @@ impl Desktop {
                 .cursor_text()
                 .on_click(cx.listener(|this, _, window, cx| this.edit_title(window, cx)))
                 .child(d.task.title.clone())
-                .into_any_element()
+                .layout_key(&self.layout, "task.title", Some(d.task.title.clone()))
         };
         let properties = self.properties(&d.task, cx);
         let placeholder = 0xaeb4bc;
@@ -1556,7 +1688,7 @@ impl Desktop {
                 .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(37.)).child(title)
                     .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).pt(px(10.25)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
                         .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(icon("layers", 0x696b6e, 16.))))
-                .child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone())))
+                .child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone())).layout_key(&self.layout, "task.header", None))
             .child(div().relative().flex().items_start().gap(px(8.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
                 .child(div().absolute().left(px(12.)).top(px(-36.)).w(px(40.)).h(px(68.)).rounded_full().bg(color(navigation_color)).shadow(shadow()).flex().flex_col().justify_center().items_center().gap(px(10.)).text_color(color(t.muted)).children(["chevron-up", "chevron-down"].into_iter().map(|name| div().opacity(0.4).child(icon(name, t.muted, 18.)))))
                 .child(div().w(px(524.)).flex_shrink_0().flex().flex_col().gap(px(16.))
@@ -1569,7 +1701,7 @@ impl Desktop {
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
                             .child(div().flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add sub-tasks"))
                             .child(div().ml(px(16.)).flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add page"))
-                            .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
+                            .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                     .child(div().id("comment-composer").anchor_scroll(Some(self.composer_anchor.clone())).h(px(if self.options.theme == ThemeName::Porcelain { 152. } else { 154. })).pt(px(19.)).pb(px(if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled) { 27. } else { 25. })).pl(px(19.)).pr(px(16.)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).bg(color(t.comment)).border_1().border_color(color(t.border)).shadow_md().flex().flex_col()
                         .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
                         .child(self.comment_input.clone())
@@ -1578,11 +1710,12 @@ impl Desktop {
                             .child(div().flex().items_center().child("Send + ").child(icon("send-archive", 0x696b6e, 14.)))
                             .child(div().id("send-comment").ml(px(24.)).cursor_pointer().on_click(cx.listener(|this, _, window, cx| { cx.stop_propagation(); this.editing = Editing::Comment; this.save_edit(window, cx); })).child("Send"))
                             .child(div().flex_1()).child(div().text_size(px(16.)).font_weight(FontWeight::NORMAL).text_color(color(0xc668ff)).child("ai"))
-                            .child(div().ml(px(8.)).child(icon("paperclip", 0x999a9d, 16.))).child(div().ml(px(10.)).child(icon("mic", 0x999a9d, 18.))).child(div().ml(px(3.)).child(icon("chevron-down", 0x999a9d, 14.)))))
+                            .child(div().ml(px(8.)).child(icon("paperclip", 0x999a9d, 16.))).child(div().ml(px(10.)).child(icon("mic", 0x999a9d, 18.))).child(div().ml(px(3.)).child(icon("chevron-down", 0x999a9d, 14.)))).layout_key(&self.layout, "task.composer", None))
                     .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| {
                         div().id(("comment", i)).anchor_scroll(Some(self.comment_anchors[i].clone())).p(px(20.)).bg(color(t.comment)).border_1().border_color(color(t.border)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow(shadow()).flex().flex_col().gap(px(12.))
-                            .child(div().flex().text_color(color(t.muted)).child(comment_author(&comment.extra)).child(div().flex_1()).child(short_date(&comment.created_at)))
-                            .child(div().line_height(px(21.)).child(body.element()))
+                            .child(div().flex().text_color(color(t.muted)).child(div().child(comment_author(&comment.extra)).layout_key(&self.layout, format!("task.comment.{i}.author"), Some(comment_author(&comment.extra)))).child(div().flex_1()).child(short_date(&comment.created_at)))
+                            .child(div().line_height(px(21.)).child(body.element()).layout_key(&self.layout, format!("task.comment.{i}.body"), Some(body.text.to_string())))
+                            .layout_key(&self.layout, format!("task.comment.{i}"), None)
                     })))
                 .child(properties))
             .into_any_element()
@@ -1697,7 +1830,7 @@ impl Desktop {
             .line_height(px(21.))
             .flex()
             .flex_col()
-            .children(rows.into_iter().map(|(label, value)| {
+            .children(rows.into_iter().enumerate().map(|(i, (label, value))| {
                 div()
                     .id(SharedString::from(format!("property-{label}")))
                     .min_h(px(
@@ -1749,14 +1882,37 @@ impl Desktop {
                             .when(label == "ID" && self.options.theme == ThemeName::Dia, |d| {
                                 d.text_color(color(0x3e6b4f))
                             })
-                            .child(value)
+                            .child(div().child(value.clone()).layout_key(
+                                &self.layout,
+                                if label == "ID" {
+                                    "task.id".to_owned()
+                                } else {
+                                    format!("task.property.{i}.value")
+                                },
+                                Some(value),
+                            ))
                             .when(label == "Status", |d| {
-                                d.child(svg().path("arrow-right").size(px(11.)).text_color(color(0x8e9093)).flex_shrink_0().mb(px(2.)))
+                                d.child(
+                                    svg()
+                                        .path("arrow-right")
+                                        .size(px(11.))
+                                        .text_color(color(0x8e9093))
+                                        .flex_shrink_0()
+                                        .mb(px(2.)),
+                                )
                             })
                             .when(label == "Project", |d| {
-                                d.child(svg().path("corner-left-up").size(px(11.)).text_color(color(0x8e9093)).flex_shrink_0().mb(px(2.)))
+                                d.child(
+                                    svg()
+                                        .path("corner-left-up")
+                                        .size(px(11.))
+                                        .text_color(color(0x8e9093))
+                                        .flex_shrink_0()
+                                        .mb(px(2.)),
+                                )
                             }),
                     )
+                    .layout_key(&self.layout, format!("task.meta.{i}"), None)
             }))
             .when(self.moving, |d| {
                 d.child(
@@ -1849,11 +2005,24 @@ impl Desktop {
 
 impl Render for Desktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        if let Some(layout) = &self.layout {
+            layout.borrow_mut().begin(self.split);
+        }
         if !self.ready_scheduled {
             self.ready_scheduled = true;
             let exit = self.options.exit_after_ready;
             let bench = self.options.bench_input;
-            ready_after_presentation(window, exit, bench, self.options.print_memory);
+            ready_after_presentation(
+                window,
+                exit,
+                bench,
+                self.options.print_memory,
+                self.options
+                    .dump_layout
+                    .clone()
+                    .zip(self.layout.clone())
+                    .map(|(path, capture)| (path, capture, self.screen, self.options.theme)),
+            );
         }
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
@@ -1887,7 +2056,8 @@ impl Render for Desktop {
                         d.child(div().p(px(8.)).text_color(color(0xcf222e)).child(error))
                     })
                     .child(body)
-                    .when(self.footer, |d| d.child(self.footer(cx))),
+                    .when(self.footer, |d| d.child(self.footer(cx)))
+                    .layout_key(&self.layout, "main", None),
             )
             .when(self.screen != Screen::Inbox, |d| {
                 d.child(
@@ -1901,14 +2071,21 @@ impl Render for Desktop {
                             t.page
                         }))
                         .border_l_1()
-                        .border_color(color(t.rail_border)),
+                        .border_color(color(t.rail_border))
+                        .layout_key(&self.layout, "rightpanel", None),
                 )
             })
             .into_any_element()
     }
 }
 
-fn ready_after_presentation(window: &Window, exit: bool, bench: usize, print_memory: bool) {
+fn ready_after_presentation(
+    window: &Window,
+    exit: bool,
+    bench: usize,
+    print_memory: bool,
+    dump: Option<(PathBuf, Rc<RefCell<LayoutDump>>, Screen, ThemeName)>,
+) {
     window.on_next_frame(move |window, cx| {
         let presented = window
             .frame_duration_snapshot()
@@ -1918,8 +2095,17 @@ fn ready_after_presentation(window: &Window, exit: bool, bench: usize, print_mem
                 frames.frames_on_time + frames.frames_late + frames.frames_unmeasured > 0
             });
         if !presented {
-            ready_after_presentation(window, exit, bench, print_memory);
+            ready_after_presentation(window, exit, bench, print_memory, dump);
             return;
+        }
+        if let Some((path, capture, screen, theme)) = dump {
+            if let Err(error) = capture
+                .borrow()
+                .write(&path, screen, theme, window.viewport_size())
+            {
+                eprintln!("Hypertask: layout dump failed: {error:#}");
+                std::process::exit(1);
+            }
         }
         println!("READY");
         if print_memory {
@@ -2107,10 +2293,7 @@ mod tests {
             json!({"creator": null, "createdBy": {"displayName": "alex+owner"}}),
             json!({"user": null, "createdBy": null, "creator": {"displayName": "alex+owner"}}),
         ] {
-            assert_eq!(
-                creator_name(extra.as_object().unwrap()),
-                "alex+owner"
-            );
+            assert_eq!(creator_name(extra.as_object().unwrap()), "alex+owner");
         }
     }
 

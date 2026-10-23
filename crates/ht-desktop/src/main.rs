@@ -1,6 +1,7 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod input;
+mod layout;
 mod memory;
 mod rich_text;
 mod signin;
@@ -10,8 +11,8 @@ mod ui;
 
 use anyhow::{Context as _, Result, bail};
 use gpui::{
-    App, AssetSource, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowDecorations, WindowOptions, point,
-    prelude::*, px, size,
+    App, AssetSource, Bounds, SharedString, TitlebarOptions, WindowBounds, WindowDecorations,
+    WindowOptions, point, prelude::*, px, size,
 };
 use std::{borrow::Cow, path::PathBuf};
 use theme::ThemeName;
@@ -27,6 +28,7 @@ pub struct Options {
     pub task: i64,
     pub theme: ThemeName,
     pub exit_after_ready: bool,
+    pub dump_layout: Option<PathBuf>,
     pub print_memory: bool,
     pub bench_input: usize,
 }
@@ -44,6 +46,7 @@ impl Options {
             task: 64897,
             theme: ThemeName::Porcelain,
             exit_after_ready: false,
+            dump_layout: None,
             print_memory: false,
             bench_input: 0,
         };
@@ -53,6 +56,10 @@ impl Options {
                 "--offline" => result.offline = true,
                 "--hold-after-ready" => (),
                 "--exit-after-ready" => result.exit_after_ready = true,
+                "--dump-layout" => {
+                    result.dump_layout =
+                        Some(args.next().context("--dump-layout requires a path")?.into())
+                }
                 "--print-memory" => result.print_memory = true,
                 "--db" => result.db = args.next().context("--db requires a path")?.into(),
                 "--screen" => {
@@ -189,10 +196,8 @@ fn run() -> Result<()> {
                 .open_window(
                     WindowOptions {
                         window_bounds: Some({
-                            let bounds = Bounds::new(
-                                point(px(origin_x), px(0.)),
-                                size(px(1440.), px(900.)),
-                            );
+                            let bounds =
+                                Bounds::new(point(px(origin_x), px(0.)), size(px(1440.), px(900.)));
                             if cfg!(windows) {
                                 WindowBounds::Maximized(bounds)
                             } else {
@@ -274,6 +279,8 @@ mod tests {
                 "58006",
                 "--theme",
                 "dia",
+                "--dump-layout",
+                "/tmp/layout.json",
                 "--hold-after-ready",
                 "--print-memory",
                 "--bench-input",
@@ -282,6 +289,14 @@ mod tests {
             .map(str::to_owned),
         )
         .unwrap();
+        assert_eq!(opts.dump_layout, Some(PathBuf::from("/tmp/layout.json")));
+        assert!(Options::parse([]).unwrap().dump_layout.is_none());
+        let exit = Options::parse(
+            ["--dump-layout", "layout.json", "--exit-after-ready"].map(str::to_owned),
+        )
+        .unwrap();
+        assert!(exit.exit_after_ready);
+        assert_eq!(exit.dump_layout, Some(PathBuf::from("layout.json")));
         assert!(opts.offline);
         assert!(opts.print_memory);
         assert!(!Options::parse([]).unwrap().print_memory);
@@ -290,6 +305,7 @@ mod tests {
         for args in [
             vec!["--screen", "nope"],
             vec!["--db"],
+            vec!["--dump-layout"],
             vec!["--theme", "blue"],
             vec!["--bench-input", "0"],
             vec!["--unknown"],
