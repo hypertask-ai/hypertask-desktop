@@ -35,7 +35,7 @@ for folder in args.rounds:
     if previous is not None:
         assert data['DatabaseSHA256'] == previous['DatabaseSHA256'], 'Database changed between rounds'
         old = {m['Screen']: m['WorkingSet64'] for m in previous['Medians']}
-        assert sum(medians.values()) < sum(old.values()), 'Change did not reduce combined working set'
+        assert sum(medians.values()) + 1_000_000 < sum(old.values()), 'Change did not meaningfully reduce combined working set'
     previous = data
     if baseline is None:
         baseline = folder
@@ -49,4 +49,9 @@ if args.pixels:
                 assert before.size == after.size
                 assert ImageChops.difference(before.convert('RGB'), after.convert('RGB')).getbbox() is None, f'{folder.name}/{screen}: pixels changed'
             print(f'{folder.name}/{screen}: pixels identical')
+            assert json.loads((folder / 'ram.json').read_text(encoding='utf-8-sig'))['ResizeMinimizeRestore']
+            with Image.open(baseline / f'{screen}-recovered.png') as before, Image.open(folder / f'{screen}-recovered.png') as recovered:
+                assert before.size == recovered.size
+                assert ImageChops.difference(before.convert('RGB'), recovered.convert('RGB')).getbbox() is None, f'{folder.name}/{screen}: recovery pixels changed'
+            print(f'{folder.name}/{screen}: resize/minimize/maximize pixels identical')
 print('RAM_EVIDENCE_VERIFIED')

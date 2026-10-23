@@ -17,16 +17,24 @@ R=https://api.github.com/repos/hypertask-ai/hypertask-desktop
 id=$(curl -fsS -H "Authorization: Bearer $a" "$R/actions/runs/$run/artifacts" | jq -er '.artifacts[]|select(.name=="hypertask-desktop-windows")|.id')
 curl -fsSL -H "Authorization: Bearer $a" -o "$out/win.zip" "$R/actions/artifacts/$id/zip"
 (cd "$out" && unzip -o -q win.zip)
+exec 8>/tmp/htbehavior-round.lock
+flock 8
 exec 9>/tmp/htram-round.lock
 flock 9
 lh shell "New-Item -ItemType Directory -Force '$W' | Out-Null; Copy-Item 'C:\Users\valen\AppData\Local\Temp\htmeasure\parity.db' '$W\parity.db' -Force" > "$out/setup.txt"
-bash "$S/lh-put.sh" "$out/ht-desktop.exe" "$W\ht-ram.exe" | tee "$out/upload.txt"
-bash "$S/lh-put.sh" "$G/ram-measure.ps1" "$W\ram-measure.ps1" >> "$out/upload.txt"
 want=$(sha256sum "$out/ht-desktop.exe" | cut -d' ' -f1 | tr a-f A-F)
-got=$(lh shell "(Get-FileHash '$W\ht-ram.exe').Hash" | tr -d '\r' | awk 'NF { last=$0 } END { print last }')
+got=$(lh shell "if (Test-Path '$W\ht-ram.exe') { (Get-FileHash '$W\ht-ram.exe').Hash }; exit 0" | tr -d '\r' | awk 'NF { last=$0 } END { print last }')
+: > "$out/upload.txt"
+if [ "$want" != "$got" ]; then
+  bash "$S/lh-put.sh" "$out/win.zip" "$W\artifact.zip" | tee "$out/upload.txt"
+  lh shell "Expand-Archive -LiteralPath '$W\artifact.zip' -DestinationPath '$W\artifact' -Force; Copy-Item '$W\artifact\ht-desktop.exe' '$W\ht-ram.exe' -Force" >> "$out/upload.txt"
+  got=$(lh shell "(Get-FileHash '$W\ht-ram.exe').Hash" | tr -d '\r' | awk 'NF { last=$0 } END { print last }')
+fi
+cp "$G/ram-measure.ps1" "$out/ram-measure.ps1"
+lh write "$W\ram-measure.ps1" "$(cat "$out/ram-measure.ps1")" >> "$out/upload.txt"
 [ "$want" = "$got" ] || { echo 'UPLOAD_HASH_MISMATCH'; exit 1; }
 lh shell "Remove-Item '$W\ram.json' -EA 0; powershell -NoProfile -ExecutionPolicy Bypass -File '$W\ram-measure.ps1' 2>&1" --timeout 110 | tr -d '\r' | tee "$out/laptop.txt"
-for file in ram.json inbox.json board.json task.json inbox.png board.png task.png; do
+for file in ram.json inbox.json board.json task.json inbox.png board.png task.png inbox-recovered.png board-recovered.png task-recovered.png; do
   lh shell "[Convert]::ToBase64String([IO.File]::ReadAllBytes('${W}/${file}'))" | tr -d '\r\n' | base64 -d > "$out/$file"
 done
 printf '%s\n' "$sha" > "$out/sha.txt"

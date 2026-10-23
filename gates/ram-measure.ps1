@@ -10,6 +10,8 @@ public class RamWindow {
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect r);
+    [DllImport("user32.dll")] public static extern bool PostMessage(IntPtr h, uint message, IntPtr w, IntPtr l);
+    [DllImport("user32.dll")] public static extern bool SetWindowPos(IntPtr h, IntPtr after, int x, int y, int width, int height, uint flags);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
     public delegate bool WindowCallback(IntPtr h, IntPtr parameter);
     [DllImport("user32.dll")] public static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
@@ -39,6 +41,21 @@ public class RamWindow {
 $w = 'C:\Users\valen\AppData\Local\Temp\htram'
 $display = [System.Windows.Forms.Screen]::PrimaryScreen.Bounds
 if ($display.Width -ne 1920 -or $display.Height -ne 1080) { throw "Expected 1920x1080, got $display" }
+function Save-Capture([IntPtr]$h, [string]$path) {
+    # Normalize hover without moving the owner's physical cursor.
+    [RamWindow]::PostMessage($h, 0x200, [IntPtr]::Zero, [IntPtr](-1)) | Out-Null
+    [RamWindow]::PostMessage($h, 0x2A3, [IntPtr]::Zero, [IntPtr]::Zero) | Out-Null
+    Start-Sleep -Milliseconds 200
+    $r = New-Object RamWindow+Rect
+    if (-not [RamWindow]::GetClientRect($h, [ref]$r)) { throw 'Capture GetClientRect failed' }
+    $bmp = New-Object System.Drawing.Bitmap ($r.Right), ($r.Bottom)
+    $g = [System.Drawing.Graphics]::FromImage($bmp)
+    $dc = $g.GetHdc()
+    try { if (-not [RamWindow]::PrintWindow($h, $dc, 3)) { throw 'PrintWindow failed' } }
+    finally { $g.ReleaseHdc($dc) }
+    $bmp.Save($path)
+    $g.Dispose(); $bmp.Dispose()
+}
 $rows = @()
 foreach ($round in 1..3) {
     foreach ($screen in 'inbox', 'board', 'task') {
@@ -74,14 +91,23 @@ foreach ($round in 1..3) {
                 ClientWidth = $rect.Right; ClientHeight = $rect.Bottom; Dpi = $dpi; Maximized = $true
             }
             if ($round -eq 3) {
-                $bmp = New-Object System.Drawing.Bitmap ($rect.Right), ($rect.Bottom)
-                $g = [System.Drawing.Graphics]::FromImage($bmp)
-                $dc = $g.GetHdc()
-                try { if (-not [RamWindow]::PrintWindow($h, $dc, 3)) { throw 'PrintWindow failed' } }
-                finally { $g.ReleaseHdc($dc) }
-                $bmp.Save("$w\$screen.png")
-                $g.Dispose(); $bmp.Dispose()
+                Save-Capture $h "$w\$screen.png"
                 Copy-Item $dump "$w\$screen.json" -Force
+                [RamWindow]::ShowWindowAsync($h, 9) | Out-Null
+                Start-Sleep -Milliseconds 300
+                if (-not [RamWindow]::SetWindowPos($h, [IntPtr]::Zero, 100, 100, 1280, 800, 0x14)) { throw 'Resize failed' }
+                Start-Sleep -Milliseconds 500
+                $small = New-Object RamWindow+Rect
+                [RamWindow]::GetClientRect($h, [ref]$small) | Out-Null
+                if ($small.Right -ge $rect.Right -or [RamWindow]::IsZoomed($h)) { throw 'Window did not restore/resize' }
+                [RamWindow]::ShowWindowAsync($h, 6) | Out-Null
+                Start-Sleep -Milliseconds 300
+                [RamWindow]::ShowWindowAsync($h, 3) | Out-Null
+                Start-Sleep -Seconds 1
+                $restored = New-Object RamWindow+Rect
+                [RamWindow]::GetClientRect($h, [ref]$restored) | Out-Null
+                if (-not [RamWindow]::IsZoomed($h) -or $restored.Right -ne $rect.Right -or $restored.Bottom -ne $rect.Bottom) { throw 'Maximize recovery failed' }
+                Save-Capture $h "$w\$screen-recovered.png"
             }
         } finally {
             if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit() }
@@ -100,7 +126,7 @@ $result = [pscustomobject]@{
     ExeSHA256 = (Get-FileHash "$w\ht-ram.exe").Hash
     DatabaseSHA256 = (Get-FileHash "$w\parity.db").Hash
     DisplayWidth = $display.Width; DisplayHeight = $display.Height
-    Samples = $rows; Medians = @($medians)
+    Samples = $rows; Medians = @($medians); ResizeMinimizeRestore = $true
 }
 $result | ConvertTo-Json -Depth 5 | Set-Content "$w\ram.json" -Encoding UTF8
 $result | ConvertTo-Json -Depth 5
