@@ -13,7 +13,7 @@ use ht_core::{
     ai_chat::{self, Client, DefaultContext, Event, MODELS, Message, Session, TurnIds},
 };
 use std::{
-    sync::mpsc::{self, Receiver},
+    sync::{Arc, mpsc::{self, Receiver}},
     thread,
     time::Duration,
 };
@@ -140,8 +140,8 @@ pub struct AiSidebar {
     model: usize,
     model_menu: bool,
     history_menu: bool,
-    history: Vec<Session>,
-    history_pending: Option<Receiver<Result<Vec<Session>, String>>>,
+    history: Vec<Arc<Session>>,
+    history_pending: Option<Receiver<Result<Vec<Arc<Session>>, String>>>,
     history_error: Option<String>,
     history_limit: usize,
     chat_pending: Option<Receiver<Chat>>,
@@ -286,7 +286,10 @@ impl AiSidebar {
                 match thread::Builder::new()
                     .name("ht-ai-history".into())
                     .spawn(move || {
-                        let _ = send.send(client.sessions().map_err(|e| e.to_string()));
+                        let result = client.sessions()
+                            .map(|sessions| sessions.into_iter().map(Arc::new).collect())
+                            .map_err(|e| e.to_string());
+                        let _ = send.send(result);
                     }) {
                     Ok(_) => self.history_pending = Some(receive),
                     Err(error) => self.history_error = Some(error.to_string()),
@@ -299,17 +302,16 @@ impl AiSidebar {
     }
 
     fn open_history_chat(&mut self, index: usize, cx: &mut Context<Self>) {
-        let session = &mut self.history[index];
-        let id = session.id.clone();
-        let title = session.title.clone().unwrap_or_else(|| "AI Chat".into());
-        let messages = std::mem::take(&mut session.messages);
+        let session = Arc::clone(&self.history[index]);
         let colors = self.colors;
         let (send, receive) = mpsc::channel();
         match thread::Builder::new()
             .name("ht-ai-transcript".into())
             .spawn(move || {
-                let messages = messages
-                    .into_iter()
+                let id = session.id.clone();
+                let title = session.title.clone().unwrap_or_else(|| "AI Chat".into());
+                let messages = session.messages
+                    .iter().cloned()
                     .map(|message| {
                         let rich = if message.role == "human" {
                             RichText::default()
@@ -1156,7 +1158,7 @@ mod tests {
             assert_eq!(sidebar.width(), 420.);
             let (send, receive) = mpsc::channel();
             sidebar.history_pending = Some(receive);
-            send.send(Ok(vec![Session {
+            send.send(Ok(vec![Arc::new(Session {
                 id: "remote-session".into(),
                 title: Some("Web history".into()),
                 messages: vec![Message {
@@ -1169,6 +1171,9 @@ mod tests {
             assert_eq!(sidebar.history.len(), 1);
             assert!(sidebar.history_pending.is_none());
             assert!(sidebar.active.is_none());
+            let original = Arc::clone(&sidebar.history[0]);
+            sidebar.open_history_chat(0, cx);
+            assert_eq!(original.messages[0].content, "Saved reply");
             // New-chat intent invalidates a late transcript result.
             let (_send, receive) = mpsc::channel();
             sidebar.chat_pending = Some(receive);
