@@ -74,11 +74,11 @@ impl Scope {
         );
         Self {
             context: DefaultContext {
-                project_id: (project > 0).then_some(project),
+                project_id: (screen != Screen::Inbox && project > 0).then_some(project),
                 task_id: task.as_ref().map(|t| t.id),
                 surface: surface.into(),
                 surface_path: path,
-                view_name: Some(board_name),
+                view_name: (screen != Screen::Inbox).then_some(board_name),
             },
             team_id,
             label,
@@ -148,6 +148,7 @@ impl AiSidebar {
     pub fn new(
         colors: Theme,
         token: Option<String>,
+        workspace_focus: FocusHandle,
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> Self {
@@ -175,7 +176,7 @@ impl AiSidebar {
             colors,
             input,
             focus: cx.focus_handle(),
-            previous_focus: None,
+            previous_focus: Some(workspace_focus),
             client: token.and_then(|t| Client::new(t).ok()),
             scope: None,
             include_context: true,
@@ -192,6 +193,12 @@ impl AiSidebar {
     }
 
     pub fn set_token(&mut self, token: Option<String>, cx: &mut Context<Self>) {
+        self.stop(cx);
+        self.active = None;
+        self.chats = vec![Chat::new()];
+        self.selected = 0;
+        self.input
+            .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.client = token.and_then(|t| Client::new(t).ok());
         cx.notify();
     }

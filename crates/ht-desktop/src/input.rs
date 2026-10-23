@@ -1,11 +1,12 @@
 use std::ops::Range;
 
 use gpui::{
-    App, Bounds, ClipboardItem, Context, CursorStyle, ElementId, ElementInputHandler, Entity,
-    EntityInputHandler, FocusHandle, Focusable, GlobalElementId, KeyBinding, LayoutId, MouseButton,
-    MouseDownEvent, MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, ShapedLine,
-    SharedString, Style, TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill,
-    point, prelude::*, px, relative, rgba, size,
+    App, AvailableSpace, Bounds, ClipboardItem, Context, CursorStyle, ElementId,
+    ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId,
+    IndentAdjustment, KeyBinding, LayoutId, LineFragment, MouseButton, MouseDownEvent,
+    MouseMoveEvent, MouseUpEvent, PaintQuad, Pixels, Point, ShapedLine, SharedString, Style,
+    TextRun, UTF16Selection, UnderlineStyle, Window, actions, div, fill, point, prelude::*, px,
+    relative, rgba, size,
 };
 
 use unicode_segmentation::*;
@@ -17,6 +18,8 @@ actions!(
         Delete,
         Left,
         Right,
+        Up,
+        Down,
         SelectLeft,
         SelectRight,
         SelectAll,
@@ -57,6 +60,22 @@ impl TextInput {
             self.move_to(self.next_boundary(self.selected_range.end), window, cx);
         } else {
             self.move_to(self.selected_range.end, window, cx)
+        }
+    }
+
+    fn vertical(&mut self, direction: isize, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.multiline {
+            cx.propagate();
+            return;
+        }
+        if let Some(layout) = &self.last_layout {
+            let row = layout.row(self.cursor_offset());
+            let target = row
+                .saturating_add_signed(direction)
+                .min(layout.lines.len() - 1);
+            let x = layout.lines[row].x_for_index(self.cursor_offset() - layout.offsets[row]);
+            let index = layout.offsets[target] + layout.lines[target].closest_index_for_x(x);
+            self.move_to(index, window, cx);
         }
     }
 
@@ -481,6 +500,30 @@ impl TextLayout {
     }
 }
 
+fn line_ranges(text: &str, width: Pixels, multiline: bool, window: &Window) -> Vec<Range<usize>> {
+    if !multiline {
+        return vec![0..text.len()];
+    }
+    let style = window.text_style();
+    let mut wrapper = window
+        .text_system()
+        .line_wrapper(style.font(), style.font_size.to_pixels(window.rem_size()));
+    let mut ranges = vec![];
+    let mut offset = 0;
+    for line in text.split('\n') {
+        let fragments = [LineFragment::text(line)];
+        let mut start = 0;
+        for boundary in wrapper.wrap_line(&fragments, width.max(px(1.)), IndentAdjustment::NoIndent)
+        {
+            ranges.push(offset + start..offset + boundary.ix);
+            start = boundary.ix;
+        }
+        ranges.push(offset + start..offset + line.len());
+        offset += line.len() + 1;
+    }
+    ranges
+}
+
 struct TextElement {
     input: Entity<TextInput>,
 }
@@ -517,15 +560,27 @@ impl Element for TextElement {
         cx: &mut App,
     ) -> (LayoutId, ()) {
         let input = self.input.read(cx);
-        let rows = if input.multiline {
-            input.content.split('\n').count()
+        let multiline = input.multiline;
+        let text = if input.content.is_empty() {
+            input.placeholder.clone()
         } else {
-            1
+            input.content.clone()
         };
         let mut style = Style::default();
         style.size.width = relative(1.).into();
-        style.size.height = (window.line_height() * rows as f32).into();
-        (window.request_layout(style, [], cx), ())
+        if !multiline {
+            style.size.height = window.line_height().into();
+            return (window.request_layout(style, [], cx), ());
+        }
+        let id = window.request_measured_layout(style, move |known, available, window, _cx| {
+            let width = known.width.unwrap_or_else(|| match available.width {
+                AvailableSpace::Definite(width) => width,
+                _ => px(380.),
+            });
+            let rows = line_ranges(&text, width, true, window).len();
+            size(width, window.line_height() * rows as f32)
+        });
+        (id, ())
     }
 
     fn prepaint(
@@ -554,8 +609,12 @@ impl Element for TextElement {
         };
         let mut selections = vec![];
         let mut cursor = None;
-        let mut offset = 0;
-        for (row, text) in display.split('\n').enumerate() {
+        for (row, range) in line_ranges(&display, bounds.size.width, input.multiline, window)
+            .into_iter()
+            .enumerate()
+        {
+            let offset = range.start;
+            let text = &display[range];
             let run = TextRun {
                 len: text.len(),
                 font: style.font(),
@@ -626,7 +685,6 @@ impl Element for TextElement {
                 ));
             }
             layout.offsets.push(offset);
-            offset += text.len() + 1;
             layout.lines.push(line);
         }
         PrepaintState {
@@ -701,6 +759,8 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::delete))
             .on_action(cx.listener(Self::left))
             .on_action(cx.listener(Self::right))
+            .on_action(cx.listener(|this, _: &Up, window, cx| this.vertical(-1, window, cx)))
+            .on_action(cx.listener(|this, _: &Down, window, cx| this.vertical(1, window, cx)))
             .on_action(cx.listener(Self::select_left))
             .on_action(cx.listener(Self::select_right))
             .on_action(cx.listener(Self::select_all))
@@ -739,6 +799,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("delete", Delete, Some("TextInput")),
         KeyBinding::new("left", Left, Some("TextInput")),
         KeyBinding::new("right", Right, Some("TextInput")),
+        KeyBinding::new("up", Up, Some("TextInput")),
+        KeyBinding::new("down", Down, Some("TextInput")),
         KeyBinding::new("shift-left", SelectLeft, Some("TextInput")),
         KeyBinding::new("shift-right", SelectRight, Some("TextInput")),
         KeyBinding::new("ctrl-a", SelectAll, Some("TextInput")),

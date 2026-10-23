@@ -119,9 +119,10 @@ impl Desktop {
                 cx,
             )
         });
+        let focus = cx.focus_handle();
         let (mut signin, secret) = SignIn::start(options.offline);
         let ai_sidebar = (AI_CHAT_PANEL_SHOWN || options.ai_sidebar)
-            .then(|| cx.new(|cx| AiSidebar::new(colors, secret.clone(), window, cx)));
+            .then(|| cx.new(|cx| AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx)));
         let worker = secret.and_then(|secret| Self::start_worker(&options, &mut signin, secret));
         let auto_board = !options.offline && !options.board_given && signin.is_interactive();
         let mut options = options;
@@ -130,7 +131,7 @@ impl Desktop {
         }
         let detail_scroll = ScrollHandle::new();
         let mut view = Self {
-            focus: cx.focus_handle(),
+            focus,
             screen: options.screen,
             previous: Screen::Board,
             layout: options

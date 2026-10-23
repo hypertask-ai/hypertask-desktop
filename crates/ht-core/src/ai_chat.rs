@@ -432,6 +432,138 @@ mod tests {
 
     const SAMPLE: &str = "event: status\ndata: {\"content\":\"Working…\"}\n\nevent: content\ndata: {\"content\":\"The blocking task is \"}\n\nevent: content\ndata: {\"content\":\"HTPR-123.\"}\n\nevent: title\ndata: {\"content\":\"Release blockers\"}\n\nevent: done\ndata: {\"status\":\"complete\",\"user_message_persisted\":true,\"assistant_persisted\":true}\n\n";
 
+    fn server(
+        status: &str,
+        content_type: &str,
+        response_body: &str,
+    ) -> (String, std::thread::JoinHandle<(String, Value)>) {
+        use std::{io::Write, net::TcpListener};
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let response = format!(
+            "HTTP/1.1 {status}\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{response_body}",
+            response_body.len()
+        );
+        let handle = std::thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket
+                .set_read_timeout(Some(Duration::from_secs(10)))
+                .unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut headers = String::new();
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                headers.push_str(&line);
+                if line == "\r\n" {
+                    break;
+                }
+                if let Some(value) = line.to_ascii_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            socket.write_all(response.as_bytes()).unwrap();
+            (headers, serde_json::from_slice(&body).unwrap())
+        });
+        (base, handle)
+    }
+
+    #[test]
+    fn http_stream_and_stop_use_real_endpoints_headers_and_ids() {
+        let ids = TurnIds::new(session_id());
+        let body = request(
+            "hello",
+            &ids,
+            &session_id(),
+            MODELS[0],
+            &DefaultContext::default(),
+            None,
+            &[],
+        );
+        let (base, server) = server("200 OK", "text/event-stream; charset=utf-8", SAMPLE);
+        let client = Client::with_base(&base, "desktop-mcp-token".into()).unwrap();
+        let mut events = vec![];
+        client
+            .stream(&body, |event| {
+                events.push(event);
+                true
+            })
+            .unwrap();
+        assert_eq!(events.len(), 5);
+        let (headers, received) = server.join().unwrap();
+        assert!(headers.starts_with("POST /api/ai/chat/stream HTTP/1.1\r\n"));
+        let headers = headers.to_ascii_lowercase();
+        assert!(headers.contains("authorization: bearer desktop-mcp-token\r\n"));
+        assert!(headers.contains("accept: text/event-stream\r\n"));
+        assert!(headers.contains("content-type: application/json\r\n"));
+        assert_eq!(received, body);
+
+        let (base, server) = self::server(
+            "200 OK",
+            "application/json",
+            r#"{"success":true,"status":"cancelling"}"#,
+        );
+        Client::with_base(&base, "desktop-mcp-token".into())
+            .unwrap()
+            .cancel(&ids)
+            .unwrap();
+        let (headers, body) = server.join().unwrap();
+        assert!(headers.starts_with("POST /api/ai/chat/cancel HTTP/1.1\r\n"));
+        assert_eq!(body, serde_json::to_value(&ids).unwrap());
+    }
+
+    #[test]
+    fn http_refusals_and_eof_are_visible_errors_not_fake_replies() {
+        for (status, content_type, response, expected) in [
+            (
+                "401 Unauthorized",
+                "application/json",
+                r#"{"error":"Desktop bearer not supported"}"#,
+                "HTTP 401: Desktop bearer not supported",
+            ),
+            (
+                "403 Forbidden",
+                "application/json",
+                r#"{"message":"Model unavailable"}"#,
+                "HTTP 403: Model unavailable",
+            ),
+            (
+                "200 OK",
+                "text/event-stream",
+                "event: content\ndata: {\"content\":\"partial\"}\n\n",
+                "interrupted before done",
+            ),
+            (
+                "200 OK",
+                "text/html",
+                "login",
+                "did not return an AI event stream",
+            ),
+        ] {
+            let (base, server) = server(status, content_type, response);
+            let mut content = String::new();
+            let error = Client::with_base(&base, "desktop-mcp-token".into())
+                .unwrap()
+                .stream(&json!({"message":"hello"}), |event| {
+                    if let Event::Content(delta) = event {
+                        content.push_str(&delta);
+                    }
+                    true
+                })
+                .unwrap_err();
+            assert!(error.to_string().contains(expected), "{error}");
+            if response.contains("partial") {
+                assert_eq!(content, "partial");
+            }
+            server.join().unwrap();
+        }
+        assert!(Client::with_base("http://example.com", "token".into()).is_err());
+        assert!(Client::new("bad\r\ntoken".into()).is_err());
+    }
+
     #[test]
     fn request_matches_web_contract_and_cancel_identity() {
         let ids = TurnIds::new(session_id());
