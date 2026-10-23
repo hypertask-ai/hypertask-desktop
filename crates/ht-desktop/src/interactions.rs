@@ -639,19 +639,88 @@ impl Desktop {
         window.focus(&focus, cx);
         cx.notify();
     }
+    fn command_usage(&self) -> serde_json::Value {
+        self.db
+            .kv_get("command-usage")
+            .ok()
+            .flatten()
+            .and_then(|s| serde_json::from_str(&s).ok())
+            .unwrap_or_else(|| serde_json::json!({}))
+    }
+    fn command_rows(&self) -> Vec<command_center::Command> {
+        let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
+        if self
+            .selected_task()
+            .and_then(|id| self.db.task(id).ok().flatten())
+            .is_some_and(|t| t.status == Status::Archive)
+        {
+            if let Some(row) = rows.iter_mut().find(|r| r.key == "archiveTask") {
+                row.name = "Unarchive task".into();
+            }
+        }
+        let insert = rows.first().map_or(0, |first| {
+            rows.iter()
+                .position(|r| r.group != first.group)
+                .unwrap_or(rows.len())
+        });
+        let boards = self
+            .db
+            .projects()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|p| {
+                let id = p["id"].as_i64()?;
+                Some(command_center::Command {
+                    key: format!("board-{id}"),
+                    name: p["title"].as_str().or(p["name"].as_str())?.into(),
+                    group: "Boards",
+                    keys: String::new(),
+                    keywords: "board project kanban navigate open",
+                    action: CommandAction::Board(id),
+                })
+            });
+        rows.splice(insert..insert, boards);
+        let usage = self.command_usage();
+        let now = chrono::Utc::now().timestamp_millis();
+        let mut frequent: Vec<_> = rows
+            .iter()
+            .filter(|r| usage[&r.key]["frequency"].as_u64().unwrap_or(0) > 0)
+            .cloned()
+            .collect();
+        frequent.sort_by(|a, b| {
+            let score = |r: &command_center::Command| {
+                command_center::frecency(
+                    usage[&r.key]["frequency"].as_u64().unwrap_or(0),
+                    usage[&r.key]["lastUsedAt"].as_i64().unwrap_or(now),
+                    now,
+                )
+            };
+            score(b).total_cmp(&score(a))
+        });
+        frequent.truncate(5);
+        for row in &mut frequent {
+            row.group = "Frequently used";
+        }
+        rows.splice(0..0, frequent);
+        rows
+    }
     pub(super) fn choices(&self, cx: &App) -> Vec<Choice> {
         let query: &str = self.interaction.query.read(cx).content.as_ref();
         match self.interaction.modal {
             Some(Modal::Commands) => {
-                let commands =
-                    command_center::commands(self.screen, self.selected_task().is_some());
-                command_center::filter(&commands, query)
-                    .into_iter()
-                    .map(|c| Choice {
-                        name: c.name.into(),
-                        action: ChoiceAction::Command(c.action),
-                    })
-                    .collect()
+                let commands = self.command_rows();
+                command_center::ranked(
+                    &commands,
+                    query,
+                    &self.command_usage(),
+                    chrono::Utc::now().timestamp_millis(),
+                )
+                .into_iter()
+                .map(|c| Choice {
+                    name: c.name.clone(),
+                    action: ChoiceAction::Command(c.action),
+                })
+                .collect()
             }
             Some(Modal::Search | Modal::LocalSearch) => {
                 let project = (self.interaction.modal == Some(Modal::LocalSearch)
@@ -784,6 +853,19 @@ impl Desktop {
         let Some(choice) = choice else {
             return;
         };
+        if self.interaction.modal == Some(Modal::Commands) {
+            let rows = self.command_rows();
+            let query: &str = self.interaction.query.read(cx).content.as_ref();
+            let mut usage = self.command_usage();
+            let now = chrono::Utc::now().timestamp_millis();
+            if let Some(command) =
+                command_center::ranked(&rows, query, &usage, now).get(self.interaction.choice)
+            {
+                let frequency = usage[&command.key]["frequency"].as_u64().unwrap_or(0) + 1;
+                usage[&command.key] = serde_json::json!({"frequency":frequency,"lastUsedAt":now});
+                let _ = self.db.kv_set("command-usage", &usage.to_string());
+            }
+        }
         self.close_modal(window, cx);
         match choice.action {
             ChoiceAction::Command(CommandAction::Shortcut(action)) => {
@@ -794,6 +876,13 @@ impl Desktop {
                 window.focus(&self.focus, cx);
             }
             ChoiceAction::Board(id) => {
+                self.options.board = id;
+                self.auto_board = false;
+                let _ = self.db.kv_set("last_board", &id.to_string());
+                self.switch(Screen::Board, cx);
+                window.focus(&self.focus, cx);
+            }
+            ChoiceAction::Command(CommandAction::Board(id)) => {
                 self.options.board = id;
                 self.auto_board = false;
                 let _ = self.db.kv_set("last_board", &id.to_string());
@@ -924,8 +1013,13 @@ impl Desktop {
             _ => 0xffffff,
         };
         let query: &str = self.interaction.query.read(cx).content.as_ref();
-        let commands = command_center::commands(self.screen, self.selected_task().is_some());
-        let filtered = command_center::filter(&commands, query);
+        let commands = self.command_rows();
+        let filtered = command_center::ranked(
+            &commands,
+            query,
+            &self.command_usage(),
+            chrono::Utc::now().timestamp_millis(),
+        );
         let choices = self.choices(cx);
         let mut last_group = String::new();
         let mut list = div()
@@ -968,7 +1062,7 @@ impl Desktop {
                 );
             }
             let keys = if modal == Modal::Commands {
-                filtered[i].keys
+                filtered[i].keys.as_str()
             } else {
                 ""
             };

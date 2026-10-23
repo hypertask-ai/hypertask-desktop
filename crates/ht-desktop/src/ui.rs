@@ -1929,6 +1929,7 @@ impl Render for Desktop {
                 "task_title": task.as_ref().map(|t| &t.title),
                 "ticket": task.as_ref().and_then(|t| t.ticket_number.as_ref()),
                 "project_id": task.as_ref().map(|t| t.project_id),
+                "board_id": self.options.board,
                 "unique_index": task.as_ref().and_then(|t| t.extra.get("uniqueIndex")),
                 "task_assignees": task.as_ref().and_then(|t| t.extra.get("assignees")),
                 "task_labels": task.as_ref().and_then(|t| t.extra.get("labels")),

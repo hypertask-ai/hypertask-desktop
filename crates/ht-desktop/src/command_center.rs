@@ -2,10 +2,10 @@ use crate::{shortcuts::Action, theme::ThemeName, ui::Screen};
 
 #[derive(Clone, Debug)]
 pub struct Command {
-    pub key: &'static str,
-    pub name: &'static str,
+    pub key: String,
+    pub name: String,
     pub group: &'static str,
-    pub keys: &'static str,
+    pub keys: String,
     pub keywords: &'static str,
     pub action: CommandAction,
 }
@@ -13,18 +13,19 @@ pub struct Command {
 pub enum CommandAction {
     Shortcut(Action),
     Theme(ThemeName),
+    Board(i64),
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
 pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     use Action::*;
     let mut rows = Vec::new();
-    let mut add = |key, name, group, keys, keywords, action| {
+    let mut add = |key: &str, name: &str, group, keys: &str, keywords, action| {
         rows.push(Command {
-            key,
-            name,
+            key: key.into(),
+            name: name.into(),
             group,
-            keys,
+            keys: keys.into(),
             keywords,
             action: CommandAction::Shortcut(action),
         })
@@ -102,11 +103,11 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         ),
     ] {
         rows.push(Command {
-            key,
-            name,
+            key: key.into(),
+            name: name.into(),
             keywords,
             group: "Appearance",
-            keys: "",
+            keys: String::new(),
             action: CommandAction::Theme(theme),
         });
     }
@@ -276,19 +277,41 @@ fn score(command: &Command, token: &str) -> u32 {
 }
 /// Port of useHTC.tsx: all tokens must match; stable score order, typo/transposition tolerance, 30 rows.
 pub fn filter<'a>(commands: &'a [Command], query: &str) -> Vec<&'a Command> {
+    ranked(commands, query, &serde_json::Value::Null, 0)
+}
+
+pub fn frecency(frequency: u64, last_used: i64, now: i64) -> f64 {
+    (frequency as f64).ln_1p()
+        * 0.5_f64.powf((now - last_used).max(0) as f64 / (14. * 86400. * 1000.))
+}
+
+pub fn ranked<'a>(
+    commands: &'a [Command],
+    query: &str,
+    usage: &serde_json::Value,
+    now: i64,
+) -> Vec<&'a Command> {
     let query = query.to_lowercase();
     let tokens: Vec<_> = query.split_whitespace().collect();
     if tokens.is_empty() {
         return commands.iter().collect();
     }
+    let mut seen = std::collections::BTreeSet::new();
     let mut ranked: Vec<_> = commands
         .iter()
+        .filter(|c| c.group != "Frequently used" && seen.insert((&c.key, &c.name)))
         .filter_map(|command| {
             let scores: Vec<_> = tokens.iter().map(|token| score(command, token)).collect();
-            (!scores.contains(&0)).then_some((command, scores.iter().sum::<u32>()))
+            let used = &usage[&command.key];
+            let boost = frecency(
+                used["frequency"].as_u64().unwrap_or(0),
+                used["lastUsedAt"].as_i64().unwrap_or(now),
+                now,
+            );
+            (!scores.contains(&0)).then_some((command, scores.iter().sum::<u32>() as f64 + boost))
         })
         .collect();
-    ranked.sort_by_key(|(_, score)| std::cmp::Reverse(*score));
+    ranked.sort_by(|(_, a), (_, b)| b.total_cmp(a));
     ranked
         .into_iter()
         .take(30)
@@ -315,15 +338,26 @@ mod tests {
     fn no_task_commands_without_target_and_no_hidden_noops() {
         let rows = commands(Screen::Inbox, false);
         assert!(rows.iter().all(|r| r.group != "Task"));
-        assert!(
-            !rows
-                .iter()
-                .any(|r| ["calendarSettings", "settings", "openAiTaskWriter"].contains(&r.key))
-        );
+        assert!(!rows.iter().any(|r| {
+            ["calendarSettings", "settings", "openAiTaskWriter"].contains(&r.key.as_str())
+        }));
         let rows = commands(Screen::Task, true);
         assert_eq!(rows[0].group, "Task");
         assert!(edit_distance_one("archive", "archvie"));
         assert!(edit_distance_one("graphte", "graphite"));
         assert!(!edit_distance_one("ab", "cd"));
+    }
+    #[test]
+    fn usage_matches_web_decay_and_never_duplicates_frequent_results() {
+        assert!((frecency(1, 0, 0) - 2_f64.ln()).abs() < 0.000001);
+        assert!((frecency(1, 0, 14 * 86400 * 1000) - 2_f64.ln() / 2.).abs() < 0.000001);
+        assert_eq!(frecency(0, 0, 0), 0.);
+        let mut rows = commands(Screen::Task, true);
+        let usage = serde_json::json!({"copyTaskId":{"frequency":100,"lastUsedAt":1000}});
+        let mut frequent = rows.iter().find(|r| r.key == "copyTaskId").unwrap().clone();
+        frequent.group = "Frequently used";
+        rows.insert(0, frequent);
+        let matched = ranked(&rows, "copy", &usage, 1000);
+        assert_eq!(matched.iter().filter(|r| r.key == "copyTaskId").count(), 1);
     }
 }

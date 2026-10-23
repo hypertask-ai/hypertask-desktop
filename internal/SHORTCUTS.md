@@ -712,7 +712,7 @@ Composition/order and availability: `src/components/Modals/commands/HTC/AllComma
 ## Measured counts (native implementation, runtime pending)
 
 - 249 direct-shortcut context/action rows: 72 done in source, 20 partial, 157 missing.
-- 295 palette definitions: 22 supported entries, 273 definitions hidden. Native dynamic per-board navigation commands and usage/frecency ordering are not implemented.
+- 295 palette definitions: 22 supported entries, 273 definitions hidden. Cached-board navigation entries and persisted usage/frecency scoring are implemented; runtime receipt pending.
 - Behavior suite: 97 isolated laptop cases; the original baseline produced 5 PASS / 4 FAIL at `d63d692` (`/tmp/htbehavior-baseline-complete/results.txt`). Its offscreen mouse injection was subsequently tightened; do not treat the baseline mouse PASS as proof of a visible target.
 - Current acceptance evidence remains pending until the final SHA's CI and laptop round finish. No build, test suite, or app copy runs on the VPS.
 
