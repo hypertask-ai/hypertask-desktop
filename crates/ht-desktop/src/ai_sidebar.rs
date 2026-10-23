@@ -10,7 +10,7 @@ use gpui::{
 };
 use ht_core::{
     Db,
-    ai_chat::{self, Client, DefaultContext, Event, MODELS, Message, TurnIds},
+    ai_chat::{self, Client, DefaultContext, Event, MODELS, Message, Session, TurnIds},
 };
 use std::{
     sync::mpsc::{self, Receiver},
@@ -140,6 +140,11 @@ pub struct AiSidebar {
     model: usize,
     model_menu: bool,
     history_menu: bool,
+    history: Vec<Session>,
+    history_pending: Option<Receiver<Result<Vec<Session>, String>>>,
+    history_error: Option<String>,
+    history_limit: usize,
+    chat_pending: Option<Receiver<Chat>>,
     more_menu: bool,
     collapsed: bool,
     scroll: ScrollHandle,
@@ -200,6 +205,11 @@ impl AiSidebar {
             model: 0,
             model_menu: false,
             history_menu: false,
+            history: vec![],
+            history_pending: None,
+            history_error: None,
+            history_limit: 30,
+            chat_pending: None,
             more_menu: false,
             collapsed: false,
             scroll: ScrollHandle::new(),
@@ -212,6 +222,11 @@ impl AiSidebar {
         self.active = None;
         self.chats = vec![Chat::new()];
         self.selected = 0;
+        self.history.clear();
+        self.history_pending = None;
+        self.history_error = None;
+        self.chat_pending = None;
+        self.history_menu = false;
         self.input
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.client = token.and_then(|t| Client::new(t).ok());
@@ -255,7 +270,109 @@ impl AiSidebar {
         self.focus.contains_focused(window, cx)
     }
 
+    pub fn width(&self) -> f32 {
+        if self.collapsed { 28. } else { 420. }
+    }
+
+    fn toggle_history(&mut self, cx: &mut Context<Self>) {
+        self.history_menu = !self.history_menu;
+        self.model_menu = false;
+        self.more_menu = false;
+        if self.history_menu && self.history_pending.is_none() {
+            self.history_error = None;
+            self.history_limit = 30;
+            if let Some(client) = self.client.clone() {
+                let (send, receive) = mpsc::channel();
+                match thread::Builder::new()
+                    .name("ht-ai-history".into())
+                    .spawn(move || {
+                        let _ = send.send(client.sessions().map_err(|e| e.to_string()));
+                    }) {
+                    Ok(_) => self.history_pending = Some(receive),
+                    Err(error) => self.history_error = Some(error.to_string()),
+                }
+            } else {
+                self.history_error = Some("Sign in to load server history".into());
+            }
+        }
+        cx.notify();
+    }
+
+    fn open_history_chat(&mut self, index: usize, cx: &mut Context<Self>) {
+        let session = &mut self.history[index];
+        let id = session.id.clone();
+        let title = session.title.clone().unwrap_or_else(|| "AI Chat".into());
+        let messages = std::mem::take(&mut session.messages);
+        let colors = self.colors;
+        let (send, receive) = mpsc::channel();
+        match thread::Builder::new()
+            .name("ht-ai-transcript".into())
+            .spawn(move || {
+                let messages = messages
+                    .into_iter()
+                    .map(|message| {
+                        let rich = if message.role == "human" {
+                            RichText::default()
+                        } else {
+                            markdown(&message.content, colors)
+                        };
+                        ChatMessage { message, rich }
+                    })
+                    .collect();
+                let _ = send.send(Chat {
+                    id,
+                    title,
+                    messages,
+                    status: String::new(),
+                    error: None,
+                });
+            }) {
+            Ok(_) => self.chat_pending = Some(receive),
+            Err(error) => self.history_error = Some(error.to_string()),
+        }
+        cx.notify();
+    }
+
+    fn poll_history(&mut self, cx: &mut Context<Self>) {
+        if let Some(pending) = &self.history_pending {
+            match pending.try_recv() {
+                Ok(result) => {
+                    self.history_pending = None;
+                    match result {
+                        Ok(sessions) => self.history = sessions,
+                        Err(error) => self.history_error = Some(error),
+                    }
+                    cx.notify();
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.history_pending = None;
+                    self.history_error = Some("AI history load interrupted".into());
+                    cx.notify();
+                }
+                Err(mpsc::TryRecvError::Empty) => (),
+            }
+        }
+        if let Some(pending) = &self.chat_pending {
+            match pending.try_recv() {
+                Ok(chat) => {
+                    self.chat_pending = None;
+                    self.chats.push(chat);
+                    self.selected = self.chats.len() - 1;
+                    self.history_menu = false;
+                    cx.notify();
+                }
+                Err(mpsc::TryRecvError::Disconnected) => {
+                    self.chat_pending = None;
+                    self.history_error = Some("AI transcript load interrupted".into());
+                    cx.notify();
+                }
+                Err(mpsc::TryRecvError::Empty) => (),
+            }
+        }
+    }
+
     fn new_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.chat_pending = None;
         self.chats.push(Chat::new());
         self.selected = self.chats.len() - 1;
         self.include_context = true;
@@ -371,6 +488,7 @@ impl AiSidebar {
     }
 
     fn poll(&mut self, cx: &mut Context<Self>) {
+        self.poll_history(cx);
         let Some(active) = &mut self.active else {
             return;
         };
@@ -633,12 +751,7 @@ impl Render for AiSidebar {
                     .items_center()
                     .gap(px(8.))
                     .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, cx| {
-                        this.history_menu = !this.history_menu;
-                        this.model_menu = false;
-                        this.more_menu = false;
-                        cx.notify();
-                    }))
+                    .on_click(cx.listener(|this, _, _, cx| this.toggle_history(cx)))
                     .child(
                         div()
                             .truncate()
@@ -713,6 +826,7 @@ impl Render for AiSidebar {
                         .hover(|d| d.bg(color(t.hover)))
                         .when(index == self.selected, |d| d.bg(color(t.active)))
                         .on_click(cx.listener(move |this, _, _, cx| {
+                            this.chat_pending = None;
                             this.selected = index;
                             this.history_menu = false;
                             cx.notify();
@@ -720,14 +834,49 @@ impl Render for AiSidebar {
                         .child(chat.title.clone()),
                 );
             }
-            panel = panel.child(
-                menu.child(
+            for (index, session) in self.history.iter().enumerate().take(self.history_limit) {
+                if self.chats.iter().any(|chat| chat.id == session.id) {
+                    continue;
+                }
+                menu = menu.child(
+                    div()
+                        .id(("ai-server-chat", index))
+                        .p(px(6.))
+                        .cursor_pointer()
+                        .hover(|d| d.bg(color(t.hover)))
+                        .on_click(cx.listener(move |this, _, _, cx| {
+                            if this.chat_pending.is_none() {
+                                this.open_history_chat(index, cx);
+                            }
+                        }))
+                        .child(session.title.clone().unwrap_or_else(|| "AI Chat".into())),
+                );
+            }
+            if self.history.len() > self.history_limit {
+                menu = menu.child(
+                    div()
+                        .id("ai-history-more")
+                        .p(px(6.))
+                        .cursor_pointer()
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.history_limit += 30;
+                            cx.notify();
+                        }))
+                        .child("Show more"),
+                );
+            }
+            if self.history_pending.is_some() || self.chat_pending.is_some() {
+                menu = menu.child(div().text_size(px(11.)).child("Loading history…"));
+            }
+            if let Some(error) = &self.history_error {
+                menu = menu.child(
                     div()
                         .text_size(px(11.))
-                        .text_color(color(t.muted))
-                        .child("This window only · server history awaits bearer support"),
-                ),
-            );
+                        .text_color(color(0xe07171))
+                        .child(error.clone()),
+                );
+            }
+            panel = panel.child(menu);
         }
         if self.more_menu {
             panel = panel.child(
@@ -979,6 +1128,64 @@ mod tests {
             assert_ne!(old_id, sidebar.chats[sidebar.selected].id);
             assert!(sidebar.input.read(cx).content.is_empty());
             assert!(sidebar.chats[sidebar.selected].error.is_none());
+        })
+        .unwrap();
+    }
+
+    #[gpui::test]
+    fn history_is_lazy_background_results_are_polled_without_an_active_turn(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let view = cx.add_window(|window, cx| {
+            let workspace = cx.focus_handle();
+            AiSidebar::new(
+                crate::theme::THEMES[1],
+                Some("test-token".into()),
+                workspace,
+                window,
+                cx,
+            )
+        });
+        view.update(cx, |sidebar, window, cx| {
+            assert!(sidebar.history.is_empty());
+            assert!(sidebar.history_pending.is_none());
+            assert_eq!(sidebar.width(), 420.);
+            sidebar.collapsed = true;
+            assert_eq!(sidebar.width(), 28.);
+            sidebar.focus_composer(window, cx);
+            assert_eq!(sidebar.width(), 420.);
+            let (send, receive) = mpsc::channel();
+            sidebar.history_pending = Some(receive);
+            send.send(Ok(vec![Session {
+                id: "remote-session".into(),
+                title: Some("Web history".into()),
+                messages: vec![Message {
+                    role: "assistant".into(),
+                    content: "Saved reply".into(),
+                }],
+            }]))
+            .unwrap();
+            sidebar.poll(cx);
+            assert_eq!(sidebar.history.len(), 1);
+            assert!(sidebar.history_pending.is_none());
+            assert!(sidebar.active.is_none());
+            // New-chat intent invalidates a late transcript result.
+            let (_send, receive) = mpsc::channel();
+            sidebar.chat_pending = Some(receive);
+            sidebar.new_chat(window, cx);
+            assert!(sidebar.chat_pending.is_none());
+            sidebar.set_token(None, cx);
+            assert!(sidebar.history.is_empty());
+            assert!(sidebar.history_pending.is_none());
+            sidebar.toggle_history(cx);
+            assert!(sidebar.history_menu);
+            assert!(
+                sidebar
+                    .history_error
+                    .as_deref()
+                    .unwrap()
+                    .contains("Sign in")
+            );
         })
         .unwrap();
     }

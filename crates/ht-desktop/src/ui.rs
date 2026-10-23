@@ -1256,7 +1256,7 @@ impl Desktop {
             .unwrap_or("Board");
         let count: usize = self.columns.iter().map(|c| c.cards.len()).sum();
         let board_width =
-            (f32::from(window.viewport_size().width) - 48. - ai_chat_panel_width()).max(0.);
+            (f32::from(window.viewport_size().width) - 48. - self.ai_sidebar.as_ref().map_or(0., |sidebar| sidebar.read(cx).width())).max(0.);
         let column_width = ((board_width * 0.97
             - 16. * self.columns.len().saturating_sub(1) as f32)
             / self.columns.len().max(1) as f32)
@@ -2083,12 +2083,7 @@ impl Desktop {
     }
 }
 
-const AI_CHAT_PANEL_SHOWN: bool = false;
-const AI_CHAT_PANEL_WIDTH: f32 = 420.;
-
-fn ai_chat_panel_width() -> f32 {
-    if AI_CHAT_PANEL_SHOWN { AI_CHAT_PANEL_WIDTH } else { 0. }
-}
+const AI_CHAT_PANEL_SHOWN: bool = true;
 
 impl Render for Desktop {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
@@ -2158,7 +2153,11 @@ impl Render for Desktop {
                     )
                     .layout_key(&self.layout, "main", None),
             )
-.when_some(self.ai_sidebar.clone(), |d, sidebar| d.child(sidebar))
+            .when_some(self.ai_sidebar.clone(), |d, sidebar| {
+                let width = sidebar.read(cx).width();
+                d.child(div().w(px(width)).flex_shrink_0().h_full().child(sidebar)
+                    .layout_key(&self.layout, "rightpanel", None))
+            })
             .into_any_element()
     }
 }
@@ -2337,10 +2336,14 @@ fn inbox_metadata(task: &serde_json::Value) -> String {
 
 fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
     let markdown = extra
-        .get("Task_Summary")
-        .and_then(|v| v.as_array())
-        .and_then(|a| a.first())
+        .get("ai_summary")
         .and_then(|v| v["content"].as_str())
+        .or_else(|| {
+            extra.get("Task_Summary")
+                .and_then(|v| v.as_array())
+                .and_then(|a| a.first())
+                .and_then(|v| v["content"].as_str())
+        })
         .or_else(|| extra.get("summary").and_then(|v| v.as_str()))
         .unwrap_or("");
     let first = markdown
@@ -2405,6 +2408,17 @@ mod tests {
             task_summary(extra.as_object().unwrap()),
             "QA reminder check task, marked safe to delete; no real work scope."
         );
+    }
+
+    #[test]
+    fn optional_mcp_ai_summary_takes_precedence_and_missing_or_null_is_hidden() {
+        for (extra, expected) in [
+            (json!({"ai_summary":{"content":"- **Live** summary", "updated_at":"2026-10-23"}, "summary":"Old"}), "Live summary"),
+            (json!({"ai_summary":null}), ""),
+            (json!({}), ""),
+        ] {
+            assert_eq!(task_summary(extra.as_object().unwrap()), expected);
+        }
     }
 
     #[test]

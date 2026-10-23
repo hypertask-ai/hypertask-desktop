@@ -327,7 +327,8 @@ impl Client {
 
     /// Fetch only when history opens, off the render thread.
     pub fn sessions(&self) -> Result<Vec<Session>> {
-        let response = match self.agent
+        let response = match self
+            .agent
             .get(&format!("{}/api/ai-chat/all-sessions", self.base))
             .set("Authorization", &format!("Bearer {}", self.token))
             .set("Accept", "application/json")
@@ -336,7 +337,10 @@ impl Client {
             Ok(response) => response,
             Err(ureq::Error::Status(status, response)) => {
                 let mut body = String::new();
-                response.into_reader().take(64 * 1024).read_to_string(&mut body)?;
+                response
+                    .into_reader()
+                    .take(64 * 1024)
+                    .read_to_string(&mut body)?;
                 bail!("{}", refusal(status, &body));
             }
             Err(error) => bail!("AI history request failed: {error}"),
@@ -621,7 +625,8 @@ mod tests {
             ("403 Forbidden", r#"{"message":"Access denied"}"#, false),
         ] {
             let (base, server) = server(status, "application/json", body);
-            let result = Client::with_base(&base, "token".into()).unwrap()
+            let result = Client::with_base(&base, "token".into())
+                .unwrap()
                 .cancel(&TurnIds::new(session_id()));
             if ok {
                 result.unwrap();
@@ -635,11 +640,15 @@ mod tests {
     #[test]
     fn history_accepts_all_1517_transcripts_beyond_ureq_json_limit() {
         let content = "é".repeat(4096);
-        let sessions: Vec<_> = (0..1517).map(|i| json!({
-            "id": format!("session-{i}"), "title": null,
-            "messages": [{"role":"assistant", "content":content}],
-            "ignoredAttachments": [1,2,3]
-        })).collect();
+        let sessions: Vec<_> = (0..1517)
+            .map(|i| {
+                json!({
+                    "id": format!("session-{i}"), "title": null,
+                    "messages": [{"role":"assistant", "content":content}],
+                    "ignoredAttachments": [1,2,3]
+                })
+            })
+            .collect();
         let bytes = serde_json::to_vec(&json!({"success":true,"sessions":sessions})).unwrap();
         assert!(bytes.len() > 10 * 1024 * 1024);
         let parsed = parse_sessions(bytes.as_slice()).unwrap();

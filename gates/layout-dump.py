@@ -12,7 +12,7 @@ import tempfile
 ROOT = Path(__file__).resolve().parent.parent
 APP = ROOT / "target/release/ht-desktop"
 OUT = ROOT / "evidence/layout"
-COMMON = {"rail", "main", "footer", "footer.text"} | {
+COMMON = {"rail", "main", "rightpanel", "footer", "footer.text"} | {
     f"rail.icon.{i}" for i in range(13)
 }
 KEYS = {
@@ -47,7 +47,7 @@ def validate(path, screen, theme):
     assert len(elements) == len(dump["elements"]), "duplicate elements"
     assert len(missing) == len(dump["missing"]), "duplicate missing keys"
     assert not elements.keys() & missing, "present keys marked missing"
-    assert (elements.keys() | missing) - {"rightpanel"} == COMMON | KEYS[screen], dump
+    assert (elements.keys() | missing) == COMMON | KEYS[screen], dump
     for element in elements.values():
         assert set(element) == FIELDS, element
         for field in ["x", "y", "w", "h"]:
@@ -66,8 +66,8 @@ def validate(path, screen, theme):
         assert elements["board.card.0.meta"]["text"] == "2", elements["board.card.0.meta"]
     assert required <= elements.keys(), f"unmeasured native elements: {required - elements.keys()}"
     assert elements["rail"]["x"] == 0 and elements["rail"]["w"] == 48, elements["rail"]
-    assert elements["main"]["x"] == 0 and elements["main"]["w"] == 1440, elements["main"]
-    assert "rightpanel" not in elements, elements["rightpanel"]
+    assert elements["main"]["x"] == 0 and elements["main"]["w"] == 1020, elements["main"]
+    assert elements["rightpanel"]["x"] == 1020 and elements["rightpanel"]["w"] == 420, elements["rightpanel"]
     if screen == "board":
         assert elements["board.header"]["h"] == 56, elements["board.header"]
         assert elements["board.column.0"]["y"] == 72, elements["board.column.0"]
