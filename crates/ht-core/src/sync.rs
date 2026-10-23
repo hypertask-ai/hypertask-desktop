@@ -333,7 +333,7 @@ fn task_snapshot(value: &Value, detail: bool) -> Value {
         }
     }
     if detail {
-        for key in ["createdBy", "estimate", "agent"] {
+        for key in ["createdBy", "estimate", "agent", "ai_summary"] {
             if task.get(key).is_none() {
                 task[key] = Value::Null;
             }

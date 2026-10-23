@@ -2342,17 +2342,16 @@ fn inbox_metadata(task: &serde_json::Value) -> String {
 }
 
 fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    let markdown = extra
-        .get("ai_summary")
-        .and_then(|v| v["content"].as_str())
-        .or_else(|| {
-            extra.get("Task_Summary")
-                .and_then(|v| v.as_array())
-                .and_then(|a| a.first())
-                .and_then(|v| v["content"].as_str())
-        })
-        .or_else(|| extra.get("summary").and_then(|v| v.as_str()))
-        .unwrap_or("");
+    let markdown = if let Some(summary) = extra.get("ai_summary") {
+        summary["content"].as_str().unwrap_or("")
+    } else {
+        extra.get("Task_Summary")
+            .and_then(|v| v.as_array())
+            .and_then(|a| a.first())
+            .and_then(|v| v["content"].as_str())
+            .or_else(|| extra.get("summary").and_then(|v| v.as_str()))
+            .unwrap_or("")
+    };
     let first = markdown
         .lines()
         .map(str::trim)
@@ -2421,7 +2420,7 @@ mod tests {
     fn optional_mcp_ai_summary_takes_precedence_and_missing_or_null_is_hidden() {
         for (extra, expected) in [
             (json!({"ai_summary":{"content":"- **Live** summary", "updated_at":"2026-10-23"}, "summary":"Old"}), "Live summary"),
-            (json!({"ai_summary":null}), ""),
+            (json!({"ai_summary":null, "summary":"Old summary"}), ""),
             (json!({}), ""),
         ] {
             assert_eq!(task_summary(extra.as_object().unwrap()), expected);
