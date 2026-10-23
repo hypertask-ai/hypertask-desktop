@@ -974,7 +974,9 @@ mod tests {
         });
         cx.simulate_input("First é🙂");
         cx.simulate_keystrokes("shift-enter");
-        cx.simulate_input("Second");
+        view.update_in(cx, |input, window, cx| {
+            input.replace_text_in_range(None, "Second", window, cx)
+        });
         view.read_with(cx, |input, _| {
             assert_eq!(input.content.as_ref(), "First é🙂\nSecond")
         });
@@ -987,7 +989,9 @@ mod tests {
             assert_eq!(input.content.as_ref(), "First é🙂\nSecond")
         });
         cx.simulate_keystrokes("ctrl-a");
-        cx.simulate_input("Replacement");
+        view.update_in(cx, |input, window, cx| {
+            input.replace_text_in_range(None, "Replacement", window, cx)
+        });
         cx.simulate_keystrokes("ctrl-z");
         view.read_with(cx, |input, _| {
             assert_eq!(input.content.as_ref(), "First é🙂\nSecond");

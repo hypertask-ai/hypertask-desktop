@@ -17,7 +17,7 @@ impl CommentWrite {
             Self::Edit { text } => {
                 ensure!(!text.trim().is_empty(), "comment must not be empty");
                 ensure!(
-                    text.chars().count() <= 5000,
+                    text.encode_utf16().count() <= 5000,
                     "comment must be 5000 characters or less"
                 );
             }

@@ -81,6 +81,7 @@ impl Db {
                 }
                 Write::TaskComment { task_id, text } => {
                     ensure!(!text.trim().is_empty(), "comment must not be empty");
+                    ensure!(text.encode_utf16().count() <= 5000, "comment must be 5000 characters or less");
                     ensure!(db.task(*task_id)?.is_some(), "task is not cached");
                     (format!("task:{task_id}"), "task_comment", json!({"task_id":task_id,"text":text}))
                 }
@@ -295,7 +296,7 @@ impl Db {
             ),
             "task_comment" => (
                 "/comments",
-                json!({"task_id":row.payload_json["task_id"],"text":row.payload_json["text"],"kind":"qa"}),
+                json!({"task_id":row.payload_json["task_id"],"text":row.payload_json["text"],"kind":"qa","content_type":"html"}),
             ),
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
             "comment_action" => ("", Value::Null),

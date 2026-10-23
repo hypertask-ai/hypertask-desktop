@@ -70,15 +70,6 @@ impl Worker {
                         Err(mpsc::RecvTimeoutError::Timeout) => None,
                     };
                     let result: Result<()> = (|| {
-                        if sync.db.current_user_id().is_none() {
-                            let context =
-                                crate::http::successful(sync.transport.get("/user/context")?)?;
-                            let id = context["user"]["id"]
-                                .as_i64()
-                                .filter(|id| *id > 0)
-                                .ok_or_else(|| anyhow::anyhow!("missing current user"))?;
-                            sync.db.kv_set("current-user-id", &id.to_string())?;
-                        }
                         match command {
                             Some(Command::Board(id)) => {
                                 boards.insert(id);
@@ -88,6 +79,13 @@ impl Worker {
                             Some(Command::Catalog(id)) => sync.catalog(id)?,
                             Some(Command::Task(id)) => {
                                 task = Some(id);
+                                if let Ok(response) = sync.transport.get("/user/context")
+                                    && let Ok(context) = crate::http::successful(response)
+                                    && let Some(id) =
+                                        context["user"]["id"].as_i64().filter(|id| *id > 0)
+                                {
+                                    sync.db.kv_set("current-user-id", &id.to_string())?;
+                                }
                                 sync.task(id)?;
                                 sync.comments(id)?;
                                 sync.drafts(id)?;

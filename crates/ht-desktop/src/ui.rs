@@ -45,8 +45,11 @@ enum Editing {
     Title,
     Comment,
     Description,
+    ExistingComment,
 }
 
+#[path = "comment_actions.rs"]
+mod comment_actions;
 #[path = "comments.rs"]
 mod comments;
 #[path = "interactions.rs"]
@@ -83,6 +86,7 @@ pub struct Desktop {
     title_input: Entity<TextInput>,
     comment_input: Entity<TextInput>,
     interaction: interactions::Interaction,
+    comment_actions: comment_actions::CommentActions,
     moving: bool,
     footer: bool,
     ready_scheduled: bool,
@@ -124,10 +128,10 @@ impl Desktop {
                 "Tip: Hit CTRL+M to comment",
                 color(0xadb5bd),
                 cx,
-            )
+            ).multiline()
         });
+        cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
         if options.background {
-            cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
             cx.observe(&title_input, |_, _, cx| cx.notify()).detach();
         }
         let focus = cx.focus_handle();
@@ -180,6 +184,7 @@ impl Desktop {
             title_input,
             comment_input,
             interaction: interactions::Interaction::new(cx),
+            comment_actions: comment_actions::CommentActions::new(cx),
             moving: false,
             footer: true,
             ready_scheduled: false,
@@ -312,6 +317,9 @@ impl Desktop {
                 Screen::Board => self.load_columns(self.options.board)?,
                 Screen::Task => {
                     self.detail = self.db.task_detail(self.options.task)?;
+                    if let Some(detail) = &mut self.detail {
+                        detail.comments.sort_by(|a,b| a.created_at.cmp(&b.created_at).then(a.id.cmp(&b.id)));
+                    }
                     if let Some(detail) = &self.detail {
                         self.description = RichText::parse(&detail.task.description, self.colors);
                         self.summary = task_summary(&detail.task.extra).into();
@@ -447,6 +455,7 @@ impl Desktop {
             self.previous = self.screen;
         }
         if self.options.task != id {
+            self.reset_comment_actions();
             self.comment_input
                 .update(cx, |input, cx| input.set_content(String::new(), cx));
         }
@@ -492,6 +501,7 @@ impl Desktop {
     }
 
     fn save_edit(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.editing == Editing::ExistingComment { return self.save_existing_comment(window, cx); }
         let Some(task_id) = self.selected_task() else {
             return false;
         };
@@ -506,31 +516,18 @@ impl Desktop {
             },
             Editing::Comment => Write::TaskComment {
                 task_id,
-                text: self
-                    .comment_input
-                    .read(cx)
-                    .content
-                    .replace('&', "&amp;")
-                    .replace('<', "&lt;")
-                    .replace('>', "&gt;"),
+                text: self.comment_body_html(cx),
             },
             Editing::Description => Write::TaskPatch {
                 task_id,
-                patch: ht_core::TaskPatch::Description(
-                    self.interaction
-                        .description
-                        .read(cx)
-                        .content
-                        .replace('&', "&amp;")
-                        .replace('<', "&lt;")
-                        .replace('>', "&gt;"),
-                ),
+                patch: ht_core::TaskPatch::Description(comment_actions::editor_html(self.interaction.description.read(cx).content.as_ref())),
             },
-            Editing::None => return false,
+            Editing::None | Editing::ExistingComment => return false,
         };
         if self.enqueue(write, cx) {
             self.editing = Editing::None;
             if comment {
+                self.comment_actions.clear_quotes();
                 self.comment_input
                     .update(cx, |input, cx| input.reset(window, cx));
             }
@@ -551,7 +548,7 @@ impl Desktop {
                 return;
             }
         }
-        self.interaction_key(event, window, cx);
+        if !self.comment_key(event, window, cx) { self.interaction_key(event, window, cx); }
     }
 
     fn rail(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -1726,18 +1723,13 @@ impl Desktop {
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
                             .child(self.creator.clone()).when(d.task.extra.get("hasDescriptionDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child("Draft")).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
-                        .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.focused_editor(Editing::Description, cx))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
+                        .child(div().pt(px(8.)).min_h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.focused_editor(Editing::Description, cx))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
                             .child(div().flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add sub-tasks"))
                             .child(div().ml(px(16.)).flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add page"))
                             .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
-                    .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| {
-                        div().id(("comment", i)).anchor_scroll(Some(self.comment_anchors[i].clone())).p(px(20.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == i + 1 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow(shadow()).flex().flex_col().gap(px(12.))
-                            .child(div().flex().text_color(color(t.muted)).child(div().child(comment_author(&comment.extra)).layout_key(&self.layout, format!("task.comment.{i}.author"), Some(comment_author(&comment.extra)))).child(div().flex_1()).child(short_date(&comment.created_at)))
-                            .child(div().line_height(px(21.)).child(body.element()).layout_key(&self.layout, format!("task.comment.{i}.body"), Some(body.text.to_string())))
-                            .layout_key(&self.layout, format!("task.comment.{i}"), None)
-                    }))
+                    .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| self.comment_row(i, comment, body, cx)))
                     .child(self.comment_composer(cx)))
                 .child(properties)))
             .into_any_element()
@@ -2060,7 +2052,7 @@ impl Render for Desktop {
                     "comment_text": self.comment_input.read(cx).content.as_ref(),
                     "title_text": self.title_input.read(cx).content.as_ref(),
                     "description_text": self.interaction.description.read(cx).content.as_ref(),
-                    "editing": match self.editing { Editing::None => "none", Editing::Title => "title", Editing::Comment => "comment", Editing::Description => "description" },
+                    "editing": match self.editing { Editing::None => "none", Editing::Title => "title", Editing::Comment => "comment", Editing::Description => "description", Editing::ExistingComment => "edit-comment" },
                     "footer": crate::footer::hints(self.screen).iter().map(|(k, v)| format!("{k} {v}")).collect::<Vec<_>>(),
                     "command_open": self.interaction.modal == Some(interactions::Modal::Commands),
                     "modal": self.interaction.modal.map(|m| format!("{m:?}").to_lowercase()),
@@ -2156,6 +2148,7 @@ impl Render for Desktop {
                 )
             })
             .child(self.interaction_overlay(window, cx))
+            .child(self.comment_overlay(cx))
             .into_any_element()
     }
 }

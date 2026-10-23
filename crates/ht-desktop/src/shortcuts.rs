@@ -43,6 +43,13 @@ pub enum Action {
     CopyUrl,
     CopyTitleUrl,
     DiscardDraft,
+    ReplyComment,
+    EditComment,
+    DeleteComment,
+    ReactComment,
+    LikeComment,
+    ExpandComment,
+    ExpandComments,
 }
 
 // GPUI consumes Shift for OEM/digit keys on Windows, leaving the shifted character.
@@ -83,6 +90,11 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         };
     }
     match (k, ctrl, shift, m.alt) {
+        ("3", true, true, false) if screen == Screen::Task => Some(Action::DeleteComment),
+        ("o", false, false, false) if screen == Screen::Task => Some(Action::ExpandComment),
+        ("o", false, true, false) if screen == Screen::Task => Some(Action::ExpandComments),
+        ("r", false, false, false) if screen == Screen::Task => Some(Action::ReactComment),
+        ("l", false, false, false) if screen == Screen::Task => Some(Action::LikeComment),
         ("m", true, false, false) => Some(Action::Comment),
         ("e", true, false, false) => Some(Action::Archive),
         ("f", true, false, false) if screen != Screen::Task => Some(Action::LocalSearch),

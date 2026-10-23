@@ -7,7 +7,7 @@ impl Desktop {
             .id("comment-composer")
             .anchor_scroll(Some(self.composer_anchor.clone()))
             .flex_shrink_0()
-            .h(px(if self.options.theme == ThemeName::Porcelain {
+            .min_h(px(if self.options.theme == ThemeName::Porcelain {
                 152.
             } else {
                 154.
@@ -61,6 +61,7 @@ impl Desktop {
             )
             .child(
                 div()
+                    .min_h(px(80.))
                     .text_size(px(14.))
                     .line_height(px(21.))
                     .child(self.comment_input.clone())

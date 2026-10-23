@@ -69,8 +69,9 @@ impl Interaction {
             cx.notify();
         })
         .detach();
-        let description =
-            cx.new(|cx| TextInput::new(String::new(), "Add Description", color(0x8e9093), cx));
+        let description = cx.new(|cx| {
+            TextInput::new(String::new(), "Add Description", color(0x8e9093), cx).multiline()
+        });
         cx.observe(&description, |_, _, cx| cx.notify()).detach();
         Self {
             modal: None,
@@ -152,6 +153,13 @@ impl Desktop {
             .is_focused(window)
         {
             Editing::Description
+        } else if self
+            .comment_actions
+            .input
+            .focus_handle(cx)
+            .is_focused(window)
+        {
+            Editing::ExistingComment
         } else {
             Editing::None
         };
@@ -218,6 +226,8 @@ impl Desktop {
     ) {
         use Action::*;
         match action {
+            ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
+            | ExpandComment | ExpandComments => self.run_comment_action(action, window, cx),
             Commands => self.show_modal(Modal::Commands, window, cx),
             Inbox | Board => {
                 if action == Board
@@ -238,6 +248,7 @@ impl Desktop {
             }
             Back => {
                 if self.editing != Editing::None {
+                    self.comment_actions.edit_id = None;
                     self.editing = Editing::None;
                     window.focus(&self.focus, cx);
                 } else if !self.interaction.bulk.is_empty() {
@@ -270,6 +281,7 @@ impl Desktop {
                 }
             }
             DiscardDraft => {
+                self.comment_actions.clear_quotes();
                 self.comment_input
                     .update(cx, |input, cx| input.reset(window, cx));
                 self.editing = Editing::None;
@@ -297,6 +309,8 @@ impl Desktop {
             Open if self.screen == Screen::Task => {
                 if self.interaction.task_part == 0 {
                     self.edit_description(window, cx);
+                } else if self.interaction.task_part <= self.comments.len() {
+                    self.run_comment_action(ReplyComment, window, cx);
                 } else {
                     self.edit_comment(window, cx);
                 }
@@ -690,6 +704,7 @@ impl Desktop {
             Editing::Comment => self.comment_input.focus_handle(cx),
             Editing::Title => self.title_input.focus_handle(cx),
             Editing::Description => self.interaction.description.focus_handle(cx),
+            Editing::ExistingComment => self.comment_actions.input.focus_handle(cx),
             Editing::None => self.focus.clone(),
         };
         window.focus(&focus, cx);
@@ -705,6 +720,7 @@ impl Desktop {
     }
     fn command_rows(&self) -> Vec<command_center::Command> {
         let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
+        self.add_comment_commands(&mut rows);
         if self
             .selected_task()
             .and_then(|id| self.db.task(id).ok().flatten())
