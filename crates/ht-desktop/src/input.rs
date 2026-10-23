@@ -68,7 +68,13 @@ impl TextInput {
             cx.propagate();
             return;
         }
+        if self.content.is_empty() {
+            return;
+        }
         if let Some(layout) = &self.last_layout {
+            if layout.text != self.content {
+                return;
+            }
             let row = layout.row(self.cursor_offset());
             let target = row
                 .saturating_add_signed(direction)
@@ -900,6 +906,12 @@ mod tests {
             input.set_selected_text_range(range, window, cx);
             input.replace_text_in_range(None, "Replacement 漢", window, cx);
             assert!(input.content.ends_with("\n\nReplacement 漢"));
+            input.move_to(0, window, cx);
+            input.vertical(1, window, cx);
+            assert_eq!(input.cursor_offset(), 0, "ignore stale layout after editing");
+            input.set_content(String::new(), cx);
+            input.vertical(1, window, cx);
+            assert_eq!(input.cursor_offset(), 0, "an empty draft has no next row");
         });
     }
 }
