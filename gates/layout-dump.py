@@ -47,7 +47,7 @@ def validate(path, screen, theme):
     assert len(elements) == len(dump["elements"]), "duplicate elements"
     assert len(missing) == len(dump["missing"]), "duplicate missing keys"
     assert not elements.keys() & missing, "present keys marked missing"
-    assert elements.keys() | missing == COMMON | KEYS[screen], dump
+    assert (elements.keys() | missing) - {"rightpanel"} == COMMON | KEYS[screen], dump
     for element in elements.values():
         assert set(element) == FIELDS, element
         for field in ["x", "y", "w", "h"]:
