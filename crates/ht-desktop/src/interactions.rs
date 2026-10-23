@@ -47,6 +47,10 @@ pub(super) struct Interaction {
     pub bulk: BTreeSet<i64>,
     pub playlist: Vec<i64>,
     pub task_part: usize,
+    pub key_events: u64,
+    pub last_key: String,
+    pub last_ctrl: bool,
+    pub last_shift: bool,
     last_g: Option<(Instant, bool)>,
     modal_scroll: ScrollHandle,
 }
@@ -76,6 +80,10 @@ impl Interaction {
             bulk: BTreeSet::new(),
             playlist: vec![],
             task_part: 0,
+            key_events: 0,
+            last_key: String::new(),
+            last_ctrl: false,
+            last_shift: false,
             last_g: None,
             modal_scroll: ScrollHandle::new(),
         }
@@ -90,6 +98,13 @@ impl Desktop {
     ) {
         let key = &event.keystroke;
         let ctrl = key.modifiers.control || key.modifiers.platform;
+        if self.options.background {
+            self.interaction.key_events += 1;
+            self.interaction.last_key = key.key.clone();
+            self.interaction.last_ctrl = ctrl;
+            self.interaction.last_shift = key.modifiers.shift;
+            cx.notify();
+        }
         if key.key == "k" && ctrl && !key.modifiers.shift && !key.modifiers.alt {
             if self.interaction.modal == Some(Modal::Commands) {
                 self.close_modal(window, cx);

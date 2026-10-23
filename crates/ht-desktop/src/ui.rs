@@ -1923,6 +1923,8 @@ impl Render for Desktop {
                 "selection_count": count, "last_index": count.saturating_sub(1),
                 "inbox_count": self.inbox.len(), "composer_index": self.comments.len() + 1,
                 "choice_count": self.choices(cx).len(),
+                "key_events": self.interaction.key_events, "last_key": self.interaction.last_key,
+                "last_ctrl": self.interaction.last_ctrl, "last_shift": self.interaction.last_shift,
                 "column_ids": self.columns.iter().map(|c| c.id).collect::<Vec<_>>(),
                 "task_title": task.as_ref().map(|t| &t.title),
                 "ticket": task.as_ref().and_then(|t| t.ticket_number.as_ref()),

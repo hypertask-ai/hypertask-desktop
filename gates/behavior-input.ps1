@@ -77,8 +77,26 @@ function Key([string]$chord) {
   $mods = @(); if ($parts -contains 'Ctrl') { $mods += 17 }; if ($parts -contains 'Shift') { $mods += 16 }; if ($parts -contains 'Alt') { $mods += 18 }
   $special = @{ Enter=13; Esc=27; Tab=9; Down=40; Up=38; Left=37; Right=39; F2=113; Home=36; End=35; Backspace=8; Delete=46; ";"=186; ","=188; "."=190; "/"=191 }
   $vk = if ($special.ContainsKey($last)) { $special[$last] } elseif ($last.Length -eq 1) { [int][char]$last.ToUpper() } else { throw "Unknown key $chord" }
+  $beforeKey = (Read-Json "$w\$script:id.behavior.json").state.key_events
+  $watch = New-Object IO.FileSystemWatcher $w, "$script:id.behavior.json"
   [BehaviorInput]::Begin($script:h, [int[]]$mods)
-  try { [BehaviorInput]::Key($script:h, $vk); Wait-Change "$w\$script:id.behavior.json" } finally { [BehaviorInput]::End($script:h, [int[]]$mods) }
+  try {
+    [BehaviorInput]::Key($script:h, $vk)
+    if ($null -eq $beforeKey) { Wait-Change "$w\$script:id.behavior.json" }
+    else {
+      $deadline = [DateTime]::UtcNow.AddSeconds(5)
+      do {
+        $state = (Read-Json "$w\$script:id.behavior.json").state
+        $want = switch ($last) { 'Esc' { 'escape' }; ';' { if ($mods -contains 16) { ';',':' } else { ';' } }; '3' { if ($mods -contains 16) { '3','#' } else { '3' } }; default { $last.ToLower() } }
+        $ack = $state.key_events -gt $beforeKey -and $state.last_key -in $want -and $state.last_ctrl -eq ($mods -contains 17) -and $state.last_shift -eq ($mods -contains 16)
+        if ($ack) { break }
+        $left = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
+        if ($left -gt 0) { $null = $watch.WaitForChanged([IO.WatcherChangeTypes]::All, $left) }
+      } while ([DateTime]::UtcNow -lt $deadline)
+      Assert-That $ack "Posted key $chord was not acknowledged with its exact modifiers"
+    }
+  } finally { [BehaviorInput]::End($script:h, [int[]]$mods); $watch.Dispose() }
+
 }
 function Type-Text([string]$text) {
   foreach ($c in $text.ToCharArray()) { [BehaviorInput]::Post($script:h, 0x102, [int]$c, 1) }
@@ -173,10 +191,20 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
         'type' { Type-Text $step.value }
         'click' { Click $step.value }
         'expect' {
-          $current = Snapshot $step.name
-          $actual = $current.state.($step.field)
-          $wanted = Expected $step.value $current $before
-          Assert-That ($actual -eq $wanted) "$($step.field): expected $($step.value), got $actual"
+          $watch = New-Object IO.FileSystemWatcher $w, "$script:id.behavior.json"
+          $deadline = [DateTime]::UtcNow.AddSeconds(5)
+          try {
+            do {
+              $current = Read-Json "$w\$script:id.behavior.json"
+              $actual = $current.state.($step.field)
+              $wanted = Expected $step.value $current $before
+              if ($actual -eq $wanted) { break }
+              $left = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
+              if ($left -gt 0) { $null = $watch.WaitForChanged([IO.WatcherChangeTypes]::All, $left) }
+            } while ([DateTime]::UtcNow -lt $deadline)
+            Assert-That ($actual -eq $wanted) "$($step.field): expected $wanted, got $actual"
+            $null = Snapshot $step.name
+          } finally { $watch.Dispose() }
         }
         'expect-change' {
           $current = Snapshot $step.name
