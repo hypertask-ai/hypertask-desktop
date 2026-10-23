@@ -44,6 +44,8 @@ builds and the layout contract on GitHub, not the VPS.
   before pending edits are reapplied, preventing the SQLite join from showing
   an obsolete title. Rows now render available due date, priority, size and
   task-label metadata from the inbox API, including the web's three-label cap.
+  Sender names follow the web's recent-actor grouping and null-agent fallback;
+  unread counts and available comment previews are no longer dropped.
 
 ## Bearer blockers (web repository source audit)
 
@@ -56,7 +58,7 @@ builds and the layout contract on GitHub, not the VPS.
   `lib/auth/getSessionUser.ts`. It reads cookies, not the CLI MCP bearer token.
   `lib/mcp/tasks/mappers.ts` neither includes nor maps `Task_Summary`;
   `/api/mcp/tasks/context`'s `summary=true` only limits comment context, not a
-  saved AI summary. `/api/v1/*` rewrites to `/api/mcp/*` (`next.config.ts`), so
+  saved AI summary. `/api/v1/*` rewrites to `/api/mcp/*` (`next.config.js`), so
   it does not add another summary source. The native saved-summary renderer
   remains usable when content is present, but absent content now hides the line
   instead of inventing “Not enough content for summary”. Full parity needs a

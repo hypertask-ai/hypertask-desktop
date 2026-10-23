@@ -1055,7 +1055,15 @@ impl Desktop {
         let n = &self.inbox[self.filtered[row]];
         let t = self.colors;
         let id = n.id;
-        let kind = notification_label(n.raw_json["type"].as_str().unwrap_or(""));
+        let kind = n.raw_json.pointer("/comment/text").and_then(|v| v.as_str())
+            .map(|html| RichText::parse(html, t).text.to_string())
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_else(|| notification_label(n.raw_json["type"].as_str().unwrap_or("")));
+        let source = n.source.clone().unwrap_or_default();
+        let source = match n.raw_json["unreadCount"].as_u64().filter(|count| *count > 0) {
+            Some(count) => format!("{source} ({count})"),
+            None => source,
+        };
         div()
             .id(("notification", id as u64))
             .w_full()
@@ -1116,12 +1124,12 @@ impl Desktop {
                             .child(
                                 div()
                                     .truncate()
-                                    .child(n.source.clone().unwrap_or_else(|| "Hypertask".into()))
+                                    .child(source.clone())
                                     .layout_key(
                                         &self.layout,
                                         format!("inbox.row.{row}.author"),
                                         Some(
-                                            n.source.clone().unwrap_or_else(|| "Hypertask".into()),
+                                            source.clone(),
                                         ),
                                     ),
                             ),

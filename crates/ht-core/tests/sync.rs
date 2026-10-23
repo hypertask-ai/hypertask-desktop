@@ -537,3 +537,30 @@ fn worker_refreshes_board_drafts_progressively_without_opening_task_pages() {
         assert_eq!(db.task(id).unwrap().unwrap().extra["hasBoardDraft"], true);
     }
 }
+
+#[test]
+fn inbox_sender_uses_recent_actors_and_null_agent_does_not_shadow_person() {
+    let f = fidelity();
+    let mut response = f["inbox"].clone();
+    response["user_notifications"][0]["fromAgent"] = json!({"displayName":null});
+    response["user_notifications"][0]["unreadCount"] = json!(3);
+    let mut sync = Sync::new(Db::memory().unwrap(), Script::new(vec![response.clone()]));
+    sync.inbox().unwrap();
+    assert_eq!(
+        sync.db.inbox().unwrap()[0].source.as_deref(),
+        Some("Example Person")
+    );
+    assert_eq!(sync.db.inbox().unwrap()[0].raw_json["unreadCount"], 3);
+    response["user_notifications"][0]["recentActors"] = json!([
+        {"displayName":"Example Person"}, {"displayName":"Example Agent"}
+    ]);
+    sync.transport.responses.push_back(Ok(Response {
+        status: 200,
+        body: response,
+    }));
+    sync.inbox().unwrap();
+    assert_eq!(
+        sync.db.inbox().unwrap()[0].source.as_deref(),
+        Some("Example Person, Example Agent")
+    );
+}
