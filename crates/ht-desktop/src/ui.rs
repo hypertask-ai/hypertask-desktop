@@ -1610,6 +1610,13 @@ impl Desktop {
                                 ),
                         ),
                     )
+                    .when(priority_name(&task.extra) != "No Priority" || task.due_date.is_some(), |d| {
+                        d.child(div().text_size(px(11.)).text_color(color(t.muted)).child(
+                            [Some(priority_name(&task.extra)).filter(|p| *p != "No Priority").map(str::to_owned),
+                             task.due_date.as_deref().map(short_date)]
+                                .into_iter().flatten().collect::<Vec<_>>().join(" · ")
+                        ))
+                    })
                     .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
                         d.child(
                             div()
@@ -1739,14 +1746,14 @@ impl Desktop {
                 .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(36.)).min_h(px(37.)).child(title)
                     .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).pt(px(10.25)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
                         .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(icon("layers", 0x696b6e, 16.))))
-                .child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone())).layout_key(&self.layout, "task.header", None))
+                .when(!self.summary.is_empty(), |d| d.child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone()))).layout_key(&self.layout, "task.header", None))
             .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
 
                 .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
                     .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(t.border)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
-                            .child(self.creator.clone()).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
+                            .child(self.creator.clone()).when(d.task.extra.get("hasDescriptionDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child("Draft")).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
                         .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(!self.description.text.trim().is_empty(), |d| d.child(self.description.element())).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
@@ -1755,6 +1762,7 @@ impl Desktop {
                             .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
                     .child(div().id("comment-composer").anchor_scroll(Some(self.composer_anchor.clone())).h(px(if self.options.theme == ThemeName::Porcelain { 152. } else { 154. })).pt(px(19.)).pb(px(if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled) { 27. } else { 25. })).pl(px(19.)).pr(px(16.)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).bg(color(t.comment)).border_1().border_color(color(t.border)).shadow_md().flex().flex_col()
                         .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
+                        .when(d.task.extra.get("hasCommentDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child(div().text_size(px(12.)).text_color(color(t.muted)).child("Draft")))
                         .child(div().text_size(px(14.)).line_height(px(21.)).child(self.comment_input.clone()))
                         .child(div().flex_1())
                         .child(div().flex().items_center().text_size(px(14.)).line_height(px(21.)).text_color(color(0x95999e)).font_weight(FontWeight::SEMIBOLD)
@@ -1780,12 +1788,13 @@ impl Desktop {
             .and_then(|v| v.as_array())
             .map(|a| {
                 a.iter()
-                    .filter_map(|v| v["displayName"].as_str().or_else(|| v["name"].as_str()))
+                    .filter(|v| v["agent"].is_null())
+                    .filter_map(|v| v["displayName"].as_str().or_else(|| v["email"].as_str()))
                     .collect::<Vec<_>>()
                     .join(", ")
             })
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "The Assignees".into());
+            .unwrap_or_else(|| "No assignees".into());
         let rows = [
             ("Assignees", assignees),
             (
@@ -1821,12 +1830,7 @@ impl Desktop {
             ("Project", task.board_title.clone()),
             (
                 "Priority",
-                task.extra
-                    .get("priority")
-                    .and_then(|v| v.get("Priority_Value"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No Priority")
-                    .into(),
+                priority_name(&task.extra).into(),
             ),
             (
                 "Task size",
@@ -1918,7 +1922,7 @@ impl Desktop {
                             .flex()
                             .items_center()
                             .gap(px(if label == "Project" { 6. } else { 10. }))
-                            .when(label == "Assignees" && value == "The Assignees", |d| {
+                            .when(label == "Assignees" && value == "No assignees", |d| {
                                 d.text_color(color(0x8e9093))
                             })
                             .when(label == "ID" && self.options.theme == ThemeName::Dia, |d| {
@@ -2274,10 +2278,15 @@ fn inbox_date(value: Option<&str>) -> String {
 fn creator_name(extra: &serde_json::Map<String, serde_json::Value>) -> String {
     ["user", "createdBy", "creator"]
         .into_iter()
-        .find_map(|key| extra.get(key).and_then(|v| v["displayName"].as_str()))
+        .find_map(|key| extra.get(key).and_then(|v| v["displayName"].as_str().filter(|s| !s.is_empty()).or_else(|| v["email"].as_str())))
         .or_else(|| extra.get("creatorName").and_then(|v| v.as_str()))
-        .unwrap_or("Hypertask")
+        .unwrap_or("Unknown author")
         .to_owned()
+}
+
+fn priority_name(extra: &serde_json::Map<String, serde_json::Value>) -> &str {
+    extra.get("priority").and_then(|v| v.as_str().or_else(|| v["Priority_Value"].as_str()))
+        .unwrap_or("No Priority")
 }
 
 fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
@@ -2311,28 +2320,20 @@ fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
             teaser = prefix.trim_end().to_owned();
         }
     }
-    if teaser.trim().is_empty() {
-        "Not enough content for summary".into()
-    } else {
-        teaser.trim().to_owned()
-    }
+    teaser.trim().to_owned()
 }
 
 fn comment_author(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    extra
-        .get("agent")
-        .filter(|v| !v.is_null())
-        .or_else(|| extra.get("creator"))
-        .or_else(|| extra.get("user"))
-        .and_then(|v| v["displayName"].as_str())
-        .unwrap_or(
-            if extra.get("pending").and_then(|v| v.as_bool()) == Some(true) {
-                "You · Pending"
-            } else {
-                "Hypertask"
-            },
-        )
-        .to_owned()
+    extra.get("agent_display_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+        .or_else(|| ["agent", "creator", "user"].into_iter().find_map(|key| {
+            extra.get(key).and_then(|v| v["displayName"].as_str().filter(|s| !s.is_empty())
+                .or_else(|| v["email"].as_str()))
+        }))
+        .unwrap_or(if extra.get("pending").and_then(|v| v.as_bool()) == Some(true) {
+            "You · Pending"
+        } else {
+            "Unknown author"
+        }).to_owned()
 }
 
 #[cfg(test)]
@@ -2371,11 +2372,38 @@ mod tests {
             ),
             (
                 json!({"Task_Summary": [{"content": " \n "}]}),
-                "Not enough content for summary",
+                "",
             ),
-            (json!({}), "Not enough content for summary"),
+            (json!({}), ""),
         ] {
             assert_eq!(task_summary(extra.as_object().unwrap()), expected);
         }
     }
+
+    #[test]
+    fn fidelity_fixture_preserves_priority_creator_summary_and_durable_comment_author() {
+        let f: serde_json::Value = serde_json::from_str(include_str!("../../../fixtures/data-fidelity.json")).unwrap();
+        for key in ["list", "detail"] {
+            assert_eq!(priority_name(f[key]["tasks"][0].as_object().unwrap()), "High");
+        }
+        assert_eq!(creator_name(f["detail"]["tasks"][0].as_object().unwrap()), "Example Creator");
+        assert_eq!(creator_name(f["list"]["tasks"][0].as_object().unwrap()), "Unknown author");
+        assert_eq!(task_summary(f["webSummary"].as_object().unwrap()), "Example saved summary.");
+        assert_eq!(task_summary(f["detail"]["tasks"][0].as_object().unwrap()), "");
+        assert_eq!(comment_author(f["comments"]["comments"][0].as_object().unwrap()), "Retired Example Agent");
+    }
+
+    #[test]
+    fn comment_author_does_not_shadow_people_with_null_or_empty_agents() {
+        for extra in [
+            json!({"agent": null, "creator": null, "user": {"displayName": "Example Person"}}),
+            json!({"agent": {"displayName": ""}, "creator": {"displayName": "Example Person"}}),
+        ] {
+            assert_eq!(comment_author(extra.as_object().unwrap()), "Example Person");
+        }
+        assert_eq!(comment_author(json!({"pending": true}).as_object().unwrap()), "You · Pending");
+        assert_eq!(creator_name(json!({"createdBy": {"email": "creator@example.com"}}).as_object().unwrap()), "creator@example.com");
+        assert_eq!(priority_name(json!({"priority": null}).as_object().unwrap()), "No Priority");
+    }
+
 }
