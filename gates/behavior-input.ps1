@@ -188,7 +188,25 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
     $null = [BehaviorInput]::SetWindowPos($h, [IntPtr]1, 0, 0, 1440, 940, 0x10 -bor 0x40)
     $watch = New-Object IO.FileSystemWatcher $w, "$id.behavior.json"
     try { if (!(Test-Path "$w\$id.behavior.json")) { $null = $watch.WaitForChanged([IO.WatcherChangeTypes]::All, 15000) } } finally { $watch.Dispose() }
+    # A hidden GPUI HWND can be enumerated before its CW_USEDEFAULT creation size
+    # is replaced. Resize only after the first render, without activating it.
+    Assert-That ([BehaviorInput]::SetWindowPos($h, [IntPtr]1, 0, 0, 1441, 940, 0x10 -bor 0x40)) 'Cannot resize test HWND'
+    Assert-That ([BehaviorInput]::SetWindowPos($h, [IntPtr]1, 0, 0, 1440, 940, 0x10 -bor 0x40)) 'Cannot size test HWND'
+    $watch = New-Object IO.FileSystemWatcher $w, "$id.json"
+    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+    try {
+      do {
+        $layout = Read-Json "$w\$id.json"
+        if ($layout.width -gt 0 -and $layout.height -gt 0) { break }
+        $left = [int]($deadline - [DateTime]::UtcNow).TotalMilliseconds
+        if ($left -gt 0) { $null = $watch.WaitForChanged([IO.WatcherChangeTypes]::All, $left) }
+      } while ([DateTime]::UtcNow -lt $deadline)
+      Assert-That ($layout.width -gt 0 -and $layout.height -gt 0) 'Invalid test viewport'
+    } finally { $watch.Dispose() }
+    $launch = Get-CimInstance Win32_Process -Filter "ProcessId=$($p.Id)"
+    @{ pid=$p.Id; hwnd=$h.ToInt64(); commandLine=$launch.CommandLine } | ConvertTo-Json | Set-Content "$w\$id-launch.json" -Encoding UTF8
     $before = Snapshot 'before'
+    Assert-That ($before.state.screen -eq $case.screen) "Wrong starting screen: expected $($case.screen), got $($before.state.screen)"
     foreach ($step in $case.steps) {
       switch ($step.op) {
         'key' { Key $step.value }
@@ -233,7 +251,7 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
       $actual | Set-Content "$w\$id-clipboard.txt" -Encoding UTF8 -NoNewline
     }
     Assert-That ([BehaviorInput]::GetForegroundWindow() -ne $h) 'Test copy stole foreground focus'
-  } catch { $failure = $_.Exception.Message }
+  } catch { $failure = $_.Exception.Message; if ($p -and !$p.HasExited) { try { $null = Snapshot 'failure' } catch {} } }
   finally {
     if ($null -ne $clipboardBackup -and $null -ne $ownClipboardSequence -and [BehaviorInput]::GetClipboardSequenceNumber() -eq $ownClipboardSequence) { [Windows.Forms.Clipboard]::SetDataObject($clipboardBackup, $true) }
     if ($p -and !$p.HasExited) {

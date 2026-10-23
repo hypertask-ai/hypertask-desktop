@@ -450,9 +450,9 @@ impl Desktop {
     }
 
     fn edit_title(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if let Some(d) = &self.detail {
+        if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
             self.title_input
-                .update(cx, |input, cx| input.set_content(d.task.title.clone(), cx));
+                .update(cx, |input, cx| input.set_content(task.title, cx));
             self.editing = Editing::Title;
             window.focus(&self.title_input.focus_handle(cx), cx);
             cx.notify();
@@ -1469,7 +1469,7 @@ impl Desktop {
                             div()
                                 .text_size(px(13.))
                                 .line_height(px(19.5))
-                                .child(title.clone())
+                                .child(if self.editing == Editing::Title && self.column == column && self.selected == row { self.focused_editor(Editing::Title, cx) } else { div().child(title.clone()).into_any_element() })
                                 .layout_key(
                                     &self.layout,
                                     format!("board.card.{index}.title"),
@@ -1566,7 +1566,7 @@ impl Desktop {
             div()
                 .flex_1()
                 .min_w_0()
-                .child(self.title_input.clone())
+                .child(self.focused_editor(Editing::Title, cx))
                 .into_any_element()
         } else {
             div()
@@ -1614,7 +1614,7 @@ impl Desktop {
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
                             .child(self.creator.clone()).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
-                        .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.interaction.description.clone())).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
+                        .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.focused_editor(Editing::Description, cx))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
                             .child(div().flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add sub-tasks"))

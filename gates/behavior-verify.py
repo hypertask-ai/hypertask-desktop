@@ -62,6 +62,8 @@ for case in cases:
         assert result['passed'], result['error']
         before = json.loads((out / f'{name}-before.behavior.json').read_text(encoding='utf-8-sig'))
         after = json.loads((out / f'{name}-after.behavior.json').read_text(encoding='utf-8-sig'))
+        layout = load(out / f'{name}-before.json')
+        assert layout['width'] > 0 and layout['height'] > 0, 'invalid test viewport'
         assert before['state']['screen'] == case['screen'], 'wrong starting screen'
         if case['screen'] == 'task':
             import re

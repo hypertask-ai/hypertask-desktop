@@ -276,7 +276,7 @@ impl Desktop {
                 }
             }
             Rename => {
-                if self.screen != Screen::Task
+                if self.screen == Screen::Inbox
                     && let Some(id) = self.selected_task()
                 {
                     self.open_task(id, cx);
@@ -482,6 +482,11 @@ impl Desktop {
                 cx,
             ) {
                 self.column = next;
+                self.selected = self.columns[next]
+                    .cards
+                    .iter()
+                    .position(|t| t.id == task_id)
+                    .unwrap_or(0);
                 self.clamp_selection();
             }
         }
@@ -586,6 +591,26 @@ impl Desktop {
             _ => url,
         };
         cx.write_to_clipboard(ClipboardItem::new_string(text));
+    }
+    pub(super) fn focused_editor(&self, editing: Editing, cx: &mut Context<Self>) -> AnyElement {
+        let input = match editing {
+            Editing::Title => self.title_input.clone(),
+            Editing::Description => self.interaction.description.clone(),
+            _ => unreachable!(),
+        };
+        div()
+            .id(if editing == Editing::Title {
+                "title-editor"
+            } else {
+                "description-editor"
+            })
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(move |this, _, _, _| this.editing = editing),
+            )
+            .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
+            .child(input)
+            .into_any_element()
     }
     pub(super) fn edit_description(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.screen != Screen::Task {
@@ -993,6 +1018,24 @@ impl Desktop {
                     if !self.enqueue(write, cx) {
                         return;
                     }
+                    if matches!(choice.action, ChoiceAction::Column(_))
+                        && self.screen == Screen::Board
+                        && self.interaction.bulk.is_empty()
+                    {
+                        if let Some((column, row)) =
+                            self.columns.iter().enumerate().find_map(|(c, column)| {
+                                column
+                                    .cards
+                                    .iter()
+                                    .position(|t| t.id == task_id)
+                                    .map(|row| (c, row))
+                            })
+                        {
+                            self.column = column;
+                            self.selected = row;
+                            self.board_scroll.scroll_to_item(column);
+                        }
+                    }
                 }
             }
         }
@@ -1007,10 +1050,11 @@ impl Desktop {
             return div().into_any_element();
         };
         let t = self.colors;
-        let background = match self.options.theme {
-            ThemeName::Graphite => 0x2c2f36,
-            ThemeName::Amoled => 0x141414,
-            _ => 0xffffff,
+        let (background, selected, keycap) = match self.options.theme {
+            ThemeName::Porcelain => (0xffffff, 0xe2e2e6, 0xececef),
+            ThemeName::Graphite => (0x2c2f36, 0x3a3d45, 0x363b44),
+            ThemeName::Amoled => (0x141414, 0x303239, 0x2d2d2d),
+            ThemeName::Dia => (0xffffff, 0xc9e3d2, 0xf1eee7),
         };
         let query: &str = self.interaction.query.read(cx).content.as_ref();
         let commands = self.command_rows();
@@ -1078,8 +1122,8 @@ impl Desktop {
                     .gap(px(12.))
                     .cursor_pointer()
                     .text_size(px(13.))
-                    .when(i == self.interaction.choice, |d| d.bg(color(t.hover)))
-                    .hover(|d| d.bg(color(t.hover)))
+                    .when(i == self.interaction.choice, |d| d.bg(color(selected)))
+                    .hover(|d| d.bg(color(selected)))
                     .on_mouse_move(cx.listener(move |this, _, _, cx| {
                         if this.interaction.choice != i {
                             this.interaction.choice = i;
@@ -1110,7 +1154,7 @@ impl Desktop {
                                             .px(px(5.))
                                             .py(px(2.))
                                             .rounded(px(2.))
-                                            .bg(color(t.active))
+                                            .bg(color(keycap))
                                             .text_size(px(11.))
                                             .font_weight(FontWeight::MEDIUM)
                                             .child(if cfg!(target_os = "macos") && key == "CTRL" {
@@ -1162,7 +1206,7 @@ impl Desktop {
                             .h(px(44.))
                             .px(px(16.))
                             .border_b_1()
-                            .border_color(color(t.border))
+                            .border_color(rgba(0x0000001a))
                             .flex()
                             .items_center()
                             .gap(px(10.))
@@ -1180,7 +1224,7 @@ impl Desktop {
                             .px(px(16.))
                             .py(px(8.))
                             .border_t_1()
-                            .border_color(color(t.border))
+                            .border_color(rgba(0x0000001a))
                             .text_size(px(11.))
                             .text_color(color(t.muted))
                             .child("↑↓ navigate       ↵ select       esc close"),

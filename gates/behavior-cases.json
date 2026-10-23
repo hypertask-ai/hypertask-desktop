@@ -1138,6 +1138,12 @@
       {
         "op": "key",
         "value": "Shift+L"
+      },
+      {
+        "op": "expect",
+        "name": "followed",
+        "field": "task_id",
+        "value": "$before.task_id"
       }
     ],
     "mutation": {
@@ -1151,6 +1157,12 @@
       {
         "op": "key",
         "value": "Shift+Right"
+      },
+      {
+        "op": "expect",
+        "name": "followed",
+        "field": "task_id",
+        "value": "$before.task_id"
       }
     ],
     "mutation": {
@@ -1168,6 +1180,12 @@
       {
         "op": "key",
         "value": "Shift+H"
+      },
+      {
+        "op": "expect",
+        "name": "followed",
+        "field": "task_id",
+        "value": 7381001
       }
     ],
     "mutation": {
@@ -1185,6 +1203,12 @@
       {
         "op": "key",
         "value": "Shift+Left"
+      },
+      {
+        "op": "expect",
+        "name": "followed",
+        "field": "task_id",
+        "value": 7381001
       }
     ],
     "mutation": {
@@ -1220,6 +1244,12 @@
         "value": "title"
       },
       {
+        "op": "expect",
+        "name": "inline",
+        "field": "screen",
+        "value": "board"
+      },
+      {
         "op": "type",
         "value": "behavior renamed boardf2"
       },
@@ -1246,6 +1276,12 @@
         "name": "editing",
         "field": "editing",
         "value": "title"
+      },
+      {
+        "op": "expect",
+        "name": "inline",
+        "field": "screen",
+        "value": "board"
       },
       {
         "op": "type",
@@ -1366,6 +1402,12 @@
       {
         "op": "key",
         "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "followed",
+        "field": "task_id",
+        "value": "$before.task_id"
       }
     ],
     "mutation": {
