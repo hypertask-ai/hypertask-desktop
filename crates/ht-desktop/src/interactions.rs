@@ -1227,7 +1227,39 @@ impl Desktop {
                             .border_color(rgba(0x0000001a))
                             .text_size(px(11.))
                             .text_color(color(t.muted))
-                            .child("↑↓ navigate       ↵ select       esc close"),
+                            .flex()
+                            .items_center()
+                            .gap(px(16.))
+                            .children(
+                                [("↑↓", "navigate"), ("↵", "select"), ("esc", "close")]
+                                    .into_iter()
+                                    .map(|(key, label)| {
+                                        div()
+                                            .flex()
+                                            .items_center()
+                                            .gap(px(4.))
+                                            .child(
+                                                div()
+                                                    .px(px(5.))
+                                                    .py(px(2.))
+                                                    .rounded(px(2.))
+                                                    .bg(color(keycap))
+                                                    .text_color(color(t.text))
+                                                    .font_weight(FontWeight::MEDIUM)
+                                                    .line_height(px(11.))
+                                                    .child(key),
+                                            )
+                                            .child(label)
+                                    }),
+                            ),
+                    )
+                    .child(
+                        div()
+                            .px(px(16.))
+                            .pb(px(8.))
+                            .text_size(px(11.))
+                            .text_color(color(t.muted))
+                            .child(concat!("v ", env!("CARGO_PKG_VERSION"))),
                     )
                     .layout_key(&self.layout, "command.center", None),
             )
