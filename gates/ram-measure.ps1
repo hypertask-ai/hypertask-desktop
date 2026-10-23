@@ -6,10 +6,29 @@ using System;
 using System.Runtime.InteropServices;
 public class RamWindow {
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
+    [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr h, int command);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect r);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
+    public delegate bool WindowCallback(IntPtr h, IntPtr parameter);
+    [DllImport("user32.dll")] public static extern bool EnumWindows(WindowCallback callback, IntPtr parameter);
+    [DllImport("user32.dll")] public static extern bool IsWindowVisible(IntPtr h);
+    [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint pid);
+    public static IntPtr FindWindow(int pid) {
+        IntPtr result = IntPtr.Zero;
+        long largest = 0;
+        EnumWindows(delegate(IntPtr h, IntPtr ignored) {
+            uint owner; Rect r;
+            GetWindowThreadProcessId(h, out owner);
+            if (owner == pid && IsWindowVisible(h) && GetClientRect(h, out r)) {
+                long area = (long)r.Right * r.Bottom;
+                if (area > largest) { largest = area; result = h; }
+            }
+            return true;
+        }, IntPtr.Zero);
+        return result;
+    }
     public struct Rect { public int Left, Top, Right, Bottom; }
 }
 '@
@@ -25,12 +44,20 @@ foreach ($round in 1..3) {
         Copy-Item "$w\parity.db" $db
         $dump = "$w\$screen-$round.json"
         Remove-Item $dump -Force -ErrorAction SilentlyContinue
-        $p = Start-Process "$w\ht-ram.exe" -PassThru -ArgumentList '--db', $db, '--offline', '--board', '7283', '--task', '60253', '--theme', 'graphite', '--screen', $screen, '--dump-layout', $dump
+        $p = Start-Process "$w\ht-ram.exe" -WindowStyle Maximized -PassThru -ArgumentList '--db', $db, '--offline', '--board', '7283', '--task', '60253', '--theme', 'graphite', '--screen', $screen, '--dump-layout', $dump
         try {
+            $deadline = [DateTime]::UtcNow.AddSeconds(10)
+            do {
+                $h = [RamWindow]::FindWindow($p.Id)
+                if ($h -ne [IntPtr]::Zero) { break }
+                if ($p.HasExited) { throw "$screen exited before opening a window" }
+                Start-Sleep -Milliseconds 100
+            } while ([DateTime]::UtcNow -lt $deadline)
+            if ($h -eq [IntPtr]::Zero) { throw "$screen has no visible window" }
+            [RamWindow]::ShowWindowAsync($h, 3) | Out-Null
             Start-Sleep -Seconds 8
             $p.Refresh()
             if ($p.HasExited) { throw "$screen run $round exited" }
-            $h = $p.MainWindowHandle
             if (-not [RamWindow]::IsZoomed($h)) { throw "$screen is not maximized" }
             $dpi = [RamWindow]::GetDpiForWindow($h)
             if ($dpi -ne 96) { throw "Expected 100% scaling, got DPI $dpi" }
