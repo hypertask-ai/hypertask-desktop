@@ -27,8 +27,9 @@ impl CommentActions {
     }
 
     pub fn new(cx: &mut Context<Desktop>) -> Self {
-        let input =
-            cx.new(|cx| TextInput::new(String::new(), "Comment", color(0x8e9093), cx).multiline());
+        let input = cx.new(|cx| {
+            TextInput::new(String::new(), "Comment", color(0x8e9093), cx).multiline_editor()
+        });
         let query = cx.new(|cx| TextInput::new(String::new(), "Search", color(0x8e9093), cx));
         cx.observe(&input, |_, _, cx| cx.notify()).detach();
         cx.observe(&query, |this, _, cx| {
@@ -190,6 +191,7 @@ impl Desktop {
                     .unwrap_or("");
                 let label = comment
                     .creator_id
+                    .filter(|id| *id != 332)
                     .map(|id| format!("name-{id}"))
                     .unwrap_or_default();
                 let html = format!(
@@ -285,11 +287,11 @@ impl Desktop {
         else {
             return false;
         };
-        let html = if text == RichText::parse(&comment.text, self.colors).text {
-            comment.text.clone()
-        } else {
-            editor_html(&text)
-        };
+        let html = crate::rich_text::edited_html(
+            &comment.text,
+            &RichText::parse(&comment.text, self.colors).text,
+            &text,
+        );
         if !self.enqueue(
             Write::CommentAction {
                 task_id: self.options.task,
@@ -776,6 +778,7 @@ impl Desktop {
             }))
             .child(
                 div()
+                    .id("comment-action-dialog")
                     .bg(color(t.comment))
                     .rounded(px(5.))
                     .shadow(shadow())
@@ -805,7 +808,6 @@ fn comment_tooltip(text: String, cx: &mut App) -> gpui::AnyView {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use gpui::EntityInputHandler;
     use serde_json::json;
 
     fn desktop(window: &mut Window, cx: &mut Context<Desktop>) -> Desktop {
@@ -892,8 +894,10 @@ mod tests {
         view.read_with(cx, |this, _| {
             assert!(this.comment_actions.edit_id.is_none());
             assert_eq!(
-                this.detail.as_ref().unwrap().comments[0].text,
-                "<p>Edited<br>Again</p>"
+                RichText::parse(&this.detail.as_ref().unwrap().comments[0].text, this.colors)
+                    .text
+                    .trim_end(),
+                "Edited\nAgain"
             );
             let rows = this.db.mutations().unwrap();
             assert_eq!(rows.len(), 1);
@@ -1044,6 +1048,52 @@ mod tests {
                 assert_eq!(input.read(cx).content.as_ref(), "é🙂\n");
             });
         }
+    }
+
+    #[gpui::test]
+    fn desktop_composer_grows_with_content_without_inventing_mobile_resize_controls(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, cx) = cx.add_window_view(desktop);
+        view.update_in(cx, |this, _, cx| {
+            this.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+            cx.notify();
+        });
+        cx.run_until_parked();
+        let height = |this: &Desktop| {
+            this.layout
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .interaction_elements()
+                .into_iter()
+                .find(|e| e["key"] == "task.composer")
+                .expect("composer painted")["h"]
+                .as_f64()
+                .unwrap()
+        };
+        let initial = view.read_with(cx, |this, _| height(this));
+        view.update_in(cx, |this, window, cx| {
+            this.edit_comment(window, cx);
+            this.comment_input.update(cx, |input, cx| {
+                input.set_content("More text\n".repeat(12), cx)
+            });
+        });
+        cx.run_until_parked();
+        view.read_with(cx, |this, cx| {
+            assert!(
+                height(this) > initial,
+                "desktop textarea must grow rather than clip lines"
+            );
+            let elements = this
+                .layout
+                .as_ref()
+                .unwrap()
+                .borrow()
+                .interaction_elements();
+            assert!(!elements.iter().any(|e| e["key"] == "task.composer.resize"));
+            assert!(this.comment_input.read(cx).content.contains("More text"));
+        });
     }
 
     #[test]

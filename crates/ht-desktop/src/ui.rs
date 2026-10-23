@@ -128,7 +128,7 @@ impl Desktop {
                 "Tip: Hit CTRL+M to comment",
                 color(0xadb5bd),
                 cx,
-            ).multiline()
+            ).multiline_editor()
         });
         cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
         if options.background {

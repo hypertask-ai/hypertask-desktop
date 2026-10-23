@@ -70,7 +70,7 @@ impl Interaction {
         })
         .detach();
         let description = cx.new(|cx| {
-            TextInput::new(String::new(), "Add Description", color(0x8e9093), cx).multiline()
+            TextInput::new(String::new(), "Add Description", color(0x8e9093), cx).multiline_editor()
         });
         cx.observe(&description, |_, _, cx| cx.notify()).detach();
         Self {

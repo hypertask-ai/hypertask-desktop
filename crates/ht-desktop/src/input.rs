@@ -51,6 +51,7 @@ pub struct TextInput {
     marked_range: Option<Range<usize>>,
     last_layout: Option<TextLayout>,
     multiline: bool,
+    editor_newlines: bool,
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
     muted: gpui::Hsla,
@@ -835,7 +836,11 @@ impl Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         div()
             .flex()
-            .key_context("TextInput")
+            .key_context(if self.editor_newlines {
+                "TextInput MultilineEditor"
+            } else {
+                "TextInput"
+            })
             .track_focus(&self.focus_handle(cx))
             .cursor(CursorStyle::IBeam)
             .on_action(cx.listener(Self::backspace))
@@ -885,8 +890,8 @@ impl Focusable for TextInput {
 
 pub fn init(cx: &mut App) {
     cx.bind_keys([
-        KeyBinding::new("enter", Newline, Some("TextInput")),
-        KeyBinding::new("shift-enter", Newline, Some("TextInput")),
+        KeyBinding::new("enter", Newline, Some("MultilineEditor")),
+        KeyBinding::new("shift-enter", Newline, Some("MultilineEditor")),
         KeyBinding::new("ctrl-z", Undo, Some("TextInput")),
         KeyBinding::new("ctrl-shift-z", Redo, Some("TextInput")),
         KeyBinding::new("cmd-z", Undo, Some("TextInput")),
@@ -924,6 +929,7 @@ impl TextInput {
             marked_range: None,
             last_layout: None,
             multiline: false,
+            editor_newlines: false,
             last_bounds: None,
             is_selecting: false,
             muted,
@@ -934,6 +940,12 @@ impl TextInput {
 
     pub fn multiline(mut self) -> Self {
         self.multiline = true;
+        self
+    }
+
+    pub fn multiline_editor(mut self) -> Self {
+        self.multiline = true;
+        self.editor_newlines = true;
         self
     }
 
@@ -967,7 +979,7 @@ mod tests {
     ) {
         cx.update(init);
         let (view, cx) = cx.add_window_view(|_, cx| {
-            TextInput::new(String::new(), "", gpui::black(), cx).multiline()
+            TextInput::new(String::new(), "", gpui::black(), cx).multiline_editor()
         });
         view.update_in(cx, |input, window, cx| {
             window.focus(&input.focus_handle, cx)

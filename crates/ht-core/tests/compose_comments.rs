@@ -256,3 +256,37 @@ fn comment_edit_survives_restart_and_rejects_wrong_server_identity() {
     ));
     assert_eq!(comment(&db)["text"], "edited");
 }
+
+#[test]
+fn quoted_reply_create_body_is_html_and_never_uses_agent_only_parent_id() {
+    let mut db = db();
+    let quote = "<span data-type=\"mention\" data-label=\"name-42\">Owner</span> said <blockquote data-quote-reply=\"true\"><p>Original</p></blockquote><p>Reply<br>Line</p>";
+    let id = db
+        .enqueue(
+            Write::TaskComment {
+                task_id: 1,
+                text: quote.into(),
+            },
+            100,
+        )
+        .unwrap();
+    let mut server = Server {
+        method: "POST",
+        path: "/comments",
+        body: json!({"task_id":1,"text":quote,"kind":"qa","content_type":"html"}),
+        response: Response {
+            status: 200,
+            body: json!({"success":true,"comment":{"id":9,"text":quote,"createdAt":"2026-01-03T00:00:00Z"}}),
+        },
+        keys: vec![],
+    };
+    assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Applied(id));
+    assert!(
+        db.task_detail(1)
+            .unwrap()
+            .unwrap()
+            .comments
+            .iter()
+            .any(|c| c.id == 9 && c.text == quote)
+    );
+}

@@ -180,3 +180,29 @@ fn worker_drains_durable_mutations_on_a_background_thread() {
     assert!(db.mutations().unwrap().is_empty());
     assert_eq!(db.task(1).unwrap().unwrap().title, "server");
 }
+
+#[test]
+fn http_comment_patch_delete_keep_bearer_and_idempotency_on_the_wire() {
+    for method in ["PATCH", "DELETE"] {
+        let (url, thread, receive) = server(200, "{\"success\":true}");
+        let mut http = Http::with_base(&url, "test-not-a-real-token".into()).unwrap();
+        let body = if method == "PATCH" {
+            json!({"text":"<p>Edit<br>é🙂</p>","content_type":"html"})
+        } else {
+            json!({})
+        };
+        http.mutate(method, "/comments/7", &body, "stable-comment-id")
+            .unwrap();
+        let request = receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(request.starts_with(&format!("{method} /api/mcp/comments/7 HTTP/1.1")));
+        let headers = request.to_ascii_lowercase();
+        assert!(headers.contains("authorization: bearer test-not-a-real-token\r\n"));
+        assert!(headers.contains("idempotency-key: stable-comment-id\r\n"));
+        assert!(headers.contains("x-correlation-id: stable-comment-id\r\n"));
+        assert_eq!(
+            serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),
+            body
+        );
+        thread.join().unwrap();
+    }
+}
