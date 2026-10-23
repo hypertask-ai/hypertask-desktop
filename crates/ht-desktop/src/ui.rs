@@ -931,7 +931,7 @@ impl Desktop {
             .pl(px(48.))
             .pr(px(48.))
             .cursor_pointer()
-            .when(row == self.selected, |d| {
+            .when(row == self.selected || self.interaction.bulk.contains(&id), |d| {
                 d.border_color(color(if self.options.theme == ThemeName::Porcelain {
                     0x9a9daa
                 } else {
@@ -1303,7 +1303,7 @@ impl Desktop {
             + row;
         let task = &self.columns[column].cards[row];
         let t = self.colors;
-        let active = self.column == column && self.selected == row;
+        let active = (self.column == column && self.selected == row) || self.interaction.bulk.contains(&task.id);
         let title = task.title.clone();
         let id = task.id;
         let labels = task
@@ -1607,7 +1607,7 @@ impl Desktop {
             .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
 
                 .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
-                    .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(t.border)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
+                    .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == 0 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
                             .child(self.creator.clone()).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
@@ -1618,7 +1618,7 @@ impl Desktop {
                             .child(div().ml(px(16.)).flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add page"))
                             .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
                     .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| {
-                        div().id(("comment", i)).anchor_scroll(Some(self.comment_anchors[i].clone())).p(px(20.)).bg(color(t.comment)).border_1().border_color(color(t.border)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow(shadow()).flex().flex_col().gap(px(12.))
+                        div().id(("comment", i)).anchor_scroll(Some(self.comment_anchors[i].clone())).p(px(20.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == i + 1 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow(shadow()).flex().flex_col().gap(px(12.))
                             .child(div().flex().text_color(color(t.muted)).child(div().child(comment_author(&comment.extra)).layout_key(&self.layout, format!("task.comment.{i}.author"), Some(comment_author(&comment.extra)))).child(div().flex_1()).child(short_date(&comment.created_at)))
                             .child(div().line_height(px(21.)).child(body.element()).layout_key(&self.layout, format!("task.comment.{i}.body"), Some(body.text.to_string())))
                             .layout_key(&self.layout, format!("task.comment.{i}"), None)
@@ -1914,7 +1914,22 @@ impl Render for Desktop {
             layout.borrow_mut().begin(self.split);
         }
         if self.options.background && let Some((path, capture)) = self.options.dump_layout.clone().zip(self.layout.clone()) {
+            let task = self.selected_task().and_then(|id| self.db.task(id).ok().flatten());
+            let count = match self.screen { Screen::Inbox => self.filtered.len(), Screen::Board => self.columns.get(self.column).map_or(0, |c| c.cards.len()), Screen::Task => 0 };
             crate::behavior::snapshot(window, path, capture, self.screen, self.options.theme, serde_json::json!({
+                "theme": format!("{:?}", self.options.theme).to_lowercase(),
+                "selection_count": count, "last_index": count.saturating_sub(1),
+                "inbox_count": self.inbox.len(), "composer_index": self.comments.len() + 1,
+                "choice_count": self.choices(cx).len(),
+                "column_ids": self.columns.iter().map(|c| c.id).collect::<Vec<_>>(),
+                "task_title": task.as_ref().map(|t| &t.title),
+                "ticket": task.as_ref().and_then(|t| t.ticket_number.as_ref()),
+                "project_id": task.as_ref().map(|t| t.project_id),
+                "unique_index": task.as_ref().and_then(|t| t.extra.get("uniqueIndex")),
+                "task_assignees": task.as_ref().and_then(|t| t.extra.get("assignees")),
+                "task_labels": task.as_ref().and_then(|t| t.extra.get("labels")),
+                "first_assignee": task.as_ref().and_then(|t| self.db.project_members(t.project_id).ok()).and_then(|m| m.first().cloned()).and_then(|m| m["id"].as_i64()),
+                "first_label": task.as_ref().and_then(|t| self.db.project_labels(t.project_id).ok()).and_then(|l| l.first().cloned()).and_then(|l| l["id"].as_str().map(str::to_owned)),
                 "screen": format!("{:?}", self.screen).to_lowercase(),
                 "selected": self.selected, "column": self.column, "split": self.split,
                 "task_id": self.selected_task(),

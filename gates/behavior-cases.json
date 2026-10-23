@@ -230,5 +230,2145 @@
         "value": false
       }
     ]
+  },
+  {
+    "id": "board-arrow-down",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "expect",
+        "name": "moved",
+        "field": "selected",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "id": "board-arrow-up",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "key",
+        "value": "Up"
+      },
+      {
+        "op": "expect",
+        "name": "moved",
+        "field": "selected",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "board-column-l",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "L"
+      },
+      {
+        "op": "expect",
+        "name": "column",
+        "field": "column",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "id": "board-column-right",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Right"
+      },
+      {
+        "op": "expect",
+        "name": "column",
+        "field": "column",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "id": "board-column-h",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Tab"
+      },
+      {
+        "op": "key",
+        "value": "H"
+      },
+      {
+        "op": "expect",
+        "name": "column",
+        "field": "column",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "board-column-left",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Tab"
+      },
+      {
+        "op": "key",
+        "value": "Left"
+      },
+      {
+        "op": "expect",
+        "name": "column",
+        "field": "column",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "board-first",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "key",
+        "value": "G"
+      },
+      {
+        "op": "key",
+        "value": "G"
+      },
+      {
+        "op": "expect",
+        "name": "first",
+        "field": "selected",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "board-last",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Shift+G"
+      },
+      {
+        "op": "key",
+        "value": "Shift+G"
+      },
+      {
+        "op": "expect",
+        "name": "last",
+        "field": "selected",
+        "value": "$last"
+      }
+    ]
+  },
+  {
+    "id": "board-select-clear",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "X"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "cleared",
+        "field": "bulk_count",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "board-select-split",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": "$count"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "cleared",
+        "field": "bulk_count",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "board-search-local",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+F"
+      },
+      {
+        "op": "expect",
+        "name": "search",
+        "field": "modal",
+        "value": "localsearch"
+      },
+      {
+        "op": "type",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "expect",
+        "name": "query",
+        "field": "query",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "modal",
+        "value": null
+      }
+    ]
+  },
+  {
+    "id": "board-search-global",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "/"
+      },
+      {
+        "op": "expect",
+        "name": "search",
+        "field": "modal",
+        "value": "search"
+      },
+      {
+        "op": "type",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "expect",
+        "name": "query",
+        "field": "query",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "modal",
+        "value": null
+      }
+    ]
+  },
+  {
+    "id": "board-search-shell",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "6"
+      },
+      {
+        "op": "expect",
+        "name": "search",
+        "field": "modal",
+        "value": "search"
+      },
+      {
+        "op": "type",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "expect",
+        "name": "query",
+        "field": "query",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "modal",
+        "value": null
+      }
+    ]
+  },
+  {
+    "id": "board-reply",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "expect",
+        "name": "opened",
+        "field": "screen",
+        "value": "task"
+      },
+      {
+        "op": "expect",
+        "name": "focused",
+        "field": "composer_focused",
+        "value": true
+      },
+      {
+        "op": "type",
+        "value": "behavior board reply"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_comment",
+      "text": "behavior board reply"
+    }
+  },
+  {
+    "id": "board-command",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "expect",
+        "name": "open",
+        "field": "command_open",
+        "value": true
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "expect",
+        "name": "close",
+        "field": "command_open",
+        "value": false
+      }
+    ]
+  },
+  {
+    "id": "board-board-picker",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+B"
+      },
+      {
+        "op": "expect",
+        "name": "boards",
+        "field": "modal",
+        "value": "boards"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "opened",
+        "field": "screen",
+        "value": "board"
+      }
+    ]
+  },
+  {
+    "id": "inbox-first",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "key",
+        "value": "G"
+      },
+      {
+        "op": "key",
+        "value": "G"
+      },
+      {
+        "op": "expect",
+        "name": "first",
+        "field": "selected",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "inbox-last",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Shift+G"
+      },
+      {
+        "op": "key",
+        "value": "Shift+G"
+      },
+      {
+        "op": "expect",
+        "name": "last",
+        "field": "selected",
+        "value": "$last"
+      }
+    ]
+  },
+  {
+    "id": "inbox-select-clear",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "X"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "cleared",
+        "field": "bulk_count",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "inbox-select-split",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+A"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": "$count"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "cleared",
+        "field": "bulk_count",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "inbox-select-all",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+A"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": "$all"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "cleared",
+        "field": "bulk_count",
+        "value": 0
+      }
+    ]
+  },
+  {
+    "id": "inbox-search-local",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+F"
+      },
+      {
+        "op": "expect",
+        "name": "search",
+        "field": "modal",
+        "value": "localsearch"
+      },
+      {
+        "op": "type",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "expect",
+        "name": "query",
+        "field": "query",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "modal",
+        "value": null
+      }
+    ]
+  },
+  {
+    "id": "inbox-search-global",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "/"
+      },
+      {
+        "op": "expect",
+        "name": "search",
+        "field": "modal",
+        "value": "search"
+      },
+      {
+        "op": "type",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "expect",
+        "name": "query",
+        "field": "query",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "modal",
+        "value": null
+      }
+    ]
+  },
+  {
+    "id": "inbox-search-shell",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "6"
+      },
+      {
+        "op": "expect",
+        "name": "search",
+        "field": "modal",
+        "value": "search"
+      },
+      {
+        "op": "type",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "expect",
+        "name": "query",
+        "field": "query",
+        "value": "behavior-no-such-task"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "modal",
+        "value": null
+      }
+    ]
+  },
+  {
+    "id": "inbox-reply",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "expect",
+        "name": "opened",
+        "field": "screen",
+        "value": "task"
+      },
+      {
+        "op": "expect",
+        "name": "focused",
+        "field": "composer_focused",
+        "value": true
+      },
+      {
+        "op": "type",
+        "value": "behavior inbox reply"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_comment",
+      "text": "behavior inbox reply"
+    }
+  },
+  {
+    "id": "inbox-command",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "expect",
+        "name": "open",
+        "field": "command_open",
+        "value": true
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "expect",
+        "name": "close",
+        "field": "command_open",
+        "value": false
+      }
+    ]
+  },
+  {
+    "id": "inbox-board-picker",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+B"
+      },
+      {
+        "op": "expect",
+        "name": "boards",
+        "field": "modal",
+        "value": "boards"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "opened",
+        "field": "screen",
+        "value": "board"
+      }
+    ]
+  },
+  {
+    "id": "inbox-reply-alias",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+R"
+      },
+      {
+        "op": "expect",
+        "name": "focused",
+        "field": "composer_focused",
+        "value": true
+      },
+      {
+        "op": "type",
+        "value": "behavior reply alias"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_comment",
+      "text": "behavior reply alias"
+    }
+  },
+  {
+    "id": "inbox-extend-j",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Shift+J"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "id": "inbox-extend-down",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Shift+Down"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "id": "inbox-extend-k",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "key",
+        "value": "Shift+K"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "id": "inbox-extend-up",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "key",
+        "value": "Shift+Up"
+      },
+      {
+        "op": "expect",
+        "name": "selected",
+        "field": "bulk_count",
+        "value": 2
+      }
+    ]
+  },
+  {
+    "id": "inbox-bulk-archive",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "X"
+      },
+      {
+        "op": "key",
+        "value": "Shift+E"
+      }
+    ],
+    "mutation": {
+      "kind": "inbox_archive"
+    }
+  },
+  {
+    "id": "inbox-archive-notification",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "key",
+        "value": "E"
+      }
+    ],
+    "mutation": {
+      "kind": "inbox_archive"
+    }
+  },
+  {
+    "id": "board-move-l",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Shift+L"
+      }
+    ],
+    "mutation": {
+      "kind": "task_section"
+    }
+  },
+  {
+    "id": "board-move-right",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Shift+Right"
+      }
+    ],
+    "mutation": {
+      "kind": "task_section"
+    }
+  },
+  {
+    "id": "board-move-h",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Tab"
+      },
+      {
+        "op": "key",
+        "value": "Shift+H"
+      }
+    ],
+    "mutation": {
+      "kind": "task_section"
+    }
+  },
+  {
+    "id": "board-move-left",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Tab"
+      },
+      {
+        "op": "key",
+        "value": "Shift+Left"
+      }
+    ],
+    "mutation": {
+      "kind": "task_section"
+    }
+  },
+  {
+    "id": "board-archive",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+E"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "status": "Archive"
+    }
+  },
+  {
+    "id": "board-rename-f2",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "F2"
+      },
+      {
+        "op": "expect",
+        "name": "editing",
+        "field": "editing",
+        "value": "title"
+      },
+      {
+        "op": "type",
+        "value": "behavior renamed boardf2"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_title",
+      "title": "behavior renamed boardf2"
+    }
+  },
+  {
+    "id": "board-rename-e",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "E"
+      },
+      {
+        "op": "expect",
+        "name": "editing",
+        "field": "editing",
+        "value": "title"
+      },
+      {
+        "op": "type",
+        "value": "behavior renamed boarde"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_title",
+      "title": "behavior renamed boarde"
+    }
+  },
+  {
+    "id": "board-set-priority",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "P"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "priority"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "priority": 1
+    }
+  },
+  {
+    "id": "board-set-size",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "S"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "size"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "estimate": 2
+    }
+  },
+  {
+    "id": "board-set-duedate",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "D"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "duedate"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "due_date": "$today"
+    }
+  },
+  {
+    "id": "board-set-column",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "M"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "column"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_section",
+      "sectionId": "$column-1"
+    }
+  },
+  {
+    "id": "board-assign",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "A"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "assign"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "assignee": "$assigned"
+    }
+  },
+  {
+    "id": "board-tag",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "T"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "tags"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "labels": "$labels"
+    }
+  },
+  {
+    "id": "board-delete",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Shift+3"
+      },
+      {
+        "op": "expect",
+        "name": "confirm",
+        "field": "modal",
+        "value": "delete"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "status": "Deleted"
+    }
+  },
+  {
+    "id": "board-copy-title-id",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+I"
+      }
+    ],
+    "clipboard": "title-id"
+  },
+  {
+    "id": "board-copy-id",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+I"
+      }
+    ],
+    "clipboard": "id"
+  },
+  {
+    "id": "board-copy-title-url",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+;"
+      }
+    ],
+    "clipboard": "title-url"
+  },
+  {
+    "id": "board-copy-title-url-comma",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+,"
+      }
+    ],
+    "clipboard": "title-url"
+  },
+  {
+    "id": "board-copy-url",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+;"
+      }
+    ],
+    "clipboard": "url"
+  },
+  {
+    "id": "task-archive",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+E"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "status": "Archive"
+    }
+  },
+  {
+    "id": "task-rename-f2",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "F2"
+      },
+      {
+        "op": "expect",
+        "name": "editing",
+        "field": "editing",
+        "value": "title"
+      },
+      {
+        "op": "type",
+        "value": "behavior renamed taskf2"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_title",
+      "title": "behavior renamed taskf2"
+    }
+  },
+  {
+    "id": "task-set-priority",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "P"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "priority"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "priority": 1
+    }
+  },
+  {
+    "id": "task-set-size",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "S"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "size"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "estimate": 2
+    }
+  },
+  {
+    "id": "task-set-duedate",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "D"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "duedate"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "due_date": "$today"
+    }
+  },
+  {
+    "id": "task-set-column",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "M"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "column"
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_section",
+      "sectionId": "$column-1"
+    }
+  },
+  {
+    "id": "task-assign",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "A"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "assign"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "assignee": "$assigned"
+    }
+  },
+  {
+    "id": "task-tag",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "T"
+      },
+      {
+        "op": "expect",
+        "name": "picker",
+        "field": "modal",
+        "value": "tags"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "labels": "$labels"
+    }
+  },
+  {
+    "id": "task-delete",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Shift+3"
+      },
+      {
+        "op": "expect",
+        "name": "confirm",
+        "field": "modal",
+        "value": "delete"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "status": "Deleted"
+    }
+  },
+  {
+    "id": "task-copy-title-id",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+I"
+      }
+    ],
+    "clipboard": "title-id"
+  },
+  {
+    "id": "task-copy-id",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+I"
+      }
+    ],
+    "clipboard": "id"
+  },
+  {
+    "id": "task-copy-title-url",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+;"
+      }
+    ],
+    "clipboard": "title-url"
+  },
+  {
+    "id": "task-copy-title-url-comma",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+,"
+      }
+    ],
+    "clipboard": "title-url"
+  },
+  {
+    "id": "task-copy-url",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+;"
+      }
+    ],
+    "clipboard": "url"
+  },
+  {
+    "id": "task-description",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+D"
+      },
+      {
+        "op": "expect",
+        "name": "editing",
+        "field": "editing",
+        "value": "description"
+      },
+      {
+        "op": "type",
+        "value": "behavior description"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "description": "behavior description",
+      "content_type": "html"
+    }
+  },
+  {
+    "id": "task-description-enter",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "editing",
+        "field": "editing",
+        "value": "description"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "escaped",
+        "field": "root_focused",
+        "value": true
+      }
+    ]
+  },
+  {
+    "id": "task-cycle-tab",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Tab"
+      },
+      {
+        "op": "expect",
+        "name": "cycled",
+        "field": "task_part",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "id": "task-cycle-down",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "expect",
+        "name": "cycled",
+        "field": "task_part",
+        "value": 1
+      }
+    ]
+  },
+  {
+    "id": "task-cycle-backtab",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Shift+Tab"
+      },
+      {
+        "op": "expect",
+        "name": "cycled",
+        "field": "task_part",
+        "value": "$composer"
+      }
+    ]
+  },
+  {
+    "id": "task-cycle-up",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Up"
+      },
+      {
+        "op": "expect",
+        "name": "cycled",
+        "field": "task_part",
+        "value": "$composer"
+      }
+    ]
+  },
+  {
+    "id": "task-playlist",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "opened",
+        "field": "screen",
+        "value": "task"
+      },
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "expect-change",
+        "name": "next",
+        "field": "task_id"
+      },
+      {
+        "op": "key",
+        "value": "K"
+      },
+      {
+        "op": "expect",
+        "name": "previous",
+        "field": "task_id",
+        "value": "$before.task_id"
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "back",
+        "field": "screen",
+        "value": "board"
+      }
+    ]
+  },
+  {
+    "id": "comment-send-stay",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "type",
+        "value": "behavior send stay"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+Enter"
+      },
+      {
+        "op": "expect",
+        "name": "stayed",
+        "field": "screen",
+        "value": "task"
+      },
+      {
+        "op": "expect",
+        "name": "cleared",
+        "field": "comment_text",
+        "value": ""
+      }
+    ],
+    "mutation": {
+      "kind": "task_comment",
+      "text": "behavior send stay"
+    }
+  },
+  {
+    "id": "comment-send-advance",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "type",
+        "value": "behavior send advance"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Enter"
+      }
+    ],
+    "also_mutation": {
+      "kind": "inbox_archive"
+    },
+    "mutation": {
+      "kind": "task_comment",
+      "text": "behavior send advance"
+    }
+  },
+  {
+    "id": "comment-send-complete",
+    "screen": "inbox",
+    "steps": [
+      {
+        "op": "click",
+        "value": "inbox.tab.last"
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "type",
+        "value": "behavior send complete"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Alt+Shift+Enter"
+      }
+    ],
+    "mutation": {
+      "kind": "task_comment",
+      "text": "behavior send complete"
+    },
+    "also_mutations": [
+      {
+        "kind": "task_patch",
+        "status": "Archive"
+      },
+      {
+        "kind": "inbox_archive"
+      }
+    ]
+  },
+  {
+    "id": "comment-discard",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "type",
+        "value": "behavior discarded"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+Shift+,"
+      },
+      {
+        "op": "expect",
+        "name": "cleared",
+        "field": "comment_text",
+        "value": ""
+      },
+      {
+        "op": "expect",
+        "name": "root",
+        "field": "root_focused",
+        "value": true
+      }
+    ]
+  },
+  {
+    "id": "comment-keymap-guard",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+M"
+      },
+      {
+        "op": "type",
+        "value": "jke"
+      },
+      {
+        "op": "expect",
+        "name": "text",
+        "field": "comment_text",
+        "value": "jke"
+      },
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "expect",
+        "name": "commands",
+        "field": "command_open",
+        "value": true
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "restored",
+        "field": "composer_focused",
+        "value": true
+      }
+    ]
+  },
+  {
+    "id": "shell-one",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "1"
+      },
+      {
+        "op": "expect",
+        "name": "screen",
+        "field": "screen",
+        "value": "inbox"
+      }
+    ]
+  },
+  {
+    "id": "shell-two",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "2"
+      },
+      {
+        "op": "expect",
+        "name": "screen",
+        "field": "screen",
+        "value": "board"
+      }
+    ]
+  },
+  {
+    "id": "sequence-inbox",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "G"
+      },
+      {
+        "op": "key",
+        "value": "I"
+      },
+      {
+        "op": "expect",
+        "name": "screen",
+        "field": "screen",
+        "value": "inbox"
+      }
+    ]
+  },
+  {
+    "id": "sequence-board",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "G"
+      },
+      {
+        "op": "key",
+        "value": "B"
+      },
+      {
+        "op": "expect",
+        "name": "screen",
+        "field": "screen",
+        "value": "board"
+      }
+    ]
+  },
+  {
+    "id": "sequence-task-board",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "G"
+      },
+      {
+        "op": "key",
+        "value": "T"
+      },
+      {
+        "op": "expect",
+        "name": "screen",
+        "field": "screen",
+        "value": "board"
+      }
+    ]
+  },
+  {
+    "id": "command-filter-execute",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "type",
+        "value": "ARCHVIE task"
+      },
+      {
+        "op": "expect",
+        "name": "filtered",
+        "field": "choice_count",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "command_open",
+        "value": false
+      }
+    ],
+    "mutation": {
+      "kind": "task_patch",
+      "status": "Archive"
+    }
+  },
+  {
+    "id": "command-keyboard-navigation",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "expect",
+        "name": "next",
+        "field": "command_selected",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "K"
+      },
+      {
+        "op": "expect",
+        "name": "previous",
+        "field": "command_selected",
+        "value": 0
+      },
+      {
+        "op": "key",
+        "value": "Down"
+      },
+      {
+        "op": "expect",
+        "name": "down",
+        "field": "command_selected",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "Up"
+      },
+      {
+        "op": "expect",
+        "name": "up",
+        "field": "command_selected",
+        "value": 0
+      },
+      {
+        "op": "key",
+        "value": "Tab"
+      },
+      {
+        "op": "expect",
+        "name": "tab",
+        "field": "command_open",
+        "value": true
+      },
+      {
+        "op": "key",
+        "value": "Esc"
+      },
+      {
+        "op": "expect",
+        "name": "closed",
+        "field": "command_open",
+        "value": false
+      }
+    ]
+  },
+  {
+    "id": "command-fuzzy-theme",
+    "screen": "task",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "type",
+        "value": "graphte"
+      },
+      {
+        "op": "expect",
+        "name": "filtered",
+        "field": "choice_count",
+        "value": 1
+      },
+      {
+        "op": "key",
+        "value": "Enter"
+      },
+      {
+        "op": "expect",
+        "name": "applied",
+        "field": "theme",
+        "value": "graphite"
+      }
+    ]
+  },
+  {
+    "id": "command-mouse",
+    "screen": "board",
+    "steps": [
+      {
+        "op": "key",
+        "value": "Ctrl+K"
+      },
+      {
+        "op": "type",
+        "value": "go to inbox"
+      },
+      {
+        "op": "click",
+        "value": "command.choice.0"
+      },
+      {
+        "op": "expect",
+        "name": "inbox",
+        "field": "screen",
+        "value": "inbox"
+      }
+    ]
   }
 ]

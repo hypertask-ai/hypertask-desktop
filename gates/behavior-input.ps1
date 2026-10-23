@@ -5,6 +5,13 @@ if ($PSScriptRoot -ne $w) { throw 'Runner must live in htbehavior' }
 Add-Type @'
 using System; using System.Runtime.InteropServices; using System.Collections.Generic;
 public class BehaviorInput {
+  [StructLayout(LayoutKind.Sequential)] public struct Point { public int x, y; }
+  [StructLayout(LayoutKind.Sequential)] public struct Rect { public int left, top, right, bottom; }
+  [StructLayout(LayoutKind.Sequential)] struct Message { public IntPtr h; public uint m; public UIntPtr w; public IntPtr l; public uint time; public Point point; public uint extra; }
+  [DllImport("user32.dll")] static extern bool PeekMessage(out Message m, IntPtr h, uint min, uint max, uint remove);
+  [DllImport("user32.dll")] public static extern bool ClientToScreen(IntPtr h, ref Point point);
+  [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect rect);
+  [DllImport("user32.dll")] public static extern uint GetClipboardSequenceNumber();
   public delegate bool EnumProc(IntPtr h, IntPtr p);
   [DllImport("user32.dll")] public static extern bool EnumWindows(EnumProc f, IntPtr p);
   [DllImport("user32.dll")] public static extern uint GetWindowThreadProcessId(IntPtr h, out uint p);
@@ -24,8 +31,9 @@ public class BehaviorInput {
   }
   static byte[] old; static uint target;
   public static void Begin(IntPtr h, int[] modifiers) {
+    Message message; PeekMessage(out message, IntPtr.Zero, 0, 0, 0);
     uint pid; target = GetWindowThreadProcessId(h, out pid);
-    if (!AttachThreadInput(GetCurrentThreadId(), target, true)) throw new Exception("AttachThreadInput failed");
+    if (!AttachThreadInput(GetCurrentThreadId(), target, true)) throw new Exception("AttachThreadInput failed: " + Marshal.GetLastWin32Error());
     old = new byte[256]; GetKeyboardState(old);
     byte[] state = new byte[256];
     foreach (int m in modifiers) { state[m] = 128; if (m == 17) state[162] = 128; if (m == 16) state[160] = 128; if (m == 18) state[164] = 128; }
@@ -77,24 +85,75 @@ function Type-Text([string]$text) {
   Wait-Change "$w\$script:id.behavior.json"
 }
 function Click([string]$key) {
-  $s = Read-Json "$w\$script:id.behavior.json"
-  if ($key -eq "inbox.tab.last") { $key = ($s.elements | Where-Object { $_.key -match "^inbox.tab.[0-9]+$" } | Sort-Object { [int]($_.key.Split(".")[-1]) } | Select-Object -Last 1).key }
-  $e = @($s.elements | Where-Object key -eq $key)[0]
-  Assert-That ($null -ne $e) "Missing measured element $key"
   $scale = [BehaviorInput]::GetDpiForWindow($script:h) / 96.0
-  $x = [int](($e.x + $e.w / 2) * $scale); $y = [int](($e.y + $e.h / 2) * $scale)
+  $rect = New-Object BehaviorInput+Rect
+  $null = [BehaviorInput]::GetClientRect($script:h, [ref]$rect)
+  for ($attempt = 0; $attempt -lt 80; $attempt++) {
+    $s = Read-Json "$w\$script:id.behavior.json"
+    if ($key -eq "inbox.tab.last") { $key = ($s.elements | Where-Object { $_.key -match "^inbox.tab.[0-9]+$" } | Sort-Object { [int]($_.key.Split(".")[-1]) } | Select-Object -Last 1).key }
+    $e = @($s.elements | Where-Object key -eq $key)[0]
+    Assert-That ($null -ne $e) "Missing measured element $key"
+    $x = [int](($e.x + $e.w / 2) * $scale); $y = [int](($e.y + $e.h / 2) * $scale)
+    if ($y -gt 0 -and $y -lt ($rect.bottom - 40)) { break }
+    $point = New-Object BehaviorInput+Point
+    $point.x = [Math]::Min($rect.right-20, [Math]::Max(80,$x)); $point.y = [int]($rect.bottom / 2)
+    $pos = ($point.y -shl 16) -bor ($point.x -band 65535)
+    [BehaviorInput]::Post($script:h, 0x200, 0, $pos)
+    $null = [BehaviorInput]::ClientToScreen($script:h, [ref]$point)
+    $pos = ($point.y -shl 16) -bor ($point.x -band 65535)
+    $delta = if ($y -gt 0) { -600 } else { 600 }
+    [BehaviorInput]::Post($script:h, 0x20A, (($delta -band 65535) -shl 16), $pos)
+    Wait-Change "$w\$script:id.behavior.json"
+  }
+  Assert-That ($y -gt 0 -and $y -lt ($rect.bottom - 40) -and $x -gt 0 -and $x -lt $rect.right) "Element $key is outside the client viewport"
   $pos = ($y -shl 16) -bor ($x -band 65535)
   [BehaviorInput]::Post($script:h, 0x200, 0, $pos)
   [BehaviorInput]::Post($script:h, 0x201, 1, $pos)
   [BehaviorInput]::Post($script:h, 0x202, 0, $pos)
   Wait-Change "$w\$script:id.behavior.json"
 }
+function Expected($value, $current, $before) {
+  switch ($value) {
+    '$last' { return $current.state.last_index }
+    '$count' { return $current.state.selection_count }
+    '$all' { return $current.state.inbox_count }
+    '$composer' { return $current.state.composer_index }
+    '$before.task_id' { return $before.state.task_id }
+    default { return $value }
+  }
+}
+
+Add-Type -AssemblyName System.Windows.Forms
+function Clipboard-Backup {
+  $original = [Windows.Forms.Clipboard]::GetDataObject()
+  $copy = New-Object Windows.Forms.DataObject
+  if ($null -ne $original) {
+    foreach ($format in $original.GetFormats($false)) {
+      $data = $original.GetData($format, $false)
+      if ($data -is [IO.MemoryStream]) { $data = New-Object IO.MemoryStream (,$data.ToArray()) }
+      $copy.SetData($format, $false, $data)
+    }
+  }
+  return $copy
+}
+function Clipboard-Expected($kind, $state) {
+  $ticket = if ($state.ticket) { $state.ticket } else { [string]$state.task_id }
+  $url = "https://app.hypertask.ai/detail/project-$($state.project_id)/$($state.unique_index)"
+  switch ($kind) {
+    'id' { return $ticket }
+    'title-id' { return "$($ticket.ToUpper()) | $($state.task_title)" }
+    'url' { return $url }
+    'title-url' { return "$($ticket.ToUpper()) | $($state.task_title) | $url" }
+    default { throw 'Unknown clipboard assertion' }
+  }
+}
 $results = @()
 foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Take)) {
   $script:id = $case.id
   if ($id -notmatch '^[a-z0-9-]+$') { throw 'Unsafe case id' }
-  $p = $null; $failure = $null
+  $p = $null; $failure = $null; $clipboardBackup = $null; $ownClipboardSequence = $null
   try {
+    if ($case.clipboard) { $clipboardBackup = Clipboard-Backup }
     Copy-Item "$w\parity.db" "$w\$id.db" -Force
     $foreground = [BehaviorInput]::GetForegroundWindow()
     $p = Start-Process "$w\ht-behavior.exe" -PassThru -ArgumentList '--db', "$w\$id.db", '--offline', '--background', '--board', '7283', '--task', '60253', '--theme', 'graphite', '--screen', $case.screen, '--dump-layout', "$w\$id.json" -RedirectStandardOutput "$w\$id.stdout" -RedirectStandardError "$w\$id.stderr"
@@ -114,16 +173,29 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
         'expect' {
           $current = Snapshot $step.name
           $actual = $current.state.($step.field)
-          Assert-That ($actual -eq $step.value) "$($step.field): expected $($step.value), got $actual"
+          $wanted = Expected $step.value $current $before
+          Assert-That ($actual -eq $wanted) "$($step.field): expected $($step.value), got $actual"
+        }
+        'expect-change' {
+          $current = Snapshot $step.name
+          Assert-That ($current.state.($step.field) -ne $before.state.($step.field)) "$($step.field) did not change"
         }
         default { throw "Unknown operation $($step.op)" }
       }
       Assert-That ([BehaviorInput]::GetForegroundWindow() -ne $h) 'Test copy stole foreground focus'
     }
     $null = Snapshot 'after'
+    if ($case.clipboard) {
+      $expected = Clipboard-Expected $case.clipboard $before.state
+      $actual = [Windows.Forms.Clipboard]::GetText()
+      Assert-That ($actual -ceq $expected) 'Clipboard does not match selected task'
+      $ownClipboardSequence = [BehaviorInput]::GetClipboardSequenceNumber()
+      $actual | Set-Content "$w\$id-clipboard.txt" -Encoding UTF8 -NoNewline
+    }
     Assert-That ([BehaviorInput]::GetForegroundWindow() -ne $h) 'Test copy stole foreground focus'
   } catch { $failure = $_.Exception.Message }
   finally {
+    if ($null -ne $clipboardBackup -and $null -ne $ownClipboardSequence -and [BehaviorInput]::GetClipboardSequenceNumber() -eq $ownClipboardSequence) { [Windows.Forms.Clipboard]::SetDataObject($clipboardBackup, $true) }
     if ($p -and !$p.HasExited) {
       # Graceful close checkpoints SQLite; forced termination is an infrastructure failure.
       [BehaviorInput]::Post($script:h, 0x10, 0, 0)

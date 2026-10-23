@@ -29,7 +29,15 @@ impl Desktop {
             }))
             .bg(color(t.comment))
             .border_1()
-            .border_color(color(t.border))
+            .border_color(color(
+                if self.interaction.task_part == self.comments.len() + 1
+                    || self.editing == Editing::Comment
+                {
+                    t.accent
+                } else {
+                    t.border
+                },
+            ))
             .shadow_md()
             .flex()
             .flex_col()

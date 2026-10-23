@@ -22,7 +22,7 @@ pub(super) enum Modal {
     Delete,
 }
 #[derive(Clone)]
-struct Choice {
+pub(super) struct Choice {
     name: String,
     action: ChoiceAction,
 }
@@ -624,7 +624,7 @@ impl Desktop {
         window.focus(&focus, cx);
         cx.notify();
     }
-    fn choices(&self, cx: &App) -> Vec<Choice> {
+    pub(super) fn choices(&self, cx: &App) -> Vec<Choice> {
         let query: &str = self.interaction.query.read(cx).content.as_ref();
         match self.interaction.modal {
             Some(Modal::Commands) => {
@@ -792,94 +792,104 @@ impl Desktop {
                 cx.notify();
             }
             _ => {
-                let Some(task_id) = self.selected_task() else {
-                    return;
-                };
-                let write = match choice.action {
-                    ChoiceAction::Column(section_id) => Write::TaskSection {
-                        task_id,
-                        section_id,
-                    },
-                    ChoiceAction::Assignee(id) => {
-                        let Some(task) = self.db.task(task_id).ok().flatten() else {
-                            return;
-                        };
-                        let mut ids: Vec<_> = task
-                            .extra
-                            .get("assignees")
-                            .unwrap_or(&serde_json::Value::Null)
-                            .as_array()
-                            .into_iter()
-                            .flatten()
-                            .filter_map(|m| m["id"].as_i64())
-                            .collect();
-                        if ids.contains(&id) {
-                            ids.retain(|v| *v != id);
-                        } else {
-                            ids.push(id);
-                        }
-                        Write::TaskPatch {
+                let targets: Vec<_> =
+                    if self.screen == Screen::Board && !self.interaction.bulk.is_empty() {
+                        self.interaction.bulk.iter().copied().collect()
+                    } else {
+                        self.selected_task().into_iter().collect()
+                    };
+                for task_id in targets {
+                    let write = match choice.action {
+                        ChoiceAction::Column(section_id) => Write::TaskSection {
                             task_id,
-                            patch: TaskPatch::Assignees(ids),
+                            section_id,
+                        },
+                        ChoiceAction::Assignee(id) => {
+                            let Some(task) = self.db.task(task_id).ok().flatten() else {
+                                return;
+                            };
+                            let mut ids: Vec<_> = task
+                                .extra
+                                .get("assignees")
+                                .unwrap_or(&serde_json::Value::Null)
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|m| m["id"].as_i64())
+                                .collect();
+                            if ids.contains(&id) {
+                                ids.retain(|v| *v != id);
+                            } else {
+                                ids.push(id);
+                            }
+                            Write::TaskPatch {
+                                task_id,
+                                patch: TaskPatch::Assignees(ids),
+                            }
                         }
-                    }
-                    ChoiceAction::Label(index) => {
-                        let Some(task) = self.db.task(task_id).ok().flatten() else {
-                            return;
-                        };
-                        let labels = self.db.project_labels(task.project_id).unwrap_or_default();
-                        let Some(id) = labels.get(index).and_then(|l| l["id"].as_str()) else {
-                            return;
-                        };
-                        let mut ids: Vec<_> = task
-                            .extra
-                            .get("labels")
-                            .unwrap_or(&serde_json::Value::Null)
-                            .as_array()
-                            .into_iter()
-                            .flatten()
-                            .filter_map(|l| l["id"].as_str().map(str::to_owned))
-                            .collect();
-                        if ids.iter().any(|v| v == id) {
-                            ids.retain(|v| v != id);
-                        } else {
-                            ids.push(id.to_owned());
+                        ChoiceAction::Label(index) => {
+                            let Some(task) = self.db.task(task_id).ok().flatten() else {
+                                return;
+                            };
+                            let labels =
+                                self.db.project_labels(task.project_id).unwrap_or_default();
+                            let Some(id) = labels.get(index).and_then(|l| l["id"].as_str()) else {
+                                return;
+                            };
+                            let mut ids: Vec<_> = task
+                                .extra
+                                .get("labels")
+                                .unwrap_or(&serde_json::Value::Null)
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .filter_map(|l| l["id"].as_str().map(str::to_owned))
+                                .collect();
+                            if ids.iter().any(|v| v == id) {
+                                ids.retain(|v| v != id);
+                            } else {
+                                ids.push(id.to_owned());
+                            }
+                            Write::TaskPatch {
+                                task_id,
+                                patch: TaskPatch::Labels(ids),
+                            }
                         }
-                        Write::TaskPatch {
+                        ChoiceAction::Priority(i) => Write::TaskPatch {
                             task_id,
-                            patch: TaskPatch::Labels(ids),
-                        }
-                    }
-                    ChoiceAction::Priority(i) => Write::TaskPatch {
-                        task_id,
-                        patch: TaskPatch::Priority(i),
-                    },
-                    ChoiceAction::Size(i) => Write::TaskPatch {
-                        task_id,
-                        patch: TaskPatch::Estimate(i),
-                    },
-                    ChoiceAction::DueDate(days) => {
-                        let date = (days >= 0).then(|| {
-                            (chrono::Utc::now().date_naive() + chrono::Duration::days(days))
-                                .and_hms_opt(0, 0, 0)
-                                .unwrap()
-                                .and_utc()
-                                .to_rfc3339()
-                        });
-                        Write::TaskPatch {
+                            patch: TaskPatch::Priority(i),
+                        },
+                        ChoiceAction::Size(i) => Write::TaskPatch {
                             task_id,
-                            patch: TaskPatch::DueDate(date),
+                            patch: TaskPatch::Estimate(i),
+                        },
+                        ChoiceAction::DueDate(days) => {
+                            let date = (days >= 0).then(|| {
+                                (chrono::Utc::now().date_naive() + chrono::Duration::days(days))
+                                    .and_hms_opt(0, 0, 0)
+                                    .unwrap()
+                                    .and_utc()
+                                    .to_rfc3339()
+                            });
+                            Write::TaskPatch {
+                                task_id,
+                                patch: TaskPatch::DueDate(date),
+                            }
                         }
+                        ChoiceAction::Delete => Write::TaskPatch {
+                            task_id,
+                            patch: TaskPatch::Status(Status::Deleted),
+                        },
+                        ChoiceAction::Command(_)
+                        | ChoiceAction::Task(_)
+                        | ChoiceAction::Board(_) => {
+                            unreachable!()
+                        }
+                    };
+                    if !self.enqueue(write, cx) {
+                        return;
                     }
-                    ChoiceAction::Delete => Write::TaskPatch {
-                        task_id,
-                        patch: TaskPatch::Status(Status::Deleted),
-                    },
-                    ChoiceAction::Command(_) | ChoiceAction::Task(_) | ChoiceAction::Board(_) => {
-                        unreachable!()
-                    }
-                };
-                self.enqueue(write, cx);
+                }
             }
         }
     }
