@@ -520,7 +520,9 @@ impl Desktop {
             },
             Editing::Description => Write::TaskPatch {
                 task_id,
-                patch: ht_core::TaskPatch::Description(comment_actions::editor_html(self.interaction.description.read(cx).content.as_ref())),
+                patch: ht_core::TaskPatch::Description(crate::rich_text::edited_html(
+                    self.detail.as_ref().map_or("", |detail| detail.task.description.as_str()),
+                    &self.description.text, self.interaction.description.read(cx).content.as_ref())),
             },
             Editing::None | Editing::ExistingComment => return false,
         };

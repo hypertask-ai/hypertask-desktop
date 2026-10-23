@@ -1097,6 +1097,36 @@ mod tests {
     }
 
     #[gpui::test]
+    fn sidebar_enter_still_sends_and_shift_enter_is_exactly_one_newline(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let workspace = cx.focus_handle();
+            let mut sidebar = AiSidebar::new(crate::theme::THEMES[0], None, workspace, window, cx);
+            sidebar.focus_composer(window, cx);
+            sidebar
+        });
+        cx.simulate_input("First");
+        cx.simulate_keystrokes("shift-enter");
+        cx.simulate_input("Second");
+        view.read_with(cx, |sidebar, cx| {
+            assert_eq!(sidebar.input.read(cx).content.as_ref(), "First\nSecond")
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |sidebar, cx| {
+            assert!(
+                sidebar.chats[sidebar.selected]
+                    .error
+                    .as_ref()
+                    .unwrap()
+                    .contains("offline")
+            );
+            assert_eq!(sidebar.input.read(cx).content.as_ref(), "First\nSecond");
+        });
+    }
+
+    #[gpui::test]
     fn offline_composer_focus_multiline_and_new_session(cx: &mut gpui::TestAppContext) {
         let view = cx.add_window(|window, cx| {
             let workspace = cx.focus_handle();
