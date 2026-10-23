@@ -13,9 +13,11 @@ pub(super) struct Shell {
     recent: bool,
     scroll: ScrollHandle,
     settings_state: settings::Settings,
+    token: Option<String>,
 }
 
 impl Shell {
+    pub fn set_token(&mut self, token: Option<String>) { self.token = token; }
     pub fn new(db: &Db, cx: &mut Context<Desktop>) -> Self {
         let query = cx.new(|cx| TextInput::new(String::new(), "Search boards", color(0x8e9093), cx));
         cx.observe(&query, |this, _, cx| {
@@ -32,6 +34,7 @@ impl Shell {
             recent: db.kv_get("boardSortMode").ok().flatten().as_deref() == Some("lastUsed"),
             scroll: ScrollHandle::new(),
             settings_state: settings::Settings::new(cx),
+            token: None,
         }
     }
 
@@ -59,11 +62,12 @@ impl Desktop {
         self.shell.boards = !self.shell.boards;
         self.shell.query.update(cx, |input, cx| input.set_content(String::new(), cx));
         self.shell.choice = 0;
-        window.focus(if self.shell.boards { &self.shell.query.focus_handle(cx) } else { &self.focus }, cx);
+        let focus = if self.shell.boards { self.shell.query.focus_handle(cx) } else { self.focus.clone() };
+        window.focus(&focus, cx);
         cx.notify();
     }
 
-    fn shell_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub(super) fn shell_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let key = &event.keystroke;
         let m = key.modifiers;
         let ctrl = m.control || m.platform;
@@ -100,7 +104,7 @@ impl Desktop {
         true
     }
 
-    fn rail(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn rail(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = self.colors;
         let wide = self.shell.expanded;
         let button = |i: usize, name: &'static str, label: &'static str, selected: bool| {
@@ -170,7 +174,7 @@ impl Desktop {
         self.switch(Screen::Board, cx);
     }
 
-    fn shell_overlay(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn shell_overlay(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
         if !self.shell.boards { return div().into_any_element(); }
         let t = self.colors;
         div().absolute().inset_0().on_mouse_down(MouseButton::Left, cx.listener(|this, _, window, cx| {
@@ -213,7 +217,7 @@ mod tests {
     use gpui::{TestAppContext, VisualTestContext, WindowHandle, size};
 
     fn setup(cx: &mut TestAppContext) -> (WindowHandle<Desktop>, VisualTestContext) {
-        crate::input::init(cx);
+        cx.update(crate::input::init);
         let view = cx.open_window(size(px(1440.), px(900.)), |window, cx| {
             let mut db = Db::memory().unwrap();
             db.apply_response(&serde_json::json!({"success": true, "projects": [

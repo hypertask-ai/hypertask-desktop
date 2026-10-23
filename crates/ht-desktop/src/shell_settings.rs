@@ -102,7 +102,7 @@ impl Desktop {
 
     fn code_row(&self, id: &'static str, value: &'static str, cx: &mut Context<Self>) -> AnyElement {
         div().id(id).p(px(8.)).rounded(px(5.)).bg(color(self.colors.card)).cursor_pointer()
-            .on_click(cx.listener(move |_, _, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(value))))
+            .on_click(cx.listener(move |_, _, _, cx| cx.write_to_clipboard(ClipboardItem::new_string(value.to_owned()))))
             .child(value).layout_key(&self.layout, format!("settings.copy.{id}"), Some(value.into()))
     }
 

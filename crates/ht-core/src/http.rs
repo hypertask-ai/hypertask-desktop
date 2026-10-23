@@ -97,6 +97,15 @@ impl Http {
         })
     }
 
+    pub fn json_request(&self, method: &str, path: &str, body: Option<&Value>) -> Result<Value> {
+        ensure!(matches!(method, "GET" | "POST" | "PUT" | "PATCH" | "DELETE"), "unsupported HTTP method");
+        let response = self.request(method, path, body, None)?;
+        if !(200..300).contains(&response.status) || response.body.get("success") == Some(&Value::Bool(false)) {
+            anyhow::bail!("{}", response.body.get("message").or_else(|| response.body.get("error")).and_then(Value::as_str).unwrap_or("Request failed"));
+        }
+        Ok(response.body)
+    }
+
     pub fn unauthorized_flag(&self) -> Arc<AtomicBool> {
         self.unauthorized.clone()
     }

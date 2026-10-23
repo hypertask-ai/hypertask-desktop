@@ -146,14 +146,15 @@ impl Desktop {
         let ai_sidebar_subscription = ai_sidebar
             .as_ref()
             .map(|sidebar| cx.observe(sidebar, |_, _, cx| cx.notify()));
-        let worker = secret.and_then(|secret| Self::start_worker(&options, &mut signin, secret));
+        let worker = secret.clone().and_then(|secret| Self::start_worker(&options, &mut signin, secret));
         let auto_board = !options.offline && !options.board_given && signin.is_interactive();
         let mut options = options;
         if auto_board {
             Self::resolve_board(&db, &mut options);
         }
         let detail_scroll = ScrollHandle::new();
-        let shell = shell::Shell::new(&db, cx);
+        let mut shell = shell::Shell::new(&db, cx);
+        shell.set_token(secret.clone());
         let mut view = Self {
             shell,
             focus,
@@ -263,6 +264,7 @@ impl Desktop {
         match self.signin.poll() {
             Event::Idle => return,
             Event::Expired => {
+                self.shell.set_token(None);
                 if let Some(sidebar) = &self.ai_sidebar {
                     sidebar.update(cx, |sidebar, cx| sidebar.set_token(None, cx));
                 }
@@ -271,6 +273,7 @@ impl Desktop {
                 }
             }
             Event::SignedIn(secret) => {
+                self.shell.set_token(Some(secret.clone()));
                 if let Some(sidebar) = &self.ai_sidebar {
                     sidebar.update(cx, |sidebar, cx| {
                         sidebar.set_token(Some(secret.clone()), cx)
