@@ -1,6 +1,8 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
 mod behavior;
+mod command_center;
+mod shortcuts;
 mod input;
 mod layout;
 mod memory;

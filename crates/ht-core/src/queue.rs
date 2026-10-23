@@ -10,6 +10,7 @@ pub enum Write {
     TaskTitle { task_id: i64, title: String },
     TaskSection { task_id: i64, section_id: i64 },
     TaskComment { task_id: i64, text: String },
+    TaskPatch { task_id: i64, patch: crate::TaskPatch },
     InboxArchive { notification_id: i64 },
 }
 
@@ -64,6 +65,12 @@ impl Db {
                     ensure!(db.task(*task_id)?.is_some(), "task is not cached");
                     (format!("task:{task_id}"), "task_comment", json!({"task_id":task_id,"text":text}))
                 }
+                Write::TaskPatch { task_id, patch } => {
+                    ensure!(db.task(*task_id)?.is_some(), "task is not cached");
+                    let mut fields = patch.fields()?;
+                    fields["task_id"] = json!(task_id);
+                    (format!("task:{task_id}"), "task_patch", fields)
+                }
                 Write::InboxArchive { notification_id } => {
                     ensure!(db.raw("Notification", &json!(notification_id))?.is_some(), "notification is not cached");
                     (format!("notification:{notification_id}"), "inbox_archive", json!({"notification_ids":[notification_id]}))
@@ -90,6 +97,11 @@ impl Db {
                     task["sectionId"] = payload["sectionId"].clone();
                     task["section"] = payload["section"].clone();
                 }
+                self.upsert_task(&task)?;
+            }
+            "task_patch" => {
+                let mut task = self.raw("Task", &payload["task_id"])?.context("task is not cached")?;
+                crate::task_patch::optimistic(&mut task, payload);
                 self.upsert_task(&task)?;
             }
             "task_comment" => {
@@ -208,6 +220,7 @@ impl Db {
             return Ok(Drain::Waiting(ready));
         }
         let (path, body) = match row.kind.as_str() {
+            "task_patch" => ("/tasks/update", row.payload_json.clone()),
             "task_title" => (
                 "/tasks/update",
                 json!({"task_id":row.payload_json["task_id"],"title":row.payload_json["title"]}),
@@ -263,7 +276,7 @@ impl Db {
             let active: bool = db.conn.query_row("SELECT EXISTS(SELECT 1 FROM mutation_queue WHERE id=? AND attempts=? AND status='inflight')", params![row.id,row.attempts], |r| r.get(0))?;
             if !active { return Ok(()); }
             match row.kind.as_str() {
-                "task_title" | "task_section" => {
+                "task_title" | "task_section" | "task_patch" => {
                     let task = body.get("task").or_else(|| body["tasks"].as_array().and_then(|v| v.iter().find(|t| t["id"] == row.payload_json["task_id"]))).context("mutation response missing task")?;
                     ensure!(task["id"] == row.payload_json["task_id"], "mutation returned another task");
                     db.upsert_task(task)?;

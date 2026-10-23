@@ -8,7 +8,7 @@ G=$(cd "$(dirname "$0")" && pwd)
 W='C:\Users\valen\AppData\Local\Temp\htbehavior'
 mkdir -p "$out"
 # Same SHA-bound CI/artifact gate as parity-round, but gh watch blocks instead of a sleep loop.
-run=$(env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh api "repos/hypertask-ai/hypertask-desktop/actions/runs?head_sha=$sha&per_page=30" --jq '[.workflow_runs[] | select(.name=="CI")][0].id')
+run=$(env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh api "repos/hypertask-ai/hypertask-desktop/actions/runs?branch=keys&per_page=30" | jq -r --arg sha "$sha" '[.workflow_runs[] | select(.name=="CI" and .head_sha==$sha)][0].id')
 [[ "$run" =~ ^[0-9]+$ ]] || { echo "CI_NOT_FOUND $sha"; exit 1; }
 env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh run watch "$run" -R hypertask-ai/hypertask-desktop --exit-status > "$out/ci-watch.txt" 2>&1
 env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh api "repos/hypertask-ai/hypertask-desktop/actions/runs/$run" --jq '"RUN \(.id) \(.status) \(.conclusion) \(.head_sha) \(.html_url)"' | tee "$out/ci.txt"

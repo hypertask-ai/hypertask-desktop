@@ -62,7 +62,7 @@ impl LayoutDump {
 }
 
 fn keys(screen: Screen) -> Vec<String> {
-    let mut keys: Vec<String> = ["rail", "main", "rightpanel", "footer", "footer.text"]
+    let mut keys: Vec<String> = ["rail", "main", "footer", "footer.text"]
         .into_iter()
         .map(str::to_owned)
         .collect();
