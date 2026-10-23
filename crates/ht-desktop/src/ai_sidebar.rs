@@ -13,7 +13,10 @@ use ht_core::{
     ai_chat::{self, Client, DefaultContext, Event, MODELS, Message, Session, TurnIds},
 };
 use std::{
-    sync::{Arc, mpsc::{self, Receiver}},
+    sync::{
+        Arc,
+        mpsc::{self, Receiver},
+    },
     thread,
     time::Duration,
 };
@@ -286,7 +289,8 @@ impl AiSidebar {
                 match thread::Builder::new()
                     .name("ht-ai-history".into())
                     .spawn(move || {
-                        let result = client.sessions()
+                        let result = client
+                            .sessions()
                             .map(|sessions| sessions.into_iter().map(Arc::new).collect())
                             .map_err(|e| e.to_string());
                         let _ = send.send(result);
@@ -310,8 +314,10 @@ impl AiSidebar {
             .spawn(move || {
                 let id = session.id.clone();
                 let title = session.title.clone().unwrap_or_else(|| "AI Chat".into());
-                let messages = session.messages
-                    .iter().cloned()
+                let messages = session
+                    .messages
+                    .iter()
+                    .cloned()
                     .map(|message| {
                         let rich = if message.role == "human" {
                             RichText::default()
@@ -1165,7 +1171,7 @@ mod tests {
                     role: "assistant".into(),
                     content: "Saved reply".into(),
                 }],
-            }]))
+            })]))
             .unwrap();
             sidebar.poll(cx);
             assert_eq!(sidebar.history.len(), 1);
