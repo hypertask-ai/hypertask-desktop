@@ -148,14 +148,7 @@ impl Desktop {
                 .take()
                 .filter(|(at, _)| at.elapsed() < Duration::from_secs(1))
             {
-                let action = match key.key.as_str() {
-                    "g" => Some(if shift { Action::Last } else { Action::First }),
-                    "i" => Some(Action::Inbox),
-                    "b" | "t" if self.screen == Screen::Inbox || self.screen == Screen::Task => {
-                        Some(Action::Board)
-                    }
-                    _ => None,
-                };
+                let action = shortcuts::sequence(&key.key, shift, self.screen);
                 if let Some(action) = action {
                     self.run_shortcut(action, window, cx);
                     cx.stop_propagation();
@@ -411,9 +404,6 @@ impl Desktop {
                         },
                     ));
                 }
-            }
-            CopyPublicUrl | CopyPublicTitleUrl => {
-                self.error = Some("This action is not available in the native app yet".into());
             }
         }
         if self.screen == Screen::Inbox {

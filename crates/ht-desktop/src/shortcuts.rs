@@ -42,8 +42,6 @@ pub enum Action {
     CopyTitleId,
     CopyUrl,
     CopyTitleUrl,
-    CopyPublicUrl,
-    CopyPublicTitleUrl,
     DiscardDraft,
 }
 
@@ -77,8 +75,6 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         ("i", true, true, false) => Some(Action::CopyId),
         (";" | ":", true, true, false) => Some(Action::CopyUrl),
         (";" | "," | ":", true, false, false) => Some(Action::CopyTitleUrl),
-        (".", true, true, false) => Some(Action::CopyPublicUrl),
-        (".", true, false, false) => Some(Action::CopyPublicTitleUrl),
         ("d", true, false, false) if screen == Screen::Task => Some(Action::Description),
         ("a", true, all_splits, false) if screen != Screen::Task => {
             Some(Action::SelectAll { all_splits })
@@ -112,6 +108,16 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         ("1", false, false, false) => Some(Action::Inbox),
         ("2", false, false, false) => Some(Action::Board),
         ("/" | "6", false, false, false) => Some(Action::Search),
+        _ => None,
+    }
+}
+
+pub fn sequence(key: &str, shifted: bool, screen: Screen) -> Option<Action> {
+    match key {
+        "g" => Some(if shifted { Action::Last } else { Action::First }),
+        "i" => Some(Action::Inbox),
+        "b" => Some(Action::Board),
+        "t" if matches!(screen, Screen::Inbox | Screen::Task) => Some(Action::Board),
         _ => None,
     }
 }
@@ -175,5 +181,78 @@ mod tests {
             Some(Action::PreviousColumn)
         );
         assert_eq!(key("ctrl-m", Screen::Inbox, false), Some(Action::Comment));
+    }
+    #[test]
+    fn complete_supported_key_map_and_contexts() {
+        use Action::*;
+        for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
+            for (chord, action) in [
+                ("ctrl-m", Comment),
+                ("ctrl-e", Archive),
+                ("ctrl-b", Boards),
+                ("ctrl-i", CopyTitleId),
+                ("ctrl-shift-i", CopyId),
+                ("ctrl-;", CopyTitleUrl),
+                ("ctrl-,", CopyTitleUrl),
+                ("ctrl-shift-;", CopyUrl),
+                ("shift-h", MoveLeft),
+                ("shift-left", MoveLeft),
+                ("shift-l", MoveRight),
+                ("shift-right", MoveRight),
+                ("shift-3", Delete),
+                ("tab", NextColumn),
+                ("shift-tab", PreviousColumn),
+                ("enter", Open),
+                ("f2", Rename),
+                ("m", MoveColumn),
+                ("p", Priority),
+                ("a", Assign),
+                ("t", Tags),
+                ("s", Size),
+                ("d", DueDate),
+                ("1", Inbox),
+                ("2", Board),
+                ("/", Search),
+                ("6", Search),
+            ] {
+                assert_eq!(
+                    key(chord, screen, false),
+                    Some(action),
+                    "{chord} {screen:?}"
+                );
+                assert_eq!(key(chord, screen, true), None, "editor must own {chord}");
+            }
+            assert_eq!(sequence("g", false, screen), Some(First));
+            assert_eq!(sequence("g", true, screen), Some(Last));
+            assert_eq!(sequence("i", false, screen), Some(Inbox));
+            assert_eq!(sequence("b", false, screen), Some(Board));
+            assert_eq!(sequence("x", false, screen), None);
+            assert_eq!(key("ctrl-shift-,", screen, true), Some(DiscardDraft));
+            assert_eq!(
+                key("ctrl-alt-shift-enter", screen, true),
+                Some(Save {
+                    stay: true,
+                    complete: true
+                })
+            );
+        }
+        assert_eq!(key("down", Screen::Task, false), Some(NextColumn));
+        assert_eq!(key("up", Screen::Task, false), Some(PreviousColumn));
+        assert_eq!(key("j", Screen::Task, false), Some(Next));
+        assert_eq!(key("k", Screen::Task, false), Some(Previous));
+        assert_eq!(key("shift-j", Screen::Inbox, false), Some(ExtendNext));
+        assert_eq!(key("shift-up", Screen::Inbox, false), Some(ExtendPrevious));
+        assert_eq!(key("ctrl-f", Screen::Board, false), Some(LocalSearch));
+        assert_eq!(key("ctrl-r", Screen::Inbox, false), Some(Comment));
+        assert_eq!(key("ctrl-d", Screen::Task, false), Some(Description));
+        assert_eq!(key("x", Screen::Board, false), Some(Select));
+        assert_eq!(
+            key("ctrl-a", Screen::Inbox, false),
+            Some(SelectAll { all_splits: false })
+        );
+        assert_eq!(
+            key("ctrl-shift-a", Screen::Inbox, false),
+            Some(SelectAll { all_splits: true })
+        );
     }
 }

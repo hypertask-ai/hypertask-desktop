@@ -49,14 +49,6 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         Inbox,
     );
     add(
-        "switchBoard",
-        "Switch board",
-        "Board",
-        "CTRL B",
-        "switch change open board kanban",
-        Boards,
-    );
-    add(
         "searchTask",
         "Search",
         "Navigate",

@@ -98,12 +98,13 @@ foreach ($case in @((Read-Json $CaseFile) | Select-Object -Skip $Skip -First $Ta
     Copy-Item "$w\parity.db" "$w\$id.db" -Force
     $foreground = [BehaviorInput]::GetForegroundWindow()
     $p = Start-Process "$w\ht-behavior.exe" -PassThru -ArgumentList '--db', "$w\$id.db", '--offline', '--background', '--board', '7283', '--task', '60253', '--theme', 'graphite', '--screen', $case.screen, '--dump-layout', "$w\$id.json" -RedirectStandardOutput "$w\$id.stdout" -RedirectStandardError "$w\$id.stderr"
-    if (!(Test-Path "$w\$id.behavior.json")) { Wait-Change "$w\$id.behavior.json" 15000 }
+    $null = $p.WaitForInputIdle(1000)
     $script:h = [BehaviorInput]::Find($p.Id)
     Assert-That ($h -ne [IntPtr]::Zero) 'Test HWND not found'
     # Bottom of Z-order, shown without activation; never attach to the owner's input queue.
     $null = [BehaviorInput]::SetWindowPos($h, [IntPtr]1, 0, 0, 1440, 940, 0x10 -bor 0x40)
-    if (!(Test-Path "$w\$id.behavior.json")) { Wait-Change "$w\$id.behavior.json" 15000 }
+    $watch = New-Object IO.FileSystemWatcher $w, "$id.behavior.json"
+    try { if (!(Test-Path "$w\$id.behavior.json")) { $null = $watch.WaitForChanged([IO.WatcherChangeTypes]::All, 15000) } } finally { $watch.Dispose() }
     $before = Snapshot 'before'
     foreach ($step in $case.steps) {
       switch ($step.op) {
