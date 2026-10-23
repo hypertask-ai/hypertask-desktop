@@ -42,6 +42,23 @@ impl Desktop {
             .flex()
             .flex_col()
             .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
+            .when(
+                self.detail.as_ref().is_some_and(|d| {
+                    d.task
+                        .extra
+                        .get("hasCommentDraft")
+                        .and_then(|v| v.as_bool())
+                        == Some(true)
+                }),
+                |d| {
+                    d.child(
+                        div()
+                            .text_size(px(12.))
+                            .text_color(color(t.muted))
+                            .child("Draft"),
+                    )
+                },
+            )
             .child(
                 div()
                     .text_size(px(14.))

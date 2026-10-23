@@ -323,7 +323,14 @@ impl Db {
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {
         self.json_rows("SELECT n.raw_json FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC", [])?
             .into_iter().map(|n| {
-                let source = n.pointer("/fromAgent/displayName").or_else(|| n.pointer("/fromUser/displayName")).and_then(Value::as_str).map(str::to_owned);
+                let actors = n["recentActors"].as_array();
+                let source = if actors.is_some_and(|actors| actors.len() >= 2) {
+                    Some(actors.unwrap().iter().filter_map(|actor| actor["displayName"].as_str())
+                        .collect::<Vec<_>>().join(", "))
+                } else {
+                    ["/fromAgent/displayName", "/fromUser/displayName"].into_iter()
+                        .find_map(|path| n.pointer(path).and_then(Value::as_str)).map(str::to_owned)
+                };
                 let task = n["taskId"].as_i64().map(|id| self.task(id)).transpose()?.flatten();
                 let title = task.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| n.pointer("/task/title").or_else(|| n.get("message")).and_then(Value::as_str).unwrap_or("").to_owned());
                 let ticket_number = task.and_then(|t| t.ticket_number).or_else(|| n.pointer("/task/ticketNumber").and_then(Value::as_str).map(str::to_owned));

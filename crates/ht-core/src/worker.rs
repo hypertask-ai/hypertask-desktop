@@ -61,6 +61,8 @@ impl Worker {
                 let mut inbox = false;
                 let mut task = None;
                 let mut last_pull = Instant::now();
+                let mut last_draft_pull = Instant::now();
+                let mut draft_tasks = std::collections::VecDeque::new();
                 loop {
                     let command = match receive.recv_timeout(Duration::from_secs(1)) {
                         Ok(Command::Stop) | Err(mpsc::RecvTimeoutError::Disconnected) => break,
@@ -79,6 +81,7 @@ impl Worker {
                                 task = Some(id);
                                 sync.task(id)?;
                                 sync.comments(id)?;
+                                sync.drafts(id)?;
                             }
                             Some(Command::Inbox) => {
                                 inbox = true;
@@ -95,6 +98,7 @@ impl Worker {
                                 if let Some(id) = task {
                                     sync.task(id)?;
                                     sync.comments(id)?;
+                                    sync.drafts(id)?;
                                 }
                             }
                             _ => (),
@@ -120,6 +124,25 @@ impl Worker {
                             if let Some(id) = task {
                                 sync.task(id)?;
                                 sync.comments(id)?;
+                                sync.drafts(id)?;
+                            }
+                        }
+                        // There is no bearer bulk-drafts endpoint. Walk tracked
+                        // boards round-robin, at most once per second, rather
+                        // than exhausting the 120/minute user-token quota.
+                        if last_draft_pull.elapsed() >= Duration::from_secs(1) {
+                            last_draft_pull = Instant::now();
+                            if draft_tasks.is_empty() {
+                                for &id in &boards {
+                                    draft_tasks.extend(
+                                        sync.db.board(id)?.into_iter().flat_map(|column| {
+                                            column.cards.into_iter().map(|t| t.id)
+                                        }),
+                                    );
+                                }
+                            }
+                            if let Some(id) = draft_tasks.pop_front() {
+                                sync.drafts(id)?;
                             }
                         }
                         Ok(())

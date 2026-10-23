@@ -922,7 +922,15 @@ impl Desktop {
         let n = &self.inbox[self.filtered[row]];
         let t = self.colors;
         let id = n.id;
-        let kind = notification_label(n.raw_json["type"].as_str().unwrap_or(""));
+        let kind = n.raw_json.pointer("/comment/text").and_then(|v| v.as_str())
+            .map(|html| RichText::parse(html, t).text.to_string())
+            .filter(|text| !text.trim().is_empty())
+            .unwrap_or_else(|| notification_label(n.raw_json["type"].as_str().unwrap_or("")));
+        let source = n.source.clone().unwrap_or_default();
+        let source = match n.raw_json["unreadCount"].as_u64().filter(|count| *count > 0) {
+            Some(count) => format!("{source} ({count})"),
+            None => source,
+        };
         div()
             .id(("notification", id as u64))
             .w_full()
@@ -983,12 +991,12 @@ impl Desktop {
                             .child(
                                 div()
                                     .truncate()
-                                    .child(n.source.clone().unwrap_or_else(|| "Hypertask".into()))
+                                    .child(source.clone())
                                     .layout_key(
                                         &self.layout,
                                         format!("inbox.row.{row}.author"),
                                         Some(
-                                            n.source.clone().unwrap_or_else(|| "Hypertask".into()),
+                                            source.clone(),
                                         ),
                                     ),
                             ),
@@ -1050,6 +1058,7 @@ impl Desktop {
                                     ),
                             ),
                     )
+                    .child(div().text_size(px(11.)).text_color(color(t.muted)).child(inbox_metadata(&n.raw_json["task"])))
                     .child(
                         div()
                             .w(px(62.))
@@ -1477,6 +1486,16 @@ impl Desktop {
                                 ),
                         ),
                     )
+                    .when(priority_name(&task.extra) != "No Priority" || task.due_date.is_some(), |d| {
+                        d.child(div().text_size(px(11.)).text_color(color(t.muted)).child(
+                            [Some(priority_name(&task.extra)).filter(|p| *p != "No Priority").map(str::to_owned),
+                             task.due_date.as_deref().map(short_date)]
+                                .into_iter().flatten().collect::<Vec<_>>().join(" · ")
+                        ))
+                    })
+                    .when(task.extra.get("hasBoardDraft").and_then(|v| v.as_bool()) == Some(true), |d| {
+                        d.child(div().text_size(px(11.)).text_color(color(t.accent)).child("Draft"))
+                    })
                     .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
                         d.child(
                             div()
@@ -1606,14 +1625,14 @@ impl Desktop {
                 .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(36.)).min_h(px(37.)).child(title)
                     .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).pt(px(10.25)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
                         .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(icon("layers", 0x696b6e, 16.))))
-                .child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone())).layout_key(&self.layout, "task.header", None))
+                .when(!self.summary.is_empty(), |d| d.child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone()))).layout_key(&self.layout, "task.header", None))
             .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
 
                 .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
                     .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == 0 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
-                            .child(self.creator.clone()).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
+                            .child(self.creator.clone()).when(d.task.extra.get("hasDescriptionDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child("Draft")).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
                         .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.focused_editor(Editing::Description, cx))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
@@ -1639,12 +1658,13 @@ impl Desktop {
             .and_then(|v| v.as_array())
             .map(|a| {
                 a.iter()
-                    .filter_map(|v| v["displayName"].as_str().or_else(|| v["name"].as_str()))
+                    .filter(|v| v["agent"].is_null())
+                    .filter_map(|v| v["displayName"].as_str().or_else(|| v["email"].as_str()))
                     .collect::<Vec<_>>()
                     .join(", ")
             })
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "The Assignees".into());
+            .unwrap_or_else(|| "No assignees".into());
         let rows = [
             ("Assignees", assignees),
             (
@@ -1680,12 +1700,7 @@ impl Desktop {
             ("Project", task.board_title.clone()),
             (
                 "Priority",
-                task.extra
-                    .get("priority")
-                    .and_then(|v| v.get("Priority_Value"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("No Priority")
-                    .into(),
+                priority_name(&task.extra).into(),
             ),
             (
                 "Task size",
@@ -1777,7 +1792,7 @@ impl Desktop {
                             .flex()
                             .items_center()
                             .gap(px(if label == "Project" { 6. } else { 10. }))
-                            .when(label == "Assignees" && value == "The Assignees", |d| {
+                            .when(label == "Assignees" && value == "No assignees", |d| {
                                 d.text_color(color(0x8e9093))
                             })
                             .when(label == "ID" && self.options.theme == ThemeName::Dia, |d| {
@@ -2179,12 +2194,37 @@ fn inbox_date(value: Option<&str>) -> String {
 }
 
 fn creator_name(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    ["user", "createdBy", "creator"]
+    ["createdBy", "user", "creator"]
         .into_iter()
-        .find_map(|key| extra.get(key).and_then(|v| v["displayName"].as_str()))
+        .find_map(|key| extra.get(key).and_then(|v| v["displayName"].as_str().filter(|s| !s.is_empty()).or_else(|| v["email"].as_str())))
         .or_else(|| extra.get("creatorName").and_then(|v| v.as_str()))
-        .unwrap_or("Hypertask")
+        .unwrap_or("Unknown author")
         .to_owned()
+}
+
+fn priority_name(extra: &serde_json::Map<String, serde_json::Value>) -> &str {
+    extra.get("priority").and_then(|v| v.as_str().or_else(|| v["Priority_Value"].as_str()))
+        .unwrap_or("No Priority")
+}
+
+fn inbox_metadata(task: &serde_json::Value) -> String {
+    let mut parts = Vec::new();
+    if let Some(date) = task["dueDate"].as_str() {
+        parts.push(short_date(date));
+    }
+    if let Some(priority) = task["priority"].as_str().or_else(|| task["priority"]["Priority_Value"].as_str()) {
+        parts.push(priority.to_owned());
+    }
+    if let Some(estimate) = task["estimate"]["estimate_value"].as_str() {
+        parts.push(estimate.to_owned());
+    }
+    let labels: Vec<_> = task["taskLabels"].as_array().into_iter().flatten()
+        .filter_map(|label| label["label"]["value"].as_str()).filter(|name| !name.is_empty()).collect();
+    parts.extend(labels.iter().take(3).map(|name| (*name).to_owned()));
+    if labels.len() > 3 {
+        parts.push(format!("+{}", labels.len() - 3));
+    }
+    parts.join(" · ")
 }
 
 fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
@@ -2218,28 +2258,20 @@ fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
             teaser = prefix.trim_end().to_owned();
         }
     }
-    if teaser.trim().is_empty() {
-        "Not enough content for summary".into()
-    } else {
-        teaser.trim().to_owned()
-    }
+    teaser.trim().to_owned()
 }
 
 fn comment_author(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    extra
-        .get("agent")
-        .filter(|v| !v.is_null())
-        .or_else(|| extra.get("creator"))
-        .or_else(|| extra.get("user"))
-        .and_then(|v| v["displayName"].as_str())
-        .unwrap_or(
-            if extra.get("pending").and_then(|v| v.as_bool()) == Some(true) {
-                "You · Pending"
-            } else {
-                "Hypertask"
-            },
-        )
-        .to_owned()
+    extra.get("agent_display_name").and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+        .or_else(|| ["agent", "creator", "user"].into_iter().find_map(|key| {
+            extra.get(key).and_then(|v| v["displayName"].as_str().filter(|s| !s.is_empty())
+                .or_else(|| v["email"].as_str()))
+        }))
+        .unwrap_or(if extra.get("pending").and_then(|v| v.as_bool()) == Some(true) {
+            "You · Pending"
+        } else {
+            "Unknown author"
+        }).to_owned()
 }
 
 #[cfg(test)]
@@ -2278,11 +2310,49 @@ mod tests {
             ),
             (
                 json!({"Task_Summary": [{"content": " \n "}]}),
-                "Not enough content for summary",
+                "",
             ),
-            (json!({}), "Not enough content for summary"),
+            (json!({}), ""),
         ] {
             assert_eq!(task_summary(extra.as_object().unwrap()), expected);
         }
     }
+
+    #[test]
+    fn fidelity_fixture_preserves_priority_creator_summary_and_durable_comment_author() {
+        let f: serde_json::Value = serde_json::from_str(include_str!("../../../fixtures/data-fidelity.json")).unwrap();
+        for key in ["list", "detail"] {
+            assert_eq!(priority_name(f[key]["tasks"][0].as_object().unwrap()), "High");
+        }
+        assert_eq!(creator_name(f["detail"]["tasks"][0].as_object().unwrap()), "Example Creator");
+        assert_eq!(creator_name(f["list"]["tasks"][0].as_object().unwrap()), "Unknown author");
+        assert_eq!(task_summary(f["webSummary"].as_object().unwrap()), "Example saved summary.");
+        assert_eq!(task_summary(f["detail"]["tasks"][0].as_object().unwrap()), "");
+        assert_eq!(comment_author(f["comments"]["comments"][0].as_object().unwrap()), "Retired Example Agent");
+    }
+
+    #[test]
+    fn comment_author_does_not_shadow_people_with_null_or_empty_agents() {
+        for extra in [
+            json!({"agent": null, "creator": null, "user": {"displayName": "Example Person"}}),
+            json!({"agent": {"displayName": ""}, "creator": {"displayName": "Example Person"}}),
+        ] {
+            assert_eq!(comment_author(extra.as_object().unwrap()), "Example Person");
+        }
+        assert_eq!(comment_author(json!({"pending": true}).as_object().unwrap()), "You · Pending");
+        assert_eq!(creator_name(json!({"createdBy": {"email": "creator@example.com"}}).as_object().unwrap()), "creator@example.com");
+        assert_eq!(priority_name(json!({"priority": null}).as_object().unwrap()), "No Priority");
+    }
+
+
+    #[test]
+    fn inbox_metadata_uses_server_shapes_and_web_label_limit() {
+        let task = json!({"priority": {"Priority_Value": "High"}, "estimate": {"estimate_value": "S"},
+            "dueDate": "2026-10-20T12:00:00Z", "taskLabels": [
+                {"label": {"value": "One"}}, {"label": {"value": "Two"}},
+                {"label": {"value": "Three"}}, {"label": {"value": "Four"}}]});
+        assert_eq!(inbox_metadata(&task), "20 Oct · High · S · One · Two · Three · +1");
+        assert_eq!(inbox_metadata(&json!({"priority": null, "dueDate": null})), "");
+    }
+
 }
