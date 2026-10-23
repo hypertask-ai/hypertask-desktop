@@ -212,11 +212,11 @@ impl Desktop {
 mod settings;
 
 #[cfg(test)]
-mod tests {
+pub(super) mod tests {
     use super::*;
     use gpui::{TestAppContext, VisualTestContext, WindowHandle, size};
 
-    fn setup(cx: &mut TestAppContext) -> (WindowHandle<Desktop>, VisualTestContext) {
+    pub(in super::super) fn setup(cx: &mut TestAppContext) -> (WindowHandle<Desktop>, VisualTestContext) {
         cx.update(crate::input::init);
         let view = cx.open_window(size(px(1440.), px(900.)), |window, cx| {
             let mut db = Db::memory().unwrap();
@@ -235,17 +235,17 @@ mod tests {
         (view, visual)
     }
 
-    fn draw(view: WindowHandle<Desktop>, cx: &mut VisualTestContext) {
+    pub(in super::super) fn draw(view: WindowHandle<Desktop>, cx: &mut VisualTestContext) {
         let entity = view.entity(cx).unwrap();
         cx.draw(point(px(0.), px(0.)), size(px(1440.), px(900.)), |_, _| entity.into_element());
     }
 
-    fn measured(view: WindowHandle<Desktop>, cx: &mut VisualTestContext, key: &str) -> Value {
+    pub(in super::super) fn measured(view: WindowHandle<Desktop>, cx: &mut VisualTestContext, key: &str) -> Value {
         draw(view, cx);
         view.read_with(cx, |this, _| this.layout.as_ref().unwrap().borrow().interaction_elements().into_iter().find(|e| e["key"] == key).unwrap_or_else(|| panic!("visible element {key} missing"))).unwrap()
     }
 
-    fn click(view: WindowHandle<Desktop>, cx: &mut VisualTestContext, key: &str) {
+    pub(in super::super) fn click(view: WindowHandle<Desktop>, cx: &mut VisualTestContext, key: &str) {
         let e = measured(view, cx, key);
         cx.simulate_click(point(px(e["x"].as_f64().unwrap() as f32 + e["w"].as_f64().unwrap() as f32 / 2.), px(e["y"].as_f64().unwrap() as f32 + e["h"].as_f64().unwrap() as f32 / 2.)), Default::default());
         draw(view, cx);
@@ -298,7 +298,7 @@ mod tests {
     fn shell_settings_icon_key_back_search_and_copy(cx: &mut TestAppContext) {
         let (view, mut cx) = setup(cx);
         click(view, &mut cx, "rail.icon.12");
-        assert_eq!(measured(view, &mut cx, "settings.title")["text"], "Appearance");
+        assert_eq!(measured(view, &mut cx, "settings.title")["text"], "General");
         click(view, &mut cx, "settings.search");
         cx.simulate_input("CLI");
         click(view, &mut cx, "settings.nav.cli");
