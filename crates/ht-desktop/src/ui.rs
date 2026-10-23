@@ -622,12 +622,10 @@ impl Desktop {
                 .items_center()
                 .justify_center()
                 .rounded(px(5.))
+                .text_color(color(if selected { t.text } else { t.muted }))
                 .when(selected, |d| d.bg(color(t.hover)))
-                .child(icon(name, t.muted, 18.).layout_key(
-                    &self.layout,
-                    format!("rail.icon.{i}"),
-                    None,
-                ))
+                .child(icon(name, if selected { t.text } else { t.muted }, 18.))
+                .layout_key(&self.layout, format!("rail.icon.{i}"), None)
         };
         div()
             .w(px(48.))
@@ -641,9 +639,17 @@ impl Desktop {
             .items_center()
             .pt(px(8.))
             .pb(px(8.))
-            .child(div().h(px(20.)).mb(px(4.)).flex().items_center().child(
-                icon("chevron-right", t.muted, 16.).layout_key(&self.layout, "rail.icon.0", None),
-            ))
+            .child(
+                div()
+                    .w(px(16.))
+                    .h(px(20.))
+                    .mb(px(4.))
+                    .flex()
+                    .items_center()
+                    .text_color(color(t.muted))
+                    .child(icon("chevron-right", t.muted, 16.))
+                    .layout_key(&self.layout, "rail.icon.0", None),
+            )
             .child(button(1, "panel-left", false))
             .child(div().h(px(16.)))
             .child(
@@ -866,18 +872,13 @@ impl Desktop {
                 .id(("split", i))
                 .cursor_pointer()
                 .flex()
-                .items_baseline()
+                .h(px(32.))
+                .text_size(px(14.))
+                .pr(px(15.))
+                .items_center()
                 .gap(px(4.))
-                .font_weight(FontWeight::MEDIUM)
-                .when(i == self.split, |d| {
-                    d.text_color(color(
-                        if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled) {
-                            0xf3f4f6
-                        } else {
-                            0x111827
-                        },
-                    ))
-                })
+                .font_weight(FontWeight::NORMAL)
+                .text_color(color(t.text))
                 .on_click(cx.listener(move |this, _, _, cx| {
                     this.split = i;
                     this.selected = 0;
@@ -892,7 +893,7 @@ impl Desktop {
                         .text_color(color(
                             if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled)
                             {
-                                0xd1d5db
+                                0xd1d5dc
                             } else {
                                 0x4b5563
                             },
@@ -911,111 +912,122 @@ impl Desktop {
             .flex()
             .flex_col()
             .bg(color(t.inbox_page))
+            .items_center()
             .child(
                 div()
-                    .h(px(80.))
-                    .flex_shrink_0()
-                    .relative()
-                    .pl(px(64.))
-                    .flex()
-                    .items_center()
-                    .gap(px(24.))
-                    .text_color(color(t.muted))
-                    .children(tabs)
-                    .child(
-                        div()
-                            .absolute()
-                            .top(px(8.))
-                            .right(px(4.))
-                            .h(px(20.))
-                            .flex()
-                            .items_center()
-                            .child(icon("chevron-left", t.muted, 16.)),
-                    )
-                    .layout_key(&self.layout, "inbox.tabs", None),
-            )
-            .child(
-                div()
-                    .mx(px(12.))
-                    .mb(px(12.))
+                    .w_full()
+                    .max_w(px(1440.))
                     .flex_1()
                     .min_h_0()
-                    .bg(color(t.inbox))
-                    .rounded(px(6.))
-                    .when(self.options.theme != ThemeName::Amoled, |d| {
-                        d.shadow(vec![
-                            gpui::BoxShadow {
-                                inset: false,
-                                color: rgba(0x0000001a).into(),
-                                offset: point(px(0.), px(4.)),
-                                blur_radius: px(6.),
-                                spread_radius: px(-1.),
-                            },
-                            gpui::BoxShadow {
-                                inset: false,
-                                color: rgba(0x0000001a).into(),
-                                offset: point(px(0.), px(2.)),
-                                blur_radius: px(4.),
-                                spread_radius: px(-2.),
-                            },
-                        ])
-                    })
                     .flex()
                     .flex_col()
-                    .overflow_hidden()
                     .child(
                         div()
-                            .h(px(46.))
+                            .h(px(80.))
                             .flex_shrink_0()
+                            .mx(px(12.))
                             .pl(px(52.))
+                            .pr(px(20.))
                             .pt(px(24.))
-                            .text_size(px(12.))
-                            .line_height(px(14.4))
-                            .font_weight(FontWeight::BOLD)
-                            .text_color(color(0x95999e))
-                            .when(self.options.theme == ThemeName::Dia, |d| {
-                                d.font_family("Newsreader").italic()
-                            })
-                            .child(inbox_date(
-                                self.filtered
-                                    .first()
-                                    .map(|&i| self.inbox[i].created_at.as_str()),
-                            ))
-                            .layout_key(
-                                &self.layout,
-                                "inbox.section",
-                                Some(inbox_date(
-                                    self.filtered
-                                        .first()
-                                        .map(|&i| self.inbox[i].created_at.as_str()),
-                                )),
+                            .pb(px(24.))
+                            .flex()
+                            .child(
+                                div()
+                                    .flex_1()
+                                    .h(px(32.))
+                                    .flex()
+                                    .items_center()
+                                    .gap(px(9.))
+                                    .children(tabs)
+                                    .layout_key(&self.layout, "inbox.tabs", None),
                             ),
                     )
-                    .when(self.filtered.is_empty(), |d| {
-                        d.child(
-                            div()
-                                .flex_1()
-                                .flex()
-                                .flex_col()
-                                .items_center()
-                                .justify_center()
-                                .gap(px(12.))
-                                .text_color(color(t.muted))
-                                .child(icon("inbox", t.muted, 32.))
-                                .child("You're all caught up"),
-                        )
-                    })
                     .child(
-                        uniform_list(
-                            "notifications",
-                            self.filtered.len(),
-                            cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                                range.map(|i| this.inbox_row(i, cx)).collect::<Vec<_>>()
-                            }),
-                        )
-                        .track_scroll(&self.inbox_scroll)
-                        .flex_1()
-                        .min_h_0(),
+                        div()
+                            .mx(px(12.))
+                            .mb(px(12.))
+                            .flex_1()
+                            .min_h_0()
+                            .bg(color(t.inbox))
+                            .rounded(px(6.))
+                            .when(self.options.theme != ThemeName::Amoled, |d| {
+                                d.shadow(vec![
+                                    gpui::BoxShadow {
+                                        inset: false,
+                                        color: rgba(0x0000001a).into(),
+                                        offset: point(px(0.), px(4.)),
+                                        blur_radius: px(6.),
+                                        spread_radius: px(-1.),
+                                    },
+                                    gpui::BoxShadow {
+                                        inset: false,
+                                        color: rgba(0x0000001a).into(),
+                                        offset: point(px(0.), px(2.)),
+                                        blur_radius: px(4.),
+                                        spread_radius: px(-2.),
+                                    },
+                                ])
+                            })
+                            .flex()
+                            .flex_col()
+                            .overflow_hidden()
+                            .child(
+                                div()
+                                    .h(px(46.))
+                                    .flex_shrink_0()
+                                    .pl(px(52.))
+                                    .pt(px(24.))
+                                    .text_size(px(12.))
+                                    .line_height(px(14.4))
+                                    .font_weight(FontWeight::BOLD)
+                                    .text_color(color(0x95999e))
+                                    .when(self.options.theme == ThemeName::Dia, |d| {
+                                        d.font_family("Newsreader").italic()
+                                    })
+                                    .child(
+                                        div().flex().child(
+                                            div()
+                                                .child(inbox_date(
+                                                    self.filtered.first().map(|&i| {
+                                                        self.inbox[i].created_at.as_str()
+                                                    }),
+                                                ))
+                                                .layout_key(
+                                                    &self.layout,
+                                                    "inbox.section",
+                                                    Some(inbox_date(self.filtered.first().map(
+                                                        |&i| self.inbox[i].created_at.as_str(),
+                                                    ))),
+                                                ),
+                                        ),
+                                    ),
+                            )
+                            .when(self.filtered.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .flex_1()
+                                        .flex()
+                                        .flex_col()
+                                        .items_center()
+                                        .justify_center()
+                                        .gap(px(12.))
+                                        .text_color(color(t.muted))
+                                        .child(icon("inbox", t.muted, 32.))
+                                        .child("You're all caught up"),
+                                )
+                            })
+                            .child(
+                                uniform_list(
+                                    "notifications",
+                                    self.filtered.len(),
+                                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
+                                        range.map(|i| this.inbox_row(i, cx)).collect::<Vec<_>>()
+                                    }),
+                                )
+                                .track_scroll(&self.inbox_scroll)
+                                .flex_1()
+                                .min_h_0(),
+                            ),
                     ),
             )
     }
@@ -1035,9 +1047,7 @@ impl Desktop {
             .border_color(gpui::transparent_black())
             .pl(px(48.))
             .pr(px(48.))
-            .gap(px(32.))
             .cursor_pointer()
-            .text_size(px(13.))
             .when(row == self.selected, |d| {
                 d.border_color(color(if self.options.theme == ThemeName::Porcelain {
                     0x9a9daa
@@ -1061,111 +1071,130 @@ impl Desktop {
             }))
             .child(
                 div()
-                    .w(gpui::relative(0.15))
-                    .min_w_0()
-                    .flex_shrink_0()
+                    .w_full()
+                    .h(px(36.))
                     .flex()
                     .items_center()
-                    .relative()
+                    .gap(px(32.))
                     .child(
                         div()
-                            .absolute()
-                            .left(px(-8.))
-                            .size(px(7.))
-                            .rounded_full()
-                            .when(!n.seen, |d| d.bg(color(t.accent))),
+                            .text_size(px(13.))
+                            .line_height(px(19.5))
+                            .w(gpui::relative(0.15))
+                            .min_w_0()
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .relative()
+                            .child(
+                                div()
+                                    .absolute()
+                                    .left(px(-8.))
+                                    .size(px(7.))
+                                    .rounded_full()
+                                    .when(!n.seen, |d| d.bg(color(t.accent))),
+                            )
+                            .child(
+                                div()
+                                    .truncate()
+                                    .child(n.source.clone().unwrap_or_else(|| "Hypertask".into()))
+                                    .layout_key(
+                                        &self.layout,
+                                        format!("inbox.row.{row}.author"),
+                                        Some(
+                                            n.source.clone().unwrap_or_else(|| "Hypertask".into()),
+                                        ),
+                                    ),
+                            ),
                     )
                     .child(
                         div()
-                            .truncate()
-                            .child(n.source.clone().unwrap_or_else(|| "Hypertask".into()))
-                            .layout_key(
-                                &self.layout,
-                                format!("inbox.row.{row}.author"),
-                                Some(n.source.clone().unwrap_or_else(|| "Hypertask".into())),
-                            ),
-                    ),
-            )
-            .child(
-                div()
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .overflow_hidden()
-                    .child(
-                        div()
+                            .text_size(px(13.))
+                            .line_height(px(19.5))
+                            .flex_1()
+                            .min_w_0()
                             .flex()
-                            .items_baseline()
-                            .gap(px(4.))
-                            .min_w(px(180.))
+                            .items_center()
+                            .gap(px(8.))
+                            .overflow_hidden()
                             .child(
                                 div()
                                     .flex()
-                                    .flex_shrink_0()
-                                    .text_color(color(0x999a9d))
-                                    .text_size(px(11.))
-                                    .child(n.ticket_number.clone().unwrap_or_default())
-                                    .child(" ")
-                                    .layout_key(
-                                        &self.layout,
-                                        format!("inbox.row.{row}.taskid"),
-                                        n.ticket_number.clone(),
+                                    .items_baseline()
+                                    .gap(px(4.))
+                                    .min_w(px(180.))
+                                    .child(
+                                        div()
+                                            .flex()
+                                            .flex_shrink_0()
+                                            .text_color(color(0x999a9d))
+                                            .text_size(px(11.))
+                                            .child(n.ticket_number.clone().unwrap_or_default())
+                                            .child(" ")
+                                            .layout_key(
+                                                &self.layout,
+                                                format!("inbox.row.{row}.taskid"),
+                                                n.ticket_number.clone(),
+                                            ),
+                                    )
+                                    .child(
+                                        div()
+                                            .min_w_0()
+                                            .truncate()
+                                            .child(n.title.clone())
+                                            .layout_key(
+                                                &self.layout,
+                                                format!("inbox.row.{row}.title"),
+                                                Some(n.title.clone()),
+                                            ),
                                     ),
                             )
                             .child(
                                 div()
-                                    .min_w_0()
+                                    .flex_1()
+                                    .min_w(px(90.))
+                                    .text_color(color(0x8e9093))
                                     .truncate()
-                                    .child(n.title.clone())
+                                    .child(kind.clone())
                                     .layout_key(
                                         &self.layout,
-                                        format!("inbox.row.{row}.title"),
-                                        Some(n.title.clone()),
+                                        format!("inbox.row.{row}.kind"),
+                                        Some(kind),
                                     ),
                             ),
                     )
                     .child(
                         div()
-                            .flex_1()
-                            .min_w(px(90.))
-                            .text_color(color(0x8e9093))
-                            .truncate()
-                            .child(kind.clone())
-                            .layout_key(&self.layout, format!("inbox.row.{row}.kind"), Some(kind)),
-                    ),
-            )
-            .child(
-                div()
-                    .w(px(62.))
-                    .flex_shrink_0()
-                    .flex()
-                    .items_center()
-                    .justify_end()
-                    .gap(px(10.))
-                    .pr(px(4.))
-                    .child(
-                        div()
-                            .id(("archive-notification", id as u64))
-                            .on_click(cx.listener(move |this, _, _, cx| {
-                                cx.stop_propagation();
-                                this.enqueue(
-                                    Write::InboxArchive {
-                                        notification_id: id,
-                                    },
-                                    cx,
-                                );
-                            }))
-                            .child(icon("archive-x", 0x696b6e, 18.)),
+                            .w(px(62.))
+                            .flex_shrink_0()
+                            .flex()
+                            .items_center()
+                            .justify_end()
+                            .gap(px(10.))
+                            .pr(px(4.))
+                            .child(
+                                div()
+                                    .id(("archive-notification", id as u64))
+                                    .on_click(cx.listener(move |this, _, _, cx| {
+                                        cx.stop_propagation();
+                                        this.enqueue(
+                                            Write::InboxArchive {
+                                                notification_id: id,
+                                            },
+                                            cx,
+                                        );
+                                    }))
+                                    .child(icon("archive-x", 0x696b6e, 18.)),
+                            )
+                            .child(icon("clock", 0x696b6e, 18.))
+                            .layout_key(&self.layout, format!("inbox.row.{row}.actions"), None),
                     )
-                    .child(icon("clock", 0x696b6e, 18.))
-                    .layout_key(&self.layout, format!("inbox.row.{row}.actions"), None),
+                    .layout_key(&self.layout, format!("inbox.row.{row}"), None),
             )
-            .layout_key(&self.layout, format!("inbox.row.{row}"), None)
+            .into_any_element()
     }
 
-    fn board_screen(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
+    fn board_screen(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.colors;
         let title = self
             .columns
@@ -1175,7 +1204,10 @@ impl Desktop {
             .map(|t| t.board_title.as_str())
             .unwrap_or("Board");
         let count: usize = self.columns.iter().map(|c| c.cards.len()).sum();
-        let column_width = ((972. * 0.97 - 16. * self.columns.len().saturating_sub(1) as f32)
+        let board_width =
+            (f32::from(window.viewport_size().width) - 48. - AI_CHAT_PANEL_WIDTH).max(0.);
+        let column_width = ((board_width * 0.97
+            - 16. * self.columns.len().saturating_sub(1) as f32)
             / self.columns.len().max(1) as f32)
             .clamp(280., 535.);
         div()
@@ -1186,18 +1218,20 @@ impl Desktop {
             .bg(color(t.page))
             .child(
                 div()
-                    .h(px(72.))
-                    .pt(px(8.))
+                    .h(px(56.))
+                    .pt(px(24.))
                     .flex_shrink_0()
-                    .pl(px(24.))
-                    .pr(px(15.))
+                    .pl(px(board_width * 0.015 + 10.))
+                    .pr(px(board_width * 0.015))
                     .flex()
                     .items_center()
                     .gap(px(4.))
                     .child(icon("house", t.text, 13.))
                     .child(
                         div()
-                            .font_weight(FontWeight::BOLD)
+                            .text_size(px(14.))
+                            .line_height(px(21.))
+                            .font_weight(FontWeight::SEMIBOLD)
                             .child(title.to_owned())
                             .layout_key(&self.layout, "board.title", Some(title.to_owned())),
                     )
@@ -1209,7 +1243,7 @@ impl Desktop {
                                     self.options.theme,
                                     ThemeName::Graphite | ThemeName::Amoled
                                 ) {
-                                    0xd1d5db
+                                    0xd1d5dc
                                 } else {
                                     0x4b5563
                                 },
@@ -1221,7 +1255,7 @@ impl Desktop {
                     .child(
                         div()
                             .flex()
-                            .gap(px(8.))
+                            .gap(px(12.))
                             .children(["filter", "arrow-up-down", "ellipsis"].into_iter().map(
                                 |name| {
                                     div()
@@ -1245,13 +1279,12 @@ impl Desktop {
                     .min_h_0()
                     .flex()
                     .gap(px(16.))
-                    .px(px(15.))
+                    .px(px(board_width * 0.015))
+                    .pt(px(16.))
                     .pb(px(35.))
                     .children(self.columns.iter().enumerate().map(|(i, c)| {
-                        let left = 972. * 0.015 + i as f32 * (column_width + 16.);
-                        let width = (left + column_width).round() - left.round();
                         div()
-                            .w(px(width))
+                            .w(px(column_width))
                             .h_full()
                             .flex_shrink_0()
                             .rounded(px(6.))
@@ -1489,7 +1522,7 @@ impl Desktop {
                             .line_height(px(if self.options.theme == ThemeName::Dia {
                                 18.
                             } else {
-                                16.
+                                16.5
                             }))
                             .font_weight(if self.options.theme == ThemeName::Dia {
                                 FontWeight::MEDIUM
@@ -1545,29 +1578,17 @@ impl Desktop {
                             }),
                     )
                     .child(
-                        div()
-                            .text_size(px(13.))
-                            .line_height(px(20.))
-                            .child(title.clone())
-                            .layout_key(
-                                &self.layout,
-                                format!("board.card.{index}.title"),
-                                Some(title),
-                            ),
-                    )
-                    .when(
-                        task.extra.get("hasDraft").and_then(|v| v.as_bool()) == Some(true),
-                        |d| {
-                            d.child(
-                                div()
-                                    .h(px(22.))
-                                    .text_size(px(11.))
-                                    .line_height(px(22.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(color(0xc2cfa5))
-                                    .child("Draft"),
-                            )
-                        },
+                        div().flex().child(
+                            div()
+                                .text_size(px(13.))
+                                .line_height(px(19.5))
+                                .child(title.clone())
+                                .layout_key(
+                                    &self.layout,
+                                    format!("board.card.{index}.title"),
+                                    Some(title),
+                                ),
+                        ),
                     )
                     .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
                         d.child(
@@ -1689,26 +1710,27 @@ impl Desktop {
             ThemeName::Amoled => 0x0c0c0c,
             _ => 0xffffff,
         };
-        div().id("task-scroll").track_scroll(&self.detail_scroll).overflow_y_scroll().flex_1().min_h_0().bg(color(t.detail)).flex().flex_col()
-            .child(div().flex_shrink_0().pt(px(36.)).pl(px(82.)).pr(px(64.)).pb(px(24.)).relative()
+        div().id("task-scroll").track_scroll(&self.detail_scroll).overflow_y_scroll().flex_1().min_h_0().bg(color(t.page)).flex().flex_col().items_center()
+            .child(div().w_full().max_w(px(1136.)).min_h_full().bg(color(t.detail)).flex().flex_col()
+            .child(div().flex_shrink_0().pt(px(36.)).pl(px(82.)).pr(px(64.)).pb(px(8.)).relative()
                 .child(div().id("task-back").absolute().left(px(23.)).top(px(51.)).cursor_pointer().on_click(cx.listener(|this, _, _, cx| this.switch(this.previous, cx))).child(icon("arrow-left", t.muted, 18.)))
-                .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(37.)).child(title)
+                .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(36.)).min_h(px(37.)).child(title)
                     .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).pt(px(10.25)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
                         .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(icon("layers", 0x696b6e, 16.))))
                 .child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone())).layout_key(&self.layout, "task.header", None))
-            .child(div().relative().flex().items_start().gap(px(8.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
+            .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
                 .child(div().absolute().left(px(12.)).top(px(-36.)).w(px(40.)).h(px(68.)).rounded_full().bg(color(navigation_color)).shadow(shadow()).flex().flex_col().justify_center().items_center().gap(px(10.)).text_color(color(t.muted)).children(["chevron-up", "chevron-down"].into_iter().map(|name| div().opacity(0.4).child(icon(name, t.muted, 18.)))))
-                .child(div().w(px(524.)).flex_shrink_0().flex().flex_col().gap(px(16.))
-                    .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(t.border)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
+                .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
+                    .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.options.theme == ThemeName::Graphite { 0x363b44 } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
                             .child(self.creator.clone()).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
-                        .child(div().pt(px(8.)).text_size(px(14.)).line_height(px(21.)).when(self.description.text.trim().is_empty(), |d| d.text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here")).when(!self.description.text.trim().is_empty(), |d| d.child(self.description.element())))
-                        .child(div().flex_1().min_h(px(68.)))
+                        .child(div().pt(px(8.)).h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.description.text.trim().is_empty(), |d| d.child(div().text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(!self.description.text.trim().is_empty(), |d| d.child(self.description.element())).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
+                        .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
                             .child(div().flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add sub-tasks"))
                             .child(div().ml(px(16.)).flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add page"))
-                            .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
+                            .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
                     .child(div().id("comment-composer").anchor_scroll(Some(self.composer_anchor.clone())).h(px(if self.options.theme == ThemeName::Porcelain { 152. } else { 154. })).pt(px(19.)).pb(px(if matches!(self.options.theme, ThemeName::Graphite | ThemeName::Amoled) { 27. } else { 25. })).pl(px(19.)).pr(px(16.)).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).bg(color(t.comment)).border_1().border_color(color(t.border)).shadow_md().flex().flex_col()
                         .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
                         .child(self.comment_input.clone())
@@ -1724,7 +1746,7 @@ impl Desktop {
                             .child(div().line_height(px(21.)).child(body.element()).layout_key(&self.layout, format!("task.comment.{i}.body"), Some(body.text.to_string())))
                             .layout_key(&self.layout, format!("task.comment.{i}"), None)
                     })))
-                .child(properties))
+                .child(properties)))
             .into_any_element()
     }
 
@@ -1818,7 +1840,11 @@ impl Desktop {
             }))
             .bg(color(t.comment))
             .border_1()
-            .border_color(color(t.border))
+            .border_color(color(if self.options.theme == ThemeName::Graphite {
+                0x363b44
+            } else {
+                t.border
+            }))
             .map(|d| {
                 if self.options.theme == ThemeName::Dia {
                     d.shadow(vec![gpui::BoxShadow {
@@ -1832,6 +1858,9 @@ impl Desktop {
                     d.shadow_md()
                 }
             })
+            .px(px(16.))
+            .py(px(10.))
+            .text_size(px(14.))
             .text_color(color(t.muted))
             .font_weight(FontWeight::MEDIUM)
             .line_height(px(21.))
@@ -1841,26 +1870,13 @@ impl Desktop {
                 div()
                     .id(SharedString::from(format!("property-{label}")))
                     .min_h(px(
-                        if matches!(
-                            label,
-                            "Assignees" | "Agents" | "Due date" | "Project" | "Priority"
-                        ) {
-                            48.
+                        if matches!(label, "Agents" | "ID" | "Task size" | "Tags") {
+                            27.
                         } else {
-                            51.
+                            24.
                         },
                     ))
-                    .px(px(15.))
-                    .py(px(
-                        if matches!(
-                            label,
-                            "Assignees" | "Agents" | "Due date" | "Project" | "Priority"
-                        ) {
-                            9.
-                        } else {
-                            12.
-                        },
-                    ))
+                    .mb(px(if i + 1 < rows.len() { 24. } else { 0. }))
                     .flex()
                     .items_start()
                     .gap(px(20.))
@@ -2036,7 +2052,7 @@ impl Render for Desktop {
         }
         let body = match self.screen {
             Screen::Inbox => self.inbox_screen(cx).into_any_element(),
-            Screen::Board => self.board_screen(cx).into_any_element(),
+            Screen::Board => self.board_screen(window, cx).into_any_element(),
             Screen::Task => self.task_screen(cx),
         };
         let t = self.colors;
@@ -2044,44 +2060,44 @@ impl Render for Desktop {
             .size_full()
             .flex()
             .font_family(self.options.theme.font())
-            .text_size(px(14.))
+            .text_size(px(16.))
             .line_height(gpui::relative(1.5))
             .text_color(color(t.text))
             .bg(color(t.page))
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
-            .child(self.rail(cx))
             .child(
                 div()
                     .flex_1()
-                    .h_full()
                     .min_w_0()
+                    .h_full()
                     .flex()
-                    .flex_col()
-                    .relative()
-                    .when_some(self.error.clone(), |d, error| {
-                        d.child(div().p(px(8.)).text_color(color(0xcf222e)).child(error))
-                    })
-                    .child(body)
-                    .when(self.footer, |d| d.child(self.footer(cx)))
+                    .child(self.rail(cx))
+                    .child(
+                        div()
+                            .flex_1()
+                            .h_full()
+                            .min_w_0()
+                            .flex()
+                            .flex_col()
+                            .relative()
+                            .when_some(self.error.clone(), |d, error| {
+                                d.child(div().p(px(8.)).text_color(color(0xcf222e)).child(error))
+                            })
+                            .child(body)
+                            .when(self.footer, |d| d.child(self.footer(cx))),
+                    )
                     .layout_key(&self.layout, "main", None),
             )
-            .when(self.screen != Screen::Inbox, |d| {
-                d.child(
-                    div()
-                        .w(px(AI_CHAT_PANEL_WIDTH))
-                        .flex_shrink_0()
-                        .h_full()
-                        .bg(color(if self.screen == Screen::Task {
-                            t.detail
-                        } else {
-                            t.page
-                        }))
-                        .border_l_1()
-                        .border_color(color(t.rail_border))
-                        .layout_key(&self.layout, "rightpanel", None),
-                )
-            })
+            .child(
+                div()
+                    .w(px(AI_CHAT_PANEL_WIDTH))
+                    .flex_shrink_0()
+                    .h_full()
+                    .bg(color(t.detail))
+                    .child(div().size_full().border_l_1().border_color(color(0x434343)))
+                    .layout_key(&self.layout, "rightpanel", None),
+            )
             .into_any_element()
     }
 }
