@@ -50,6 +50,9 @@ enum Editing {
 
 #[path = "comment_actions.rs"]
 mod comment_actions;
+#[path = "shell.rs"]
+mod shell;
+
 #[path = "comments.rs"]
 mod comments;
 #[path = "interactions.rs"]
@@ -57,6 +60,7 @@ mod interactions;
 
 pub struct Desktop {
     pub focus: FocusHandle,
+    shell: shell::Shell,
     db: Db,
     options: Options,
     colors: Theme,
@@ -149,7 +153,9 @@ impl Desktop {
             Self::resolve_board(&db, &mut options);
         }
         let detail_scroll = ScrollHandle::new();
+        let shell = shell::Shell::new(&db, cx);
         let mut view = Self {
+            shell,
             focus,
             screen: options.screen,
             previous: Screen::Board,
@@ -541,6 +547,9 @@ impl Desktop {
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.shell_key(event, window, cx) {
+            return;
+        }
         if let Some(sidebar) = &self.ai_sidebar {
             if event.keystroke.modifiers.control && event.keystroke.key == "q" {
                 sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
@@ -551,77 +560,6 @@ impl Desktop {
             }
         }
         if !self.comment_key(event, window, cx) { self.interaction_key(event, window, cx); }
-    }
-
-    fn rail(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let t = self.colors;
-        let button = |i: usize, name: &'static str, selected: bool| {
-            div()
-                .w(px(36.))
-                .h(px(34.))
-                .flex()
-                .items_center()
-                .justify_center()
-                .rounded(px(5.))
-                .text_color(color(if selected { t.text } else { t.muted }))
-                .when(selected, |d| d.bg(color(t.hover)))
-                .child(icon(name, if selected { t.text } else { t.muted }, 18.))
-                .layout_key(&self.layout, format!("rail.icon.{i}"), None)
-        };
-        div()
-            .w(px(48.))
-            .h_full()
-            .flex_shrink_0()
-            .bg(color(t.rail))
-            .border_r_1()
-            .border_color(color(t.rail_border))
-            .flex()
-            .flex_col()
-            .items_center()
-            .pt(px(8.))
-            .pb(px(8.))
-            .child(
-                div()
-                    .w(px(16.))
-                    .h(px(20.))
-                    .mb(px(4.))
-                    .flex()
-                    .items_center()
-                    .text_color(color(t.muted))
-                    .child(icon("chevron-right", t.muted, 16.))
-                    .layout_key(&self.layout, "rail.icon.0", None),
-            )
-            .child(button(1, "panel-left", false))
-            .child(div().h(px(16.)))
-            .child(
-                div()
-                    .id("rail-inbox")
-                    .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, cx| this.switch(Screen::Inbox, cx)))
-                    .child(button(2, "inbox", self.screen == Screen::Inbox)),
-            )
-            .child(div().h(px(4.)))
-            .child(
-                div()
-                    .id("rail-board")
-                    .cursor_pointer()
-                    .on_click(cx.listener(|this, _, _, cx| this.switch(Screen::Board, cx)))
-                    .child(button(3, "columns-2", self.screen == Screen::Board)),
-            )
-            .children(
-                ["rows-3", "calendar", "sparkles", "search"]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, name)| div().mt(px(4.)).child(button(i + 4, name, false))),
-            )
-            .child(div().flex_1())
-            .children(
-                ["bot", "user-plus", "rocket", "message-circle", "settings"]
-                    .into_iter()
-                    .enumerate()
-                    .map(|(i, name)| div().mb(px(4.)).child(button(i + 8, name, false))),
-            )
-            .layout_key(&self.layout, "rail", None)
     }
 
     fn footer(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -2092,6 +2030,9 @@ impl Render for Desktop {
             let scope = Scope::load(&self.db, self.screen, self.options.board, task);
             sidebar.update(cx, |sidebar, cx| sidebar.set_scope(scope, cx));
         }
+        if self.shell.settings {
+            return self.settings_screen(window, cx).into_any_element();
+        }
         let body = match self.screen {
             Screen::Inbox => self.inbox_screen(cx).into_any_element(),
             Screen::Board => self.board_screen(window, cx).into_any_element(),
@@ -2138,7 +2079,7 @@ impl Render for Desktop {
                     )
                     .layout_key(&self.layout, "main", None),
             )
-            .when_some(self.ai_sidebar.clone(), |d, sidebar| {
+            .when_some(self.ai_sidebar.clone().filter(|_| self.shell.ai_open), |d, sidebar| {
                 let width = sidebar.read(cx).width();
                 d.child(
                     div()
@@ -2149,6 +2090,7 @@ impl Render for Desktop {
                         .layout_key(&self.layout, "rightpanel", None),
                 )
             })
+            .child(self.shell_overlay(window, cx))
             .child(self.interaction_overlay(window, cx))
             .child(self.comment_overlay(cx))
             .into_any_element()
