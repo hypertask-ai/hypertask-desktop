@@ -7,9 +7,9 @@ S=/tmp/claude-1000/-home-valentin-projects-hypertask/dda64bba-e2ec-4ae7-bd77-524
 G=/home/valentin/projects/hypertask-desktop-wt-public/internal/gates
 W='C:\Users\valen\AppData\Local\Temp\htram'
 mkdir -p "$out"
-run=$(env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh run list -R hypertask-ai/hypertask-desktop --workflow CI --commit "$sha" --limit 1 --json databaseId --jq '.[0].databaseId')
+run=$(env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh api "repos/hypertask-ai/hypertask-desktop/actions/runs?head_sha=$sha&per_page=10" --jq '[.workflow_runs[] | select(.name == "CI")][0].id')
 [[ "$run" =~ ^[0-9]+$ ]] || { echo "CI_NOT_FOUND $sha"; exit 1; }
-env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh run watch "$run" -R hypertask-ai/hypertask-desktop --exit-status > "$out/ci-watch.txt" 2>&1
+env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh run watch "$run" -R hypertask-ai/hypertask-desktop --exit-status --interval 60 > "$out/ci-watch.txt" 2>&1
 env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh run view "$run" -R hypertask-ai/hypertask-desktop --json databaseId,status,conclusion,headSha,url --jq '"RUN \(.databaseId) \(.status) \(.conclusion) \(.headSha) \(.url)"' | tee "$out/ci.txt"
 grep -q "completed success $sha" "$out/ci.txt" || { echo "CI_FAILED see $out/ci.txt"; exit 1; }
 a=$(env -u GH_TOKEN -u GITHUB_TOKEN /usr/bin/gh auth token)
