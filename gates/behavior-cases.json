@@ -2132,8 +2132,16 @@
         "value": "Ctrl+M"
       },
       {
-        "op": "type",
-        "value": "jke"
+        "op": "key",
+        "value": "J"
+      },
+      {
+        "op": "key",
+        "value": "K"
+      },
+      {
+        "op": "key",
+        "value": "E"
       },
       {
         "op": "expect",

@@ -585,7 +585,7 @@ impl Desktop {
             return;
         };
         let text = match action {
-            Action::CopyId => id,
+            Action::CopyId => id.to_uppercase(),
             Action::CopyTitleId => format!("{} | {}", id.to_uppercase(), task.title),
             Action::CopyTitleUrl => format!("{} | {} | {url}", id.to_uppercase(), task.title),
             _ => url,

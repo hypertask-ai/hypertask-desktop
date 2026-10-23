@@ -162,7 +162,7 @@ The web help registry is included even when advertised behavior conflicts with h
 | S117 | # / Shift+3 | Delete task | `src/lib/keyboard/taskShortcuts.ts:70` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S118 | Ctrl+S | Share task | `src/lib/keyboard/taskShortcuts.ts:130` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S119 | Ctrl+Shift+; | Copy private URL | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:662` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
-| S120 | Ctrl+; / Ctrl+, | Copy private title + URL | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:671` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
+| S120 | Ctrl+; / Ctrl+, | Copy private title + URL | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:671` | **partial** — plain-text title + URL only; GPUI clipboard API has no HTML format; web defaults to a rich anchor; `crates/ht-desktop/src/interactions.rs:560` |
 | S121 | Ctrl+Shift+. | Copy public URL | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:686` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S122 | Ctrl+. | Copy public title + URL | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:691` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S123 | Ctrl+I | Copy title + ticket number | `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:696` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
@@ -204,7 +204,7 @@ The web help registry is included even when advertised behavior conflicts with h
 | S154 | Ctrl+S | Share task | `src/lib/constants/shortcuts.ts:173` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S155 | Ctrl+SHIFT++ | Show task options | `src/lib/constants/shortcuts.ts:174` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S156 | Ctrl+SHIFT+; | Private share link (URL only) | `src/lib/constants/shortcuts.ts:175` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
-| S157 | Ctrl+; | Private share link (Title + URL) | `src/lib/constants/shortcuts.ts:176` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
+| S157 | Ctrl+; | Private share link (Title + URL) | `src/lib/constants/shortcuts.ts:176` | **partial** — plain-text title + URL only; GPUI clipboard API has no HTML format; web defaults to a rich anchor; `crates/ht-desktop/src/interactions.rs:560` |
 | S158 | Ctrl+SHIFT+. | Public share link (URL only) | `src/lib/constants/shortcuts.ts:177` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S159 | Ctrl+. | Public share link (Title + URL) | `src/lib/constants/shortcuts.ts:178` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S160 | Ctrl+SHIFT+I | Copy task ID | `src/lib/constants/shortcuts.ts:179` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
@@ -235,7 +235,7 @@ The web help registry is included even when advertised behavior conflicts with h
 | S185 | L | Fast-like focused comment | `src/hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:578` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S186 | Ctrl+Shift+A | Attach file in focused task editor | `src/hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:535` | **missing** — no native feature/UI/write path yet; hidden from the command center |
 | S187 | Ctrl+Tab | Consumed placeholder, no action beyond preventing default | `src/app/detail/[...slug]/taskDetailEditingKeymap.ts:125` | **missing** — no native feature/UI/write path yet; hidden from the command center |
-| S188 | Ctrl+, | Copy private title + URL, actual alias | `src/app/detail/[...slug]/taskDetailNavigationKeymap.ts:169` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
+| S188 | Ctrl+, | Copy private title + URL, actual alias | `src/app/detail/[...slug]/taskDetailNavigationKeymap.ts:169` | **partial** — plain-text title + URL only; GPUI clipboard API has no HTML format; web defaults to a rich anchor; `crates/ht-desktop/src/interactions.rs:560` |
 | S189 | ENTER | Activate description/comment or reply to comment — native always edits title | `src/lib/constants/shortcuts.ts:148` | **partial** — description/composer activation; quoted reply editor absent; `crates/ht-desktop/src/interactions.rs:180` |
 | S190 | Ctrl+ENTER | Send comment and advance in Inbox — native saves comment but never advances inbox | `src/lib/constants/shortcuts.ts:149` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
 | S191 | Ctrl+SHIFT+ENTER | Send comment and stay on task — native saves comment; Shift distinction absent | `src/lib/constants/shortcuts.ts:153` | **done** — `crates/ht-desktop/src/shortcuts.rs:51`, `crates/ht-desktop/src/interactions.rs:180` (behavior verification pending) |
@@ -711,7 +711,7 @@ Composition/order and availability: `src/components/Modals/commands/HTC/AllComma
 
 ## Measured counts (native implementation, runtime pending)
 
-- 249 direct-shortcut context/action rows: 72 done in source, 20 partial, 157 missing.
+- 249 direct-shortcut context/action rows: 69 done in source, 23 partial, 157 missing.
 - 295 palette definitions: 22 supported entries, 273 definitions hidden. Cached-board navigation entries and persisted usage/frecency scoring are implemented; runtime receipt pending.
 - Behavior suite: 97 isolated laptop cases; the original baseline produced 5 PASS / 4 FAIL at `d63d692` (`/tmp/htbehavior-baseline-complete/results.txt`). Its offscreen mouse injection was subsequently tightened; do not treat the baseline mouse PASS as proof of a visible target.
 - Current acceptance evidence remains pending until the final SHA's CI and laptop round finish. No build, test suite, or app copy runs on the VPS.
