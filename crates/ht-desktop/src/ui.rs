@@ -1,5 +1,6 @@
 use crate::{
     Options,
+    ai_sidebar::{AiSidebar, Scope},
     input::TextInput,
     layout::{Capture, LayoutDump, LayoutKey},
     rich_text::RichText,
@@ -20,6 +21,7 @@ use std::{
     rc::Rc,
     time::{Duration, SystemTime, UNIX_EPOCH},
 };
+
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Screen {
@@ -83,6 +85,7 @@ pub struct Desktop {
     worker: Option<Worker>,
     signin: SignIn,
     auto_board: bool,
+    ai_sidebar: Option<Entity<AiSidebar>>,
 }
 
 fn icon(name: &'static str, tint: u32, width: f32) -> impl IntoElement + Styled + use<> {
@@ -117,6 +120,8 @@ impl Desktop {
             )
         });
         let (mut signin, secret) = SignIn::start(options.offline);
+        let ai_sidebar = (AI_CHAT_PANEL_SHOWN || options.ai_sidebar)
+            .then(|| cx.new(|cx| AiSidebar::new(colors, secret.clone(), window, cx)));
         let worker = secret.and_then(|secret| Self::start_worker(&options, &mut signin, secret));
         let auto_board = !options.offline && !options.board_given && signin.is_interactive();
         let mut options = options;
@@ -165,6 +170,7 @@ impl Desktop {
             worker,
             signin,
             auto_board,
+            ai_sidebar,
         };
         view.reload();
         view.request_sync();
@@ -228,11 +234,17 @@ impl Desktop {
         match self.signin.poll() {
             Event::Idle => return,
             Event::Expired => {
+                if let Some(sidebar) = &self.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.set_token(None, cx));
+                }
                 if let Some(worker) = self.worker.take() {
                     std::thread::spawn(move || drop(worker));
                 }
             }
             Event::SignedIn(secret) => {
+                if let Some(sidebar) = &self.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.set_token(Some(secret.clone()), cx));
+                }
                 self.worker = Self::start_worker(&self.options, &mut self.signin, secret);
                 self.screen = Screen::Inbox;
                 self.selected = 0;
@@ -483,6 +495,15 @@ impl Desktop {
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if let Some(sidebar) = &self.ai_sidebar {
+            if event.keystroke.modifiers.control && event.keystroke.key == "q" {
+                sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
+                return;
+            }
+            if sidebar.read(cx).has_focus(window, cx) {
+                return;
+            }
+        }
         let key = event.keystroke.key.as_str();
         let ctrl = event.keystroke.modifiers.control || event.keystroke.modifiers.platform;
         if self.editing != Editing::None {
@@ -2092,6 +2113,11 @@ impl Render for Desktop {
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
         }
+        if let Some(sidebar) = &self.ai_sidebar {
+            let task = (self.screen != Screen::Board).then(|| self.selected_task()).flatten();
+            let scope = Scope::load(&self.db, self.screen, self.options.board, task);
+            sidebar.update(cx, |sidebar, cx| sidebar.set_scope(scope, cx));
+        }
         let body = match self.screen {
             Screen::Inbox => self.inbox_screen(cx).into_any_element(),
             Screen::Board => self.board_screen(window, cx).into_any_element(),
@@ -2131,20 +2157,7 @@ impl Render for Desktop {
                     )
                     .layout_key(&self.layout, "main", None),
             )
-            .when(AI_CHAT_PANEL_SHOWN, |d| d.child(
-                div()
-                    .w(px(AI_CHAT_PANEL_WIDTH))
-                    .flex_shrink_0()
-                    .h_full()
-                    .bg(color(t.detail))
-                    .child(
-                        div()
-                            .size_full()
-                            .border_l_1()
-                            .border_color(color(t.rail_border)),
-                    )
-                    .layout_key(&self.layout, "rightpanel", None),
-            ))
+.when_some(self.ai_sidebar.clone(), |d, sidebar| d.child(sidebar))
             .into_any_element()
     }
 }

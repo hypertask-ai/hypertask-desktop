@@ -1,5 +1,6 @@
 #![cfg_attr(windows, windows_subsystem = "windows")]
 
+mod ai_sidebar;
 mod input;
 mod layout;
 mod memory;
@@ -22,6 +23,7 @@ use ui::{Desktop, Screen};
 pub struct Options {
     pub db: PathBuf,
     pub offline: bool,
+    pub ai_sidebar: bool,
     pub screen: Screen,
     pub board: i64,
     pub board_given: bool,
@@ -40,6 +42,7 @@ impl Options {
                 .context("OS app-data directory is unavailable")?
                 .join("Hypertask/local.db"),
             offline: false,
+            ai_sidebar: false,
             screen: Screen::Inbox,
             board: 15,
             board_given: false,
@@ -54,6 +57,7 @@ impl Options {
         while let Some(arg) = args.next() {
             match arg.as_str() {
                 "--offline" => result.offline = true,
+                "--ai-sidebar" => result.ai_sidebar = true,
                 "--hold-after-ready" => (),
                 "--exit-after-ready" => result.exit_after_ready = true,
                 "--dump-layout" => {
@@ -146,7 +150,8 @@ impl AssetSource for Assets {
             "arrow-right",
             "corner-left-up",
             "ai-sparkles",
-            "send-archive"
+            "send-archive",
+            "square-pen"
         ))
     }
     fn list(&self, _: &str) -> Result<Vec<SharedString>> {
@@ -308,6 +313,8 @@ mod tests {
         assert!(exit.exit_after_ready);
         assert_eq!(exit.dump_layout, Some(PathBuf::from("layout.json")));
         assert!(opts.offline);
+        assert!(!Options::parse([]).unwrap().ai_sidebar);
+        assert!(Options::parse(["--ai-sidebar".to_owned()]).unwrap().ai_sidebar);
         assert!(opts.print_memory);
         assert!(!Options::parse([]).unwrap().print_memory);
         assert_eq!(opts.bench_input, 300);
