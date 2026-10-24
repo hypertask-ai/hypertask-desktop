@@ -72,6 +72,15 @@ fn manual_times(date: &str, minutes: u16, offset: i32) -> Result<(String, String
         "Enter a duration from 1 minute to 24 hours"
     );
     ensure!((-840..=840).contains(&offset), "Invalid timezone offset");
+    ensure!(
+        date.len() == 10
+            && date.bytes().enumerate().all(|(i, c)| if i == 4 || i == 7 {
+                c == b'-'
+            } else {
+                c.is_ascii_digit()
+            }),
+        "Pick a date"
+    );
     let day = NaiveDate::parse_from_str(date, "%Y-%m-%d").context("Pick a date")?;
     ensure!(day.format("%Y-%m-%d").to_string() == date, "Pick a date");
     let start = Utc.from_utc_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
@@ -264,6 +273,21 @@ impl Db {
             })
             .context("Missing pending time entry")?;
         let ack = &response["entry"];
+        if id.is_some() {
+            ensure!(
+                valid_entry(ack) && ack["seconds"] == i64::from(*minutes) * 60,
+                "Wrong time entry acknowledgement"
+            );
+        } else {
+            ensure!(
+                !value["entries"]
+                    .as_array()
+                    .unwrap()
+                    .iter()
+                    .any(|existing| existing["id"] == ack["id"]),
+                "Wrong time entry acknowledgement"
+            );
+        }
         ensure!(
             ack["id"].as_i64().is_some_and(|id| id > 0)
                 && id.is_none_or(|id| ack["id"] == id)

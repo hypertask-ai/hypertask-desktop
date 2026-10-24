@@ -64,7 +64,7 @@ fn changes() -> Vec<(TimeEntryChange, &'static str, Value, Value)> {
     edited["note"] = json!("Edited");
     edited["endedAt"] = json!("2026-10-01T13:30:00Z");
     edited["seconds"] = json!(5400);
-    let moved = json!({"id":5,"userId":42,"note":null,"startedAt":"2026-10-02T06:30:00Z","endedAt":"2026-10-02T07:15:00Z"});
+    let moved = json!({"id":5,"userId":42,"userName":"Me","note":null,"startedAt":"2026-10-02T06:30:00Z","endedAt":"2026-10-02T07:15:00Z","pausedAt":null,"createdAt":"2026-10-02T09:00:00Z","seconds":2700});
     vec![
         (
             TimeEntryChange::Update {
@@ -227,7 +227,7 @@ fn time_log_refuses_wrong_ack_uncertain_replay_other_users_and_invalid_durations
             .is_err()
         );
     }
-    for date in ["2026-02-30", "2026-2-1", ""] {
+    for date in ["2026-02-30", "2026-2-1", "-0001-02-01", ""] {
         assert!(
             TimeEntryChange::Create {
                 date: date.into(),
@@ -286,5 +286,60 @@ fn time_log_reads_validate_entries_and_preserve_server_authentication_failures()
                 .to_string(),
             "Unauthorized"
         );
+    }
+}
+
+#[test]
+fn time_log_admin_edit_preserves_entry_owner_and_rejects_inconsistent_acknowledged_seconds() {
+    for status in [200, 401, 403] {
+        for bad_seconds in [false, true] {
+            let mut db = Db::memory().unwrap();
+            seed(&mut db);
+            let mut other = entry();
+            other["userId"] = json!(7);
+            other["userName"] = json!("Other");
+            let before = json!({"canManage":true,"entries":[other.clone()]});
+            db.cache_time_entries(42, 1, &before).unwrap();
+            let change = TimeEntryChange::Update {
+                entry: 5,
+                date: None,
+                minutes: 90,
+                offset: 0,
+                note: "Edited".into(),
+            };
+            let id = db
+                .enqueue(
+                    Write::Time {
+                        change: TimeWrite::Entry { task: 1, change },
+                    },
+                    100,
+                )
+                .unwrap();
+            other["endedAt"] = json!("2026-10-01T13:30:00Z");
+            other["note"] = json!("Edited");
+            other["seconds"] = json!(if bad_seconds { 1 } else { 5400 });
+            let result = db
+                .drain_once(
+                    &mut Server {
+                        status,
+                        method: "PATCH",
+                        body: json!({"entryId":5,"minutes":90,"note":"Edited"}),
+                        reply: json!({"success":true,"entry":other}),
+                        calls: 0,
+                        user: 42,
+                    },
+                    101,
+                )
+                .unwrap();
+            if status == 200 && !bad_seconds {
+                assert_eq!(result, Drain::Applied(id));
+                let after = db.time_entries(1).unwrap().unwrap();
+                assert_eq!(after["entries"][0]["userId"], 7);
+                assert_eq!(after["entries"][0]["seconds"], 5400);
+            } else {
+                assert_eq!(result, Drain::Failed(id));
+                assert_eq!(db.time_entries(1).unwrap().unwrap(), before);
+            }
+        }
     }
 }
