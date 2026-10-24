@@ -51,6 +51,9 @@ if args.owners:
         assert store['SqliteCacheBytes'] > 0 and store['SqliteSchemaBytes'] > 0
         print(f"MEMORY_RESOURCE_PAYLOAD {screen}: {json.dumps(owners, sort_keys=True)}")
         print(f"MEMORY_SQLITE_OWNERS {screen}: {json.dumps(store, sort_keys=True)}")
+        fonts = json.loads((args.folder / f'{screen}-3-owners.fonts.json').read_text())
+        assert fonts['RegisteredFontBytes'] > 0 and fonts['RegisteredFontFaces'] > 0
+        print(f"MEMORY_REGISTERED_FONTS {screen}: {json.dumps(fonts, sort_keys=True)}")
 if args.budget:
     budget = json.loads(args.budget.read_text())
     check_budget(data, budget)

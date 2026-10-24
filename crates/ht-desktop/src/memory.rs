@@ -1,8 +1,3 @@
-// Keep the system allocator available for CI's otherwise identical A/B build.
-#[cfg(all(windows, feature = "compact-allocator"))]
-#[global_allocator]
-static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
-
 #[cfg(windows)]
 pub fn print() -> anyhow::Result<()> {
     use anyhow::Context as _;

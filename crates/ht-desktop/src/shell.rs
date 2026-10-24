@@ -930,6 +930,7 @@ impl Desktop {
     }
 
     fn apply_shell_theme(&mut self, theme: ThemeName, cx: &mut Context<Self>) {
+        crate::fonts::load(theme, cx);
         self.options.theme = theme;
         self.colors = theme.colors();
         self.reload();
