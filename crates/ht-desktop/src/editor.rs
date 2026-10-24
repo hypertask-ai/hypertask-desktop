@@ -448,10 +448,24 @@ impl TextInput {
         self.remember_edit();
         let range = self.selected_range.clone();
         let e = self.editor.as_mut().unwrap();
-        let current = e.document.has_mark(range.clone(), "mark")
-            && e.document.marks_at(range.start).iter().any(|m| {
-                m.name == "mark" && m.attrs.iter().any(|(k, v)| k == "data-color" && v == color)
-            });
+        let mut at = 0;
+        let mut current = e.document.has_mark(range.clone(), "mark");
+        for block in e.document.blocks() {
+            for span in &block.spans {
+                let end = at + span.text.len();
+                if at < range.end
+                    && end > range.start
+                    && !span.marks.iter().any(|m| {
+                        m.name == "mark"
+                            && m.attrs.iter().any(|(k, v)| k == "data-color" && v == color)
+                    })
+                {
+                    current = false;
+                }
+                at = end;
+            }
+            at += 1;
+        }
         e.document.set_mark(
             range,
             Tag {
@@ -1513,5 +1527,45 @@ mod tests {
         });
         cx.simulate_click(point, gpui::Modifiers::default());
         assert_eq!(cx.opened_url().as_deref(), Some("https://example.com"));
+    }
+    #[gpui::test]
+    fn task_checkboxes_list_enter_and_mixed_highlight_colors_are_real_editor_transactions(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(init);
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).comment_editor()
+        });
+        view.update_in(cx,|input,window,cx|{input.set_html("<ul data-type=\"taskList\" class=\"taskList\"><li data-type=\"taskItem\" data-checked=\"false\"><label><input type=\"checkbox\"></label><div><p>check</p></div></li></ul>",cx);window.focus(&input.focus_handle,cx);});
+        cx.run_until_parked();
+        let position = view.read_with(cx, |input, _| {
+            let bounds = input.last_bounds.unwrap();
+            let row = &input.last_layout.as_ref().unwrap().rows[0];
+            point(
+                bounds.left() + row.indent - px(10.),
+                bounds.top() + row.top + row.height / 2.,
+            )
+        });
+        cx.simulate_click(position, gpui::Modifiers::default());
+        view.read_with(cx, |input, _| {
+            assert!(input.html().contains("data-checked=\"true\""))
+        });
+        cx.simulate_keystrokes("ctrl-z");
+        view.read_with(cx, |input, _| {
+            assert!(input.html().contains("data-checked=\"false\""))
+        });
+        view.update_in(cx, |input, _, cx| {
+            input.set_html("<ul><li><p>one</p></li></ul>", cx)
+        });
+        cx.simulate_keystrokes("enter");
+        cx.simulate_input("two");
+        cx.simulate_keystrokes("enter enter");
+        view.read_with(cx, |input, _| {
+            assert_eq!(
+                input.html(),
+                "<ul><li><p>one</p></li><li><p>two</p></li></ul><p></p>"
+            )
+        });
+        view.update_in(cx,|input,window,cx|{input.set_html("<p><mark data-color=\"#74c0fc\">blue</mark><mark data-color=\"#ff0000\">red</mark></p>",cx);input.selected_range=0..7;input.highlight_color("#74c0fc",window,cx);assert!(!input.html().contains("#ff0000"));assert!(input.html().contains("data-color=\"#74c0fc\""));input.highlight_color("#74c0fc",window,cx);assert!(!input.html().contains("<mark"));});
     }
 }

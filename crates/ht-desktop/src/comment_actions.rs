@@ -1078,8 +1078,9 @@ mod tests {
                 assert_eq!(html,"<p><u>é🙂</u></p>");
             });
         }
-        cx.simulate_keystrokes("ctrl-b");
-        view.read_with(cx,|this,_|assert!(this.shell.boards,"Ctrl+B switches boards outside editors"));
+        view.update_in(cx,|this,_,cx|{this.layout=Some(Rc::new(RefCell::new(LayoutDump::default())));cx.notify();});
+        cx.simulate_keystrokes("ctrl-b");cx.run_until_parked();
+        view.read_with(cx,|this,_|assert!(this.layout.as_ref().unwrap().borrow().interaction_elements().iter().any(|e|e["key"]=="shell.boards"&&e["w"].as_f64().unwrap()>0.),"Ctrl+B paints the board switcher outside editors"));
     }
     #[gpui::test]
     fn discard_is_surface_scoped_and_queues_the_authorized_server_lifecycle(cx: &mut gpui::TestAppContext) {
