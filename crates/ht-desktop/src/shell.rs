@@ -687,7 +687,10 @@ impl Desktop {
                             .child(div().id("favorites-manage").cursor_pointer().child(icon("settings",t.muted,14.))
                                 .on_click(cx.listener(|this,_,window,cx|this.open_favorites(window,cx)))
                                 .layout_key(&self.layout,"shell.favorites.manage",None))
-                            .on_drop(cx.listener(|this, drag:&sidebar::BoardDrag, _, cx| this.drop_favorite(drag.project,None,true,cx)))
+                            .on_drop(cx.listener(|this, drag:&sidebar::BoardDrag, _, cx| {
+                                if !drag.favorite && this.db.sidebar_data("favorites").as_array().into_iter().flatten().any(|f|f["projectId"]==drag.project) {return;}
+                                this.drop_favorite(drag.project,None,true,cx)
+                            }))
                             .layout_key(&self.layout,"shell.boards.favorites",None)))
                     .child(
                         div()

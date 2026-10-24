@@ -4,6 +4,7 @@ use serde_json::json;
 pub(super) struct BoardDrag {
     pub project: i64,
     pub title: String,
+    pub favorite: bool,
 }
 impl Render for BoardDrag {
     fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
@@ -196,12 +197,14 @@ impl Desktop {
                                     BoardDrag {
                                         project: id,
                                         title: title.clone(),
+                                        favorite,
                                     },
                                     |drag, _, _, cx| cx.new(|_| drag.clone()),
                                 )
                             })
                             .on_drop(cx.listener(move |this, drag: &BoardDrag, _, cx| {
                                 cx.stop_propagation();
+                                if !drag.favorite && favorite && this.db.sidebar_data("favorites").as_array().into_iter().flatten().any(|f|f["projectId"]==drag.project) {return;}
                                 this.drop_favorite(drag.project, Some(id), favorite, cx);
                             }))
                             .on_click(cx.listener(move |this, _, window, cx| {
@@ -263,7 +266,7 @@ impl Desktop {
                     choices=choices.child(div().text_color(color(t.muted)).child(team["title"].as_str().unwrap_or("").to_owned()));
                     for (board_index,board) in team["projects"].as_array().into_iter().flatten().enumerate() {
                         let Some(project)=board["id"].as_i64() else {continue;};
-                        choices=choices.child(div().id((format!("favorite-board-{team_index}"),board_index)).p(px(6.)).cursor_pointer().hover(|d|d.bg(color(t.hover)))
+                        choices=choices.child(div().id((gpui::SharedString::from(format!("favorite-board-{team_index}")),board_index)).p(px(6.)).cursor_pointer().hover(|d|d.bg(color(t.hover)))
                             .child(board["title"].as_str().unwrap_or("").to_owned())
                             .on_click(cx.listener(move|this,_,_,cx|this.set_favorite_slot(index,Some(project),cx)))
                             .layout_key(&self.layout,format!("shell.favorites.board.{project}"),None));
@@ -305,6 +308,7 @@ impl Desktop {
             .filter_map(|f| f["projectId"].as_i64())
             .collect();
         let was_favorite = ids.contains(&project);
+        if favorite && !was_favorite && ids.len()>=10 {return;}
         ids.retain(|id| *id != project);
         if favorite {
             let index = before
@@ -333,11 +337,11 @@ mod tests {
         }).unwrap();
         measured(view,&mut cx,"shell.favorites.manager");
         for index in 0..10 {measured(view,&mut cx,&format!("shell.favorites.slot.{index}"));}
-        click(view,&mut cx,"shell.favorites.slot.0");
+        click(view,&mut cx,"shell.favorites.slot.1");
         click(view,&mut cx,"shell.favorites.board.16");
         view.read_with(&cx,|this,_|{
             let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0].kind,"web_favorite_slot");
-            assert_eq!(rows[0].payload_json["body"],json!({"userSettingId":99,"index":0,"projectId":16}));
+            assert_eq!(rows[0].payload_json["body"],json!({"userSettingId":99,"index":1,"projectId":16}));
         }).unwrap();
         cx.simulate_keystrokes("escape ctrl-b");
         measured(view,&mut cx,"shell.favorites.collapse");
@@ -346,7 +350,7 @@ mod tests {
             assert!(!this.shell.favorites_expanded);
             assert!(!this.shell_boards(cx).iter().any(|b|b["desktopFavorite"]==true));
         }).unwrap();
-        cx.simulate_keystrokes(if cfg!(target_os="macos"){"ctrl-0"}else{"alt-0"});
+        cx.simulate_keystrokes(if cfg!(target_os="macos"){"ctrl-1"}else{"alt-1"});
         view.read_with(&cx,|this,_|{assert_eq!(this.options.board,16);assert!(!this.shell.boards);}).unwrap();
     }
     #[gpui::test]
