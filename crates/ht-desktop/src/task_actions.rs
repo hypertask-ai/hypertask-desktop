@@ -6,6 +6,9 @@ use serde_json::Value;
 pub(super) struct TaskActions {
     pending: Option<(String, i64, i64, TaskAction)>,
     pub relations: Vec<Value>,
+    pub templates: Value,
+    pub templates_project: i64,
+    templates_generation: u64,
     pub search_loading: bool,
     pub search_failed: bool,
     search_generation: u64,
@@ -29,6 +32,72 @@ fn waiting_age(value: Option<&str>, now: i64) -> String {
     }
 }
 impl Desktop {
+    pub(super) fn open_task_templates(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let project = self
+            .detail
+            .as_ref()
+            .filter(|_| self.screen == Screen::Task)
+            .map_or(self.options.board, |detail| detail.task.project_id);
+        self.task_actions.templates_project = project;
+        self.task_actions.templates = Value::Null;
+        self.task_actions.templates_generation += 1;
+        self.show_modal(interactions::Modal::Templates, window, cx);
+        if self.options.offline {
+            return;
+        }
+        let (Some(user), Some(token)) = (self.db.current_user_id(), self.cli_token()) else {
+            return;
+        };
+        let generation = self.task_actions.templates_generation;
+        let expected = token.clone();
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = ht_core::Http::new(token)
+                .and_then(|mut http| {
+                    let identity = ht_core::Transport::get(&mut http, "/user/context")?;
+                    anyhow::ensure!(
+                        identity.status == 200 && identity.body["user"]["id"] == user,
+                        "Unauthorized"
+                    );
+                    ht_core::task_create::templates(&mut http, project)
+                })
+                .map_err(|e| e.to_string());
+            let _ = send.send(result);
+        });
+        cx.spawn(async move |view, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(50))
+                    .await;
+                match receive.try_recv() {
+                    Ok(result) => {
+                        let _ = view.update(cx, |this, cx| {
+                            if this.task_actions.templates_generation != generation
+                                || this.db.current_user_id() != Some(user)
+                                || this.cli_token().as_deref() != Some(expected.as_str())
+                                || this.interaction.modal != Some(interactions::Modal::Templates)
+                            {
+                                return;
+                            }
+                            this.apply_task_templates(result, cx);
+                        });
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
+                    _ => break,
+                }
+            }
+        })
+        .detach();
+    }
+    pub(super) fn apply_task_templates(
+        &mut self,
+        result: Result<Value, String>,
+        cx: &mut Context<Self>,
+    ) {
+        self.task_actions.templates = result.unwrap_or(Value::Null);
+        cx.notify();
+    }
     pub(super) fn tick_waiting_on(&mut self, cx: &mut Context<Self>) {
         if self.task_actions.waiting_ticking
             || self.screen != Screen::Task

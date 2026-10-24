@@ -16,6 +16,7 @@ impl Desktop {
             ShellCommand::AssignMe => {
                 if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::AssignMe, window, cx); }
             }
+            ShellCommand::NewFromTemplate => self.open_task_templates(window,cx),
             ShellCommand::AcceptTask => {
                 if let Some(task) = self.selected_task() {
                     match self.db.accept_task_action(task) {

@@ -21,6 +21,7 @@ pub(super) enum Modal {
     DueDate,
     WaitingOn,
     Recurrence,
+    Templates,
     Relation(ht_core::RelationKind),
     Delete,
 }
@@ -42,6 +43,7 @@ enum ChoiceAction {
     WaitingOn(Option<i64>),
     Recurrence(Option<&'static str>),
     Relation(usize),
+    Template(i64),
     Task(i64),
     Board(i64),
     Delete,
@@ -900,6 +902,7 @@ impl Desktop {
                     action: ChoiceAction::Column(c.id),
                 })
                 .collect(),
+            Some(Modal::Templates) => self.task_actions.templates["templates"].as_array().into_iter().flatten().filter_map(|row|Some(Choice{name:row["name"].as_str()?.into(),action:ChoiceAction::Template(row["id"].as_i64()?)})).collect(),
             Some(Modal::Relation(_)) => self.task_actions.relations.iter().enumerate().map(|(index,task)| Choice { name:format!("{} {}",task["ticketNumber"].as_str().unwrap_or(""),task["title"].as_str().unwrap_or("")),action:ChoiceAction::Relation(index) }).collect(),
             Some(Modal::Recurrence) => {
                 let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return vec![]; };
@@ -1031,6 +1034,7 @@ impl Desktop {
             && !(self.screen == Screen::Board && !self.interaction.bulk.is_empty());
         if !keep_open { self.close_modal(window, cx); }
         match choice.action {
+            ChoiceAction::Template(id) => self.open_template_task(id,window,cx),
             ChoiceAction::Relation(index) => {
                 if let (Some(task), Some(Modal::Relation(relation)), Some(target)) = (self.selected_task(), self.interaction.modal, self.task_actions.relations.get(index).cloned()) { self.queue_task_action(task, ht_core::TaskAction::Relation { target, relation }, window, cx); }
             }
@@ -1176,7 +1180,7 @@ impl Desktop {
                             task_id,
                             patch: TaskPatch::Status(Status::Deleted),
                         },
-                        ChoiceAction::Relation(_) | ChoiceAction::Recurrence(_) | ChoiceAction::WaitingOn(_) | ChoiceAction::Command(_) | ChoiceAction::CreateLabel
+                        ChoiceAction::Template(_) | ChoiceAction::Relation(_) | ChoiceAction::Recurrence(_) | ChoiceAction::WaitingOn(_) | ChoiceAction::Command(_) | ChoiceAction::CreateLabel
                         | ChoiceAction::Task(_)
                         | ChoiceAction::Board(_) => {
                             unreachable!()
@@ -1264,6 +1268,7 @@ impl Desktop {
                     Modal::DueDate => "Set due date",
                     Modal::WaitingOn => "Blocked by person",
                     Modal::Recurrence => "Repeat task",
+                    Modal::Templates => "New task from template",
                     Modal::Relation(kind) => kind.title(),
                     Modal::Delete => "Delete task?",
                     Modal::Commands => unreachable!(),
@@ -1363,6 +1368,7 @@ impl Desktop {
                     ),
             );
         }
+        if modal==Modal::Templates && self.choices(cx).is_empty(){list=list.child(div().p(px(16.)).text_color(color(t.muted)).child("No templates yet — use “Save task as template” on a task first").layout_key(&self.layout,"task.templates.empty",None));}
         if matches!(modal, Modal::Relation(_)) {
             let message = if self.task_actions.search_loading { Some("Loading tasks…") } else if self.task_actions.search_failed { Some("Couldn't load tasks. Try searching again.") } else if self.task_actions.relations.is_empty() { Some(if query.trim().is_empty() { "No recently worked tasks yet" } else { "No matching tasks" }) } else { None };
             if let Some(message) = message { list = list.child(div().p(px(16.)).text_color(color(t.muted)).child(message).layout_key(&self.layout,"task.relations.search-status",Some(message.into()))); }

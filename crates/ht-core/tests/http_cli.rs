@@ -478,3 +478,12 @@ fn time_log_reads_and_crud_send_desktop_bearer_with_web_routes_methods_and_refus
         if method!="GET"{assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);}thread.join().unwrap();
     }}
 }
+
+#[test]
+fn template_picker_catalog_uses_web_route_and_desktop_bearer_without_cookies() {
+    for status in [200,401,403]{
+        let (url,thread,receive)=server(status,"{\"error\":\"Unauthorized\"}");let mut http=Http::with_base(&url,"desktop-template-token".into()).unwrap();
+        let response=http.get("/api/task-templates?projectId=15").unwrap();assert_eq!(response.status,status);assert_eq!(response.body["error"],"Unauthorized");
+        let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with("GET /api/task-templates?projectId=15 HTTP/1.1\r\n"));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-template-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));thread.join().unwrap();
+    }
+}

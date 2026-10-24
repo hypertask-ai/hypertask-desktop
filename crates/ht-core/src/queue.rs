@@ -136,7 +136,7 @@ impl Db {
                 ("favorites".into(),"web_favorites",db.prepare_favorites(project_ids)?)
             },
             Write::CreateTask { project_id, section_id, title, top } => {
-                let mut payload=db.prepare_create(*project_id,*section_id,title,*top)?;
+                let mut payload=db.prepare_create(*project_id,*section_id,title,*top,true)?;
                 payload["attempted"]=json!(false);
                 (format!("create:{project_id}"), "web_create", payload)
             },

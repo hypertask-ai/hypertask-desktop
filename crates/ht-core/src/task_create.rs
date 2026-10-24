@@ -88,7 +88,7 @@ pub fn duplicate_source(transport: &mut impl Transport, task: i64) -> Result<Val
 }
 impl Db {
     pub(crate) fn prepare_create_form(&self,project:i64,section:i64,title:&str,fields:&Value)->Result<Value>{
-        let mut payload=self.prepare_create(project,section,title,true)?;
+        let mut payload=self.prepare_create(project,section,title,true,false)?;
         let project_row=self.board_project(project)?;let column=self.raw("Section",&json!(section))?.context("column is not cached")?;
         let body=&mut payload["body"];
         for (key,value) in fields.as_object().context("Invalid task form")?{
@@ -108,6 +108,7 @@ impl Db {
         section: i64,
         title: &str,
         top: bool,
+        require_visible: bool,
     ) -> Result<Value> {
         ensure!(!title.trim().is_empty(), "title must not be empty");
         let user = self
@@ -121,7 +122,7 @@ impl Db {
             .context("column is not cached")?;
         ensure!(
             column["projectId"] == project
-                && column["visibility"] == true
+                && (!require_visible || column["visibility"] == true)
                 && column["deleted"] == false,
             "column is not visible in this board"
         );
@@ -166,4 +167,28 @@ impl Db {
         }
         Ok(json!({"user_id":user,"body":body,"global":global}))
     }
+}
+
+pub fn templates(transport: &mut impl Transport, project: i64) -> Result<Value> {
+    ensure!(project > 0, "Board is unavailable");
+    let response = transport.get(&format!("/api/task-templates?projectId={project}"))?;
+    ensure!(response.status == 200 && response.body["success"] == true, "{}", response.body["error"].as_str().unwrap_or("Could not load templates"));
+    let value = response.body;
+    ensure!(value["templates"].as_array().is_some_and(|rows| rows.iter().all(|row| {
+        row["id"].as_i64().is_some_and(|id| id > 0) && row["name"].is_string() && row["title"].is_string()
+            && row["descriptionHtml"].is_string() && row["labelIds"].as_array().is_some_and(|ids| ids.iter().all(Value::is_string))
+    })) && value["labels"].as_array().is_some_and(|rows| rows.iter().all(|row| row["id"].is_string() && row["value"].is_string() && row["projectId"] == project))
+        && (value["targetSection"].is_null() || value["targetSection"]["id"].as_i64().is_some_and(|id| id > 0) && value["targetSection"]["section_title"].is_string()), "Invalid templates response");
+    Ok(value)
+}
+pub fn template_source(catalog: &Value, project: i64, id: i64) -> Result<Value> {
+    let template = catalog["templates"].as_array().into_iter().flatten().find(|row| row["id"] == id).context("Could not find an open column for this task")?;
+    let section = &catalog["targetSection"];
+    ensure!(section["id"].as_i64().is_some_and(|id| id > 0), "Could not find an open column for this task");
+    let labels: Vec<_> = template["labelIds"].as_array().into_iter().flatten().filter_map(|id| {
+        catalog["labels"].as_array()?.iter().find(|label| label["id"] == *id && label["projectId"] == project).cloned()
+    }).collect();
+    Ok(json!({"projectId":project,"sectionId":section["id"],"section":section["section_title"],"title":template["title"],"description":template["descriptionHtml"],
+        "priority":template["priorityIndex"].as_u64().and_then(|i|u8::try_from(i).ok()).and_then(priority),
+        "estimate":template["estimateIndex"].as_u64().and_then(|i|u8::try_from(i).ok()).and_then(estimate),"tags":labels}))
 }

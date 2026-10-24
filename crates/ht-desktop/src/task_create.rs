@@ -71,6 +71,20 @@ impl Create {
     }
 }
 impl Desktop {
+    pub(super) fn open_template_task(&mut self,id:i64,window:&mut Window,cx:&mut Context<Self>) {
+        if self.create_task.open || self.create_task.pending.is_some(){return;}
+        let project=self.task_actions.templates_project;
+        let source=match ht_core::task_create::template_source(&self.task_actions.templates,project,id){Ok(source)=>source,Err(error)=>{self.error=Some(error.to_string());cx.notify();return;}};
+        self.invalidate_task_create(cx);
+        self.create_task.project=project;self.create_task.section=source["sectionId"].as_i64().unwrap_or(0);
+        self.create_task.fields=json!({"tags":source["tags"]});
+        self.create_task.edited.insert("tags");
+        for key in ["priority","estimate"]{if source[key].is_object(){self.create_task.fields[key]=source[key].clone();self.create_task.edited.insert(key);}}
+        self.create_task.initial=self.create_task.fields.clone();
+        self.create_task.title.update(cx,|input,cx|input.set_content(source["title"].as_str().unwrap_or("").into(),cx));
+        self.create_task.description.update(cx,|input,cx|input.set_html(source["description"].as_str().unwrap_or("<p></p>"),cx));
+        self.open_create_task(window,cx);
+    }
     pub(super) fn invalidate_task_create(&mut self, cx: &mut Context<Self>) {
         let generation = self.create_task.generation + 1;
         self.create_task = Create::new(cx);
@@ -1162,6 +1176,32 @@ mod tests {
             assert!(this.create_task.fields["priority"].is_null());assert_eq!(this.create_task.fields["estimate"]["estimate_index"],6);assert_eq!(this.create_task.fields["dueDate"],"2026-12-01T09:00:00Z");
             assert_eq!(this.create_task.section,20);assert!(this.db.mutations().unwrap().is_empty());
         });
+    }
+
+    #[gpui::test]
+    fn template_palette_prefills_live_properties_and_preserves_refused_create_form(cx:&mut gpui::TestAppContext) {
+        struct Templates(u16);
+        impl ht_core::Transport for Templates {
+            fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{
+                let body=if path=="/user/context"{json!({"success":true,"user":{"id":42}})}else{assert_eq!(path,"/api/task-templates?projectId=15");json!({"success":true,"templates":[{"id":81,"name":"Daily template","title":"Check everything","descriptionHtml":"<p>Checklist</p>","priorityIndex":2,"estimateIndex":4,"labelIds":["live","gone"]}],"labels":[{"id":"live","value":"Ready","projectId":15}],"targetSection":{"id":10,"section_title":"Todo"}})};
+                Ok(ht_core::http::Response{status:if path=="/user/context"{200}else{self.0},body})
+            }
+            fn post(&mut self,path:&str,body:&Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{assert_eq!(path,"/api/tasks/createGlobally");assert_eq!(body["title"],"Check everything");assert_eq!(body["description"],"<p>Checklist</p>");assert_eq!(body["priority"]["priority_index"],2);assert_eq!(body["estimate"]["estimate_index"],4);assert_eq!(body["tags"][0]["id"],"live");assert_eq!(body["tags"].as_array().unwrap().len(),1);let mut task=body.clone();task["id"]=json!(500);task["status"]=json!("Normal");Ok(ht_core::http::Response{status:self.0,body:if self.0==200{json!({"newTask":task})}else{json!({"error":"Unauthorized"})}})}
+        }
+        cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),desktop);let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
+        for read in [401,403,200]{for write in [401,403,200]{
+            view.update(&mut cx,|this,_,cx|this.invalidate_task_create(cx)).unwrap();
+            cx.simulate_keystrokes("ctrl-k");cx.simulate_input("New task from template");cx.simulate_keystrokes("enter");
+            view.update(&mut cx,|this,_,cx|{let result=ht_core::task_create::templates(&mut Templates(read),15).map_err(|e|e.to_string());this.apply_task_templates(result,cx);}).unwrap();
+            if read!=200{view.update(&mut cx,|this,_,cx|{assert!(this.choices(cx).is_empty());assert!(this.db.mutations().unwrap().iter().all(|row|row.status=="failed"));}).unwrap();cx.simulate_keystrokes("escape");continue;}
+            cx.simulate_input("Daily");cx.simulate_keystrokes("enter ctrl-enter");
+            view.update(&mut cx,|this,window,cx|{
+                assert!(this.create_task.open);assert!(this.create_task.pending.is_some());assert_eq!(this.create_task.title.read(cx).content,"Check everything");
+                this.db.drain_once(&mut Templates(write),chrono::Utc::now().timestamp()+1).unwrap();this.poll_create_task(window,cx);
+                if write!=200{assert!(this.create_task.open);assert!(this.create_task.error.is_some());assert_eq!(this.create_task.description.read(cx).html(),"<p>Checklist</p>");assert_eq!(this.create_task.fields["tags"][0]["id"],"live");}else{assert!(!this.create_task.open);assert!(this.db.task(500).unwrap().is_some());}
+                this.invalidate_task_create(cx);
+            }).unwrap();
+        }}
     }
 
 }
