@@ -12,6 +12,11 @@ fn server(
     status: u16,
     body: &str,
 ) -> (String, std::thread::JoinHandle<()>, mpsc::Receiver<String>) {
+    server_type(status, body, "application/json")
+}
+
+fn server_type(status: u16, body: &str, content_type: &str) -> (String, std::thread::JoinHandle<()>, mpsc::Receiver<String>) {
+    let content_type=content_type.to_owned();
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let url = format!("http://{}/api/mcp", listener.local_addr().unwrap());
     let body = body.to_owned();
@@ -43,7 +48,7 @@ fn server(
             }
         }
         send.send(String::from_utf8(bytes).unwrap()).unwrap();
-        write!(socket,"HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
+        write!(socket,"HTTP/1.1 {status} Test\r\nContent-Type: {content_type}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}",body.len()).unwrap();
     });
     (url, thread, receive)
 }
@@ -203,6 +208,24 @@ fn http_comment_patch_delete_keep_bearer_and_idempotency_on_the_wire() {
             serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),
             body
         );
+        thread.join().unwrap();
+    }
+}
+
+#[test]
+fn desktop_cli_web_routes_use_same_origin_bearer_without_mcp_prefix_or_cookies() {
+    use ht_core::desktop_cli::*;
+    for request in [defaults_request(7283),mentions_request(7283,"é & QA"),saved_request(60253,7283,7,false,false),writer_request(&json!({"id":7283}),"Note","UTC")] {
+        let writer=request.path=="/api/ai/task-writer";
+        let (url,thread,receive)=server_type(200,if writer {"<h1 id=\"ai-generated-task-title\">Title</h1><p>Body</p>"}else{"{}"},if writer {"text/event-stream"}else{"application/json"});
+        let mut http=Http::with_base(&url,"test-human-token".into()).unwrap();
+        let response=if request.method=="GET" {http.get(&request.path)}else{http.post(&request.path,&request.body,"client-id")}.unwrap();
+        if writer {assert!(response.body.as_str().unwrap().contains("ai-generated-task-title"));}
+        let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(wire.starts_with(&format!("{} {} HTTP/1.1",request.method,request.path)));
+        assert!(wire.to_ascii_lowercase().contains("authorization: bearer test-human-token\r\n"));
+        assert!(!wire.to_ascii_lowercase().contains("cookie:"));
+        if request.method=="POST" {assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),request.body);}
         thread.join().unwrap();
     }
 }

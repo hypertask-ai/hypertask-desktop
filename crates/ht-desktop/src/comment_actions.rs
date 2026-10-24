@@ -147,6 +147,7 @@ impl Desktop {
         let id = comment.id;
         match action {
             Action::StarComment | Action::PinComment => {
+                self.comment_actions.collapsed.remove(&id);
                 if self.enqueue(Write::CommentAction {task_id:self.options.task,comment_id:id,change:CommentWrite::Saved {public:action == Action::PinComment}},cx) {
                     if let Ok(rows)=self.db.mutations() {if let Some(row)=rows.last() {self.comment_actions.saved_pending.push(row.client_id.clone());}}
                 }

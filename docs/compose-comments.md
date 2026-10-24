@@ -2,18 +2,49 @@
 
 Web contract inspected at `hypertask` commit `6f9901764d355aba7bfc76e4e62ff255e0b68b31`. Web paths below are relative to that repository. No web changes, authenticated application requests, VPS builds/tests/test copies, or owner-laptop access.
 
-## Compose first: blocked, not a substitute writer
+## HTPR-7699: native CLI contracts implemented; QA live authorization pending
 
-**F011, F001, F002, F003 remain blocked.** The reachable command-window writer uses `createComposedTask` (`src/components/Modals/commands/HTC/ComposeTaskWriter.tsx:22,285`), whose POST is `taskWriterRoute` (`src/lib/ai/composeTask.ts:108`; `src/lib/constants/APIRouteConstants.ts:66`). The route is **POST `/api/ai/task-writer`**; `src/app/api/ai/task-writer/route.ts:41-44` calls **`getAiRequestUser`**. That helper requires `hasOAuthAccessTokenClaims` before MCP verification (`src/app/api/ai/_lib/requestUser.ts:25-33`). Desktop's CLI exchange creates an MCP token (`src/app/api/cli/token-exchange/route.ts:79`), whose audience is `mcp-api` (`src/lib/mcp/auth/verifyJwt.ts:13,474-477`), not the OAuth audience required by `src/lib/mcp/oauthTokenContract.ts:13-25`.
+Contracts re-read at server commit `489e9ea52`: `src/lib/auth/desktopCliTokenUser.ts`,
+POST `/api/ai/task-writer`, GET `/api/tasks/createGlobally`, POST
+`/api/savedContent/toggleSaved` (comment only), GET `/api/tasks/searchByParam`.
+All four accept the verified human CLI bearer only while `htpr-7699-desktop-cli-token`
+is enabled for that user. Cookie authentication is not added to desktop.
 
-The sidebar stream, **POST `/api/ai/chat/stream`**, uses that same helper (`src/app/api/ai/chat/stream/route.ts:31-33`); it is not the writer used by web compose. **POST `/api/mcp/ai/task-writer`** does accept MCP auth (`src/app/api/mcp/ai/task-writer/route.ts:36-40`), but it is a different JSON draft API with different fields, not web compose's streaming/split-task/request-kind contract. It was **not** substituted or falsely described as parity. No fake Ctrl+J dialog, pretend Send button, or queued raw-title task is added.
+`compose.rs` implements Ctrl+J, Search/New Task tabs, Tab/Shift+Tab, Enter send,
+Shift+Enter newline, board chip and searchable board picker. The actual web writer
+body is built by `ht_core::desktop_cli::writer_request`, including `requestKind:
+compose-task`; it is not the MCP draft writer or sidebar chat. Streamed HTML and
+split JSON are parsed; unavailable writing retains the original note as web does.
+The durable queue freezes writer output before retrying idempotent bearer task
+creation. Errors preserve the compose note; navigation waits for acknowledgement.
 
-Web behaviors retained as the unimplemented contract:
+GET defaults is unlocked, **POST createGlobally is not**. Saving therefore uses
+existing `/api/mcp/tasks/create` with the returned section. That MCP contract
+appends to a column and cannot reproduce the web's returned top `ranking`, custom
+field values, or existing-empty-task fill. Those differences remain explicit;
+this is not a claim that every flagged compose extension has full parity.
 
-* Search/New Task tabs, Tab/Shift+Tab switching: `src/components/Modals/commands/HTC/commands.tsx:672-710`.
-* Enter sends; Shift+Enter edits: `src/components/Modals/commands/HTC/ComposeTaskWriter.tsx:407-419`.
-* Prompt Tab → board chip, chip Shift+Tab → prompt, Enter/Space → board picker: same file `:408-412,435-448`.
-* Creation defaults also use cookie-session **GET `/api/tasks/createGlobally`** (`src/lib/ai/composeTask.ts:77`), through `taskWriteHandler`/`taskWriteRoute` and `getSessionUser` (`src/lib/api/task-writes/route.ts:32-35,89-91`). Completing compose requires a server-side human-MCP bridge for the actual web contract, not provider keys in desktop.
+Named CI checks are in `crates/ht-core/tests/desktop_cli.rs`,
+`crates/ht-core/tests/http_cli.rs`, and GPUI `compose::tests` / `mentions::tests`.
+No builds, tests, test copies, or app launches run on the VPS or owner laptop.
+
+### QA production blocker (not a desktop authentication workaround)
+
+The supplied QA-owner state is user **4036**, `valentin+qa-owner@hypertask.ai`.
+Its human CLI exchange succeeds and bearer GET comments for task 60253 on board
+7283 returns 200. Bearer GET defaults returns **401**, so that account does not
+currently have the new route authorization. The inherited probe's alternate
+flag-QA identity **985** instead gets **404** for that task. No owner account,
+board membership change, flag write, or cookie-authenticated contract request is
+used to hide this mismatch; no live state was created by the failed seed attempt.
+
+`internal/gates/ai-live-check.mjs --compose <CI compose-live-requests.json>` retains
+the storageState → browser consent → one-time code → CLI token exchange flow.
+It keeps the token in memory, uses bearer-only native fetch for contracts, and
+prints status/short shapes only. Its optional `--seed` creates a temporary QA
+comment only after defaults authorizes; pass that ID as CI `qa_comment_id` to
+produce unchanged Rust request fixtures, then remove the probe comment after
+star/pin cleanup. Never use fixture ID 7 as a real QA target without seeding.
 
 ## Comments: authorized writes and local behavior
 
@@ -32,8 +63,19 @@ Identity comes from bearer **GET `/api/mcp/user/context`** (`src/lib/mcp/operati
 
 ### Remaining auth/permission blockers
 
-* **F115 / F116 (comment star/pin)**: web POST **`/api/savedContent/toggleSaved`** (`src/lib/constants/APIRouteConstants.ts:54`; `src/hooks/Task Detail/useStarAndPin.ts:36-50`) calls **`getSessionUser`**, not bearer verification (`src/pages/api/savedContent/toggleSaved.ts:14-18`; `src/lib/auth/getSessionUser.ts:17-20`). Private star and Public pin differ by `type`; no corresponding comment-saved-content MCP route exists in the inspected MCP route tree. No inert star/pin buttons or fabricated local-only writes added.
-* **F587 (@mention search)**: web GET **`/api/tasks/searchByParam?param=…&projectId=…`** (`src/components/RTE/MentionData.js:13-25`) delegates to **`taskWriteHandler`/`taskWriteRoute` → `getSessionUser`** (`src/pages/api/tasks/searchByParam.ts:3`; `src/lib/api/task-writes/route.ts:32-35,89-91`; `src/lib/api/task-writes/search-by-param.ts:8-12`). The web mixed people/agents/tasks suggestion contract cannot be fetched with this token. Plain text remains editable, but no fake cached-only picker is labeled complete. The comment MCP endpoint can accept explicit mentions; that does not authenticate the web search endpoint.
+* **F115 / F116 (comment star/pin)**: native focused-comment commands and
+  Ctrl+Shift+S/P use the authorized `Private`/`Public` web body. Successful 200
+  (`saved`) and 201 (`{}` removal) are handled without requiring MCP's `success`
+  envelope. The non-idempotent toggle is never automatically replayed after an
+  uncertain acknowledgement or expired process lease; denial is surfaced.
+* **F587 (@mention search)**: native mixed people/model/agent/task/board/page
+  results come from the actual bearer search route, not a cached-only substitute.
+  Arrow/Enter and mouse selection retain web notification IDs and linkable task/
+  page attributes; headings are skipped, stale results are ignored, Escape does
+  not send, and insertion is one rich-editor undo transaction.
+* These rows are implemented with CI coverage, **not live-QA Done** until the QA
+  identity/flag mismatch above is resolved and the Rust-fixture probe succeeds.
+
 * **Deleting other people's comments**: web POST **`/api/comments/deleteCommentById`** permits an accessible task's comment after **`getSessionUser`** (`src/pages/api/comments/deleteCommentById.ts:13-18,28-36`). MCP DELETE only permits own or configured HyperAI comments (`src/lib/mcp/operations/comments/[comment_id]/operation.ts:460-474`). No ownership bypass is attempted; full web delete permissions remain blocked by the cookie-only route. Native deletion is limited to the bearer route's allowed ownership.
 
 ### F578 is a mobile-only inventory affordance
@@ -77,17 +119,17 @@ Paths are relative to the web repository. An implemented subset does not remove 
 | B3 — F498 | GET/POST `/api/notifications/splits`: `taskWriteHandler` → **getSessionUser**, `src/pages/api/notifications/splits.ts:1-6`, `src/lib/api/notification-writes/splits.ts:31-35,77-81`. | Native reads authoritative tab membership through MCP; cannot persist “Also in Important” settings. |
 | B4 — F185/F186/F187/F502/F503 | POST `/api/notifications/inbox-zero/preview`, `/execute`, `/undo`: **getSessionUser**, respectively `src/app/api/notifications/inbox-zero/preview/route.ts:14-16`, `execute/route.ts:61-63`, `undo/route.ts:13-15`. | “Archive all read” and “Archive reactions” are presets of this **server preview/execute/undo** sheet (`src/components/useCommandsState.ts:105-113`), not direct cached-row filters. MCP archive/unarchive does not supply its preview token/rule snapshot/undo operation; no fabricated cleanup sheet. |
 | B5 — F057 | GET `/api/tasks/searchOrphans`: **getSessionUser**, `src/lib/api/task-writes/search-orphans.ts:9-12`; POST `/api/tasks/addParent`: `taskWriteRoute` → **getSessionUser**, `src/lib/api/task-writes/add-parent.ts:8-12`, `src/lib/api/task-writes/route.ts:32-35`; empty-result creation uses `/api/tasks/createGlobally` (blocked above). | MCP task update accepts `parent_task_id`, but does not provide the web orphan-search/filter/ranking/create-in-section contract (`src/components/Modals/SubtaskLinkingModal/SubtaskLinking.tsx:45-57,96-109,121-136`). No cached-only substitute. |
-| B6 — F059 | POST `/api/savedContent/toggleSaved`: **getSessionUser**, `src/pages/api/savedContent/toggleSaved.ts:14-19`. | Task star/unstar uses the same saved-content route as blocked comment star/pin; no MCP saved-content writer. |
-| B7 — F062 | GET/POST `/api/tasks/createGlobally`: `taskWriteHandler` / `taskWriteRoute` → **getSessionUser**, `src/pages/api/tasks/createGlobally.ts:110-112`, `src/lib/api/task-writes/route.ts:32-35,89-91`. | Existing compose blocker also covers inbox C/create-in-section. MCP plain-task create does not reproduce web defaults/placement. |
+| B6 — F059 | POST `/api/savedContent/toggleSaved`: **getSessionUser**, `src/pages/api/savedContent/toggleSaved.ts:14-19`. | Only comment-scoped saved-content was unlocked by HTPR-7699; task star/unstar remains cookie-only. |
+| B7 — F062 | GET/POST `/api/tasks/createGlobally`: `taskWriteHandler` / `taskWriteRoute` → **getSessionUser**, `src/pages/api/tasks/createGlobally.ts:110-112`, `src/lib/api/task-writes/route.ts:32-35,89-91`. | GET defaults now accepts human CLI bearers; POST creation still requires the cookie session. MCP task create does not reproduce web top ranking/placement. |
 | B8 — F499/F585 | GET/POST `/api/users/preferences`: **loadCurrentUser** → **getSessionUser**, `src/app/api/users/preferences/route.ts:58-75,117-132`, `src/lib/auth/currentUser.ts:13-21`. Inbox drafts: POST `/api/drafts/getUserDrafts`, **getSessionUser**, `src/pages/api/drafts/getUserDrafts.ts:13-17`; draft archive POST `/api/drafts/archiveDraft`, **verifySession**, `src/pages/api/drafts/archiveDraft.ts:13`. | F499 actor/text/metadata/unread subset retained; avatar visibility is explicitly preference-controlled (`NotificationRow.tsx:285-312`) and authoritative draft timeline/lifecycle is not a local fake badge. F585 existing send chords stay; full menu hints/default require unavailable archive-after-comment preference. |
-| B9 — F581/F583 | Author hovercard GET `/api/members/personHovercard`: **verifySession**, `src/pages/api/members/personHovercard.ts:45-49`. Overflow pin/star POST `/api/savedContent/toggleSaved`: **getSessionUser** (`src/pages/api/savedContent/toggleSaved.ts:14-19`); AI and task-from-comment routes/auth are A1/A2/A7 in ai-parity.md. | Exact timestamp and focused edit/copy/reply/react/delete remain; broader rows are not relabelled Done. |
+| B9 — F581/F583 | Author hovercard GET `/api/members/personHovercard`: **verifySession**, `src/pages/api/members/personHovercard.ts:45-49`. Overflow pin/star now accepts the flagged human CLI bearer via **getDesktopCliTokenUser** (489e9ea52); AI and task-from-comment routes/auth are A1/A2/A7 in ai-parity.md. | Exact timestamp and focused edit/copy/reply/react/delete remain; pin/star commands are implemented, but broader rows are not relabelled Done. |
 | B10 — F588/F590 | GIF GET `https://api.giphy.com/v1/gifs/{search,trending}` requires external **api_key=NEXT_PUBLIC_GIPHY_API_KEY**, `src/components/RTE/Components/EmojiGifPicker.tsx:144-169`. Attachment staging POST `/api/tasks/uploadUrl` and `/api/tasks/uploadFinalize`: **verifySession / getSessionUser**, `src/lib/api/task-writes/upload-url.ts:235-240`, `upload-finalize.ts:210-215`; buffered POST `/api/tasks/n8nUpload`: **verifySession / resolveBetterAuthSession**, `src/pages/api/tasks/n8nUpload.ts:120-126`. | No native GIPHY key; no cancellable bearer editor-upload staging. MCP attachment upload immediately changes published content, so is not substituted. Exact details in editor-formatting.md. |
-| B11 — F589 | POST `/api/mcp/comments`, PATCH `/api/mcp/comments/[comment_id]`: **validateMcpRouteAuth**; task update POST `/api/mcp/tasks/update`: **validateMcpAuth**. All call **sanitizeRichHtml**, which strips `<mark>` and color attributes (`src/utils/helperFunctions/sanitizeRichHtml.ts:6-35`; writer locations in editor-formatting.md). Task suggestions GET `/api/tasks/searchByParam`: `taskWriteHandler/taskWriteRoute` → **getSessionUser**. | Existing real keyboard/slash/bubble formatting and link editing retained; full highlight/link-suggestion persistence is blocked, not “fixed” by stripping user formatting. |
+| B11 — F589 | POST `/api/mcp/comments`, PATCH `/api/mcp/comments/[comment_id]`: **validateMcpRouteAuth**; task update POST `/api/mcp/tasks/update`: **validateMcpAuth**. All call **sanitizeRichHtml**, which strips `<mark>` and color attributes (`src/utils/helperFunctions/sanitizeRichHtml.ts:6-35`; writer locations in editor-formatting.md). Task suggestions GET `/api/tasks/searchByParam` now accepts the flagged human CLI bearer (489e9ea52); rich-format sanitizer restrictions remain. | Existing real keyboard/slash/bubble formatting and link editing retained; full highlight/link-suggestion persistence is blocked, not “fixed” by stripping user formatting. |
 | B12 — alternate reminder condition, not claimed | POST `/api/queues/inboxReminder`: **getSessionUser**, `src/pages/api/queues/inboxReminder.ts:27-30` (caller `src/hooks/Inbox/useGlobalFocusHandler.tsx:92-95`). Web “If any activity” is `NewNotification` (`src/lib/constants/constants.ts:381-390`). | MCP `/api/mcp/inbox/archive` hardcodes `invokeCondition: 'DurationComplete'` (`src/lib/mcp/operations/inbox/archive/operation.ts:154,164`). Only web default Regardless is offered. No nonfunctional condition selector. |
 | B13 — F651/F652/F653/F654/F655 | GET/POST `/api/agent-sidebar-chats?projectId=…`: **getSessionUser**, `src/app/api/agent-sidebar-chats/route.ts:19-20,70-73`; GET `/api/agent-chat/[sessionId]`: **getSessionUser**, `src/app/api/agent-chat/[sessionId]/route.ts:49-55`; POST `/api/agent-chat/[sessionId]/messages`: **getSessionUser**, `src/app/api/agent-chat/[sessionId]/messages/route.ts:27-35`. Agent @ lookup POST `/api/tasks/searchAll`: `taskWriteHandler/taskWriteRoute` → **getSessionUser** (`src/pages/api/tasks/searchAll.ts:1-5`, `src/lib/api/task-writes/route.ts:32-35`); caller `src/app/agents/chat/useAgentChatComposer.ts:96-103`. | No human-bearer roster/session/transcript/send contract. Agent-token `/api/mcp/chat/pending` is not a human conversation endpoint. Alt+Up/Down, Ctrl+Enter, Ctrl+O and @ cannot be implemented by inventing empty sessions, replies or task context. |
 | Desktop exclusion — F578 | No route/auth helper: mobile-only branch at `src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/NewCommentComponent.tsx:490-527`. | Already audited above. Native desktop keeps auto-growing editor; no mobile resize/collapse widget is added. |
 
-F587 and focused-comment F368/F371/F372 remain the pre-existing auth blockers above / in ai-parity.md, without redoing their work. Final SHA-bound CI receipts and ignored feature dispositions are recorded in `internal/COMPOSER2-GATES.md` and the public worktree's ignored `internal/FEATURES.md`.
+F587 native implementation and its live-QA blocker are recorded above; focused-comment F368/F371/F372 retain their pre-existing blockers in ai-parity.md, without redoing their work. Final SHA-bound CI receipts and ignored feature dispositions are recorded in `internal/COMPOSER2-GATES.md` and the public worktree's ignored `internal/FEATURES.md`.
 
 ## p2 audit: remaining P1 rows
 
