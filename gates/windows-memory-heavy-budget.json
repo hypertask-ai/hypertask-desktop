@@ -10,5 +10,27 @@
   "MinimumDistinctAvatars": 160,
   "MinimumComments": 48,
   "MinimumAiSessions": 40,
-  "MinimumAiMessages": 960
+  "MinimumAiMessages": 960,
+  "Fixture": {
+    "Version": 1,
+    "InboxItems": 640,
+    "BoardCards": 320,
+    "DescriptionBytes": 9168480,
+    "DescriptionImages": 960,
+    "DistinctAvatars": 160,
+    "Comments": 48,
+    "AiSessions": 40,
+    "AiMessages": 960,
+    "AiHistoryBytes": 1434301,
+    "ImageSourceWidth": 2560,
+    "ImageSourceHeight": 1440,
+    "ImageDisplayWidth": 640,
+    "ImageDisplayHeight": 360,
+    "AvatarSourceWidth": 1024,
+    "AvatarSourceHeight": 1024,
+    "AvatarAssetCount": 160,
+    "DescriptionImageAssetCount": 3,
+    "EncodedImageAssetBytes": 3328830,
+    "FixtureSHA256": "6d4bab0690859ce5a55084c337f702af063ab8649fc7773d939d9d4bb8e6faaa"
+  }
 }

@@ -111,3 +111,19 @@ mod tests {
         assert_eq!(super::payload_bytes(&value), serde_json::to_vec(&value).unwrap().len());
     }
 }
+
+static READ_BYTES: [AtomicUsize; 2] = [const { AtomicUsize::new(0) }; 2];
+
+pub fn measure_read<T>(owner: usize, read: impl FnOnce() -> T) -> T {
+    let before = LIVE.load(Ordering::Relaxed);
+    let value = read();
+    READ_BYTES[owner].store(LIVE.load(Ordering::Relaxed).saturating_sub(before), Ordering::Relaxed);
+    value
+}
+
+pub fn data_read_usage() -> serde_json::Value {
+    serde_json::json!({
+        "InboxReadNetRequestedBytes": READ_BYTES[0].load(Ordering::Relaxed),
+        "BoardReadNetRequestedBytes": READ_BYTES[1].load(Ordering::Relaxed),
+    })
+}

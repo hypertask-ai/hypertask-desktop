@@ -364,7 +364,7 @@ impl Desktop {
 
     fn reload(&mut self) {
         let result: anyhow::Result<()> = (|| {
-            self.inbox = self.db.inbox()?;
+            self.inbox = crate::memory::measure_read(0, || self.db.inbox_rows())?;
             match self.screen {
                 Screen::Inbox => {
                     self.reload_inbox_tabs();
@@ -407,7 +407,7 @@ impl Desktop {
     }
 
     fn load_columns(&mut self, project: i64) -> anyhow::Result<()> {
-        let mut columns = self.db.board_cards(project)?;
+        let mut columns = crate::memory::measure_read(1, || self.db.board_cards(project))?;
         if self.screen == Screen::Board && self.board_actions.project == project {
             for column in &mut columns { column.cards.retain(|task| board::search_matches(task, &self.board_actions.search_text)); }
         }

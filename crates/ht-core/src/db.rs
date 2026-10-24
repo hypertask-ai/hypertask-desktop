@@ -326,10 +326,10 @@ impl Db {
     }
 
 
-    /// Cards never display the description; detail/editor/search still read the complete task.
+    /// Cards omit detail-only bodies; detail/editor/search still read the complete task.
     pub fn board_cards(&self, project_id: i64) -> Result<Vec<BoardColumn>> {
         if !cfg!(feature = "compact-task-reads") { return self.board(project_id); }
-        self.board_rows(project_id, "SELECT json_remove(raw_json, '$.description') FROM Task WHERE projectId=? AND status='Normal' ORDER BY updatedAt DESC,id ASC")
+        self.board_rows(project_id, "SELECT json_remove(raw_json, '$.description', '$.attachments', '$.pullRequests', '$.savedContent', '$.customFieldValues', '$.followers', '$.sub_tasks') FROM Task WHERE projectId=? AND status='Normal' ORDER BY updatedAt DESC,id ASC")
     }
 
     fn board_rows(&self, project_id: i64, sql: &str) -> Result<Vec<BoardColumn>> {
@@ -364,8 +364,18 @@ impl Db {
         Ok(columns)
     }
 
+    /// Row metadata only; the complete notification and task stay in the sync store.
+    pub fn inbox_rows(&self) -> Result<Vec<InboxItem>> {
+        if !cfg!(feature = "compact-task-reads") { return self.inbox(); }
+        self.read_inbox("json_remove(n.raw_json, '$.task.description', '$.task.attachments', '$.task.pullRequests', '$.task.savedContent', '$.task.customFieldValues', '$.task.followers', '$.task.sub_tasks')")
+    }
+
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {
-        self.json_rows("SELECT n.raw_json FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC", [])?
+        self.read_inbox("n.raw_json")
+    }
+
+    fn read_inbox(&self, projection: &str) -> Result<Vec<InboxItem>> {
+        self.json_rows(&format!("SELECT {projection} FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC"), [])?
             .into_iter().map(|n| {
                 let actors = n["recentActors"].as_array();
                 let source = if actors.is_some_and(|actors| actors.len() >= 2) {
