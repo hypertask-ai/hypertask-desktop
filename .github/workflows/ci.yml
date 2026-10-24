@@ -39,6 +39,19 @@ jobs:
           sudo sed -i 's|http://azure.archive.ubuntu.com|https://archive.ubuntu.com|g' /etc/apt/apt-mirrors.txt
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 update
           sudo apt-get -o Acquire::Retries=3 -o Acquire::http::Timeout=30 -o Acquire::https::Timeout=30 install -y libasound2-dev libfontconfig-dev libwayland-dev libx11-xcb-dev libxkbcommon-x11-dev libxkbcommon-dev libvulkan-dev libssl-dev libzstd-dev clang cmake xvfb xauth mesa-vulkan-drivers
+      - name: Prepare web font faces (CI only)
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m pip install fonttools==4.60.1 brotli==1.1.0
+          python3 gates/layout-font-assets.py
+          python3 gates/layout-font-freetype.py
+      - name: Upload web font faces
+        if: runner.os == 'Linux' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-source-fonts
+          path: evidence/web-fonts/
+          if-no-files-found: error
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --workspace --release --no-fail-fast
@@ -56,13 +69,32 @@ jobs:
       - run: cargo build --release -p ht-desktop -p ht-core
       - name: Layout dump contract
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s '-screen 0 1440x900x24' python3 gates/layout-dump.py
+        run: xvfb-run -a -s '-screen 0 1920x1009x24' python3 gates/layout-dump.py
+      - name: Native web-font advance regression
+        if: runner.os == 'Linux'
+        run: cargo test --release -p gpui_wgpu --lib cosmic_text_system::tests
+      - name: Dependency lock contract
+        if: runner.os == 'Linux'
+        run: git diff --exit-code -- Cargo.lock
+      - uses: actions/setup-node@v4
+        if: runner.os == 'Linux'
+        with:
+          node-version: 22
+      - name: Browser typography dependencies
+        if: runner.os == 'Linux'
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+      - name: Web-source typography contract
+        if: runner.os == 'Linux'
+        run: node gates/layout-fonts.mjs
       - name: Upload layout dumps
         if: runner.os == 'Linux' && always()
         uses: actions/upload-artifact@v4
         with:
           name: layout-dumps
-          path: evidence/layout/*.json
+          path: evidence/layout/**/*.json
+          if-no-files-found: error
       - name: Windows memory (three runs per screen)
         if: runner.os == 'Windows'
         shell: pwsh

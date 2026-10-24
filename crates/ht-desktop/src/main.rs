@@ -39,6 +39,7 @@ pub struct Options {
     pub theme: ThemeName,
     pub exit_after_ready: bool,
     pub dump_layout: Option<PathBuf>,
+    pub window_size: (u32, u32),
     pub print_memory: bool,
     pub bench_input: usize,
 }
@@ -60,6 +61,7 @@ impl Options {
             theme: ThemeName::Porcelain,
             exit_after_ready: false,
             dump_layout: None,
+            window_size: (1440, 900),
             print_memory: false,
             bench_input: 0,
         };
@@ -74,6 +76,12 @@ impl Options {
                 "--dump-layout" => {
                     result.dump_layout =
                         Some(args.next().context("--dump-layout requires a path")?.into())
+                }
+                "--window-size" => {
+                    let value = args.next().context("--window-size requires WIDTHxHEIGHT")?;
+                    let (width, height) = value.split_once('x').context("--window-size requires WIDTHxHEIGHT")?;
+                    result.window_size = (width.parse()?, height.parse()?);
+                    anyhow::ensure!(result.window_size.0 > 0 && result.window_size.1 > 0, "--window-size must be positive");
                 }
                 "--print-memory" => result.print_memory = true,
                 "--db" => result.db = args.next().context("--db requires a path")?.into(),
@@ -219,7 +227,7 @@ fn run() -> Result<()> {
                     WindowOptions {
                         window_bounds: Some({
                             let bounds =
-                                Bounds::new(point(px(origin_x), px(0.)), size(px(1440.), px(900.)));
+                                Bounds::new(point(px(origin_x), px(0.)), size(px(options.window_size.0 as f32), px(options.window_size.1 as f32)));
                             if cfg!(windows) && !background {
                                 WindowBounds::Maximized(bounds)
                             } else {
@@ -301,6 +309,40 @@ mod tests {
     }
 
     #[test]
+    fn embedded_plex_faces_retain_web_weights_and_unhinted_tables() {
+        for (weight, face) in [
+            (400, include_bytes!("../assets/fonts/IBMPlexSans-400.ttf").as_slice()),
+            (500, include_bytes!("../assets/fonts/IBMPlexSans-500.ttf").as_slice()),
+            (600, include_bytes!("../assets/fonts/IBMPlexSans-600.ttf").as_slice()),
+            (700, include_bytes!("../assets/fonts/IBMPlexSans-700.ttf").as_slice()),
+        ] {
+            let count = u16::from_be_bytes(face[4..6].try_into().unwrap()) as usize;
+            let tables = face[12..12 + count * 16].chunks_exact(16).collect::<Vec<_>>();
+            let os2 = tables.iter().find(|table| &table[..4] == b"OS/2").unwrap();
+            let offset = u32::from_be_bytes(os2[8..12].try_into().unwrap()) as usize;
+            assert_eq!(u16::from_be_bytes(face[offset + 4..offset + 6].try_into().unwrap()), weight);
+            let name = tables.iter().find(|table| &table[..4] == b"name").unwrap();
+            let offset = u32::from_be_bytes(name[8..12].try_into().unwrap()) as usize;
+            let names = &face[offset..];
+            let count = u16::from_be_bytes(names[2..4].try_into().unwrap()) as usize;
+            let base = u16::from_be_bytes(names[4..6].try_into().unwrap()) as usize;
+            let family_id = if weight == 500 || weight == 600 { 16 } else { 1 };
+            let family = names[6..6 + count * 12].chunks_exact(12).find(|entry|
+                u16::from_be_bytes(entry[..2].try_into().unwrap()) == 3 &&
+                u16::from_be_bytes(entry[6..8].try_into().unwrap()) == family_id
+            ).expect("retain the typographic family for intermediate weights");
+            let length = u16::from_be_bytes(family[8..10].try_into().unwrap()) as usize;
+            let start = base + u16::from_be_bytes(family[10..12].try_into().unwrap()) as usize;
+            let family = names[start..start + length].chunks_exact(2)
+                .map(|pair|u16::from_be_bytes(pair.try_into().unwrap())).collect::<Vec<_>>();
+            assert_eq!(String::from_utf16(&family).unwrap(), "IBM Plex Sans");
+            for tag in [b"fpgm", b"prep", b"cvt "] {
+                assert!(!tables.iter().any(|table| &table[..4] == tag), "web font has no hint programs");
+            }
+        }
+    }
+
+    #[test]
     fn cli_validates_all_contract_flags() {
         let opts = Options::parse(
             [
@@ -340,6 +382,8 @@ mod tests {
                 .unwrap()
                 .ai_sidebar
         );
+        assert_eq!(opts.window_size, (1440, 900));
+        assert_eq!(Options::parse(["--window-size", "1920x1009"].map(str::to_owned)).unwrap().window_size, (1920, 1009));
         assert!(opts.print_memory);
         assert!(!Options::parse([]).unwrap().print_memory);
         assert_eq!(opts.bench_input, 300);
@@ -351,6 +395,10 @@ mod tests {
             vec!["--theme", "blue"],
             vec!["--bench-input", "0"],
             vec!["--unknown"],
+            vec!["--window-size"],
+            vec!["--window-size", "1920"],
+            vec!["--window-size", "0x1009"],
+            vec!["--window-size", "1920x-1"],
             vec!["--exit-after-ready", "--bench-input", "3"],
         ] {
             assert!(Options::parse(args.into_iter().map(str::to_owned)).is_err());

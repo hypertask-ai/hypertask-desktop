@@ -662,22 +662,19 @@ impl Desktop {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(if self.screen == Screen::Inbox {
-                        16.
-                    } else {
-                        12.
-                    }))
+                    .gap(px(16.))
                     .mr(px(18.))
                     .whitespace_nowrap()
                     .flex_shrink_0()
                     .children(items.iter().enumerate().map(|(i, &(key, label))| {
+                        let label = format!("{}{}", label[..1].to_uppercase(), &label[1..]);
                         div()
                             .flex()
                             .flex_shrink_0()
                             .items_center()
                             .gap(px(8.))
                             .relative()
-                            .when(self.screen == Screen::Inbox && i > 0, |d| {
+                            .when(i > 0, |d| {
                                 d.child(
                                     div()
                                         .absolute()
@@ -718,19 +715,12 @@ impl Desktop {
                                         }),
                                 ),
                             )
-                            .child(label)
-                    }))
-                    .layout_key(
-                        &self.layout,
-                        "footer.text",
-                        Some(
-                            items
-                                .iter()
-                                .map(|(key, label)| format!("{key} {label}"))
-                                .collect::<Vec<_>>()
-                                .join(" "),
-                        ),
-                    ),
+                            .child(div().child(label.clone()).layout_key(
+                                &self.layout,
+                                if i == 0 { "footer.text".to_owned() } else { format!("footer.hint.{i}") },
+                                Some(label),
+                            ))
+                    })),
             )
             .child(
                 div()
@@ -980,6 +970,8 @@ impl Desktop {
                                             .id(("board-add-task", c.id as u64))
                                             .cursor_pointer()
                                             .on_click(cx.listener({ let section = c.id; move |this, _, window, cx| this.start_board_create(section, window, cx) }))
+                                            .text_size(px(16.))
+                                            .line_height(px(24.))
                                             .size(px(10.))
                                             .flex_shrink_0()
                                             .relative()
@@ -1207,8 +1199,10 @@ impl Desktop {
                             }),
                     )
                     .child(
-                        div().flex().child(
+                        div().flex().w_full().min_w_0().child(
                             div()
+                                .max_w(gpui::relative(1.))
+                                .min_w_0()
                                 .text_size(px(13.))
                                 .line_height(px(19.5))
                                 .when(

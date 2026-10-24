@@ -1,0 +1,56 @@
+[package]
+name = "gpui_wgpu"
+version = "0.1.0"
+license = "Apache-2.0"
+edition = "2024"
+publish = false
+
+[lib]
+path = "src/gpui_wgpu.rs"
+# CI explicitly runs the text-system target on Linux, not upstream GPU tests.
+test = false
+doctest = false
+
+[features]
+default = []
+bench-support = ["gpui/bench-support", "dep:image"]
+font-kit = ["dep:font-kit"]
+test-support = ["gpui/test-support", "dep:image"]
+
+[dependencies]
+gpui = { default-features = false, git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9" }
+anyhow = { version = "1.0.86" }
+bytemuck = { version = "1" }
+collections = { version = "0.1.0", git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9" }
+cosmic-text = "0.19.0"
+etagere = { version = "0.2" }
+itertools = { version = "0.14.0" }
+image = { version = "0.25.1", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "rayon", "tga", "tiff", "webp"], optional = true }
+log = { version = "0.4", default-features = false, features = ["std"] }
+parking_lot = { version = "0.12.1" }
+profiling = { version = "1" }
+raw-window-handle = { version = "0.6" }
+smallvec = { version = "1.6", features = ["union", "const_new"] }
+swash = { version = "0.2.6" }
+unicode-bidi = { version = "0.3.18", default-features = false, features = ["hardcoded-data"] }
+unicode-segmentation = { version = "1.10" }
+gpui_util = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9" }
+font-kit = { git = "https://github.com/zed-industries/font-kit", rev = "94b0f28166665e8fd2f53ff6d268a14955c82269", package = "zed-font-kit", version = "0.14.1-zed", default-features = false, optional = true }
+
+[dev-dependencies]
+gpui = { default-features = false, features = ["test-support"], git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9" }
+image = { version = "0.25.1", default-features = false, features = ["bmp", "dds", "exr", "ff", "gif", "hdr", "ico", "jpeg", "png", "pnm", "qoi", "rayon", "tga", "tiff", "webp"] }
+naga = { git = "https://github.com/gfx-rs/wgpu", rev = "3b3506ea31154edc04de64debda0e780cba2639c", features = ["wgsl-in"] }
+
+[target.'cfg(any(target_os = "linux", target_os = "freebsd"))'.dependencies]
+wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "3b3506ea31154edc04de64debda0e780cba2639c", default-features = false, features = ["std", "metal", "gles", "vulkan", "wgsl", "webgpu"] }
+
+[target.'cfg(not(any(target_os = "linux", target_os = "freebsd")))'.dependencies]
+wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "3b3506ea31154edc04de64debda0e780cba2639c", default-features = true }
+
+[target.'cfg(target_family = "wasm")'.dependencies]
+web-sys = { version = "0.3", features = ["HtmlCanvasElement"] }
+wgpu = { git = "https://github.com/gfx-rs/wgpu", rev = "3b3506ea31154edc04de64debda0e780cba2639c", default-features = false, features = ["webgl"] }
+
+[target.'cfg(target_os = "linux")'.dependencies]
+freetype-sys = "0.20.1"
