@@ -144,7 +144,7 @@ jobs:
           path: target/aarch64-pc-windows-msvc/release/ht-desktop.exe
           retention-days: 14
   windows-memory-baselines:
-    name: memory-${{ github.head_ref == 'mem2' && 'eager-fonts' || matrix.revision }}
+    name: memory-${{ github.head_ref == 'mem2' && 'eager-fonts-triple-buffer' || matrix.revision }}
     if: github.event_name == 'pull_request' && (github.head_ref == 'ram2' || github.head_ref == 'mem2')
     strategy:
       fail-fast: false
@@ -164,9 +164,9 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p ht-desktop -p ht-core
         if: github.head_ref != 'mem2'
-      - name: Build identical code with all theme fonts loaded
+      - name: Build identical code with eager fonts and three swap-chain buffers
         if: github.head_ref == 'mem2'
-        run: cargo build --release --no-default-features -p ht-desktop -p ht-core
+        run: cargo build --release --no-default-features -p ht-desktop -p ht-core -p gpui_windows --features gpui_windows/triple-buffer
       - name: Measure historical release
         shell: pwsh
         run: >-

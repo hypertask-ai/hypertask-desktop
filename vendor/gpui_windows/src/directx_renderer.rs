@@ -367,7 +367,11 @@ impl DirectXRenderer {
         let json = format!(
             "{{\"MonochromeAtlasBytes\":{mono},\"ImageAtlasBytes\":{image},\"FontAtlasBytes\":{subpixel},\"InstanceBufferBytes\":{instance_bytes},\"PathTextureBytes\":{path_bytes},\"SwapChainBytes\":{swap_bytes}}}"
         );
-        if let Err(error) = std::fs::write(path, json) {
+        let path = std::path::PathBuf::from(path);
+        let temporary = path.with_extension("tmp");
+        if let Err(error) = std::fs::write(&temporary, json)
+            .and_then(|_| std::fs::rename(&temporary, &path))
+        {
             log::error!("writing memory owners: {error}");
         }
     }
@@ -1730,7 +1734,9 @@ fn report_live_objects(device: &ID3D11Device) -> Result<()> {
     Ok(())
 }
 
-const BUFFER_COUNT: usize = 3;
+// Two buffers are sufficient for FLIP_SEQUENTIAL; keep three only for CI's
+// otherwise identical before/after memory and pixel comparison.
+const BUFFER_COUNT: usize = if cfg!(feature = "triple-buffer") { 3 } else { 2 };
 
 pub(crate) mod shader_resources {
     use anyhow::Result;
