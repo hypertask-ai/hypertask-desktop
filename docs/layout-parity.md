@@ -212,3 +212,8 @@ actions and their write assertions. A replacement regression checks that the
 desktop composer exists without either phone-only control, then exercises both
 shortcuts. The CI sparse Graphite dump additionally requires the live 154px
 composer height. No fixture content or comparer tolerance is changed.
+
+Font subsetting must also retain name IDs 16/17: IBM Plex Sans Medium and
+SemiBold use those typographic-family names to remain members of IBM Plex Sans.
+The generator now retains all name IDs and checks the family, and the embedded
+asset regression checks family names, OS/2 weights and absence of hint programs.

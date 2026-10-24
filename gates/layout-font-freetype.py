@@ -28,7 +28,7 @@ try:
                 probes = {}
                 for name, flags in {"default": 0, "noHint": 2, "autoHint": 32, "light": 1 << 16, "autoLight": 32 | (1 << 16)}.items():
                     advances = {}
-                    for char in set(text):
+                    for char in sorted(set(text)):
                         advance = C.c_long()
                         glyph = ft.FT_Get_Char_Index(face, ord(char))
                         assert ft.FT_Get_Advance(face, glyph, flags, C.byref(advance)) == 0

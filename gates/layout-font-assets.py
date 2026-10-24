@@ -31,7 +31,7 @@ for weight in [400, 500, 600, 700]:
         # The web asset (ibmPlexSans.ts:3) is unhinted. Preserve every glyph,
         # but do not import the full source's different TrueType hint programs.
         if name == "full":
-            unhinted = subset.Subsetter(options=subset.Options(hinting=False, retain_gids=True))
+            unhinted = subset.Subsetter(options=subset.Options(hinting=False, retain_gids=True, name_IDs=["*"]))
             unhinted.populate(glyphs=face.getGlyphOrder())
             unhinted.subset(face)
         directory = OUT if name == "full" else OUT / "latin-probe"
@@ -43,7 +43,10 @@ for weight in [400, 500, 600, 700]:
     old = TTFont(f"crates/ht-desktop/assets/fonts/IBMPlexSans-{weight}.ttf")
     missing = sorted(set(old.getBestCmap()) - set(full_map))
     mismatches = [code for code, glyph in web_map.items() if full["hmtx"][full_map[code]] != web["hmtx"][glyph]]
-    receipts.append({"weight": weight, "fullGlyphs": len(full_map), "webGlyphs": len(web_map), "missingExisting": missing, "webMetricDifferences": mismatches})
+    family = full["name"].getDebugName(16) or full["name"].getDebugName(1)
+    assert family == "IBM Plex Sans", family
+    assert not any(tag in full for tag in ["fpgm", "prep", "cvt "])
+    receipts.append({"family": family, "weight": weight, "fullGlyphs": len(full_map), "webGlyphs": len(web_map), "missingExisting": missing, "webMetricDifferences": mismatches})
     assert full["OS/2"].usWeightClass == weight
     assert not missing, receipts[-1]
     assert not mismatches, receipts[-1]
