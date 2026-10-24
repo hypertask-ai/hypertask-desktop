@@ -87,3 +87,18 @@ pub fn rust_heap_usage() -> serde_json::Value {
         "RustPeakRequestedBytes": PEAK.load(Ordering::Relaxed),
     })
 }
+
+struct PayloadCounter(usize);
+impl std::io::Write for PayloadCounter {
+    fn write(&mut self, bytes: &[u8]) -> std::io::Result<usize> {
+        self.0 += bytes.len();
+        Ok(bytes.len())
+    }
+    fn flush(&mut self) -> std::io::Result<()> { Ok(()) }
+}
+
+pub fn payload_bytes(value: &impl serde::Serialize) -> usize {
+    let mut counter = PayloadCounter(0);
+    serde_json::to_writer(&mut counter, value).expect("memory payload serialization");
+    counter.0
+}

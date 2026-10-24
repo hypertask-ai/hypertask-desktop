@@ -7,6 +7,7 @@ license.workspace = true
 [features]
 default = []
 bounded-sync-cache = []
+compact-task-reads = []
 realtime-ws = ["dep:tungstenite"]
 
 [dependencies]

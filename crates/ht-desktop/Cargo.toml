@@ -4,7 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["lazy-theme-fonts", "ht-core/bounded-sync-cache"]
+default = ["lazy-theme-fonts", "ht-core/bounded-sync-cache", "ht-core/compact-task-reads"]
 lazy-theme-fonts = []
 
 [dependencies]
@@ -16,6 +16,7 @@ chrono = "0.4"
 iana-time-zone = "0.1"
 dirs = "6"
 serde_json = "1"
+serde = "1"
 unicode-segmentation = "1"
 scraper = "0.24"
 pulldown-cmark = { version = "0.13", default-features = false, features = ["html"] }

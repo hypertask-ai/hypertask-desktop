@@ -325,6 +325,45 @@ impl Db {
             .collect()
     }
 
+
+    /// Cards never display the description; detail/editor/search still read the complete task.
+    pub fn board_cards(&self, project_id: i64) -> Result<Vec<BoardColumn>> {
+        if !cfg!(feature = "compact-task-reads") { return self.board(project_id); }
+        self.board_rows(project_id, "SELECT json_remove(raw_json, '$.description') FROM Task WHERE projectId=? AND status='Normal' ORDER BY updatedAt DESC,id ASC")
+    }
+
+    fn board_rows(&self, project_id: i64, sql: &str) -> Result<Vec<BoardColumn>> {
+        let sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
+        let mut columns = sections.into_iter().map(|s| {
+            Ok(BoardColumn {
+                id: integer(&s, "id")?,
+                title: s["section_title"].as_str().context("section title missing")?.to_owned(),
+                ranking: s["ranking"].as_str().context("section ranking missing")?.to_owned(),
+                cards: vec![],
+            })
+        }).collect::<Result<Vec<_>>>()?;
+        let mut statement = self.conn.prepare(sql)?;
+        let rows = statement.query_map([project_id], |row| row.get::<_, String>(0))?;
+        for row in rows {
+            let task = task_view(serde_json::from_str(&row?)?)?;
+            let section_id = task.section_id;
+            let section = task.section.clone();
+            let mut matches = columns.iter_mut().filter(|column| {
+                section_id == Some(column.id)
+                    || (section_id.is_none() && section == column.title)
+            }).peekable();
+            while let Some(column) = matches.next() {
+                if matches.peek().is_none() {
+                    column.cards.push(task);
+                    break;
+                }
+                // Legacy tasks can match multiple identically named sections.
+                column.cards.push(task.clone());
+            }
+        }
+        Ok(columns)
+    }
+
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {
         self.json_rows("SELECT n.raw_json FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC", [])?
             .into_iter().map(|n| {
@@ -336,9 +375,16 @@ impl Db {
                     ["/fromAgent/displayName", "/fromUser/displayName"].into_iter()
                         .find_map(|path| n.pointer(path).and_then(Value::as_str)).map(str::to_owned)
                 };
-                let task = n["taskId"].as_i64().map(|id| self.task(id)).transpose()?.flatten();
-                let title = task.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| n.pointer("/task/title").or_else(|| n.get("message")).and_then(Value::as_str).unwrap_or("").to_owned());
-                let ticket_number = task.and_then(|t| t.ticket_number).or_else(|| n.pointer("/task/ticketNumber").and_then(Value::as_str).map(str::to_owned));
+                let task = n["taskId"].as_i64().map(|id| -> Result<Option<(String, Option<String>)>> {
+                    if cfg!(feature = "compact-task-reads") {
+                        Ok(self.conn.query_row("SELECT title,ticketNumber FROM Task WHERE id=?", [id],
+                            |row| Ok((row.get(0)?, row.get(1)?))).optional()?)
+                    } else {
+                        Ok(self.task(id)?.map(|t| (t.title, t.ticket_number)))
+                    }
+                }).transpose()?.flatten();
+                let title = task.as_ref().map(|t| t.0.clone()).unwrap_or_else(|| n.pointer("/task/title").or_else(|| n.get("message")).and_then(Value::as_str).unwrap_or("").to_owned());
+                let ticket_number = task.and_then(|t| t.1).or_else(|| n.pointer("/task/ticketNumber").and_then(Value::as_str).map(str::to_owned));
                 Ok(InboxItem { id: integer(&n,"id")?, task_id: n["taskId"].as_i64(), title,
                     ticket_number, source,
                     seen: n["seen"].as_bool().unwrap_or(false), created_at: n["createdAt"].as_str().context("notification createdAt missing")?.to_owned(), raw_json: n })

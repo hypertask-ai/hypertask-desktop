@@ -47,7 +47,7 @@ impl Scope {
         let project = task.as_ref().map_or(project, |t| t.project_id);
         let (board_name, team_id) = ai_chat::project_metadata(db, project);
         let columns = if screen == Screen::Board {
-            db.board(project).unwrap_or_default()
+            db.board_cards(project).unwrap_or_default()
         } else {
             vec![]
         };
