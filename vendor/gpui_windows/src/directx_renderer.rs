@@ -338,7 +338,35 @@ impl DirectXRenderer {
             return Ok(());
         }
         self.render(scene, background_appearance)?;
+        self.write_memory_receipt();
         self.present()
+    }
+
+    fn write_memory_receipt(&self) {
+        let Some(path) = std::env::var_os("GPUI_MEMORY_RECEIPT") else { return };
+        let [mono, image, subpixel] = self.atlas.texture_bytes();
+        let p = &self.pipelines;
+        let instance_bytes = p.shadow_pipeline.buffer_size * std::mem::size_of::<Shadow>()
+            + p.quad_pipeline.buffer_size * std::mem::size_of::<Quad>()
+            + p.path_rasterization_pipeline.buffer_size * std::mem::size_of::<PathRasterizationSprite>()
+            + p.path_sprite_pipeline.buffer_size * std::mem::size_of::<PathSprite>()
+            + p.underline_pipeline.buffer_size * std::mem::size_of::<Underline>()
+            + p.mono_sprites.buffer_size * std::mem::size_of::<MonochromeSprite>()
+            + p.subpixel_sprites.buffer_size * std::mem::size_of::<SubpixelSprite>()
+            + p.poly_sprites.buffer_size * std::mem::size_of::<PolychromeSprite>();
+        let path_bytes = self.resources.as_ref().map_or(0, |resources| {
+            if resources.path_intermediate_texture.is_some() {
+                u64::from(self.width) * u64::from(self.height) * 4 * (1 + u64::from(PATH_MULTISAMPLE_COUNT))
+            } else { 0 }
+        });
+        // Resource payload sizes, not resident pages: driver/allocator overhead is
+        // intentionally left to the independent process working-set receipt.
+        let json = format!(
+            "{{\"MonochromeAtlasBytes\":{mono},\"ImageAtlasBytes\":{image},\"FontAtlasBytes\":{subpixel},\"InstanceBufferBytes\":{instance_bytes},\"PathTextureBytes\":{path_bytes}}}"
+        );
+        if let Err(error) = std::fs::write(path, json) {
+            log::error!("writing memory owners: {error}");
+        }
     }
 
     /// Clear the render target for `background_appearance` and encode every

@@ -117,6 +117,7 @@ foreach ($round in 1..3) {
         $db = Join-Path $Out "run-$screen-$round.db"
         Copy-Item $seed $db
         $dump = Join-Path $Out "$screen-$round.json"
+        $env:GPUI_MEMORY_RECEIPT = Join-Path $Out "$screen-$round-owners.json"
         $p = Start-Process $Exe -WindowStyle Maximized -PassThru -ArgumentList @(
             '--db', "`"$db`"", '--offline', '--theme', 'graphite', '--screen', $screen,
             '--board', '15', '--task', '58006', '--dump-layout', "`"$dump`""
@@ -156,6 +157,7 @@ foreach ($round in 1..3) {
                 $g.Dispose(); $bmp.Dispose()
             }
         } finally {
+            Remove-Item Env:GPUI_MEMORY_RECEIPT -ErrorAction SilentlyContinue
             if (-not $p.HasExited) { Stop-Process -Id $p.Id -Force; $p.WaitForExit() }
         }
     }
