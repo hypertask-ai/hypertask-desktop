@@ -120,7 +120,7 @@ downloaded from that CI artifact and embedded without local conversion or build.
 The previous filenames were mislabeled (400/500/600/700 contained OS/2 weights
 500/400/700/600); a Rust CI regression now checks their declared weights.
 
-## Font investigation disposition (not pixel-perfect completion)
+## Historical font handoff (superseded by the authorized continuation below)
 
 The generated full faces and the exact Latin web faces have identical declared
 advances/bearings, but Chromium measures them differently: footer 108 vs 106,
@@ -160,17 +160,16 @@ copy was run on this VPS and no owner-laptop command was used. The recommended
 next decision is deeper native font-metric work rather than source-unsupported
 UI compensation; this receipt must not be presented as complete part-B parity.
 
-### Blocking oracle correction
+### Historical blocking oracle correction
 
 Agreement with an equivalent full font is diagnostic evidence only, not a
 substitute for the actual frozen web-subset contract. The final CI gate retains
 **both** assertions with the original 1.5px tolerance: equivalent-full-font and
-actual-web-font widths must match native. The nine same-label differences still
-fail the latter. The earlier equivalent-only green receipt is not full parity
-proof and must not be used as such. B3 **and B4** are consequently unmet/handoff
-required (two met, two abandoned), until the deeper font-metrics work is scoped
-and the real check passes. No native app/Cargo/font-asset changes from the
-unsuccessful experiments remain in the final patch.
+actual-web-font widths must match native. At that handoff the nine same-label differences failed the latter. The earlier
+equivalent-only green receipt was not full parity proof. B3 **and B4** were
+unmet/handoff required until the owner authorized the deeper continuation below.
+That continuation keeps both assertions and closes the nine boxes; the old
+equivalent-only receipt is not used as its proof.
 
 ## Authorized native-font continuation
 
@@ -196,12 +195,15 @@ normal advances. Full-source TrueType hint programs caused the browser variant
 difference, while native layout previously used fractional design advances.
 Rounding design advances alone cannot reproduce FreeType auto-hinting.
 
-The embedded full faces now come directly from that CI artifact, with the web
+The embedded full faces originate from CI font artifacts (with family-name
+preservation corrected in run 40099324788 below), with the web
 asset's unhinted behavior and correctly named weight classes. Linux's vendored
 GPUI backend retains HarfRust shaping and uses FreeType normal advances for the
 actual selected glyphs, preserving kerning, fallback, variable weight and bidi
-cluster order at FreeType 26.6 precision. Glyph metrics are cached per face,
-size and glyph; no text-specific compensation is used. Both original strict
+cluster order. Glyph metrics are cached per face,
+size and glyph; fixed-pitch keycaps retain fractional spacing. Shaping
+adjustments share the normal hinted pixel grid, and glyph positions preserve
+FreeType 26.6 precision. No text-specific compensation is used. Both original strict
 browser assertions remain unchanged. Final runtime/comparison proof follows.
 
 A further source review found that the extra task-composer row is not a fixture
@@ -244,9 +246,68 @@ label differences (YESTERDAY versus LAST WEEK, Synthetic Board versus QA Team
 Board), not new source-supported UI changes. Native text tests exposed a
 fractional kerning/ceil drift, so shaping adjustments now use the same pixel
 grid as normal FreeType advances. Fixed-pitch keycap fonts retain fractional
-advances (`src/components/Common/kbd.tsx`, the web kbd element's monospace font;
+advances (`src/components/Common/kbd.tsx:11-18`, the web kbd element, and the
+Tailwind preflight imported by `src/styles/tailwind-entry.css:7-10`;
 `BottomSettings_QuickTips.tsx:405-408` supplies the 12px size). CI records the
 actual browser keycap widths as additional diagnostics. The inherited wrap-hit
 regression now injects its historical one-ulp boundary explicitly instead of
 assuming that font rounding will still produce that error naturally; its
 out-of-width hit assertion remains mandatory.
+
+
+## Verified native-font completion
+
+Runtime SHA **dde82c20b363a0bcdc0c0f5a08280072726567c4**, CI
+[40102196576](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40102196576):
+Ubuntu, Windows x64, macOS ARM64, Windows ARM64 and Windows memory receipt/budget
+all **success**. The historical ram2-only baseline is skipped by its unchanged
+branch condition. The final documentation-only descendant's exact SHA, run and
+every job result are bound in the [final receipt](https://github.com/hypertask-ai/hypertask-desktop/pull/16#issuecomment-6385476101).
+
+`layout-dumps` artifact **12563074476**, digest
+`sha256:49c7f27ac90162c68c4b5fc5bb2f5ac6acdecd1bc70f6e4d0ae108978c1c3ffc`,
+was downloaded into `evidence/look-pixel-grid`. The unmodified supplied comparer,
+with live 1920x1009 reference and original tolerances, reports:
+
+| Input | Original baseline | Continuation before (1c2f460) | Native-font result |
+| --- | ---: | ---: | ---: |
+| Dense/raw | 116 | 74 | **68** |
+| Matched structure | 83 | 42 | **34** (12 inbox / 13 board / 9 task) |
+
+Raw outputs: `evidence/look-font-before{,-parity}.txt` and
+`evidence/look-pixel-grid{,-parity}.txt`. No filtering or tolerance change.
+All six tab boxes (including active alias) now match the reference exactly:
+positions **118/223/304/395/528** and widths **96/72/82/124/69**. Each footer hint
+is **106px** wide; native first-hint x is **380/272/324** versus live
+**380.625/273.171875/324.625**, all within the unchanged 1.5px gate. Thus **all
+nine** previous same-label boxes close. The desktop composer is **154px**.
+
+The 34 remaining matched differences are **24 collector-only rail keys** and
+**ten synthetic/content-dependent boxes**: inbox author/title/kind and relative
+date section, board title/count, first card title/id and second card height,
+and task ticket ID. The corrected font exposes three previously accidental
+width agreements (Synthetic Board versus QA Team Board, its following count,
+and YESTERDAY versus LAST WEEK); these are reported, not hidden by changing
+fixtures. No source-supported layout discrepancy remains among these boxes.
+Style-field mismatch count remains **zero**.
+
+`font-metrics.json` proves web/full/native **106/96/72** exactly and
+`LAYOUT_WEB_FONT_METRICS_OK` in Ubuntu's log. Chromium keycap diagnostics explain
+the fixed-pitch exception: source-stack CTRL/K widths are **28.8046875/7.201171875**,
+whereas normal-hinting the embedded mono face gives **28/7**. Fractional keycap
+advances are necessary for centering the complete hint row; no fixed label
+width or compensating coordinate was introduced.
+
+CI logs additionally prove **28 native text-system tests passed**, including
+metric, combining-mark/cluster, bidi/fallback and the deterministic historical
+wrap-hit control. Embedded-family/weight/no-hint and desktop-no-phone-actions
+regressions pass on all three test platforms. Source-generation receipts retain
+**891** mapped characters per weight, lose no existing character and match all
+**232** web-subset advances/bearings. The original failing strict run
+[40096584998](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40096584998)
+and the family-name regression failure in run 40099324788 are real negative
+controls. Both original strict font assertions remain unchanged at 1.5px.
+
+Acceptance F1–F4 and the superseded B3/B4 handoff are closed by these CI artifacts
+and the final SHA-bound receipt. F011 is unchanged. No VPS build, test, app or
+test-copy execution and no owner-laptop access occurred.
