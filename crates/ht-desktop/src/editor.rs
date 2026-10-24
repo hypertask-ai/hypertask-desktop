@@ -1161,6 +1161,8 @@ fn autolink_url(text: &str) -> Option<String> {
             return Some(format!("mailto:{text}"));
         }
         return None;
+    } else if text.contains("://") {
+        return None;
     } else if text.contains('.') {
         let domain = text.split(['/', '?', '#', ':']).next()?;
         let suffix = domain.rsplit('.').next()?;
@@ -1647,6 +1649,7 @@ mod tests {
             assert!(!input.paste_link("https://example.org", window, cx));
         });
         assert!(autolink_url("1.2").is_none());
+        assert!(autolink_url("javascript://example.com").is_none());
         assert_eq!(
             autolink_url("hello@example.com").as_deref(),
             Some("mailto:hello@example.com")
