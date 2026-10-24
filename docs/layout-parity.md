@@ -228,3 +228,9 @@ macOS job (`167 passed; 1 failed`, missing typographic family), demonstrating a
 real negative control; the four corrected faces are downloaded without local
 conversion. Only runtime font/shader sources and tests are vendored; the
 unrelated upstream Criterion benchmark and its dependency are omitted.
+
+The patched backend is an explicit workspace member so Cargo can run its
+text-system unit target. Its upstream GPU unit target is not auto-selected on
+all hosts: Linux CI explicitly selects the text-system tests (including both
+new metric/cluster regressions). Original workspace tests, real layout dumps
+and both strict Chromium assertions remain required and unchanged.

@@ -7,6 +7,8 @@ publish = false
 
 [lib]
 path = "src/gpui_wgpu.rs"
+# CI explicitly runs the text-system target on Linux, not upstream GPU tests.
+test = false
 doctest = false
 
 [features]
