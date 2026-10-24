@@ -261,7 +261,7 @@ Runtime SHA **dde82c20b363a0bcdc0c0f5a08280072726567c4**, CI
 [40102196576](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40102196576):
 Ubuntu, Windows x64, macOS ARM64, Windows ARM64 and Windows memory receipt/budget
 all **success**. The historical ram2-only baseline is skipped by its unchanged
-branch condition. The final documentation-only descendant's exact SHA, run and
+branch condition. The final descendant's exact SHA, run and
 every job result are bound in the [final receipt](https://github.com/hypertask-ai/hypertask-desktop/pull/16#issuecomment-6385476101).
 
 `layout-dumps` artifact **12563074476**, digest

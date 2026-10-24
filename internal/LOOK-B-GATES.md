@@ -9,7 +9,7 @@ Scope: only layout parity; F011 POST createGlobally remains server-blocked under
 - [x] B3: All actionable look differences are fixed with web-source file:line citations and CI regression assertions; no UI absent from web is introduced.
   EVIDENCE: Owner authorized deeper native font work. Runtime CI 40102196576, SHA dde82c20b363a0bcdc0c0f5a08280072726567c4 closes all nine metric boxes, retains both strict font gates, removes the phone-only composer row, and records dense 68/matched 34 differences (only coverage/synthetic content remain). See internal/LOOK-FONT-GATES.md, docs/layout-parity.md and final receipt https://github.com/hypertask-ai/hypertask-desktop/pull/16#issuecomment-6385476101.
 - [x] B4: Final pushed SHA has successful public GitHub CI and the requested draft PR; every push is preceded by fetch/rebase origin/main, and every new commit ends with the requested coauthor trailer.
-  EVIDENCE: Runtime CI 40102196576: all five applicable jobs success, unchanged ram2-only baseline skipped. Every continuation push follows fetch/rebase origin/main with the required coauthor trailer; PR 16 remains draft/main/look. Final documentation-only descendant is independently verified and SHA-bound in https://github.com/hypertask-ai/hypertask-desktop/pull/16#issuecomment-6385476101.
+  EVIDENCE: Runtime CI 40102196576: all five applicable jobs success, unchanged ram2-only baseline skipped. Every continuation push follows fetch/rebase origin/main with the required coauthor trailer; PR 16 remains draft/main/look. Final descendant is independently verified and SHA-bound in https://github.com/hypertask-ai/hypertask-desktop/pull/16#issuecomment-6385476101.
 
 
 
