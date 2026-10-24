@@ -78,7 +78,7 @@ fn switcher_reads_actual_post_teams_and_get_favorites_and_never_guesses_on_denia
             calls: vec![],
         };
         let result = board_sidebar::load(&mut server);
-        assert_eq!(result.is_ok(), status == 200);
+        assert!(result.is_ok());
         assert_eq!(
             server
                 .calls
@@ -92,6 +92,11 @@ fn switcher_reads_actual_post_teams_and_get_favorites_and_never_guesses_on_denia
             ]
         );
         if let Ok((user, t, f)) = result {
+            assert_eq!(t.is_array(), status == 200);
+            assert_eq!(f.is_array(), status == 200);
+            if status != 200 {
+                continue;
+            }
             let mut db = Db::memory().unwrap();
             db.kv_set("current-user-id", "42").unwrap();
             db.cache_sidebar(user, &t, &f).unwrap();
@@ -145,4 +150,22 @@ fn favorite_replacement_is_durable_optimistic_and_rolls_back_401_and_403() {
             if status == 200 { 16 } else { 15 }
         );
     }
+}
+
+#[test]
+fn independent_metadata_refusal_retains_the_other_authoritative_query_and_cached_values() {
+    let mut db = Db::memory().unwrap();
+    db.kv_set("current-user-id", "42").unwrap();
+    db.cache_sidebar(42, &teams(), &favorites()).unwrap();
+    db.cache_sidebar(
+        42,
+        &json!([{"id":"new-team","title":"New","projects":[]}]),
+        &Value::Null,
+    )
+    .unwrap();
+    assert_eq!(db.sidebar_data("teams")[0]["id"], "new-team");
+    assert_eq!(db.sidebar_data("favorites"), favorites());
+    db.cache_sidebar(42, &Value::Null, &json!([])).unwrap();
+    assert_eq!(db.sidebar_data("teams")[0]["id"], "new-team");
+    assert_eq!(db.sidebar_data("favorites"), json!([]));
 }

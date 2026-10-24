@@ -19,8 +19,8 @@ pub fn load(transport: &mut impl Transport) -> Result<(i64, Value, Value)> {
         "/api/teams/getAllSidebar",
         &json!({"userId":user}),
         "sidebar-read",
-    )?;
-    let favorites = transport.get("/api/favorites/getFavorites")?;
+    );
+    let favorites = transport.get("/api/favorites/getFavorites");
     let read = |r: Response| -> Result<Value> {
         ensure!(
             (200..300).contains(&r.status),
@@ -33,7 +33,15 @@ pub fn load(transport: &mut impl Transport) -> Result<(i64, Value, Value)> {
         ensure!(r.body.is_array(), "Invalid board metadata");
         Ok(r.body)
     };
-    Ok((user, read(teams)?, read(favorites)?))
+    // These are independent web queries: one refused read must not discard the other.
+    Ok((
+        user,
+        teams.ok().and_then(|r| read(r).ok()).unwrap_or(Value::Null),
+        favorites
+            .ok()
+            .and_then(|r| read(r).ok())
+            .unwrap_or(Value::Null),
+    ))
 }
 impl Db {
     pub fn cache_sidebar(&mut self, user: i64, teams: &Value, favorites: &Value) -> Result<()> {
@@ -42,11 +50,11 @@ impl Db {
             "Board metadata belongs to another account"
         );
         ensure!(
-            teams.is_array() && favorites.is_array(),
+            (teams.is_array() || teams.is_null()) && (favorites.is_array() || favorites.is_null()),
             "Invalid board metadata"
         );
         self.transaction(|db| {
-            for team in teams.as_array().unwrap() {
+            for team in teams.as_array().into_iter().flatten() {
                 let id = team["id"]
                     .as_str()
                     .filter(|id| !id.is_empty())
@@ -57,8 +65,12 @@ impl Db {
                     db.upsert("Project", &project)?;
                 }
             }
-            db.kv_set(&cache_key(user, "teams"), &teams.to_string())?;
-            db.kv_set(&cache_key(user, "favorites"), &favorites.to_string())?;
+            if teams.is_array() {
+                db.kv_set(&cache_key(user, "teams"), &teams.to_string())?;
+            }
+            if favorites.is_array() {
+                db.kv_set(&cache_key(user, "favorites"), &favorites.to_string())?;
+            }
             db.reapply_pending()?;
             Ok(())
         })

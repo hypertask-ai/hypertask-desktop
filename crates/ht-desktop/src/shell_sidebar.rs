@@ -28,6 +28,7 @@ impl Desktop {
         };
         self.shell.metadata_loading = true;
         let user = self.db.current_user_id();
+        let expected_token = token.clone();
         let (send, receive) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let result = ht_core::Http::new(token)
@@ -43,12 +44,19 @@ impl Desktop {
                     Ok(result) => {
                         let _ = view.update(cx, |this, cx| {
                             this.shell.metadata_loading = false;
-                            if this.db.current_user_id() != user {
+                            if this.db.current_user_id() != user
+                                || this.cli_token().as_deref() != Some(expected_token.as_str())
+                            {
                                 return;
                             }
                             // Web switcher leaves its last successful data in place on read refusal.
-                            if let Ok((user, teams, favorites)) = result {
-                                let _ = this.db.cache_sidebar(user, &teams, &favorites);
+                            if let Ok((resolved_user, teams, favorites)) = result {
+                                if user.is_none() {
+                                    let _ = this
+                                        .db
+                                        .kv_set("current-user-id", &resolved_user.to_string());
+                                }
+                                let _ = this.db.cache_sidebar(resolved_user, &teams, &favorites);
                             }
                             cx.notify();
                         });
