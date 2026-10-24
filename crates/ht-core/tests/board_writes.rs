@@ -342,3 +342,25 @@ fn people_and_agent_assignments_preserve_each_other_and_denial_rolls_back() {
     ));
     assert_eq!(db.task(1).unwrap().unwrap().assignee_count, 2);
 }
+
+#[test]
+fn archive_board_uses_existing_bearer_archive_contract_and_real_status_ack() {
+    let mut db = Db::memory().unwrap();
+    seed(&mut db);
+    let id = db
+        .enqueue(
+            Write::Board {
+                change: BoardWrite::ArchiveBoard { project: 15 },
+            },
+            100,
+        )
+        .unwrap();
+    let mut s = server(
+        "POST",
+        "/projects/archive",
+        json!({"project_id":15,"status":"Archive"}),
+        json!({"success":true,"project":{"id":15,"title":"Board","status":"Archive"}}),
+    );
+    assert_eq!(db.drain_once(&mut s, 101).unwrap(), Drain::Applied(id));
+    assert_eq!(db.projects().unwrap()[0]["status"], "Archive");
+}

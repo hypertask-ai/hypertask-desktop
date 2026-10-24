@@ -73,6 +73,7 @@ actions!(
         End,
         ShowCharacterPalette,
         Paste,
+        PastePlain,
         Cut,
         Copy,
         Newline,
@@ -318,6 +319,14 @@ impl TextInput {
         }
     }
 
+    fn paste_plain(&mut self, _: &PastePlain, window: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only { return; }
+        if let Some(text)=cx.read_from_clipboard().and_then(|item|item.text()) {
+            let text=text.replace("\r\n","\n");
+            let text=if self.multiline {text}else{text.replace('\n'," ")};
+            self.replace_text_in_range(None,&text,window,cx);
+        }
+    }
     fn copy(&mut self, _: &Copy, _: &mut Window, cx: &mut Context<Self>) {
         if !self.selected_range.is_empty() {
             cx.write_to_clipboard(ClipboardItem::new_string(
@@ -1050,6 +1059,7 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::end))
             .on_action(cx.listener(Self::show_character_palette))
             .on_action(cx.listener(Self::paste))
+            .on_action(cx.listener(Self::paste_plain))
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::newline))
@@ -1107,6 +1117,8 @@ pub fn init(cx: &mut App) {
         KeyBinding::new("shift-right", SelectRight, Some("TextInput")),
         KeyBinding::new("ctrl-a", SelectAll, Some("TextInput")),
         KeyBinding::new("ctrl-v", Paste, Some("TextInput")),
+        KeyBinding::new("ctrl-shift-v", PastePlain, Some("TextInput")),
+        KeyBinding::new("cmd-shift-v", PastePlain, Some("TextInput")),
         KeyBinding::new("ctrl-c", Copy, Some("TextInput")),
         KeyBinding::new("ctrl-x", Cut, Some("TextInput")),
         KeyBinding::new("home", Home, Some("TextInput")),

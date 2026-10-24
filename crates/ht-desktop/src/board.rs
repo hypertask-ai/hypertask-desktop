@@ -227,6 +227,11 @@ impl Desktop {
                     "Rename board",
                     crate::command_center::BoardAction::RenameBoard,
                 ),
+                (
+                    "archiveBoards",
+                    "Archive board",
+                    crate::command_center::BoardAction::ArchiveBoard,
+                ),
             ] {
                 rows.push(crate::command_center::Command {
                     key: key.into(),

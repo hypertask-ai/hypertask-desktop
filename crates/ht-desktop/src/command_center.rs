@@ -19,7 +19,7 @@ pub enum CommandAction {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum BoardAction { AddColumn, RenameColumn, DeleteColumn, RenameBoard, MoveTask }
+pub enum BoardAction { AddColumn, RenameColumn, DeleteColumn, RenameBoard, ArchiveBoard, MoveTask }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShellCommand {

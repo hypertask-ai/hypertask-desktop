@@ -5,6 +5,9 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BoardWrite {
+    ArchiveBoard {
+        project: i64,
+    },
     AssignAgent {
         task: i64,
         agent: String,
@@ -52,6 +55,14 @@ impl BoardWrite {
             Ok::<(), anyhow::Error>(())
         };
         let request = match self {
+            Self::ArchiveBoard { project } => {
+                positive(*project)?;
+                (
+                    "POST",
+                    "/projects/archive".into(),
+                    json!({"project_id":project,"status":"Archive"}),
+                )
+            }
             Self::AssignAgent {
                 task,
                 agent,
@@ -214,11 +225,17 @@ impl BoardWrite {
                 db.upsert("Section", &column)?;
                 db.request_refetch("board", *project)?;
             }
-            Self::RenameBoard { project, .. } => {
+            Self::RenameBoard { project, .. } | Self::ArchiveBoard { project } => {
                 let value = body
                     .get("project")
                     .context("missing board acknowledgement")?;
                 ensure!(value["id"] == *project, "wrong board acknowledgement");
+                if matches!(self, Self::ArchiveBoard { .. }) {
+                    ensure!(
+                        value["status"] == "Archive",
+                        "missing archive acknowledgement"
+                    );
+                }
                 db.upsert("Project", value)?;
             }
             Self::CreateTaskLabel { project, task, .. } => {

@@ -38,6 +38,21 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         self.task_fields.summary_open = false;
+        if action == BoardAction::ArchiveBoard
+            && !self
+                .db
+                .projects()
+                .unwrap_or_default()
+                .iter()
+                .any(|project| {
+                    project["id"] == self.options.board
+                        && project["ownerId"].as_i64() == self.db.current_user_id()
+                })
+        {
+            self.error = Some("Only board owner can manage this board".into());
+            cx.notify();
+            return;
+        }
         let section = self.columns.get(self.column).map_or(0, |column| column.id);
         let task = self.selected_task();
         if action == BoardAction::MoveTask && task.is_none() {
@@ -115,6 +130,9 @@ impl Desktop {
         }
         let title = self.board_forms.input.read(cx).content.trim().to_owned();
         let change = match form.action {
+            BoardAction::ArchiveBoard => BoardWrite::ArchiveBoard {
+                project: form.project,
+            },
             BoardAction::AddColumn if !title.is_empty() => BoardWrite::AddColumn {
                 project: form.project,
                 title,
@@ -206,6 +224,11 @@ impl Desktop {
                     form.pending = None;
                     cx.notify();
                 } else {
+                    let archived = self
+                        .board_forms
+                        .form
+                        .as_ref()
+                        .is_some_and(|form| form.action == BoardAction::ArchiveBoard);
                     let moved = self
                         .board_forms
                         .form
@@ -213,6 +236,9 @@ impl Desktop {
                         .is_some_and(|form| form.action == BoardAction::MoveTask);
                     self.close_board_form(window, cx);
                     self.reload();
+                    if archived {
+                        self.switch(Screen::Inbox, cx);
+                    }
                     if moved && self.screen == Screen::Task {
                         self.options.board = self
                             .detail
@@ -271,6 +297,7 @@ impl Desktop {
         };
         let t = self.colors;
         let title = match form.action {
+            BoardAction::ArchiveBoard => "Archive board?",
             BoardAction::AddColumn => "Add Column",
             BoardAction::RenameColumn => "Rename board column",
             BoardAction::RenameBoard => "Change board name",
@@ -279,7 +306,10 @@ impl Desktop {
             BoardAction::MoveTask => "Select Column",
         };
         let mut content = div().flex().flex_col().gap(px(12.)).child(title);
-        if form.action != BoardAction::DeleteColumn {
+        if !matches!(
+            form.action,
+            BoardAction::DeleteColumn | BoardAction::ArchiveBoard
+        ) {
             content = content.child(self.board_forms.input.clone());
         }
         if form.action == BoardAction::MoveTask {
@@ -317,6 +347,8 @@ impl Desktop {
                     .cursor_pointer()
                     .child(if form.action == BoardAction::DeleteColumn {
                         "Delete board column"
+                    } else if form.action == BoardAction::ArchiveBoard {
+                        "Archive board"
                     } else {
                         "Save"
                     })
@@ -513,5 +545,51 @@ mod tests {
             );
         })
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod archive_tests {
+    use super::*;
+    use crate::ui::task_fields::tests::desktop;
+    use serde_json::json;
+    #[gpui::test]
+    fn archive_board_palette_is_owner_only_cancel_is_no_write_and_confirm_is_queued(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let mut v = desktop(window, cx);
+            v.screen = Screen::Board;
+            v.reload();
+            v
+        });
+        view.update_in(cx, |this, window, cx| {
+            this.open_board_form(BoardAction::ArchiveBoard, window, cx);
+            assert!(this.board_forms.form.is_none());
+            assert!(this.error.as_ref().unwrap().contains("Only board owner"));
+            this.db
+                .apply_response(
+                    &json!({"success":true,"projects":[{"id":15,"title":"Board","ownerId":42}]}),
+                )
+                .unwrap();
+        });
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Archive board");
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter escape");
+        view.read_with(cx, |this, _| {
+            assert!(this.db.mutations().unwrap().is_empty())
+        });
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Archive board");
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter enter");
+        view.read_with(cx, |this, _| {
+            assert_eq!(
+                this.db.mutations().unwrap()[0].payload_json["change"]["ArchiveBoard"]["project"],
+                15
+            )
+        });
     }
 }

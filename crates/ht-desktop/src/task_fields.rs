@@ -849,3 +849,35 @@ mod assignee_tests {
         .unwrap();
     }
 }
+
+#[cfg(test)]
+mod plain_paste_tests {
+    use super::*;
+    use crate::ui::task_fields::tests::desktop;
+    #[gpui::test]
+    fn plain_paste_key_replaces_selection_without_link_wrapping_and_keeps_unicode_and_newlines(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(desktop);
+        cx.simulate_keystrokes("ctrl-m");
+        cx.simulate_input("Selected");
+        cx.simulate_keystrokes("ctrl-a");
+        view.update_in(cx, |_, _, cx| {
+            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                "https://example.org\r\né🙂".into(),
+            ))
+        });
+        cx.simulate_keystrokes("ctrl-shift-v");
+        view.read_with(cx, |this, cx| {
+            let input = this.comment_input.read(cx);
+            assert_eq!(input.content.as_ref(), "https://example.org\né🙂");
+            assert!(!input.html().contains("<a "));
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
+        cx.simulate_keystrokes("ctrl-z");
+        view.read_with(cx, |this, cx| {
+            assert_eq!(this.comment_input.read(cx).content.as_ref(), "Selected")
+        });
+    }
+}
