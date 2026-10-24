@@ -729,6 +729,7 @@ impl Desktop {
         cx.notify();
     }
     fn close_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.dismiss_compose_search();
         self.interaction.modal = None;
         let focus = match self.editing {
             Editing::Comment => self.comment_input.focus_handle(cx),

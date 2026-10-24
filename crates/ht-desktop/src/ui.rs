@@ -281,6 +281,7 @@ impl Desktop {
                         .update(cx, |this, cx| {
                             this.reload();
                             this.poll_editor_results(cx);
+                            this.poll_saved_comments(cx);
                             if let Some(worker) = &this.worker {
                                 if worker.errors().try_iter().next().is_some() {
                                     this.error =
@@ -607,7 +608,7 @@ impl Desktop {
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.compose_key(event, window, cx) { return; }
-        if self.compose_open() { self.interaction_key(event, window, cx); return; }
+        if self.compose_open() { if self.compose_search_active() {self.interaction_key(event, window, cx);} return; }
         if self.mention_key(event, window, cx) { return; }
         if self.unread_review_key(event,window,cx) {return;}
         if self.comment_reader_key(event, window, cx) { return; }

@@ -134,7 +134,7 @@ mod tests {
     use serde_json::json;
     fn desktop(window:&mut Window,cx:&mut Context<Desktop>)->Desktop {
         let mut db=Db::memory().unwrap();db.kv_set("current-user-id","985").unwrap();
-        db.apply_task(&json!({"id":1,"projectId":7283,"title":"QA","status":"Normal"})).unwrap();
+        db.apply_task(&json!({"id":1,"projectId":7283,"title":"QA","status":"Normal","uniqueIndex":5})).unwrap();
         db.apply_comments(1,&json!({"success":true,"comments":[{"id":7,"creatorId":985,"text":"<p>Comment</p>","createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
         let options=Options::parse(["--offline","--screen","task","--task","1","--board","7283"].map(String::from)).unwrap();
         let view=Desktop::new(db,options,window,cx);window.focus(&view.focus,cx);view
@@ -151,9 +151,10 @@ mod tests {
     fn comment_mentions_skip_headers_insert_rich_task_links_and_undo_without_sending(cx:&mut gpui::TestAppContext) {
         cx.update(crate::input::init);let(view,cx)=cx.add_window_view(desktop);
         cx.simulate_keystrokes("ctrl-m");cx.simulate_input("Before @QA");
-        view.update_in(cx,|this,_,cx|results(this,cx));cx.simulate_keystrokes("down enter");
+        view.update_in(cx,|this,_,cx|results(this,cx));cx.simulate_keystrokes("down");
+        view.read_with(cx,|this,_|assert_eq!(this.mentions.choice,3));cx.simulate_keystrokes("enter");
         view.read_with(cx,|this,cx|{
-            let html=this.comment_input.read(cx).html();assert!(html.contains("Before "));assert!(html.contains("data-label=\"task\""));assert!(html.contains("href=\"https://app.hypertask.ai/detail/project-7283/5\""));assert!(!html.contains("@QA"));assert!(this.db.mutations().unwrap().is_empty());
+            let html=this.comment_input.read(cx).html();assert!(html.contains("Before "));assert!(html.contains("data-label=\"task\""),"inserted HTML: {html}");assert!(html.contains("href=\"https://app.hypertask.ai/detail/project-7283/5\""));assert!(!html.contains("@QA"));assert!(this.db.mutations().unwrap().is_empty());
         });
         cx.simulate_keystrokes("ctrl-z");view.read_with(cx,|this,cx|assert!(this.comment_input.read(cx).content.ends_with("@QA")));
     }

@@ -43,7 +43,11 @@ pub fn writer_request(project: &Value, text: &str, time_zone: &str) -> Request {
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct Draft { pub title: String, pub description: String, #[serde(default)] pub due_date: Option<String>, #[serde(default)] pub labels: Vec<String> }
+pub struct Draft {
+    pub title: String, pub description: String,
+    #[serde(default)] pub due_date: Option<String>, #[serde(default)] pub labels: Vec<String>,
+    #[serde(default)] pub priority: Option<u8>, #[serde(default)] pub estimate: Option<u8>,
+}
 
 // Parse the same marker elements as the web, including entities and nested HTML.
 fn marker(html: &mut String, id: &str) -> Option<String> {
@@ -65,6 +69,7 @@ pub fn writer_drafts(body: &Value) -> Result<Vec<Draft>> {
         tasks.iter().map(|t| Ok(Draft {
             title:t["title"].as_str().context("missing writer title")?.trim().into(),
             description:t["description"].as_str().context("missing writer description")?.into(),
+            priority:None, estimate:None,
             due_date:t["dueDate"].as_str().map(str::to_owned),
             labels:t["labelIds"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_owned).collect(),
         })).collect::<Result<Vec<_>>>()?
@@ -74,8 +79,10 @@ pub fn writer_drafts(body: &Value) -> Result<Vec<Draft>> {
         let title = marker(&mut html, "ai-generated-task-title").context("writer returned no title")?;
         let due_date = marker(&mut html, "ai-generated-task-due-date");
         let labels = marker(&mut html, "ai-generated-task-tags").unwrap_or_default().split(',').map(str::trim).filter(|s|!s.is_empty()).map(str::to_owned).collect();
-        for id in ["properties","priority","estimate","status","assignees","ticket-type","custom-fields"] { marker(&mut html, &format!("ai-generated-task-{id}")); }
-        vec![Draft {title:plain(&title),description:html,due_date,labels}]
+        let priority=marker(&mut html,"ai-generated-task-priority").and_then(|v|v.parse::<u8>().ok()).filter(|v|*v<=4);
+        let estimate=marker(&mut html,"ai-generated-task-estimate").and_then(|v|v.parse::<u8>().ok()).filter(|v|[0,2,3,4,5,6].contains(v));
+        for id in ["properties","status","assignees","type","custom-fields"] { marker(&mut html, &format!("ai-generated-task-{id}")); }
+        vec![Draft {title,description:html,due_date,labels,priority,estimate}]
     };
     ensure!(drafts.iter().all(|d|!d.title.trim().is_empty() && !plain(&d.description).is_empty()), "writer returned an incomplete ticket");
     Ok(drafts)
@@ -102,7 +109,7 @@ pub(crate) fn compose(db: &Db, transport: &mut impl Transport, payload: &Value, 
             Ok(Response {status,body}) if (200..300).contains(&status) => match writer_drafts(&body) { Ok(drafts)=>(drafts,false), Err(_)=>(vec![],true) },
             _ => (vec![],true),
         };
-        let drafts = if drafts.is_empty() { vec![Draft { title:text.trim().into(),description:format!("<p>{}</p>",escape(text).replace('\n',"<br>")),due_date:None,labels:vec![] }] } else { drafts };
+        let drafts = if drafts.is_empty() { vec![Draft { title:text.trim().into(),description:format!("<p>{}</p>",escape(text).replace('\n',"<br>")),due_date:None,labels:vec![],priority:None,estimate:None }] } else { drafts };
         let value = json!({"placement":placement,"drafts":drafts,"writerFailed":failed});
         db.kv_set(&cache_key, &value.to_string()).map_err(|_|TransportError::InvalidResponse)?;
         value
@@ -113,6 +120,8 @@ pub(crate) fn compose(db: &Db, transport: &mut impl Transport, payload: &Value, 
         let receipt_key = format!("compose-created:{key}:{index}");
         if let Some(task) = db.kv_get(&receipt_key).ok().flatten().and_then(|s|serde_json::from_str::<Value>(&s).ok()) { tasks.push(task); continue; }
         let mut body = json!({"project_id":project["id"],"section_id":prepared["placement"]["sectionId"],"title":draft.title,"description":draft.description});
+        if let Some(priority)=draft.priority {body["priority"]=json!(priority);}
+        if let Some(estimate)=draft.estimate {body["estimate"]=json!(estimate);}
         if let Some(date) = &draft.due_date { body["due_date"] = json!(date); }
         if !draft.labels.is_empty() { body["labels"] = json!(draft.labels); }
         // Stable per-draft key and frozen body allow a lost create acknowledgement to be replayed safely.

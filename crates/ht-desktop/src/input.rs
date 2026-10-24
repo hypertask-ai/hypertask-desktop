@@ -48,6 +48,8 @@ impl TextInput {
     }
     pub fn insert_mention(&mut self, range: Range<usize>, html: &str, window: &mut Window, cx: &mut Context<Self>) {
         if self.read_only {return;}
+        let mut range=range;
+        if self.content[range.end..].starts_with(' ') {range.end+=1;}
         self.remember_edit();
         if let Some(editor)=&mut self.editor {
             let end=editor.document.replace_inline_html(range,html);

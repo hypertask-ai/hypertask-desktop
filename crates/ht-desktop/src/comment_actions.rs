@@ -17,6 +17,7 @@ pub(super) struct CommentActions {
     pub choice: usize,
     pub collapsed: BTreeSet<i64>,
     pub readers: BTreeMap<i64,(String,Entity<TextInput>)>,
+    pub saved_pending: Vec<String>,
     all_open: bool,
     picker_scroll: ScrollHandle,
 }
@@ -42,6 +43,7 @@ impl CommentActions {
             choice: 0,
             collapsed: BTreeSet::new(),
             readers: BTreeMap::new(),
+            saved_pending: vec![],
             all_open: false,
             picker_scroll: ScrollHandle::new(),
         }
@@ -86,6 +88,16 @@ impl Desktop {
             .filter(|c| c.id > 0 && !activity(c))
     }
 
+    pub(super) fn poll_saved_comments(&mut self, cx: &mut Context<Self>) {
+        self.comment_actions.saved_pending.retain(|key| {
+            let receipt=format!("comment-saved-result:{key}");
+            let Some(value)=self.db.kv_get(&receipt).ok().flatten().and_then(|s|serde_json::from_str::<Value>(&s).ok()) else{return true;};
+            if let Some(error)=value["error"].as_str() {self.error=Some(format!("Could not star/pin comment: {error}. Refresh before trying again."));}
+            let _=self.db.kv_set(&receipt,"null");
+            false
+        });
+        cx.notify();
+    }
     pub(super) fn reset_comment_actions(&mut self) {
         self.comment_actions.readers.clear();
         self.comment_actions.edit_id = None;
@@ -135,7 +147,9 @@ impl Desktop {
         let id = comment.id;
         match action {
             Action::StarComment | Action::PinComment => {
-                self.enqueue(Write::CommentAction {task_id:self.options.task,comment_id:id,change:CommentWrite::Saved {public:action == Action::PinComment}},cx);
+                if self.enqueue(Write::CommentAction {task_id:self.options.task,comment_id:id,change:CommentWrite::Saved {public:action == Action::PinComment}},cx) {
+                    if let Ok(rows)=self.db.mutations() {if let Some(row)=rows.last() {self.comment_actions.saved_pending.push(row.client_id.clone());}}
+                }
             }
             Action::CopyCommentContent => {
                 let text = RichText::parse(&comment.text, self.colors).text;

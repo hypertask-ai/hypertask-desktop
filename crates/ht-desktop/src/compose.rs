@@ -25,13 +25,15 @@ impl Compose {
 }
 impl Desktop {
     pub(super) fn compose_open(&self) -> bool { self.compose.open }
+    pub(super) fn compose_search_active(&self) -> bool {self.compose.open && !self.compose.writing}
+    pub(super) fn dismiss_compose_search(&mut self) {if !self.compose.writing {self.compose.open=false;}}
     pub(super) fn open_compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.compose.open = true;
         self.compose.writing = true;
         self.compose.picker = false;
         self.interaction.modal = None;
         if self.compose.project <= 0 {
-            self.compose.project = if self.screen != Screen::Inbox { self.options.board }
+            self.compose.project = if self.screen == Screen::Task {self.detail.as_ref().map_or(self.options.board,|d|d.task.project_id)} else if self.screen == Screen::Board { self.options.board }
                 else { self.db.kv_get("compose-last-board").ok().flatten().and_then(|s|s.parse().ok()).unwrap_or(self.options.board) };
         }
         window.focus(&self.compose.input.focus_handle(cx), cx);

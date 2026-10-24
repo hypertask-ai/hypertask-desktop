@@ -2,12 +2,13 @@ use ht_core::{Db, Write, Drain, Transport, CommentWrite, desktop_cli::*, http::{
 use serde_json::{Value,json};
 
 fn db() -> Db {
-    let mut db=Db::memory().unwrap();
+    let mut db=Db::memory().unwrap(); seed(&mut db); db
+}
+fn seed(db: &mut Db) {
     db.kv_set("current-user-id","985").unwrap();
     db.apply_response(&json!({"success":true,"projects":[{"id":7283,"title":"QA","status":"Normal"}]})).unwrap();
     db.apply_task(&json!({"id":60253,"projectId":7283,"title":"QA","status":"Normal"})).unwrap();
     db.apply_comments(60253,&json!({"success":true,"comments":[{"id":7,"creatorId":985,"text":"<p>QA</p>","createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
-    db
 }
 struct Server { calls:Vec<(String,Value,String)>, create_failure:bool, writer_failure:bool, saved_status:u16 }
 impl Default for Server {fn default()->Self {Self{calls:vec![],create_failure:false,writer_failure:false,saved_status:200}}}
@@ -102,4 +103,22 @@ fn rust_writes_production_contract_requests_without_credentials() {
     let target=std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../target");
     std::fs::create_dir_all(&target).unwrap();
     std::fs::write(target.join("compose-live-requests.json"),serde_json::to_vec_pretty(&requests).unwrap()).unwrap();
+}
+
+#[test]
+fn compose_frozen_payload_and_comment_toggle_safety_survive_restart() {
+    let file=tempfile::NamedTempFile::new().unwrap();
+    let mut db=Db::open(file.path()).unwrap();seed(&mut db);
+    let id=db.enqueue(Write::ComposeTask{project_id:7283,text:"Note".into(),time_zone:"UTC".into()},100).unwrap();
+    let mut server=Server{create_failure:true,..Default::default()};
+    assert_eq!(db.drain_once(&mut server,100).unwrap(),Drain::Retrying(id));drop(db);
+    let mut db=Db::open(file.path()).unwrap();
+    assert_eq!(db.drain_once(&mut server,101).unwrap(),Drain::Applied(id));
+    assert_eq!(server.calls.iter().filter(|c|c.0=="/api/ai/task-writer").count(),1);
+    let id=db.enqueue(Write::CommentAction{task_id:60253,comment_id:7,change:CommentWrite::Saved{public:false}},102).unwrap();
+    // Simulate process exit after claiming a toggle, before its acknowledgement was persisted.
+    let conn=rusqlite::Connection::open(file.path()).unwrap();
+    conn.execute("UPDATE mutation_queue SET attempts=1,status='inflight',lease_until=103 WHERE id=?",[id]).unwrap();drop(conn);drop(db);
+    let mut db=Db::open(file.path()).unwrap();let before=server.calls.len();
+    assert_eq!(db.drain_once(&mut server,104).unwrap(),Drain::Failed(id));assert_eq!(server.calls.len(),before);
 }

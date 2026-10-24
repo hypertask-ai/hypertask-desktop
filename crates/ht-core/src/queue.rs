@@ -515,6 +515,7 @@ impl Db {
                     db.reapply_pending()?;
                 }
                 if row.kind == "comment_action" {
+                    if row.payload_json["change"]["action"]=="saved" {db.kv_set(&format!("comment-saved-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;}
                     db.upsert_comment(row.payload_json["task_id"].as_i64().context("missing task id")?, &row.payload_json["before"])?;
                     db.request_refetch("comments", row.payload_json["task_id"].as_i64().unwrap())?;
                     db.reapply_pending()?;
@@ -563,7 +564,10 @@ impl Db {
                 }
                 "editor_improve"|"draft_discard"=>db.resolve_editor(row.id,&row.kind,&row.payload_json,body)?,
                 "comment_draft" => db.resolve_comment_draft(&row.payload_json, body)?,
-                "comment_action" => db.resolve_comment_action(&row.payload_json, body)?,
+                "comment_action" => {
+                    db.resolve_comment_action(&row.payload_json, body)?;
+                    if row.payload_json["change"]["action"]=="saved" {db.kv_set(&format!("comment-saved-result:{}",row.client_id),&body.to_string())?;}
+                }
                 "task_title" | "task_section" | "task_patch" => {
                     let task = body.get("task").or_else(|| body["tasks"].as_array().and_then(|v| v.iter().find(|t| t["id"] == row.payload_json["task_id"]))).context("mutation response missing task")?;
                     ensure!(task["id"] == row.payload_json["task_id"], "mutation returned another task");

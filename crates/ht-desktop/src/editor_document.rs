@@ -1667,3 +1667,15 @@ mod selection_tests {
         assert_eq!(doc.selection_html(4..9),"<ul><li><p><em>two</em></p></li><li><p>t</p></li></ul>");
     }
 }
+
+#[cfg(test)]
+mod mention_insert_tests {
+    use super::*;
+    #[test]
+    fn inline_mention_replaces_only_trigger_range_and_keeps_surrounding_rich_blocks() {
+        let mut doc=Document::parse("<p><strong>Before</strong> @QA after</p><p>Next</p>");
+        let html=ht_core::desktop_cli::mention_html(&serde_json::json!({"type":"task","id":5,"name":"Linked task","project_id":7283,"index":5,"ticketNumber":"QA-5"})).unwrap();
+        doc.replace_inline_html(7..10,&html);
+        let html=doc.html();assert!(html.contains("<strong>Before</strong>"));assert!(html.contains("data-label=\"task\""),"{html}");assert!(html.contains("<p>Next</p>"));assert!(!html.contains("@QA"));
+    }
+}
