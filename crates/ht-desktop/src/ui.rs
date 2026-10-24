@@ -874,6 +874,10 @@ impl Desktop {
                     .pb(px(35.))
                     .children(self.columns.iter().enumerate().map(|(i, c)| {
                         div()
+                            .id(("board-drop-column", c.id as u64))
+                            .on_drop(cx.listener(move |this, drag: &board::CardDrag, _, cx| {
+                                this.drop_card(drag.task, i, None, cx);
+                            }))
                             .w(px(column_width))
                             .h_full()
                             .flex_shrink_0()
@@ -1020,6 +1024,11 @@ impl Desktop {
             .filter(|v| !v.is_empty());
         div()
             .id(("task-card", id as u64))
+            .on_drag(board::CardDrag { task: id, title: title.clone() }, |drag, _, _, cx| cx.new(|_| drag.clone()))
+            .on_drop(cx.listener(move |this, drag: &board::CardDrag, _, cx| {
+                cx.stop_propagation();
+                if drag.task != id { this.drop_card(drag.task, column, Some(id), cx); }
+            }))
             .px(px(8.))
             .pb(px(16.))
             .child(

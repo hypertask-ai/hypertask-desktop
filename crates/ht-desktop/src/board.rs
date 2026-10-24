@@ -2,6 +2,14 @@ use super::*;
 use crate::shortcuts::Action;
 use gpui::MouseButton;
 
+#[derive(Clone)]
+pub(super) struct CardDrag { pub task: i64, pub title: String }
+impl Render for CardDrag {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().w(px(280.)).p(px(12.)).rounded(px(5.)).bg(color(0x30343b)).text_color(color(0xffffff)).child(self.title.clone())
+    }
+}
+
 pub(super) struct ReturnTo {
     screen: Screen,
     board: i64,
@@ -49,6 +57,18 @@ pub(super) fn search_matches(task: &TaskView, query: &str) -> bool {
             .contains(query)
 }
 impl Desktop {
+    pub(super) fn drop_card(&mut self, task: i64, column: usize, before: Option<i64>, cx: &mut Context<Self>) {
+        let Some(target) = self.columns.get(column) else { return; };
+        let cards: Vec<_> = target.cards.iter().filter(|card| card.id != task).collect();
+        let index = before.and_then(|id| cards.iter().position(|card| card.id == id)).unwrap_or(cards.len());
+        let rank = |i: usize| cards.get(i).and_then(|card| card.extra.get("ranking")).and_then(serde_json::Value::as_str);
+        let ranking = match ht_core::task_rank(index.checked_sub(1).and_then(rank), rank(index)) {
+            Ok(rank) => rank,
+            Err(error) => { self.error = Some(error.to_string()); cx.notify(); return; }
+        };
+        let change = ht_core::BoardWrite::PositionTask { task, project: self.options.board, section: target.id, title: target.title.clone(), ranking };
+        if self.enqueue(Write::Board { change }, cx) { self.column = column; self.selected = index; }
+    }
     pub(super) fn remember_task_origin(&mut self) {
         if self.screen == Screen::Task {
             return;

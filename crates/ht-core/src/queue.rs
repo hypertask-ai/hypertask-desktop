@@ -94,7 +94,12 @@ impl Db {
                 if let crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
                     ensure!(db.task(*task)?.is_some_and(|task| task.project_id == *project), "task is not cached in this board");
                 }
-                let before = if let crate::BoardWrite::AssignAgent { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
+                if let crate::BoardWrite::PositionTask { task, project, section, .. } = change {
+                    ensure!(db.task(*task)?.is_some_and(|t| t.project_id == *project), "task must belong to the board");
+                    let column = db.raw("Section", &json!(section))?.context("column is not cached")?;
+                    ensure!(column["projectId"] == *project && column["deleted"] == false && column["visibility"] == true, "column is not visible in this board");
+                }
+                let before = if let crate::BoardWrite::AssignAgent { task, .. } | crate::BoardWrite::PositionTask { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
                 ("board".into(), "board_write", json!({"user_id":user,"change":change,"before":before}))
             }
             Write::Shell { request } => {
@@ -198,6 +203,11 @@ impl Db {
         match kind {
             "shell_write" | "compose_task" => (),
             "board_write" => {
+                if let crate::BoardWrite::PositionTask { task, section, title, ranking, .. } = serde_json::from_value(payload["change"].clone())? {
+                    let mut value = self.raw("Task", &json!(task))?.context("task is not cached")?;
+                    value["sectionId"] = json!(section); value["section"] = json!(title); value["ranking"] = json!(ranking);
+                    self.upsert_task(&value)?;
+                }
                 if let crate::BoardWrite::AssignAgent { task, agent, active } = serde_json::from_value(payload["change"].clone())? {
                     let mut task_row = self.raw("Task",&json!(task))?.context("task is not cached")?;
                     let project = task_row["projectId"].as_i64().context("missing task board")?;
@@ -483,6 +493,11 @@ impl Db {
         } else {
             transport.post(path, &body, &row.client_id)
         };
+        let response = if row.kind == "board_write" && row.payload_json["change"]["PositionTask"].is_object() {
+            response.map(|response| if (200..300).contains(&response.status) {
+                Response { status: response.status, body: json!({"success":true,"task":response.body}) }
+            } else { response })
+        } else { response };
         let result = match response {
             Ok(Response { status, body }) if (200..300).contains(&status) => {
                 match ensure_success(&body)

@@ -229,3 +229,20 @@ fn desktop_cli_web_routes_use_same_origin_bearer_without_mcp_prefix_or_cookies()
         thread.join().unwrap();
     }
 }
+
+#[test]
+fn ranked_web_move_sends_desktop_bearer_and_route_denial_does_not_destroy_login() {
+    use std::sync::atomic::Ordering;
+    for status in [200,401,403] {
+        let (url, thread, receive) = server(status, "{\"id\":1}");
+        let mut http = Http::with_base(&url, "desktop-test-token".into()).unwrap();
+        let body = json!({"taskId":1,"sectionId":11,"section_title":"Doing","ranking":"A0100","projectId":15});
+        assert_eq!(http.mutate("PUT", "/api/tasks/moveTask", &body, "drop-key").unwrap().status, status);
+        let request = receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(request.starts_with("PUT /api/tasks/moveTask HTTP/1.1"));
+        assert!(request.to_lowercase().contains("authorization: bearer desktop-test-token\r\n"));
+        assert_eq!(serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),body);
+        assert!(!http.unauthorized_flag().load(Ordering::SeqCst));
+        thread.join().unwrap();
+    }
+}

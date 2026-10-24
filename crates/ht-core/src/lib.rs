@@ -30,3 +30,6 @@ pub use worker::Worker;
 pub type Result<T> = anyhow::Result<T>;
 
 mod inbox;
+
+mod ranking;
+pub use ranking::task_rank;

@@ -159,7 +159,7 @@ impl Http {
         match response {
             Ok(r) | Err(ureq::Error::Status(_, r)) => {
                 let status = r.status();
-                if status == 401 {
+                if status == 401 && !path.starts_with("/api/") {
                     self.unauthorized.store(true, Ordering::SeqCst);
                 }
                 let writer_text = path == "/api/ai/task-writer" && !r.header("Content-Type").unwrap_or("").contains("application/json");
