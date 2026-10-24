@@ -607,8 +607,9 @@ impl AiSidebar {
             } else {
                 self.send(self.input.read(cx).content.to_string(), window, cx);
             }
+        } else {
+            return;
         }
-        // Workspace J/K/E/M shortcuts must never consume composer typing.
         cx.stop_propagation();
     }
 }
