@@ -1,0 +1,866 @@
+//! The editable document uses UTF-8 offsets, without display-only list/quote markers.
+use scraper::{ElementRef, Html, Node};
+use std::ops::Range;
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Tag {
+    pub name: String,
+    pub attrs: Vec<(String, String)>,
+}
+impl Tag {
+    fn new(name: &str) -> Self {
+        Self {
+            name: name.into(),
+            attrs: vec![],
+        }
+    }
+    fn attr(mut self, name: &str, value: &str) -> Self {
+        self.attrs.push((name.into(), value.into()));
+        self.attrs.sort();
+        self
+    }
+    fn from(el: ElementRef<'_>) -> Self {
+        Self {
+            name: el.value().name().into(),
+            attrs: el
+                .value()
+                .attrs()
+                .map(|(k, v)| (k.into(), v.into()))
+                .collect(),
+        }
+    }
+    fn open(&self) -> String {
+        let mut out = format!("<{}", self.name);
+        for (k, v) in &self.attrs {
+            out.push_str(&format!(" {k}=\"{}\"", escape(v)));
+        }
+        out.push('>');
+        out
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Span {
+    pub text: String,
+    pub marks: Vec<Tag>,
+    atom: Option<String>,
+}
+impl Span {
+    fn text(text: &str, marks: &[Tag]) -> Self {
+        Self {
+            text: text.into(),
+            marks: marks.to_vec(),
+            atom: None,
+        }
+    }
+    fn html(&self, pre: bool) -> String {
+        if let Some(html) = &self.atom {
+            return html.clone();
+        }
+        let mut out = String::new();
+        for mark in &self.marks {
+            out.push_str(&mark.open());
+        }
+        let text = escape(&self.text);
+        out.push_str(&if pre {
+            text
+        } else {
+            text.replace('\n', "<br>")
+        });
+        for mark in self.marks.iter().rev() {
+            out.push_str(&format!("</{}>", mark.name));
+        }
+        out
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Block {
+    pub tag: Tag,
+    pub spans: Vec<Span>,
+    code: Option<Tag>,
+}
+impl Block {
+    fn text(&self) -> String {
+        self.spans.iter().map(|s| s.text.as_str()).collect()
+    }
+    fn len(&self) -> usize {
+        self.spans.iter().map(|s| s.text.len()).sum()
+    }
+    fn slice(&self, range: Range<usize>) -> Vec<Span> {
+        let mut at = 0;
+        let mut out = vec![];
+        for span in &self.spans {
+            let end = at + span.text.len();
+            let start = range.start.max(at);
+            let stop = range.end.min(end);
+            if start < stop {
+                let mut s = span.clone();
+                s.text = span.text[start - at..stop - at].into();
+                out.push(s);
+            }
+            at = end;
+        }
+        out
+    }
+    fn compact(&mut self) {
+        let mut spans: Vec<Span> = vec![];
+        for mut span in self.spans.drain(..).filter(|s| !s.text.is_empty()) {
+            span.marks.sort_by_key(|m| match m.name.as_str() {
+                "a" => 0,
+                "code" => 1,
+                "strong" => 2,
+                "em" => 3,
+                "s" => 4,
+                "mark" => 5,
+                "u" => 6,
+                _ => 7,
+            });
+            if let Some(last) = spans.last_mut() {
+                if last.marks == span.marks && last.atom.is_none() && span.atom.is_none() {
+                    last.text.push_str(&span.text);
+                    continue;
+                }
+            }
+            spans.push(span);
+        }
+        self.spans = spans;
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum Part {
+    Block(Block),
+    Container(Tag, Vec<Part>),
+    Atom(String),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Document {
+    parts: Vec<Part>,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Format {
+    Bold,
+    Italic,
+    Underline,
+    Highlight,
+    Code,
+    Quote,
+    BulletList,
+    OrderedList,
+    TaskList,
+    Paragraph,
+    Heading(u8),
+    CodeBlock,
+}
+impl Format {
+    pub fn mark(self) -> Option<&'static str> {
+        match self {
+            Self::Bold => Some("strong"),
+            Self::Italic => Some("em"),
+            Self::Underline => Some("u"),
+            Self::Highlight => Some("mark"),
+            Self::Code => Some("code"),
+            _ => None,
+        }
+    }
+}
+
+pub fn escape(text: &str) -> String {
+    text.replace('&', "&amp;")
+        .replace('<', "&lt;")
+        .replace('>', "&gt;")
+        .replace('"', "&quot;")
+}
+fn is_block(name: &str) -> bool {
+    matches!(name, "p" | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "pre")
+}
+fn inline(el: ElementRef<'_>, marks: &[Tag], out: &mut Vec<Span>) {
+    for child in el.children() {
+        match child.value() {
+            Node::Text(text) => out.push(Span::text(text, marks)),
+            Node::Element(_) => {
+                let child = ElementRef::wrap(child).unwrap();
+                let name = child.value().name();
+                match name {
+                    "br" => out.push(Span::text("\n", marks)),
+                    "script" | "style" => (),
+                    "img" | "iframe" | "video" | "input" => out.push(Span {
+                        text: "\u{fffc}".into(),
+                        marks: vec![],
+                        atom: Some(child.html()),
+                    }),
+                    "code" if el.value().name() == "pre" => inline(child, marks, out),
+                    _ => {
+                        let mut tag = Tag::from(child);
+                        tag.name = match name {
+                            "b" => "strong",
+                            "i" => "em",
+                            _ => name,
+                        }
+                        .into();
+                        let mut nested = marks.to_vec();
+                        nested.push(tag);
+                        inline(child, &nested, out);
+                    }
+                }
+            }
+            _ => (),
+        }
+    }
+}
+fn parse_parts(el: ElementRef<'_>) -> Vec<Part> {
+    let mut parts = vec![];
+    for child in el.children() {
+        match child.value() {
+            Node::Text(text) if !text.trim().is_empty() => parts.push(Part::Block(Block {
+                tag: Tag::new("p"),
+                code: None,
+                spans: vec![Span::text(text, &[])],
+            })),
+            Node::Element(_) => {
+                let child = ElementRef::wrap(child).unwrap();
+                let name = child.value().name();
+                if matches!(name, "script" | "style" | "label") {
+                    continue;
+                }
+                if is_block(name) {
+                    let mut spans = vec![];
+                    inline(child, &[], &mut spans);
+                    let mut block = Block {
+                        tag: Tag::from(child),
+                        code: if name == "pre" {
+                            child
+                                .children()
+                                .filter_map(ElementRef::wrap)
+                                .find(|e| e.value().name() == "code")
+                                .map(Tag::from)
+                        } else {
+                            None
+                        },
+                        spans,
+                    };
+                    block.compact();
+                    parts.push(Part::Block(block));
+                } else if matches!(name, "blockquote" | "ul" | "ol" | "li")
+                    || (name == "div" && child.value().attr("class") != Some("video-wrapper"))
+                {
+                    let task_item =
+                        name == "li" && child.value().attr("data-type") == Some("taskItem");
+                    let mut children = if task_item {
+                        child
+                            .children()
+                            .filter_map(ElementRef::wrap)
+                            .filter(|e| e.value().name() == "div")
+                            .flat_map(parse_parts)
+                            .collect()
+                    } else {
+                        parse_parts(child)
+                    };
+                    // Tiptap task items serialize a checkbox label and a content div.
+                    if children.is_empty() {
+                        children.push(Part::Block(Block {
+                            tag: Tag::new("p"),
+                            code: None,
+                            spans: vec![],
+                        }));
+                    }
+                    parts.push(Part::Container(Tag::from(child), children));
+                } else {
+                    parts.push(Part::Atom(child.html()));
+                }
+            }
+            _ => (),
+        }
+    }
+    parts
+}
+fn visit<'a>(parts: &'a [Part], out: &mut Vec<&'a Block>) {
+    for part in parts {
+        match part {
+            Part::Block(b) => out.push(b),
+            Part::Container(_, p) => visit(p, out),
+            Part::Atom(_) => (),
+        }
+    }
+}
+fn each_mut(parts: &mut [Part], index: &mut usize, f: &mut impl FnMut(usize, &mut Block)) {
+    for part in parts {
+        match part {
+            Part::Block(b) => {
+                f(*index, b);
+                *index += 1;
+            }
+            Part::Container(_, p) => each_mut(p, index, f),
+            Part::Atom(_) => (),
+        }
+    }
+}
+fn html_parts(parts: &[Part], out: &mut String) {
+    for part in parts {
+        match part {
+            Part::Atom(html) => out.push_str(html),
+            Part::Block(b) => {
+                out.push_str(&b.tag.open());
+                if b.tag.name == "pre" {
+                    out.push_str(
+                        &b.code
+                            .clone()
+                            .unwrap_or_else(|| {
+                                Tag::new("code").attr("class", "language-javascript")
+                            })
+                            .open(),
+                    );
+                }
+                for span in &b.spans {
+                    out.push_str(&span.html(b.tag.name == "pre"));
+                }
+                if b.tag.name == "pre" {
+                    out.push_str("</code>");
+                }
+                out.push_str(&format!("</{}>", b.tag.name));
+            }
+            Part::Container(tag, children) => {
+                out.push_str(&tag.open());
+                let task = tag.name == "li"
+                    && tag
+                        .attrs
+                        .iter()
+                        .any(|(k, v)| k == "data-type" && v == "taskItem");
+                if task {
+                    let checked = tag
+                        .attrs
+                        .iter()
+                        .any(|(k, v)| k == "data-checked" && v == "true");
+                    out.push_str(if checked { "<label><input type=\"checkbox\" checked=\"checked\"><span></span></label><div>" } else { "<label><input type=\"checkbox\"><span></span></label><div>" });
+                }
+                html_parts(children, out);
+                if task {
+                    out.push_str("</div>");
+                }
+                out.push_str(&format!("</{}>", tag.name));
+            }
+        }
+    }
+}
+impl Default for Document {
+    fn default() -> Self {
+        Self::plain("")
+    }
+}
+impl Document {
+    pub fn plain(text: &str) -> Self {
+        Self {
+            parts: vec![Part::Block(Block {
+                tag: Tag::new("p"),
+                code: None,
+                spans: vec![Span::text(text, &[])],
+            })],
+        }
+    }
+    pub fn parse(html: &str) -> Self {
+        let doc = Html::parse_fragment(html);
+        let mut parts = parse_parts(doc.root_element());
+        if parts.is_empty() {
+            return Self::default();
+        }
+        let mut blocks = vec![];
+        visit(&parts, &mut blocks);
+        if blocks.is_empty() {
+            parts.push(Part::Block(Block {
+                tag: Tag::new("p"),
+                code: None,
+                spans: vec![],
+            }));
+        }
+        Self { parts }
+    }
+    pub fn html(&self) -> String {
+        let mut out = String::new();
+        html_parts(&self.parts, &mut out);
+        out
+    }
+    pub fn blocks(&self) -> Vec<&Block> {
+        let mut out = vec![];
+        visit(&self.parts, &mut out);
+        out
+    }
+    pub fn text(&self) -> String {
+        self.blocks()
+            .iter()
+            .map(|b| b.text())
+            .collect::<Vec<_>>()
+            .join("\n")
+    }
+    fn location(&self, offset: usize) -> (usize, usize) {
+        let blocks = self.blocks();
+        let mut at = 0;
+        for (i, b) in blocks.iter().enumerate() {
+            if offset <= at + b.len() {
+                return (i, offset - at);
+            }
+            at += b.len() + 1;
+        }
+        let i = blocks.len() - 1;
+        (i, blocks[i].len())
+    }
+    pub fn marks_at(&self, offset: usize) -> Vec<Tag> {
+        let (i, offset) = self.location(offset);
+        let blocks = self.blocks();
+        let mut at = 0;
+        for span in &blocks[i].spans {
+            at += span.text.len();
+            if offset <= at {
+                return span.marks.clone();
+            }
+        }
+        vec![]
+    }
+    pub fn replace(&mut self, range: Range<usize>, text: &str, marks: &[Tag]) {
+        let (first, start) = self.location(range.start);
+        let (last, end) = self.location(range.end);
+        let blocks = self.blocks();
+        let mut spans = blocks[first].slice(0..start);
+        spans.push(Span::text(text, marks));
+        spans.extend(blocks[last].slice(end..blocks[last].len()));
+        let mut next = Block {
+            tag: blocks[first].tag.clone(),
+            code: blocks[first].code.clone(),
+            spans,
+        };
+        next.compact();
+        let mut index = 0;
+        each_mut(&mut self.parts, &mut index, &mut |i, b| {
+            if i == first {
+                *b = next.clone();
+            }
+        });
+        if first != last {
+            let mut index = 0;
+            remove_blocks(&mut self.parts, &mut index, first + 1..last + 1);
+        }
+    }
+    pub fn set_mark(&mut self, range: Range<usize>, tag: Tag, enabled: bool) {
+        let mut at = 0;
+        each_mut(&mut self.parts, &mut 0, &mut |_, b| {
+            let len = b.len();
+            let start = range.start.saturating_sub(at).min(len);
+            let end = range.end.saturating_sub(at).min(len);
+            if start < end {
+                let mut spans = b.slice(0..start);
+                for mut span in b.slice(start..end) {
+                    span.marks
+                        .retain(|m| m.name != tag.name && (tag.name != "code" || !enabled));
+                    if enabled && span.atom.is_none() {
+                        span.marks.push(tag.clone());
+                    }
+                    spans.push(span);
+                }
+                spans.extend(b.slice(end..len));
+                b.spans = spans;
+                b.compact();
+            }
+            at += len + 1;
+        });
+    }
+    pub fn has_mark(&self, range: Range<usize>, name: &str) -> bool {
+        if range.is_empty() {
+            return self.marks_at(range.start).iter().any(|m| m.name == name);
+        }
+        let mut at = 0;
+        let mut found = false;
+        for b in self.blocks() {
+            for s in &b.spans {
+                let end = at + s.text.len();
+                if at < range.end && end > range.start {
+                    if !s.marks.iter().any(|m| m.name == name) {
+                        return false;
+                    }
+                    found = true;
+                }
+                at = end;
+            }
+            at += 1;
+        }
+        found
+    }
+    pub fn format(&mut self, range: Range<usize>, format: Format) {
+        if let Some(name) = format.mark() {
+            let enabled = !self.has_mark(range.clone(), name);
+            self.set_mark(range, Tag::new(name), enabled);
+            return;
+        }
+        let (first, _) = self.location(range.start);
+        let (last, _) = self.location(range.end);
+        match format {
+            Format::Quote | Format::BulletList | Format::OrderedList | Format::TaskList => {
+                let name = match format {
+                    Format::Quote => "blockquote",
+                    Format::OrderedList => "ol",
+                    _ => "ul",
+                };
+                let task = format == Format::TaskList;
+                let mut index = 0;
+                let mut unwrapped = false;
+                unwrap_selected(
+                    &mut self.parts,
+                    &mut index,
+                    first..last + 1,
+                    name,
+                    task,
+                    &mut unwrapped,
+                );
+                if !unwrapped {
+                    let mut index = 0;
+                    wrap_selected(&mut self.parts, &mut index, first..last + 1, format);
+                }
+            }
+            _ => {
+                let name = match format {
+                    Format::Heading(1) => "h1",
+                    Format::Heading(2) => "h2",
+                    Format::Heading(3) => "h3",
+                    Format::Heading(4) => "h4",
+                    Format::Heading(5) => "h5",
+                    Format::Heading(6) => "h6",
+                    Format::CodeBlock => "pre",
+                    _ => "p",
+                };
+                let same = self.blocks()[first].tag.name == name && format != Format::Paragraph;
+                each_mut(&mut self.parts, &mut 0, &mut |i, b| {
+                    if i >= first && i <= last {
+                        b.tag = Tag::new(if same { "p" } else { name });
+                        if name == "pre" {
+                            for s in &mut b.spans {
+                                s.marks.clear();
+                            }
+                        }
+                    }
+                });
+            }
+        }
+    }
+    pub fn split(&mut self, range: Range<usize>) {
+        self.replace(range.clone(), "", &[]);
+        let (index, offset) = self.location(range.start);
+        let b = self.blocks()[index];
+        let mut left = b.clone();
+        left.spans = b.slice(0..offset);
+        let mut right = b.clone();
+        right.spans = b.slice(offset..b.len());
+        if offset == b.len() && b.tag.name.starts_with('h') {
+            right.tag = Tag::new("p");
+        }
+        split_block(&mut self.parts, &mut 0, index, &left, &right);
+    }
+    pub fn link(&mut self, range: Range<usize>, href: &str) -> bool {
+        if !safe_link(href) {
+            return false;
+        }
+        let tag = Tag::new("a")
+            .attr("target", "_blank")
+            .attr("rel", "noopener noreferrer nofollow")
+            .attr("href", href);
+        self.set_mark(range, tag, true);
+        true
+    }
+    pub fn unlink(&mut self, range: Range<usize>) {
+        self.set_mark(range, Tag::new("a"), false);
+    }
+    pub fn append_html(&mut self, html: &str) {
+        if self.text().is_empty() && self.parts.len() == 1 {
+            self.parts.clear();
+        }
+        self.parts.extend(Self::parse(html).parts);
+        self.parts.push(Part::Block(Block {
+            tag: Tag::new("p"),
+            code: None,
+            spans: vec![],
+        }));
+    }
+    pub fn toggle_task(&mut self, block: usize) {
+        fn toggle(parts: &mut [Part], at: &mut usize, target: usize) -> bool {
+            for p in parts {
+                match p {
+                    Part::Block(_) => *at += 1,
+                    Part::Container(tag, children) => {
+                        let start = *at;
+                        let hit = toggle(children, at, target);
+                        if hit {
+                            return true;
+                        }
+                        if target >= start && target < *at && tag.name == "li" {
+                            if let Some((_, v)) =
+                                tag.attrs.iter_mut().find(|(k, _)| k == "data-checked")
+                            {
+                                *v = if v == "true" { "false" } else { "true" }.into();
+                                return true;
+                            }
+                        }
+                    }
+                    _ => (),
+                }
+            }
+            false
+        }
+        toggle(&mut self.parts, &mut 0, block);
+    }
+}
+fn remove_blocks(parts: &mut Vec<Part>, index: &mut usize, range: Range<usize>) {
+    parts.retain_mut(|p| match p {
+        Part::Block(_) => {
+            let keep = !range.contains(index);
+            *index += 1;
+            keep
+        }
+        Part::Container(_, p) => {
+            remove_blocks(p, index, range.clone());
+            !p.is_empty()
+        }
+        _ => true,
+    });
+}
+fn count(parts: &[Part]) -> usize {
+    let mut b = vec![];
+    visit(parts, &mut b);
+    b.len()
+}
+fn unwrap_selected(
+    parts: &mut Vec<Part>,
+    index: &mut usize,
+    range: Range<usize>,
+    name: &str,
+    task: bool,
+    changed: &mut bool,
+) {
+    let mut out = vec![];
+    for mut part in parts.drain(..) {
+        match &mut part {
+            Part::Block(_) => *index += 1,
+            Part::Container(tag, children) => {
+                let end = *index + count(children);
+                let is_task = tag
+                    .attrs
+                    .iter()
+                    .any(|(k, v)| k == "data-type" && v == "taskList");
+                if tag.name == name && is_task == task && *index <= range.start && end >= range.end
+                {
+                    *index = end;
+                    *changed = true;
+                    for p in children.drain(..) {
+                        match p {
+                            Part::Container(t, items) if t.name == "li" => out.extend(items),
+                            other => out.push(other),
+                        }
+                    }
+                    continue;
+                }
+                unwrap_selected(children, index, range.clone(), name, task, changed);
+            }
+            _ => (),
+        }
+        out.push(part);
+    }
+    *parts = out;
+}
+fn wrap_selected(parts: &mut Vec<Part>, index: &mut usize, range: Range<usize>, format: Format) {
+    let mut out = vec![];
+    let mut selected = vec![];
+    fn flush(out: &mut Vec<Part>, selected: &mut Vec<Part>, format: Format) {
+        if selected.is_empty() {
+            return;
+        }
+        let mut children = std::mem::take(selected);
+        let tag = match format {
+            Format::Quote => Tag::new("blockquote"),
+            Format::OrderedList => Tag::new("ol").attr("class", "numbered-list"),
+            Format::TaskList => Tag::new("ul")
+                .attr("class", "taskList")
+                .attr("data-type", "taskList"),
+            _ => Tag::new("ul"),
+        };
+        if format != Format::Quote {
+            children = children
+                .into_iter()
+                .map(|p| {
+                    let li = if format == Format::TaskList {
+                        Tag::new("li")
+                            .attr("data-type", "taskItem")
+                            .attr("data-checked", "false")
+                    } else {
+                        Tag::new("li")
+                    };
+                    Part::Container(li, vec![p])
+                })
+                .collect();
+        }
+        out.push(Part::Container(tag, children));
+    }
+    for mut part in parts.drain(..) {
+        match &mut part {
+            Part::Block(_) => {
+                let selected_here = range.contains(index);
+                *index += 1;
+                if selected_here {
+                    selected.push(part);
+                    continue;
+                }
+            }
+            Part::Container(_, p) => wrap_selected(p, index, range.clone(), format),
+            _ => (),
+        }
+        flush(&mut out, &mut selected, format);
+        out.push(part);
+    }
+    flush(&mut out, &mut selected, format);
+    *parts = out;
+}
+fn split_block(parts: &mut Vec<Part>, at: &mut usize, target: usize, left: &Block, right: &Block) {
+    let mut out = vec![];
+    for mut part in parts.drain(..) {
+        match &mut part {
+            Part::Block(_) => {
+                let hit = *at == target;
+                *at += 1;
+                if hit {
+                    out.push(Part::Block(left.clone()));
+                    out.push(Part::Block(right.clone()));
+                    continue;
+                }
+            }
+            Part::Container(tag, p) => {
+                let start = *at;
+                split_block(p, at, target, left, right);
+                if tag.name == "li" && target >= start && target < *at {
+                    // Enter in a list creates a sibling item, not a second paragraph in the item.
+                    let split = p
+                        .iter()
+                        .position(|p| matches!(p,Part::Block(b) if b==right))
+                        .unwrap_or(p.len());
+                    if split < p.len() {
+                        let next = p.split_off(split);
+                        out.push(Part::Container(tag.clone(), std::mem::take(p)));
+                        out.push(Part::Container(tag.clone(), next));
+                        continue;
+                    }
+                }
+            }
+            _ => (),
+        }
+        out.push(part);
+    }
+    *parts = out;
+}
+pub fn safe_link(href: &str) -> bool {
+    let lower = href.trim().to_ascii_lowercase();
+    !lower.chars().any(char::is_control)
+        && (lower.starts_with("https://")
+            || lower.starts_with("http://")
+            || lower.starts_with("mailto:")
+            || lower.starts_with("tel:")
+            || lower.starts_with('/')
+            || lower.starts_with('#'))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    #[test]
+    fn web_marks_selection_unicode_and_html_round_trip() {
+        for (format, tag) in [
+            (Format::Bold, "strong"),
+            (Format::Italic, "em"),
+            (Format::Underline, "u"),
+            (Format::Highlight, "mark"),
+            (Format::Code, "code"),
+        ] {
+            let mut doc = Document::plain("a é🙂 z");
+            doc.format(2..8, format);
+            assert_eq!(doc.html(), format!("<p>a <{tag}>é🙂</{tag}> z</p>"));
+            assert_eq!(Document::parse(&doc.html()), doc);
+            doc.format(2..8, format);
+            assert_eq!(doc.html(), "<p>a é🙂 z</p>");
+        }
+    }
+    #[test]
+    fn web_blocks_lists_and_heading_round_trip() {
+        for level in 1..=6 {
+            let mut d = Document::plain("Heading");
+            d.format(0..7, Format::Heading(level));
+            assert_eq!(d.html(), format!("<h{level}>Heading</h{level}>"));
+            assert_eq!(Document::parse(&d.html()), d);
+            d.format(0..7, Format::Paragraph);
+            assert_eq!(d.html(), "<p>Heading</p>");
+        }
+        for (f, html) in [
+            (Format::Quote, "<blockquote><p>one</p></blockquote>"),
+            (Format::BulletList, "<ul><li><p>one</p></li></ul>"),
+            (
+                Format::OrderedList,
+                "<ol class=\"numbered-list\"><li><p>one</p></li></ol>",
+            ),
+        ] {
+            let mut d = Document::plain("one");
+            d.format(0..3, f);
+            assert_eq!(d.html(), html);
+            assert_eq!(Document::parse(html).html(), html);
+            d.format(0..3, f);
+            assert_eq!(d.html(), "<p>one</p>");
+        }
+        let mut d = Document::plain("one");
+        d.format(0..3, Format::TaskList);
+        let html = d.html();
+        assert!(html.contains("data-type=\"taskList\""));
+        assert!(html.contains("data-checked=\"false\""));
+        assert_eq!(Document::parse(&html).text(), "one");
+        d.toggle_task(0);
+        assert!(d.html().contains("data-checked=\"true\""));
+        let mut d = Document::plain("let x = 1;\nnext");
+        d.format(0..0, Format::CodeBlock);
+        assert_eq!(
+            d.html(),
+            "<pre><code class=\"language-javascript\">let x = 1;\nnext</code></pre>"
+        );
+        assert_eq!(Document::parse(&d.html()).html(), d.html());
+    }
+    #[test]
+    fn replacing_across_blocks_keeps_unrelated_links_marks_media_and_quote_attributes() {
+        let mut d = Document::parse(
+            "<blockquote data-quote-reply=\"true\"><p>Hello <strong>é🙂</strong></p></blockquote><p><a href=\"https://example.com\">link</a><img src=\"https://example.com/a.png\"></p>",
+        );
+        d.replace(0..5, "Goodbye", &[]);
+        assert!(d.html().contains("<strong>é🙂</strong>"));
+        assert!(d.html().contains("data-quote-reply=\"true\""));
+        assert!(d.html().contains("<img src="));
+        assert!(d.html().contains("href=\"https://example.com\""));
+        let mut d = Document::parse("<p>one</p><p>two</p>");
+        d.replace(2..5, "X", &[]);
+        assert_eq!(d.html(), "<p>onXwo</p>");
+        assert_eq!(d.text(), "onXwo");
+    }
+    #[test]
+    fn links_validate_schemes_and_preserve_web_attributes() {
+        let mut d = Document::plain("link");
+        assert!(!d.link(0..4, "javascript:alert(1)"));
+        assert!(d.link(0..4, "https://example.com?a=1&b=2"));
+        assert!(d.html().contains("target=\"_blank\""));
+        assert!(d.html().contains("rel=\"noopener noreferrer nofollow\""));
+        assert_eq!(Document::parse(&d.html()).html(), d.html());
+        d.unlink(0..4);
+        assert_eq!(d.html(), "<p>link</p>");
+    }
+    #[test]
+    fn enter_splits_paragraph_and_list_items_while_hard_break_stays_inline() {
+        let mut d = Document::plain("onetwo");
+        d.split(3..3);
+        assert_eq!(d.html(), "<p>one</p><p>two</p>");
+        let mut d = Document::parse("<ul><li><p>onetwo</p></li></ul>");
+        d.split(3..3);
+        assert_eq!(d.html(), "<ul><li><p>one</p></li><li><p>two</p></li></ul>");
+        let mut d = Document::plain("one");
+        d.replace(3..3, "\ntwo", &[]);
+        assert_eq!(d.html(), "<p>one<br>two</p>");
+    }
+}

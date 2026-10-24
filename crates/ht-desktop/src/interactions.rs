@@ -651,7 +651,7 @@ impl Desktop {
             return;
         }
         self.interaction.description.update(cx, |input, cx| {
-            input.set_content(self.description.text.clone(), cx)
+            input.set_html(self.detail.as_ref().map_or("", |d| d.task.description.as_str()), cx)
         });
         self.editing = Editing::Description;
         self.description_anchor.scroll_to(window, cx);

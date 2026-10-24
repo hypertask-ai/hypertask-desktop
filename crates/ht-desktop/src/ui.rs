@@ -132,7 +132,7 @@ impl Desktop {
                 "Tip: Hit CTRL+M to comment",
                 color(0xadb5bd),
                 cx,
-            ).multiline_editor()
+            ).comment_editor()
         });
         cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
         if options.background {
@@ -531,9 +531,7 @@ impl Desktop {
             },
             Editing::Description => Write::TaskPatch {
                 task_id,
-                patch: ht_core::TaskPatch::Description(crate::rich_text::edited_html(
-                    self.detail.as_ref().map_or("", |detail| detail.task.description.as_str()),
-                    &self.description.text, self.interaction.description.read(cx).content.as_ref())),
+                patch: ht_core::TaskPatch::Description(self.interaction.description.read(cx).html()),
             },
             Editing::None | Editing::ExistingComment => return false,
         };

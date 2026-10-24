@@ -1,5 +1,9 @@
 use std::ops::Range;
 
+#[path = "editor.rs"]
+mod editor;
+use editor::EditorState;
+
 use gpui::{
     App, AvailableSpace, Bounds, ClipboardItem, Context, CursorStyle, ElementId,
     ElementInputHandler, Entity, EntityInputHandler, FocusHandle, Focusable, GlobalElementId,
@@ -30,6 +34,7 @@ actions!(
         Cut,
         Copy,
         Newline,
+        HardBreak,
         Undo,
         Redo,
     ]
@@ -40,6 +45,7 @@ struct EditSnapshot {
     content: SharedString,
     selection: Range<usize>,
     reversed: bool,
+    editor: Option<EditorState>,
 }
 
 pub struct TextInput {
@@ -57,6 +63,7 @@ pub struct TextInput {
     muted: gpui::Hsla,
     undo: Vec<EditSnapshot>,
     redo: Vec<EditSnapshot>,
+    editor: Option<EditorState>,
 }
 
 impl TextInput {
@@ -65,6 +72,7 @@ impl TextInput {
             content: self.content.clone(),
             selection: self.selected_range.clone(),
             reversed: self.selection_reversed,
+            editor: self.editor.clone(),
         }
     }
 
@@ -89,6 +97,7 @@ impl TextInput {
                 self.redo.push(current);
             }
             self.content = snapshot.content;
+            self.editor = snapshot.editor;
             self.selected_range = snapshot.selection;
             self.selection_reversed = snapshot.reversed;
             self.marked_range = None;
@@ -99,6 +108,9 @@ impl TextInput {
     }
 
     fn newline(&mut self, _: &Newline, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editor_enter(window, cx) {
+            return;
+        }
         if self.multiline {
             self.insert_newline(window, cx);
         } else {
@@ -257,6 +269,9 @@ impl TextInput {
     }
 
     fn move_to(&mut self, offset: usize, window: &Window, cx: &mut Context<Self>) {
+        if let Some(e) = &mut self.editor {
+            e.clear_marks();
+        }
         self.selected_range = offset..offset;
         self.selection_reversed = false;
         window.notify_text_selection_changed(&self.focus_handle);
@@ -292,6 +307,9 @@ impl TextInput {
     }
 
     fn select_to(&mut self, offset: usize, window: &Window, cx: &mut Context<Self>) {
+        if let Some(e) = &mut self.editor {
+            e.clear_marks();
+        }
         if self.selection_reversed {
             self.selected_range.start = offset
         } else {
@@ -362,6 +380,11 @@ impl TextInput {
         self.undo.clear();
         self.redo.clear();
         self.content = "".into();
+        if let Some(e) = &mut self.editor {
+            let comment = e.comment;
+            *e = EditorState::new("");
+            e.comment = comment;
+        }
         self.selected_range = 0..0;
         self.selection_reversed = false;
         self.marked_range = None;
@@ -395,6 +418,7 @@ impl EntityInputHandler for TextInput {
         Some(UTF16Selection {
             range: self.range_to_utf16(&self.selected_range),
             reversed: self.selection_reversed,
+            editor: self.editor.clone(),
         })
     }
 
@@ -448,12 +472,14 @@ impl EntityInputHandler for TextInput {
             .unwrap_or(self.selected_range.clone());
 
         self.remember_edit();
+        self.replace_document(range.clone(), new_text);
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
         self.selected_range = range.start + new_text.len()..range.start + new_text.len();
         self.selection_reversed = false;
         self.marked_range.take();
+        self.update_slash(range.start, new_text);
         window.notify_text_input_changed(&self.focus_handle);
         cx.notify();
     }
@@ -473,6 +499,7 @@ impl EntityInputHandler for TextInput {
             .unwrap_or(self.selected_range.clone());
 
         self.remember_edit();
+        self.replace_document(range.clone(), new_text);
         self.content =
             (self.content[0..range.start].to_owned() + new_text + &self.content[range.end..])
                 .into();
@@ -551,6 +578,17 @@ impl EntityInputHandler for TextInput {
         let utf8_index =
             last_layout.offsets[row] + last_layout.lines[row].closest_index_for_x(line_point.x);
         Some(self.offset_to_utf16(utf8_index))
+    }
+}
+
+fn run_for_editor(style: &gpui::TextStyle, color: gpui::Hsla) -> TextRun {
+    TextRun {
+        len: 0,
+        font: style.font(),
+        color,
+        background_color: None,
+        underline: None,
+        strikethrough: None,
     }
 }
 
@@ -728,11 +766,17 @@ impl Element for TextElement {
                         },
                         TextRun {
                             len: text.len() - end,
-                            ..run
+                            ..run.clone()
                         },
                     ];
                     runs.retain(|r| r.len > 0);
                 }
+            }
+            if input.editor.is_some() && !input.content.is_empty() {
+                runs = input.editor_runs(
+                    offset..offset + text.len(),
+                    &run_for_editor(&style, text_color),
+                );
             }
             let line =
                 window
@@ -834,8 +878,10 @@ impl Element for TextElement {
 
 impl Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+        let menu = self.editor_menu(cx);
         div()
             .flex()
+            .flex_col()
             .key_context(if self.editor_newlines {
                 "TextInput MultilineEditor"
             } else {
@@ -843,6 +889,7 @@ impl Render for TextInput {
             })
             .track_focus(&self.focus_handle(cx))
             .cursor(CursorStyle::IBeam)
+            .on_key_down(cx.listener(Self::editor_key))
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
             .on_action(cx.listener(Self::left))
@@ -859,6 +906,9 @@ impl Render for TextInput {
             .on_action(cx.listener(Self::cut))
             .on_action(cx.listener(Self::copy))
             .on_action(cx.listener(Self::newline))
+            .on_action(
+                cx.listener(|this, _: &HardBreak, window, cx| this.insert_newline(window, cx)),
+            )
             .on_action(
                 cx.listener(|this, _: &Undo, window, cx| this.restore_edit(false, window, cx)),
             )
@@ -879,6 +929,7 @@ impl Render for TextInput {
             .overflow_hidden()
             .line_height(px(24.))
             .child(TextElement { input: cx.entity() })
+            .children(menu)
     }
 }
 
@@ -891,7 +942,7 @@ impl Focusable for TextInput {
 pub fn init(cx: &mut App) {
     cx.bind_keys([
         KeyBinding::new("enter", Newline, Some("MultilineEditor")),
-        KeyBinding::new("shift-enter", Newline, Some("MultilineEditor")),
+        KeyBinding::new("shift-enter", HardBreak, Some("MultilineEditor")),
         KeyBinding::new("ctrl-z", Undo, Some("TextInput")),
         KeyBinding::new("ctrl-shift-z", Redo, Some("TextInput")),
         KeyBinding::new("cmd-z", Undo, Some("TextInput")),
@@ -935,6 +986,7 @@ impl TextInput {
             muted,
             undo: vec![],
             redo: vec![],
+            editor: None,
         }
     }
 
@@ -946,6 +998,7 @@ impl TextInput {
     pub fn multiline_editor(mut self) -> Self {
         self.multiline = true;
         self.editor_newlines = true;
+        self.editor = Some(EditorState::new(self.content.as_ref()));
         self
     }
 
@@ -970,6 +1023,11 @@ impl TextInput {
         self.undo.clear();
         self.redo.clear();
         self.selected_range = 0..text.len();
+        if let Some(e) = &mut self.editor {
+            let comment = e.comment;
+            *e = EditorState::new(&text);
+            e.comment = comment;
+        }
         self.content = text.into();
         self.marked_range = None;
         cx.notify();

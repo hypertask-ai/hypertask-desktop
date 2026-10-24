@@ -5,6 +5,8 @@ mod behavior;
 mod command_center;
 mod footer;
 mod input;
+mod editor_document;
+mod emoji;
 mod layout;
 mod memory;
 mod rich_text;

@@ -28,7 +28,7 @@ impl CommentActions {
 
     pub fn new(cx: &mut Context<Desktop>) -> Self {
         let input = cx.new(|cx| {
-            TextInput::new(String::new(), "Comment", color(0x8e9093), cx).multiline_editor()
+            TextInput::new(String::new(), "Comment", color(0x8e9093), cx).comment_editor()
         });
         let query = cx.new(|cx| TextInput::new(String::new(), "Search", color(0x8e9093), cx));
         cx.observe(&input, |_, _, cx| cx.notify()).detach();
@@ -79,55 +79,7 @@ fn reacted(comment: &CommentView, user: i64, emoji: &str) -> bool {
         .any(|r| r["emoji"] == emoji && r["userId"] == user && r["isAgent"] != true)
 }
 
-fn emojis(query: &str) -> Vec<&'static Value> {
-    static CATALOG: std::sync::OnceLock<Vec<Value>> = std::sync::OnceLock::new();
-    let catalog = CATALOG.get_or_init(|| {
-        serde_json::from_str(include_str!("../assets/emoji/catalog.json"))
-            .expect("bundled web emoji catalog")
-    });
-    let mut query = query.to_lowercase();
-    if let Some(at) = query.char_indices().find_map(|(at, c)| {
-        (c == '-' && at > 0 && query.as_bytes()[at - 1].is_ascii_alphanumeric()).then_some(at)
-    }) {
-        query.replace_range(at..at + 1, " ");
-    }
-    let mut tokens: Vec<_> = vec![];
-    for token in query.split(|c: char| c.is_whitespace() || matches!(c, '|' | ',')) {
-        if !token.is_empty() && !tokens.contains(&token) {
-            tokens.push(token);
-        }
-    }
-    if tokens.is_empty() {
-        return catalog.iter().collect();
-    }
-    let mut matches: Vec<_> = catalog
-        .iter()
-        .filter(|e| {
-            tokens
-                .iter()
-                .all(|t| e["search"].as_str().unwrap().contains(&format!(",{t}")))
-        })
-        .collect();
-    let last = tokens.last().unwrap();
-    let rank = |e: &Value| {
-        let search = e["search"].as_str().unwrap();
-        if e["id"] == *last {
-            0
-        } else {
-            search[..search.find(&format!(",{last}")).unwrap()]
-                .encode_utf16()
-                .count()
-                + 1
-        }
-    };
-    matches.sort_by(|a, b| {
-        rank(a)
-            .cmp(&rank(b))
-            .then_with(|| a["id"].as_str().cmp(&b["id"].as_str()))
-    });
-    matches.truncate(90);
-    matches
-}
+use crate::emoji::emojis;
 
 impl Desktop {
     fn focused_comment(&self) -> Option<&CommentView> {
@@ -148,21 +100,7 @@ impl Desktop {
     }
 
     pub(super) fn comment_body_html(&self, cx: &App) -> String {
-        let mut text = self.comment_input.read(cx).content.to_string();
-        let mut html = String::new();
-        for (plain, quote) in &self.comment_actions.quotes {
-            if let Some(at) = text.find(plain) {
-                if at > 0 {
-                    html.push_str(&editor_html(&text[..at]));
-                }
-                html.push_str(quote);
-                text = text[at + plain.len()..].to_owned();
-            }
-        }
-        if !text.is_empty() {
-            html.push_str(&editor_html(&text));
-        }
-        html
+        self.comment_input.read(cx).html()
     }
 
     pub(super) fn run_comment_action(
@@ -232,10 +170,8 @@ impl Desktop {
                     escape(name),
                     comment.text
                 );
-                let plain = RichText::parse(&html, self.colors).text;
                 self.comment_input
-                    .update(cx, |input, cx| input.append(&plain, window, cx));
-                self.comment_actions.quotes.push((plain, html));
+                    .update(cx, |input, cx| input.append_html(&html, window, cx));
                 self.edit_comment(window, cx);
             }
             Action::EditComment => {
@@ -243,10 +179,10 @@ impl Desktop {
                     return;
                 }
                 self.comment_actions.collapsed.remove(&id);
-                let text = RichText::parse(&comment.text, self.colors).text;
+                let html = comment.text.clone();
                 self.comment_actions
                     .input
-                    .update(cx, |input, cx| input.set_content(text, cx));
+                    .update(cx, |input, cx| input.set_html(&html, cx));
                 self.comment_actions.edit_id = Some(id);
                 self.editing = Editing::ExistingComment;
                 window.focus(&self.comment_actions.input.focus_handle(cx), cx);
@@ -318,11 +254,7 @@ impl Desktop {
         else {
             return false;
         };
-        let html = crate::rich_text::edited_html(
-            &comment.text,
-            &RichText::parse(&comment.text, self.colors).text,
-            &text,
-        );
+        let html = self.comment_actions.input.read(cx).html();
         if !self.enqueue(
             Write::CommentAction {
                 task_id: self.options.task,
