@@ -1079,7 +1079,7 @@ mod tests {
             });
         }
         cx.simulate_keystrokes("ctrl-b");
-        view.read_with(cx,|this,_|assert!(this.interaction.modal.is_some(),"Ctrl+B switches boards outside editors"));
+        view.read_with(cx,|this,_|assert!(this.shell.boards,"Ctrl+B switches boards outside editors"));
     }
     #[gpui::test]
     fn discard_is_surface_scoped_and_queues_the_authorized_server_lifecycle(cx: &mut gpui::TestAppContext) {

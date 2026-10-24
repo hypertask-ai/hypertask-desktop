@@ -1,5 +1,6 @@
 use super::*;
 use crate::editor_document::{Document, Format, Tag};
+use crate::layout::{Capture, LayoutDump, LayoutKey};
 use gpui::{AnyElement, FontWeight, KeyDownEvent, ScrollHandle};
 
 #[derive(Clone)]
@@ -13,6 +14,7 @@ pub(super) struct EditorState {
     pub comment: bool,
     palette: bool,
     job: Option<(i64, i64)>,
+    capture: Capture,
 }
 #[derive(Clone)]
 struct Dialog {
@@ -148,6 +150,8 @@ impl EditorState {
             comment: false,
             palette: false,
             job: None,
+            capture: cfg!(test)
+                .then(|| std::rc::Rc::new(std::cell::RefCell::new(LayoutDump::default()))),
         }
     }
 }
@@ -184,6 +188,8 @@ impl TextInput {
             return Err("Editor changed while AI was running; the result was not applied".into());
         }
         if let Some(error) = result.error {
+            self.selected_range = self.content.len()..self.content.len();
+            cx.notify();
             return Err(error);
         }
         let html = result
@@ -730,6 +736,9 @@ impl TextInput {
         let Some(e) = &self.editor else {
             return vec![];
         };
+        if let Some(capture) = &e.capture {
+            capture.borrow_mut().begin(0);
+        }
         if !self.focus_handle.is_focused(window)
             && !e
                 .dialog
@@ -861,7 +870,6 @@ impl TextInput {
                     let (title, description, _) = COMMANDS[index];
                     div()
                         .id(("slash-choice", index))
-                        .debug_selector(|| format!("slash-{title}"))
                         .p(px(6.))
                         .cursor_pointer()
                         .when(choice == e.choice, |d| {
@@ -876,6 +884,7 @@ impl TextInput {
                                 this.select_slash(index, window, cx);
                             }),
                         )
+                        .layout_key(&e.capture, format!("slash-{title}"), None)
                 }))
                 .child(
                     div()
@@ -960,7 +969,6 @@ impl TextInput {
                 .children(buttons.into_iter().enumerate().map(|(i, (label, format))| {
                     div()
                         .id(("format", i))
-                        .debug_selector(|| format!("format-{i}"))
                         .cursor_pointer()
                         .child(label)
                         .on_mouse_down(
@@ -981,11 +989,11 @@ impl TextInput {
                                 );
                             }),
                         )
+                        .layout_key(&e.capture, format!("format-{i}"), None)
                 }))
                 .child(
                     div()
                         .id("editor-link")
-                        .debug_selector(|| "editor-link".into())
                         .cursor_pointer()
                         .child("Link")
                         .on_mouse_down(
@@ -1388,20 +1396,38 @@ mod tests {
         });
         cx.simulate_input("/Bold");
         cx.run_until_parked();
-        let bounds = cx
-            .debug_bounds("slash-Bold")
-            .expect("real slash choice was painted");
-        cx.simulate_click(bounds.center(), gpui::Modifiers::default());
+        let center = |key: &str, cx: &mut gpui::VisualTestContext| {
+            view.read_with(cx, |input, _| {
+                let rows = input
+                    .editor
+                    .as_ref()
+                    .unwrap()
+                    .capture
+                    .as_ref()
+                    .unwrap()
+                    .borrow()
+                    .interaction_elements();
+                let row = rows
+                    .iter()
+                    .find(|e| e["key"] == key)
+                    .expect("real editor control was painted");
+                assert!(row["w"].as_f64().unwrap() > 0. && row["h"].as_f64().unwrap() > 0.);
+                point(
+                    px((row["x"].as_f64().unwrap() + row["w"].as_f64().unwrap() / 2.) as f32),
+                    px((row["y"].as_f64().unwrap() + row["h"].as_f64().unwrap() / 2.) as f32),
+                )
+            })
+        };
+        let position = center("slash-Bold", cx);
+        cx.simulate_click(position, gpui::Modifiers::default());
         cx.simulate_input("bold");
         view.read_with(cx, |input, _| {
             assert_eq!(input.html(), "<p><strong>bold</strong></p>")
         });
         cx.simulate_keystrokes("ctrl-a");
         cx.run_until_parked();
-        let bounds = cx
-            .debug_bounds("format-1")
-            .expect("selection bubble painted");
-        cx.simulate_click(bounds.center(), gpui::Modifiers::default());
+        let position = center("format-1", cx);
+        cx.simulate_click(position, gpui::Modifiers::default());
         view.read_with(cx, |input, _| {
             assert_eq!(input.html(), "<p><strong><em>bold</em></strong></p>")
         });
