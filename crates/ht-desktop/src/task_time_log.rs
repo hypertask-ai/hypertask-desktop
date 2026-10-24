@@ -905,7 +905,18 @@ mod tests {
                     }
                 })
                 .unwrap();
-                cx.simulate_keystrokes("escape escape");
+                let editing = view
+                    .read_with(&mut cx, |this, _| this.time_log.editing.is_some())
+                    .unwrap();
+                if editing {
+                    cx.simulate_keystrokes("escape");
+                }
+                cx.simulate_keystrokes("escape");
+                view.read_with(&mut cx, |this, _| {
+                    assert!(!this.time_log.open);
+                    assert_eq!(this.screen, Screen::Task);
+                })
+                .unwrap();
             }
         }
     }

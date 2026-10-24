@@ -1190,10 +1190,13 @@ mod tests {
         }
         cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),desktop);let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
         for read in [401,403,200]{for write in [401,403,200]{
-            view.update(&mut cx,|this,_,cx|this.invalidate_task_create(cx)).unwrap();
+            view.update(&mut cx,|this,window,cx|{this.invalidate_task_create(cx);window.focus(&this.focus,cx);}).unwrap();
+            crate::ui::shell::tests::draw(view,&mut cx);
             cx.simulate_keystrokes("ctrl-k");cx.simulate_input("New task from template");cx.simulate_keystrokes("enter");
             view.update(&mut cx,|this,_,cx|{let result=ht_core::task_create::templates(&mut Templates(read),15).map_err(|e|e.to_string());this.apply_task_templates(result,cx);}).unwrap();
             if read!=200{view.update(&mut cx,|this,_,cx|{assert!(this.choices(cx).is_empty());assert!(this.db.mutations().unwrap().iter().all(|row|row.status=="failed"));}).unwrap();cx.simulate_keystrokes("escape");continue;}
+            crate::ui::shell::tests::draw(view,&mut cx);
+            view.update(&mut cx,|this,_,cx|{assert_eq!(this.interaction.modal,Some(interactions::Modal::Templates));assert_eq!(this.choices(cx).len(),1);}).unwrap();
             cx.simulate_input("Daily");cx.simulate_keystrokes("enter ctrl-enter");
             view.update(&mut cx,|this,window,cx|{
                 assert!(this.create_task.open);assert!(this.create_task.pending.is_some());assert_eq!(this.create_task.title.read(cx).content,"Check everything");
