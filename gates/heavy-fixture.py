@@ -3,6 +3,8 @@ import argparse
 import copy
 import hashlib
 import json
+import struct
+import zlib
 from pathlib import Path
 
 
@@ -10,17 +12,31 @@ def write(path, value):
     path.write_text(json.dumps(value, separators=(',', ':')), encoding='utf-8')
 
 
+def png(path, width, height, seed):
+    path.parent.mkdir(parents=True, exist_ok=True)
+    def chunk(kind, data):
+        return struct.pack('>I', len(data)) + kind + data + struct.pack('>I', zlib.crc32(kind + data))
+    row = b'\x00' + bytes((x // 4 + seed + c * 47) % 256 for x in range(width) for c in range(3))
+    path.write_bytes(b'\x89PNG\r\n\x1a\n' + chunk(b'IHDR', struct.pack('>IIBBBBB', width, height, 8, 2, 0, 0, 0))
+                     + chunk(b'IDAT', zlib.compress(row * height)) + chunk(b'IEND', b''))
+
+
 def generate(out):
     out.mkdir(parents=True, exist_ok=True)
     demo = Path(__file__).resolve().parents[1] / 'fixtures/demo'
-    load = lambda name: json.loads((demo / name).read_text())
+    load = lambda name: json.loads((demo / name).read_text(encoding='utf-8'))
     sections = load('sections-15.json')
     sections['sections'] = [s for s in sections['sections'] if not s.get('deleted') and s.get('visibility')]
     write(out / 'sections.json', sections)
     write(out / 'projects.json', load('projects.json'))
     template = load('task-58006.json')['tasks'][0]
     actors = [{'id': 700000 + i, 'displayName': f'Colleague {i:03}',
-               'photoURL': f'https://memory.invalid/avatar/{i:03}-1024.png'} for i in range(160)]
+               'photoURL': f'http://127.0.0.1:8765/avatar/{i:03}-1024.png'} for i in range(160)]
+    assets = out.parent / 'heavy-assets'
+    for i in range(160):
+        png(assets / f'avatar/{i:03}-1024.png', 1024, 1024, i)
+    for i in range(3):
+        png(assets / f'capture-{i}-2560x1440.png', 2560, 1440, i+160)
     tasks = []
     for i in range(320):
         task = copy.deepcopy(template)
@@ -31,7 +47,7 @@ def generate(out):
                     description=''.join(f'<p>Task {i}, investigation {p}: ' +
                         'Review the customer report, reproduction steps, rollout metrics and follow-up actions. ' * 20 + '</p>'
                         for p in range(16)) + ''.join(
-                        f'<p><img src="https://memory.invalid/task/{i}/capture-{n}-2560x1440.png" width="640" height="360"></p>'
+                        f'<p><img src="http://127.0.0.1:8765/capture-{n}-2560x1440.png" width="640" height="360"></p>'
                         for n in range(3)))
         tasks.append(task)
     write(out / 'tasks.json', {'success': True, 'tasks': tasks})
@@ -68,8 +84,16 @@ def generate(out):
                 'AiHistoryBytes': (out.parent / 'heavy-ai-history.json').stat().st_size,
                 'ImageSourceWidth': 2560, 'ImageSourceHeight': 1440,
                 'ImageDisplayWidth': 640, 'ImageDisplayHeight': 360,
-                'AvatarSourceWidth': 1024, 'AvatarSourceHeight': 1024}
-    paths = sorted(out.glob('*.json')) + [out.parent / 'heavy-ai-history.json']
+                'AvatarSourceWidth': 1024, 'AvatarSourceHeight': 1024,
+                'AvatarAssetCount': len(list((assets / 'avatar').glob('*.png'))),
+                'DescriptionImageAssetCount': len(list(assets.glob('capture-*.png'))),
+                'EncodedImageAssetBytes': sum(p.stat().st_size for p in assets.rglob('*.png'))}
+    for path in assets.rglob('*.png'):
+        header = path.read_bytes()[:24]
+        assert header[:8] == b'\x89PNG\r\n\x1a\n'
+        expected = (1024, 1024) if path.parent.name == 'avatar' else (2560, 1440)
+        assert struct.unpack('>II', header[16:24]) == expected
+    paths = sorted(out.glob('*.json')) + [out.parent / 'heavy-ai-history.json'] + sorted(assets.rglob('*.png'))
     manifest['FixtureSHA256'] = hashlib.sha256(b''.join(p.name.encode()+p.read_bytes() for p in paths)).hexdigest()
     write(out.parent / 'heavy-manifest.json', manifest)
     print('HEAVY_FIXTURE_GENERATED ' + json.dumps(manifest, sort_keys=True))

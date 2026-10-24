@@ -1,0 +1,14 @@
+{
+  "inboxWorkingSet64": 99000000,
+  "boardWorkingSet64": 99000000,
+  "taskWorkingSet64": 99000000,
+  "FixtureVersion": 1,
+  "MinimumInboxItems": 640,
+  "MinimumBoardCards": 320,
+  "MinimumDescriptionBytes": 8000000,
+  "MinimumDescriptionImages": 960,
+  "MinimumDistinctAvatars": 160,
+  "MinimumComments": 48,
+  "MinimumAiSessions": 40,
+  "MinimumAiMessages": 960
+}

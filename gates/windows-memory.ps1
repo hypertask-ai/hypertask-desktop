@@ -5,7 +5,8 @@ param(
     [Parameter(Mandatory)][string]$Revision,
     [Parameter(Mandatory)][string]$Out,
     [string]$HeavyManifest,
-    [string]$AiHistory
+    [string]$AiHistory,
+    [string]$Assets
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -117,6 +118,13 @@ if ($HeavyManifest) {
     Copy-Item $HeavyManifest (Join-Path $Out 'heavy-manifest.json')
     $env:HT_MEMORY_AI_HISTORY = (Resolve-Path $AiHistory).Path
 }
+$assetServer = $null
+if ($Assets) {
+    $assetServer = Start-Process python -WindowStyle Hidden -PassThru -ArgumentList @(
+        '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', "`"$((Resolve-Path $Assets).Path)`""
+    )
+}
+try {
 $rows = @()
 foreach ($round in 1..3) {
     foreach ($screen in 'inbox', 'board', 'task') {
@@ -193,4 +201,10 @@ if ($env:GITHUB_STEP_SUMMARY) {
     @("## Memory: $Revision", "Display $($display.Width)x$($display.Height), maximized, 8 s, median of three. MB = 1,000,000 bytes.") + $table | Add-Content $env:GITHUB_STEP_SUMMARY
 }
 
-Remove-Item Env:HT_MEMORY_AI_HISTORY -ErrorAction SilentlyContinue
+} finally {
+    Remove-Item Env:HT_MEMORY_AI_HISTORY -ErrorAction SilentlyContinue
+    if ($assetServer -and -not $assetServer.HasExited) {
+        Stop-Process -Id $assetServer.Id -Force
+        $assetServer.WaitForExit()
+    }
+}

@@ -102,3 +102,12 @@ pub fn payload_bytes(value: &impl serde::Serialize) -> usize {
     serde_json::to_writer(&mut counter, value).expect("memory payload serialization");
     counter.0
 }
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn memory_payload_counter_matches_serialization_without_retaining_a_copy() {
+        let value = serde_json::json!({"unicode":"é🙂", "html":"<p>text</p>", "items":[1,2,3]});
+        assert_eq!(super::payload_bytes(&value), serde_json::to_vec(&value).unwrap().len());
+    }
+}

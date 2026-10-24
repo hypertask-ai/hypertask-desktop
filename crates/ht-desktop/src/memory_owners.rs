@@ -12,8 +12,8 @@ impl Desktop {
         usage["BoardDescriptionBytes"] = self.columns.iter().flat_map(|c| &c.cards).map(|t| t.description.len()).sum::<usize>().into();
         usage["DetailJsonPayloadBytes"] = crate::memory::payload_bytes(&self.detail).into();
         usage["RichTextPayloadBytes"] = (self.description.memory_payload_bytes() + self.comments.iter().map(RichText::memory_payload_bytes).sum::<usize>()).into();
-        usage["DescriptionDecodedImageBytes"] = 0.into();
-        usage["AvatarDecodedImageBytes"] = 0.into();
+        usage["DescriptionImageDecoderPresent"] = false.into();
+        usage["AvatarImageDecoderPresent"] = false.into();
         if let Some(sidebar) = &self.ai_sidebar {
             usage["Ai"] = sidebar.read(cx).memory_usage();
         }
