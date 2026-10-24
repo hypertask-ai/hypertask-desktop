@@ -404,3 +404,12 @@ uses nowrap rather than wrapping long metadata into the fixed-height inbox row.
 The same CI regression adds a long-priority case, requiring width <=180px,
 single-line height, and both unchanged source gaps. This is additive coverage,
 not a relaxation of the existing layout contract.
+
+CI 40108538957 rejected an incorrect new test-only assumption: 11px metadata
+inherits the content container's fixed 19.5px line-height (the same line-height
+as its adjacent notification content), so an invented <=18px assertion is not a
+valid single-line oracle. The regression now requires exact equality with the
+adjacent single-line content's measured height, retaining the mandatory 180px
+clip, exact long-case 180px width, and 8px/32px gaps. No application dimensions,
+existing assertion, gate tolerance or fixture is changed to accommodate that
+failure. Final proof is bound to the corrected descendant below via PR 18.

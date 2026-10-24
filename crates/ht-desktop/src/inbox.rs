@@ -626,7 +626,7 @@ mod tests {
                     let meta = meta.expect("nonempty metadata must be rendered");
                     assert_eq!(meta["text"], priority.chars().take(40).collect::<String>());
                     assert!(meta["w"].as_f64().unwrap() <= 180.);
-                    assert!(meta["h"].as_f64().unwrap() <= 18., "metadata must stay on one line");
+                    assert_eq!(meta["h"], kind["h"], "metadata must stay on the inherited single line");
                     if priority.len() > 40 {
                         assert_eq!(meta["w"], 180.);
                     }
