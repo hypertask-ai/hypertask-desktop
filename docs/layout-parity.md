@@ -49,3 +49,24 @@ keys are evidence coverage differences, not invented UI.
 
 Further run IDs, raw before/after comparisons, and any content-dependent
 residuals are recorded below after downloading the actual CI artifacts.
+
+Structural baseline: `9ee408af16afb54afae207951375a3d47c0045fd`,
+[40087161031](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40087161031),
+all five applicable jobs successful. `layout-dumps` artifact ID `12557423496`,
+digest `sha256:aef25f4e2ee40cbf49ac6ee03952805c4c13e0e7abc5175cc678df4a6881843c`.
+Downloaded into `evidence/look-structural-before`; unmodified comparer on its
+`parity/` subdirectory reports inbox **32**, board **27**, task **24**, total
+**83**. This is the same fixture used for subsequent structural comparisons.
+
+First fix artifact (`8cec052b0cfca40dcc97dcf6490c20842f49aec3`, run
+[40088049145](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40088049145)):
+dense **74**, structural **42** differences. All Rust/platform jobs passed;
+the layout assertion incorrectly applied Graphite's label-width range to Dia's
+Inter font (115px). The range is now theme-scoped, retaining the 100-110px
+Graphite assertion and checking that other themes still measure the label, not
+the entire row. No application theme values were changed to satisfy that check.
+
+Board footer declaration includes the web's `N / Shift+C` quick-add hint between
+add-task and archive (`src/components/Global/BottomSettings_QuickTips.tsx:125-127,241`).
+This is a cosmetic hint-list change only, with a CI declaration-order regression
+test; it does not implement or change shortcuts or the blocked F011 save route.

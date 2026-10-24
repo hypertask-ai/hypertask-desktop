@@ -1170,7 +1170,7 @@ impl Desktop {
                     .child(
                         div().flex().w_full().min_w_0().child(
                             div()
-                                .w_full()
+                                .max_w(gpui::relative(1.))
                                 .min_w_0()
                                 .text_size(px(13.))
                                 .line_height(px(19.5))

@@ -83,7 +83,9 @@ def validate(path, screen, theme, width=1440, height=900, sparse=False):
     for i in range(2, 5):
         assert elements[f"rail.icon.{i}"]["y"] == 82 + (i - 2) * 38, elements[f"rail.icon.{i}"]
     assert elements["footer.text"]["text"] == "Command center", elements["footer.text"]
-    assert 100 <= elements["footer.text"]["w"] <= 110, elements["footer.text"]
+    assert 80 <= elements["footer.text"]["w"] <= 140, elements["footer.text"]
+    if theme == "graphite":
+        assert 100 <= elements["footer.text"]["w"] <= 110, elements["footer.text"]
     if screen == "board":
         assert elements["board.column.0.add"]["fontSize"] == 16, elements["board.column.0.add"]
         assert elements["board.column.0.add"]["lineHeight"] == 24, elements["board.column.0.add"]
