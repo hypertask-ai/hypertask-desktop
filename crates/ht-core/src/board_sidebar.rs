@@ -98,3 +98,26 @@ impl Db {
         )
     }
 }
+
+impl Db {
+    pub fn cache_sidebar_profile(&self, user: i64, profile: &Value) -> Result<()> {
+        ensure!(self.current_user_id() == Some(user) && profile["id"] == user, "Wrong account profile");
+        let setting = profile["UserSettingId"].as_i64().filter(|id| *id > 0).context("Missing user settings")?;
+        self.kv_set(&cache_key(user, "setting"), &setting.to_string())
+    }
+    pub(crate) fn prepare_favorite_slot(&self, index: u8, project: Option<i64>) -> Result<Value> {
+        ensure!(index <= 9, "Invalid favorite slot");
+        let user = self.current_user_id().context("Unauthorized")?;
+        let setting: i64 = self.kv_get(&cache_key(user, "setting"))?.context("User settings are unavailable")?.parse()?;
+        let before = self.sidebar_data("favorites");
+        let exists = before.as_array().into_iter().flatten().any(|row| row["index"] == index);
+        let mut rows = before.as_array().cloned().unwrap_or_default();
+        rows.retain(|row| row["index"] != index && project.is_none_or(|id| row["projectId"] != id));
+        if let Some(id) = project {
+            ensure!(id > 0, "Invalid favorite board");
+            let board = self.raw("Project", &json!(id))?.context("Board is unavailable")?;
+            rows.push(json!({"projectId":id,"project":board,"index":index,"userSettingId":setting}));
+        }
+        Ok(json!({"user_id":user,"before":before,"favorites":rows,"method":if exists || project.is_none(){"PUT"}else{"POST"},"body":{"userSettingId":setting,"index":index,"projectId":project.unwrap_or(-1)}}))
+    }
+}

@@ -6,6 +6,9 @@ use serde_json::Value;
 pub(super) struct Shell {
     metadata_loading: bool,
     metadata_generation:u64,
+    favorites_manager: bool,
+    favorite_slot: Option<u8>,
+    favorites_expanded: bool,
     expanded: bool,
     hovered: Option<usize>,
     pub ai_open: bool,
@@ -65,6 +68,9 @@ impl Shell {
         Self {
             metadata_loading: false,
             metadata_generation:0,
+            favorites_manager: false,
+            favorite_slot: None,
+            favorites_expanded: db.kv_get("isFavoritesExpanded").ok().flatten().as_deref() != Some("false"),
             agents: false,
             destination: Destination::Workspace,
             search_input,
@@ -145,6 +151,14 @@ impl Desktop {
         let key = &event.keystroke;
         let m = key.modifiers;
         let ctrl = m.control || m.platform;
+        if self.shell.favorites_manager {
+            if key.key == "escape" {
+                if self.shell.favorite_slot.take().is_none() { self.close_favorites(window, cx); }
+                cx.notify();
+                cx.stop_propagation();
+            }
+            return true;
+        }
         if self.shell.cli {
             if key.key == "escape" {
                 self.close_cli(window, cx);
@@ -189,6 +203,12 @@ impl Desktop {
         }
         if self.shell.settings {
             return self.settings_key(event, window, cx);
+        }
+        let favorite_modifier = if cfg!(target_os = "macos") {m.control && !m.alt} else {m.alt && !m.control};
+        let favorite_index = (favorite_modifier && !m.platform && !m.shift && key.key.len()==1)
+            .then(||key.key.parse::<u8>().ok()).flatten().filter(|i|*i<=9);
+        if self.shell.boards {
+            if let Some(index)=favorite_index {self.open_favorite(index,window,cx);cx.stop_propagation();return true;}
         }
         if self.shell.boards {
             match key.key.as_str() {
@@ -254,6 +274,7 @@ impl Desktop {
         {
             return false;
         }
+        if let Some(index)=favorite_index {self.open_favorite(index,window,cx);cx.stop_propagation();return true;}
         match (key.key.as_str(), ctrl, m.shift, m.alt) {
             ("[", false, false, false) => self.toggle_rail(cx),
             ("5" | "]", false, false, false)
@@ -580,6 +601,7 @@ impl Desktop {
     }
 
     pub(super) fn shell_overlay(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.shell.favorites_manager { return self.favorites_overlay(cx); }
         if self.shell.cli { return self.cli_overlay(cx); }
         if self.shell.invite {
             return self.invite_overlay(cx);
@@ -658,7 +680,13 @@ impl Desktop {
                             )),
                     )
                     .when(self.db.sidebar_data("favorites").as_array().is_some_and(|favorites|!favorites.is_empty()), |d|d.child(
-                        div().id("favorites-drop-target").px(px(16.)).py(px(8.)).child("Favorite Boards")
+                        div().id("favorites-drop-target").px(px(16.)).py(px(8.)).flex().items_center().gap(px(8.))
+                            .child(div().id("favorites-collapse").cursor_pointer().child(format!("Favorite Boards {} {}",self.db.sidebar_data("favorites").as_array().map_or(0,Vec::len),if self.shell.favorites_expanded {"⌄"}else{"›"}))
+                                .on_click(cx.listener(|this,_,_,cx|{this.shell.favorites_expanded=!this.shell.favorites_expanded;let _=this.db.kv_set("isFavoritesExpanded",if this.shell.favorites_expanded {"true"}else{"false"});cx.notify();}))
+                                .layout_key(&self.layout,"shell.favorites.collapse",None))
+                            .child(div().id("favorites-manage").cursor_pointer().child(icon("settings",t.muted,14.))
+                                .on_click(cx.listener(|this,_,window,cx|this.open_favorites(window,cx)))
+                                .layout_key(&self.layout,"shell.favorites.manage",None))
                             .on_drop(cx.listener(|this, drag:&sidebar::BoardDrag, _, cx| this.drop_favorite(drag.project,None,true,cx)))
                             .layout_key(&self.layout,"shell.boards.favorites",None)))
                     .child(
@@ -1277,6 +1305,7 @@ impl Desktop {
         self.invalidate_compose_identity();
         self.shell.set_token(token);
         self.shell.metadata_generation+=1;self.shell.metadata_loading=false;
+        self.shell.favorites_manager=false;self.shell.favorite_slot=None;
         self.invalidate_board_views(cx);self.invalidate_board_create(cx);
         self.shell.settings = false;
         self.shell.boards = false;

@@ -53,3 +53,24 @@ never automatically resends an uncertain create, including after restart.
 
 No live sign-in acceptance is claimed. All full-login live writes still depend
 on HTPR-7699; a green CI receipt proves the mocked client contracts, not SaaS QA.
+
+## Resume: favorite-slot manager
+
+The existing web Manage Favorites panel is now reachable from Ctrl+K and the
+switcher's favorite settings icon, including its ten slots (1–9, 0), team/board
+choices and “Do Nothing” reset. It obtains `UserSettingId` from the same GET
+`/api/users/getById` used by the web, never guesses it from the login user ID.
+Slot writes use POST/PUT `/api/favorites/addEditFavorites` with
+`{userSettingId,index,projectId}` (reset is `projectId:-1`), not reorderFavorites.
+The durable queue applies slot optimism and restores the old list on 401/403;
+account validation precedes every write. The web does not show an error toast
+for this panel's rejected write; the native panel does not claim success.
+Favorites collapse persists locally; Alt+digit (macOS literal Ctrl+digit) opens
+the actual slot, including 0 as the tenth slot, inside or outside Ctrl+B.
+Web: `src/components/Modals/ManageFavorites/index.tsx:71-90,148-193,221-229,278-286,339-353`,
+`src/utils/api/Homepage/index.ts:39-42`,
+`src/components/sidebars/leftSidebar.tsx:171-186,738-790`,
+`src/lib/constants/shortcuts.ts:13-22`.
+CI cases: `ten_slot_favorites_use_web_post_put_reset_and_rollback_after_restart`,
+`sidebar_web_requests_use_desktop_bearer_on_accept_and_refusal`,
+`favorites_manager_has_ten_real_slots_and_clicks_queue_web_slot_bodies`.

@@ -264,7 +264,7 @@ fn native_task_creation_routes_send_exact_web_json_and_bearer_on_accept_and_refu
 
 #[test]
 fn sidebar_web_requests_use_desktop_bearer_on_accept_and_refusal(){
-    for (method,path,body) in [("POST","/api/teams/getAllSidebar",json!({})),("GET","/api/favorites/getFavorites",Value::Null),("PUT","/api/favorites/reorderFavorites",json!({"favorites":[{"projectId":15}]}))] {
+    for (method,path,body) in [("POST","/api/favorites/addEditFavorites",json!({"userSettingId":99,"index":0,"projectId":15})),("PUT","/api/favorites/addEditFavorites",json!({"userSettingId":99,"index":0,"projectId":-1})),("GET","/api/users/getById",Value::Null),("POST","/api/teams/getAllSidebar",json!({"userId":42})),("GET","/api/favorites/getFavorites",Value::Null),("PUT","/api/favorites/reorderFavorites",json!({"favorites":[{"projectId":15}]}))] {
         for status in [200,401,403]{
             let(url,thread,receive)=server(status,"[]");let mut http=Http::with_base(&url,"desktop-sidebar-token".into()).unwrap();
             let response=if method=="GET"{http.get(path)}else{http.mutate(method,path,&body,"favorites-key")}.unwrap();assert_eq!(response.status,status);

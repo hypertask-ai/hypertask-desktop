@@ -9,6 +9,7 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::Favorites => self.open_favorites(window, cx),
             ShellCommand::Settings(section) => {
                 self.open_settings(window, cx);
                 self.select_settings(section, window, cx);

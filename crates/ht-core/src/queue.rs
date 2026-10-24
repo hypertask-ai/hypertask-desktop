@@ -9,6 +9,7 @@ use serde_json::{Value, json};
 pub enum Write {
     View { change: crate::ViewWrite },
     Favorites { project_ids: Vec<i64> },
+    FavoriteSlot { index: u8, project_id: Option<i64> },
     CreateTask { project_id: i64, section_id: i64, title: String, top: bool },
     ComposeTask { project_id: i64, text: String, time_zone: String },
     Shell { request: crate::ShellWrite },
@@ -91,8 +92,12 @@ impl Db {
                 let user=db.current_user_id().context("Unauthorized")?;
                 (format!("view:{}",change.project),"web_view",json!({"user_id":user,"change":change,"before":db.board_project(change.project)?}))
             }
+            Write::FavoriteSlot { index, project_id } => {
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && matches!(row.kind.as_str(),"web_favorites"|"web_favorite_slot")), "wait for the previous favorite update to finish");
+                ("favorites".into(),"web_favorite_slot",db.prepare_favorite_slot(*index,*project_id)?)
+            }
             Write::Favorites { project_ids } => {
-                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_favorites"), "wait for the previous favorite update to finish");
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && matches!(row.kind.as_str(),"web_favorites"|"web_favorite_slot")), "wait for the previous favorite update to finish");
                 ("favorites".into(),"web_favorites",db.prepare_favorites(project_ids)?)
             },
             Write::CreateTask { project_id, section_id, title, top } => (format!("create:{project_id}"), "web_create", db.prepare_create(*project_id,*section_id,title,*top)?),
@@ -222,7 +227,7 @@ impl Db {
                 let change:crate::ViewWrite=serde_json::from_value(payload["change"].clone())?;
                 let mut project=self.board_project(change.project)?;change.optimistic(&mut project);self.upsert("Project",&project)?;
             }
-            "web_favorites" => {
+            "web_favorites" | "web_favorite_slot" => {
                 let user=payload["user_id"].as_i64().context("missing account")?;
                 if self.current_user_id()==Some(user) {self.kv_set(&crate::board_sidebar::cache_key(user,"favorites"),&payload["favorites"].to_string())?;}
             }
@@ -449,7 +454,7 @@ impl Db {
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
             "inbox_seen" => ("/inbox/seen", json!({"notification_ids":row.payload_json["notification_ids"]})),
             "inbox_remind" => ("/inbox/archive", json!({"notification_ids":row.payload_json["notification_ids"],"remind_at":row.payload_json["remind_at"]})),
-            "web_view" | "web_favorites" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
+            "web_view" | "web_favorites" | "web_favorite_slot" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
         let response = if row.kind == "web_view" {
@@ -459,6 +464,11 @@ impl Db {
                 Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.post(&format!("/api/projects/views/{}",change.route),&change.body,&row.client_id),
                 _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
             }}.map(|r|if r.status==200 {Response{status:200,body:json!({"success":true,"view":r.body})}}else{r})
+        } else if row.kind == "web_favorite_slot" {
+            match transport.get("/user/context") {
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate(row.payload_json["method"].as_str().context("Missing favorite method")?,"/api/favorites/addEditFavorites",&row.payload_json["body"],&row.client_id),
+                _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
+            }.map(|r|if r.status==200 && (r.body["count"].is_number() || r.body["projectId"]==row.payload_json["body"]["projectId"]) {Response{status:200,body:json!({"success":true})}}else{r})
         } else if row.kind == "web_favorites" {
             match transport.get("/user/context") {
                 Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate("PUT","/api/favorites/reorderFavorites",&row.payload_json["body"],&row.client_id),
@@ -586,7 +596,7 @@ impl Db {
                     }
                     db.kv_set(&format!("view-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
                 }
-                if row.kind == "web_favorites" {
+                if matches!(row.kind.as_str(), "web_favorites" | "web_favorite_slot") {
                     let user=row.payload_json["user_id"].as_i64().context("missing account")?;
                     db.kv_set(&crate::board_sidebar::cache_key(user,"favorites"),&row.payload_json["before"].to_string())?;
                     db.reapply_pending()?;
@@ -662,7 +672,7 @@ impl Db {
                     }
                     db.kv_set(&format!("view-result:{}",row.client_id),&body.to_string())?;
                 }
-                "web_favorites" => (),
+                "web_favorites" | "web_favorite_slot" => (),
                 "web_create" => {
                     let task = &body["task"];
                     ensure!(task["id"].as_i64().is_some_and(|id|id>0) && task["projectId"] == row.payload_json["body"]["projectId"], "invalid created task");

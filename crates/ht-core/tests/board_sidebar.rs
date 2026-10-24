@@ -169,3 +169,34 @@ fn independent_metadata_refusal_retains_the_other_authoritative_query_and_cached
     assert_eq!(db.sidebar_data("teams")[0]["id"], "new-team");
     assert_eq!(db.sidebar_data("favorites"), json!([]));
 }
+
+#[test]
+fn ten_slot_favorites_use_web_post_put_reset_and_rollback_after_restart() {
+    struct Slots { status: u16, method: &'static str, body: Value }
+    impl Transport for Slots {
+        fn get(&mut self, path: &str) -> Result<Response, TransportError> {
+            assert_eq!(path,"/user/context");
+            Ok(Response { status:200, body:json!({"success":true,"user":{"id":42}}) })
+        }
+        fn post(&mut self, _: &str, _: &Value, _: &str) -> Result<Response,TransportError> {panic!("use method")}
+        fn mutate(&mut self, method:&str, path:&str, body:&Value, _: &str) -> Result<Response,TransportError> {
+            assert_eq!(method,self.method); assert_eq!(path,"/api/favorites/addEditFavorites"); assert_eq!(body,&self.body);
+            Ok(Response { status:self.status, body:if self.status!=200 {json!({"message":"Unauthorized"})}else if method=="POST" {json!({"projectId":body["projectId"],"index":body["index"]})}else{json!({"count":1})} })
+        }
+    }
+    for status in [200,401,403] { for (index, project, method) in [(0,Some(16),"POST"),(1,Some(16),"PUT"),(1,None,"PUT")] {
+        let file=tempfile::NamedTempFile::new().unwrap(); let mut db=Db::open(file.path()).unwrap();
+        db.kv_set("current-user-id","42").unwrap();db.cache_sidebar(42,&teams(),&favorites()).unwrap();
+        assert!(db.enqueue(Write::FavoriteSlot{index,project_id:project},100).is_err());
+        assert!(db.cache_sidebar_profile(42,&json!({"id":43,"UserSettingId":9})).is_err());
+        db.cache_sidebar_profile(42,&json!({"id":42,"UserSettingId":99})).unwrap();
+        let before=db.sidebar_data("favorites");
+        let id=db.enqueue(Write::FavoriteSlot{index,project_id:project},100).unwrap();
+        let optimistic=db.sidebar_data("favorites");assert_ne!(optimistic,before);
+        assert!(db.enqueue(Write::Favorites{project_ids:vec![]},100).is_err());
+        drop(db);let mut db=Db::open(file.path()).unwrap();
+        let mut server=Slots{status,method,body:json!({"userSettingId":99,"index":index,"projectId":project.unwrap_or(-1)})};
+        assert_eq!(db.drain_once(&mut server,100).unwrap(),if status==200{Drain::Applied(id)}else{Drain::Failed(id)});
+        assert_eq!(db.sidebar_data("favorites"),if status==200{optimistic}else{before});
+    }}
+}

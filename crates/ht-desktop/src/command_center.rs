@@ -30,6 +30,7 @@ pub enum ShellCommand {
     Feedback,
     Invite,
     Cli,
+    Favorites,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -150,6 +151,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
 fn shell_commands(rows: &mut Vec<Command>) {
     use ShellCommand::*;
     for (key, name, group, keys, keywords, action) in [
+        ("manageFavorites", "Manage favorites", "Navigate", "", "manage favorites favourites starred pinned sidebar boards reorder remove organize", Favorites),
         ("sendFeedback", "Send feedback", "Board", "", "send feedback bug idea issue report", Feedback),
         ("inviteBoard", "Invite people", "Board", "", "invite people members email board team", Invite),
         ("settingsCalendarShowWeekends", "Settings: Show weekends", "Settings", "", "settings show weekends profile", Settings("calendar")),
