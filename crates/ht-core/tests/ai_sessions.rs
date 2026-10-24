@@ -50,3 +50,15 @@ fn uncertain_create_is_never_replayed_after_restart(){
     let file=tempfile::NamedTempFile::new().unwrap();let mut db=Db::open(file.path()).unwrap();seed(&db);let change=AiSessionWrite::Create{task:None,project:None};db.enqueue(Write::AiSession{change:change.clone()},1).unwrap();assert!(matches!(db.drain_once(&mut Lost,2).unwrap(),Drain::Retrying(_)));
     drop(db);let mut db=Db::open(file.path()).unwrap();let mut server=Server{status:200,user:42,calls:0,change};assert!(matches!(db.drain_once(&mut server,4).unwrap(),Drain::Failed(_)));assert_eq!(server.calls,0);
 }
+
+#[test]
+fn durable_chat_continuation_is_atomic_account_scoped_and_survives_acknowledgement(){
+    let file=tempfile::NamedTempFile::new().unwrap();let mut db=Db::open(file.path()).unwrap();seed(&db);
+    let change=AiSessionWrite::Create{task:Some(7),project:Some(15)};let before=db.ai_sessions().unwrap();
+    let continuation=json!({"draft":"Unsaved note","branch":"<blockquote>Original comment</blockquote>"});
+    let key=db.enqueue_ai_session(change.clone(),&before,&continuation,1).unwrap();
+    assert!(db.enqueue_ai_session(change.clone(),&[],&json!({}),1).is_err());assert_eq!(db.ai_sessions().unwrap(),before);
+    drop(db);let mut db=Db::open(file.path()).unwrap();let pending:Value=serde_json::from_str(&db.kv_get("ai-session-pending:42").unwrap().unwrap()).unwrap();assert_eq!(pending["continuation"],continuation);assert_eq!(pending["key"],key);
+    assert!(matches!(db.drain_once(&mut Server{status:200,user:42,calls:0,change},2).unwrap(),Drain::Applied(_)));assert!(db.mutations().unwrap().is_empty());assert!(db.kv_get("ai-session-pending:42").unwrap().is_some());assert!(db.kv_get(&format!("ai-session-result:{key}")).unwrap().is_some());
+    db.kv_set("current-user-id","99").unwrap();assert!(db.kv_get("ai-session-pending:99").unwrap().is_none());assert!(db.ai_sessions().unwrap().is_empty());
+}

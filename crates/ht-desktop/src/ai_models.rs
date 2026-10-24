@@ -26,8 +26,9 @@ impl AiSidebar {
         if team==self.models.team && (self.models.pending.is_some() || self.models.configuration.is_some() || self.models.failed){return;}
         self.models.team=team.clone();self.models.configuration=None;self.models.selected=None;self.models.pending=None;self.models.failed=false;
         if let(Some(team),Some(token))=(team,self.models.token.clone()){
+            let board_default=self.scope.as_ref().and_then(|s|s.model_default.clone());
             let(send,receive)=mpsc::channel();self.models.pending=Some(receive);
-            thread::spawn(move||{let result=Http::new(token).and_then(|mut http|ht_core::ai_models::load(&mut http,&team,None)).map_err(|e|e.to_string());let _=send.send(result);});
+            thread::spawn(move||{let result=Http::new(token).and_then(|mut http|ht_core::ai_models::load(&mut http,&team,board_default.as_deref())).map_err(|e|e.to_string());let _=send.send(result);});
         }
         cx.notify();
     }
@@ -75,11 +76,11 @@ impl AiSidebar {
                 let group=model["definition"]["provider"].as_str().unwrap_or("").to_owned();
                 if !groups.contains(&group){groups.push(group);}
             }
-            for(group_index,group)in groups.iter().enumerate(){
-                menu=menu.child(div().text_size(px(11.)).p(px(6.)).child(group.clone()));
+            for group in &groups{
+                menu=menu.child(div().text_size(px(11.)).p(px(6.)).child(match group.as_str(){"openai"=>"OpenAI","anthropic"=>"Anthropic","google"=>"Google","deepseek"=>"DeepSeek","moonshot"=>"Moonshot (Kimi)","alibaba"=>"Alibaba (Qwen)","zhipu"=>"Z.ai (GLM)","custom"=>"Custom endpoint",_=>group.as_str()}.to_owned()));
                 for(index,model)in config.options.iter().enumerate().filter(|(_,m)|m["definition"]["provider"]==*group){
                     let id=model["id"].as_str().unwrap().to_owned();let locked=config.locked(model);
-                    menu=menu.child(div().id((format!("ai-model-{group_index}"),index)).p(px(6.)).text_size(px(12.)).cursor_pointer().when(self.models.selected.as_deref()==Some(id.as_str()),|d|d.bg(color(self.colors.active))).child(model["title"].as_str().unwrap_or("").to_owned()).when(locked,|d|d.child(" · Paid plan or BYOK")).on_click(cx.listener(move|this,_,_,cx|this.choose_model(&id,cx))));
+                    menu=menu.child(div().id(("ai-model",index)).p(px(6.)).text_size(px(12.)).cursor_pointer().when(self.models.selected.as_deref()==Some(id.as_str()),|d|d.bg(color(self.colors.active))).child(model["title"].as_str().unwrap_or("").to_owned()).when(locked,|d|d.child(" · Paid plan or BYOK")).on_click(cx.listener(move|this,_,_,cx|this.choose_model(&id,cx))));
                 }
             }
         }

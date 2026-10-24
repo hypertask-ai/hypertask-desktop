@@ -43,6 +43,16 @@ impl AiSessionWrite {
 }
 fn cache_key(user:i64)->String {format!("ai-sessions:{user}")}
 impl Db {
+    pub fn enqueue_ai_session(&mut self,change:AiSessionWrite,sessions:&[Value],continuation:&Value,now:i64)->Result<String>{
+        self.transaction(|db|{
+            db.cache_ai_sessions(sessions)?;
+            let id=db.enqueue_in_transaction(crate::Write::AiSession{change:change.clone()},now)?;
+            let row=db.mutations()?.into_iter().find(|row|row.id==id).context("Missing chat mutation")?;
+            let user=db.current_user_id().context("Unauthorized")?;
+            db.kv_set(&format!("ai-session-pending:{user}"),&json!({"key":row.client_id,"change":change,"continuation":continuation}).to_string())?;
+            Ok(row.client_id)
+        })
+    }
     pub fn ai_sessions(&self)->Result<Vec<Value>> {
         let user=self.current_user_id().context("Sign in to load chats")?;
         Ok(self.kv_get(&cache_key(user))?.map(|v|serde_json::from_str(&v)).transpose()?.unwrap_or_default())

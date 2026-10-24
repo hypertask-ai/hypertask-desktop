@@ -6,6 +6,7 @@ use std::{ops::Range,time::Instant};
 pub(super) struct ContextPicker {
     token: Option<String>,
     pub(super) scope: Value,
+    fullscreen_scope:Value,
     teams: Vec<Value>,
     recent: Vec<i64>,
     ticket_enabled: bool,
@@ -24,27 +25,29 @@ pub(super) struct ContextPicker {
 }
 impl ContextPicker {
     pub(super) fn new(token:Option<String>)->Self {
-        Self{token,scope:Value::Null,teams:vec![],recent:vec![],ticket_enabled:false,scope_open:false,scope_pending:None,scope_error:false,user:None,mention:None,pending:None,changed:Instant::now(),rows:vec![],selected:vec![],choice:0,dismissed:false,fetched:false}
+        Self{token,scope:Value::Null,fullscreen_scope:Value::Null,teams:vec![],recent:vec![],ticket_enabled:false,scope_open:false,scope_pending:None,scope_error:false,user:None,mention:None,pending:None,changed:Instant::now(),rows:vec![],selected:vec![],choice:0,dismissed:false,fetched:false}
     }
 }
 impl AiSidebar {
     pub fn restore_context(&mut self,db:&Db){
         self.context_picker.user=db.current_user_id();
         if let Some(user)=db.current_user_id(){
-            if let Ok(Some(value))=db.kv_get(&format!("ai-scope:{user}")){if let Ok(value)=serde_json::from_str::<Value>(&value){self.context_picker.scope=value["scope"].clone();self.context_picker.recent=serde_json::from_value(value["recent"].clone()).unwrap_or_default();}}
+            if let Ok(Some(value))=db.kv_get(&format!("ai-scope:{user}")){if let Ok(value)=serde_json::from_str::<Value>(&value){self.context_picker.scope=value["scope"].clone();self.context_picker.fullscreen_scope=value["fullscreen"].clone();self.context_picker.recent=serde_json::from_value(value["recent"].clone()).unwrap_or_default();}}
         }
     }
     pub fn persist_context(&self,db:&Db)->ht_core::Result<()> {
-        if let Some(user)=db.current_user_id().filter(|user|Some(*user)==self.context_picker.user){db.kv_set(&format!("ai-scope:{user}"),&json!({"scope":self.context_picker.scope,"recent":self.context_picker.recent}).to_string())?;}
+        if let Some(user)=db.current_user_id().filter(|user|Some(*user)==self.context_picker.user){db.kv_set(&format!("ai-scope:{user}"),&json!({"scope":self.context_picker.scope,"fullscreen":self.context_picker.fullscreen_scope,"recent":self.context_picker.recent}).to_string())?;}
         Ok(())
     }
     pub(super) fn context_project(&self)->Option<i64> {
+        if self.mode()==DisplayMode::Fullscreen{return self.context_picker.fullscreen_scope.as_i64();}
         if self.context_picker.scope=="all" || !self.include_context{return None;}
         self.context_picker.scope.as_i64().or_else(||self.scope.as_ref().and_then(|s|s.context.project_id))
     }
     pub(super) fn request_context(&self)->DefaultContext {
         let mut context=self.scope.as_ref().map(|s|s.context.clone()).unwrap_or_default();
         context.project_id=self.context_project();
+        if self.mode()==DisplayMode::Fullscreen{context.surface="chat".into();context.surface_path="/chat".into();context.task_id=None;context.view_name=None;return context;}
         if self.context_picker.scope=="all" || !self.include_context {context.task_id=None;context.view_name=None;}
         if let Some(project)=self.context_picker.scope.as_i64(){
             context.task_id=None;
@@ -53,6 +56,9 @@ impl AiSidebar {
         context
     }
     pub(super) fn context_label(&self)->String {
+        if self.mode()==DisplayMode::Fullscreen{
+            return self.context_picker.fullscreen_scope.as_i64().and_then(|id|self.context_picker.teams.iter().flat_map(|team|team["projects"].as_array().into_iter().flatten()).find(|p|p["id"]==id)).and_then(|p|p["title"].as_str().or(p["name"].as_str())).unwrap_or("All boards").into();
+        }
         if self.context_picker.scope=="all" || !self.include_context{return "All boards".into();}
         if let Some(project)=self.context_picker.scope.as_i64(){
             return self.context_picker.teams.iter().flat_map(|team|team["projects"].as_array().into_iter().flatten()).find(|p|p["id"]==project).and_then(|p|p["title"].as_str().or(p["name"].as_str())).unwrap_or("Board").into();
@@ -71,12 +77,12 @@ impl AiSidebar {
         cx.notify();
     }
     pub(super) fn select_scope(&mut self,value:Value,cx:&mut Context<Self>){
-        if value=="ticket" && (!self.context_picker.ticket_enabled || self.scope.as_ref().and_then(|s|s.context.task_id).is_none()){return;}
+        if value=="ticket" && (self.mode()==DisplayMode::Fullscreen || !self.context_picker.ticket_enabled || self.scope.as_ref().and_then(|s|s.context.task_id).is_none()){return;}
         if let Some(id)=value.as_i64(){
             if !self.context_picker.teams.iter().any(|team|team["projects"].as_array().into_iter().flatten().any(|p|p["id"]==id)){return;}
             self.context_picker.recent.retain(|old|*old!=id);self.context_picker.recent.insert(0,id);self.context_picker.recent.truncate(12);
         }
-        self.context_picker.scope=value;self.include_context=true;self.context_picker.scope_open=false;self.context_picker.mention=None;self.context_picker.pending=None;cx.notify();
+        if self.mode()==DisplayMode::Fullscreen{self.context_picker.fullscreen_scope=if value.is_number(){value}else{Value::Null};}else{self.context_picker.scope=value;}self.include_context=true;self.context_picker.scope_open=false;self.context_picker.mention=None;self.context_picker.pending=None;cx.notify();
     }
     pub(super) fn poll_context(&mut self,cx:&mut Context<Self>){
         if let Some(result)=self.context_picker.scope_pending.as_ref().and_then(|rx|rx.try_recv().ok()){
@@ -131,8 +137,9 @@ impl AiSidebar {
     pub(super) fn context_menu(&self,cx:&mut Context<Self>)->gpui::AnyElement {
         let mut menu=div().id("ai-context-menu").max_h(px(240.)).overflow_y_scroll().bg(color(self.colors.card));
         if self.context_picker.scope_open {
-            let mut rows=vec![("Current board".to_owned(),Value::Null),("All boards".into(),json!("all"))];
-            if self.context_picker.ticket_enabled && self.scope.as_ref().and_then(|s|s.context.task_id).is_some(){rows.insert(0,("Current ticket".into(),json!("ticket")));}
+            let mut rows=vec![("All boards".to_owned(),json!("all"))];
+            if self.mode()!=DisplayMode::Fullscreen{rows.insert(0,("Current board".into(),Value::Null));}
+            if self.mode()!=DisplayMode::Fullscreen && self.context_picker.ticket_enabled && self.scope.as_ref().and_then(|s|s.context.task_id).is_some(){rows.insert(0,("Current ticket".into(),json!("ticket")));}
             for team in ai_context::sort_scopes(&self.context_picker.teams,&self.context_picker.recent){
                 rows.push((team["title"].as_str().unwrap_or("").into(),json!({"heading":true})));
                 for project in team["projects"].as_array().into_iter().flatten(){rows.push((project["title"].as_str().or(project["name"].as_str()).unwrap_or("").into(),project["id"].clone()));}
@@ -163,6 +170,9 @@ mod tests {
             sidebar.select_scope(json!(16),cx);assert_eq!(sidebar.context_project(),Some(16));assert_eq!(sidebar.context_label(),"Other");assert_eq!(sidebar.context_picker.recent,vec![16]);sidebar.persist_context(&db).unwrap();
             sidebar.context_picker=ContextPicker::new(None);sidebar.restore_context(&db);assert_eq!(sidebar.context_picker.scope,16);assert_eq!(sidebar.context_picker.recent,vec![16]);
             sidebar.select_scope(json!("all"),cx);assert!(sidebar.request_context().project_id.is_none());assert!(sidebar.request_context().task_id.is_none());
+            sidebar.context_picker.teams=vec![json!({"id":"team","projects":[{"id":16,"title":"Other"}]})];
+            sidebar.set_mode(DisplayMode::Fullscreen,cx);assert!(sidebar.request_context().project_id.is_none());assert_eq!(sidebar.request_context().surface,"chat");sidebar.select_scope(json!(16),cx);assert_eq!(sidebar.request_context().project_id,Some(16));assert!(sidebar.request_context().task_id.is_none());
+            sidebar.set_mode(DisplayMode::Sidebar,cx);assert!(sidebar.request_context().project_id.is_none());
         }).unwrap();
     }
     #[gpui::test]

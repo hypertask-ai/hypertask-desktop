@@ -49,6 +49,7 @@ pub struct Scope {
     team_id: Option<String>,
     label: String,
     suggestions: Vec<String>,
+    model_default: Option<String>,
 }
 
 impl Scope {
@@ -108,6 +109,7 @@ impl Scope {
             team_id,
             label,
             suggestions,
+            model_default:db.board_project(project).ok().and_then(|p|p["ai_custom_instructions"][0]["model_selected"].as_str().map(str::to_owned)),
         }
     }
 }
@@ -286,7 +288,7 @@ impl AiSidebar {
 
     pub fn set_token(&mut self, token: Option<String>, cx: &mut Context<Self>) {
         self.stop(cx);
-        self.session_pending=None;self.rename_open=false;
+        self.session_pending=None;self.rename_open=false;self.scope=None;
         self.active = None;
         self.chats = vec![Chat::new()];
         self.selected = 0;
@@ -528,6 +530,7 @@ impl AiSidebar {
             return;
         }
         let context=self.request_context();
+        let ticket_scope=self.mode()!=DisplayMode::Fullscreen && self.context_picker.scope=="ticket";
         let chat = &mut self.chats[self.selected];
         chat.error = None;
         let Some(client) = self.client.clone() else {
@@ -551,7 +554,7 @@ impl AiSidebar {
             if let Err(error)=config.apply(&mut body,id){chat.error=Some(error.to_string());cx.notify();return;}
         }
         body["context_list"]=serde_json::json!(self.context_picker.selected);
-        if self.context_picker.scope=="ticket" && context.task_id.is_some(){body["default_context"]["scope"]=serde_json::json!("ticket");}
+        if ticket_scope && context.task_id.is_some(){body["default_context"]["scope"]=serde_json::json!("ticket");}
         let (send, updates) = mpsc::sync_channel(64);
         let worker_client = client.clone();
         if let Err(error) = thread::Builder::new()
