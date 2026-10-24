@@ -55,7 +55,7 @@ impl HintedMetrics {
                     std::slice::from_raw_parts((*axes).axis, (*axes).num_axis as usize)
                         .iter()
                         .map(|axis| {
-                            if axis.tag == u32::from_be_bytes(*b"wght").into() {
+                            if axis.tag == u32::from_be_bytes(*b"wght") as ft::FT_ULong {
                                 ((weight as ft::FT_Fixed) << 16).clamp(axis.minimum, axis.maximum)
                             } else {
                                 axis.def

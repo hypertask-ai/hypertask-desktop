@@ -217,3 +217,14 @@ Font subsetting must also retain name IDs 16/17: IBM Plex Sans Medium and
 SemiBold use those typographic-family names to remain members of IBM Plex Sans.
 The generator now retains all name IDs and checks the family, and the embedded
 asset regression checks family names, OS/2 weights and absence of hint programs.
+
+Corrected embedding source: CI
+[40099324788](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40099324788),
+SHA `e0367d979b9385071621be848521abf4fa95b880`, `web-source-fonts` artifact:
+all four faces report family IBM Plex Sans, **891** mapped characters, no lost
+existing characters and no web advance/bearing differences. The new embedded
+asset regression fails on the earlier incorrectly subsetted faces in that run's
+macOS job (`167 passed; 1 failed`, missing typographic family), demonstrating a
+real negative control; the four corrected faces are downloaded without local
+conversion. Only runtime font/shader sources and tests are vendored; the
+unrelated upstream Criterion benchmark and its dependency are omitted.
