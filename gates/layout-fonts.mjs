@@ -66,12 +66,11 @@ try {
   writeFileSync('evidence/layout/font-metrics.json', JSON.stringify(receipt, null, 2) + '\n');
   for (const probe of probes) console.log(`FONT_METRIC ${JSON.stringify(probe)}`);
   for (const probe of probes) {
-    // The full desktop face and the Latin web subset have different rasterizer
-    // metrics even in Chromium. Compare equivalent full faces for this oracle;
-    // retain the web/frozen deltas above instead of compensating with UI offsets.
     assert.ok(Math.abs(probe.fullStaticWidth - probe.nativeWidth) <= 1.5, JSON.stringify(probe));
+    // Equivalent full-face agreement cannot waive the actual live-web contract.
+    assert.ok(Math.abs(probe.webWidth - probe.nativeWidth) <= 1.5, JSON.stringify(probe));
   }
-  console.log('LAYOUT_EQUIVALENT_FONT_METRICS_OK; frozen web-subset deltas remain in receipt');
+  console.log('LAYOUT_WEB_FONT_METRICS_OK');
 } finally {
   await browser.close();
 }

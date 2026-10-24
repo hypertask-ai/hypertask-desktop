@@ -159,3 +159,15 @@ F011 remains server-blocked under HTPR-7699 and untouched. No app/build/test/tes
 copy was run on this VPS and no owner-laptop command was used. The recommended
 next decision is deeper native font-metric work rather than source-unsupported
 UI compensation; this receipt must not be presented as complete part-B parity.
+
+### Blocking oracle correction
+
+Agreement with an equivalent full font is diagnostic evidence only, not a
+substitute for the actual frozen web-subset contract. The final CI gate retains
+**both** assertions with the original 1.5px tolerance: equivalent-full-font and
+actual-web-font widths must match native. The nine same-label differences still
+fail the latter. The earlier equivalent-only green receipt is not full parity
+proof and must not be used as such. B3 **and B4** are consequently unmet/handoff
+required (two met, two abandoned), until the deeper font-metrics work is scoped
+and the real check passes. No native app/Cargo/font-asset changes from the
+unsuccessful experiments remain in the final patch.
