@@ -47,6 +47,7 @@ pub(super) struct Interaction {
     pub choice: usize,
     pub bulk: BTreeSet<i64>,
     pub playlist: Vec<i64>,
+    pub return_to: Option<super::board::ReturnTo>,
     pub task_part: usize,
     pub key_events: u64,
     pub last_key: String,
@@ -81,6 +82,7 @@ impl Interaction {
             choice: 0,
             bulk: BTreeSet::new(),
             playlist: vec![],
+            return_to: None,
             task_part: 0,
             key_events: 0,
             last_key: String::new(),
@@ -228,6 +230,9 @@ impl Desktop {
     ) {
         use Action::*;
         match action {
+            ExpandSummary => {
+                if !self.summary.is_empty() { self.task_fields.summary_open = !self.task_fields.summary_open; }
+            }
             PinAiChat | FullscreenAiChat => self.ai_command(action, cx),
             CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
             | ExpandComment | ExpandComments => self.run_comment_action(action, window, cx),
@@ -257,7 +262,7 @@ impl Desktop {
                 } else if !self.interaction.bulk.is_empty() {
                     self.interaction.bulk.clear();
                 } else if self.screen == Screen::Task {
-                    self.switch(self.previous, cx);
+                    self.return_from_task(cx);
                     window.focus(&self.focus, cx);
                 }
                 self.moving = false;
@@ -679,6 +684,7 @@ impl Desktop {
     }
 
     pub(super) fn show_modal(&mut self, modal: Modal, window: &mut Window, cx: &mut Context<Self>) {
+        self.task_fields.summary_open = false;
         if !matches!(
             modal,
             Modal::Commands | Modal::Search | Modal::LocalSearch | Modal::Boards

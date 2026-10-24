@@ -37,6 +37,7 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.task_fields.summary_open = false;
         let section = self.columns.get(self.column).map_or(0, |column| column.id);
         let task = self.selected_task();
         if action == BoardAction::MoveTask && task.is_none() {

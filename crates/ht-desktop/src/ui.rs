@@ -487,6 +487,12 @@ impl Desktop {
         }
         self.shell.reset_destination();
         self.screen = screen;
+        if screen == Screen::Board && self.board_actions.project != self.options.board {
+            self.board_actions.project = self.options.board;
+            self.board_actions.searching = false;
+            self.board_actions.search_text.clear();
+            self.board_actions.search.update(cx, |input,cx|input.set_content(String::new(),cx));
+        }
         self.selected = 0;
         self.editing = Editing::None;
         self.moving = false;
@@ -496,6 +502,7 @@ impl Desktop {
     }
 
     fn open_task(&mut self, id: i64, cx: &mut Context<Self>) {
+        self.remember_task_origin();
         self.mark_opened_notification(id, cx);
         self.remember_playlist();
         if self.screen != Screen::Task {
@@ -506,6 +513,7 @@ impl Desktop {
             self.comment_input
                 .update(cx, |input, cx| input.set_content(String::new(), cx));
         }
+        self.task_fields.summary_open = false;
         self.options.task = id;
         self.detail_scroll.set_offset(point(px(0.), px(0.)));
         self.switch(Screen::Task, cx);
@@ -1332,7 +1340,7 @@ impl Desktop {
             _ => 0xffffff,
         };
         div().id("task-scroll").track_scroll(&self.detail_scroll).overflow_y_scroll().flex_1().min_h_0().bg(color(t.page)).flex().flex_col().items_center().relative()
-            .child(div().id("task-back").absolute().left(px(23.)).top(px(51.)).cursor_pointer().on_click(cx.listener(|this, _, _, cx| this.switch(this.previous, cx))).child(icon("arrow-left", t.muted, 18.)))
+            .child(div().id("task-back").absolute().left(px(23.)).top(px(51.)).cursor_pointer().on_click(cx.listener(|this, _, window, cx| this.run_shortcut(crate::shortcuts::Action::Back, window, cx))).child(icon("arrow-left", t.muted, 18.)).layout_key(&self.layout,"task.back",None))
             .child(div().absolute().left(px(12.)).top(px(88.)).w(px(40.)).h(px(68.)).rounded_full().bg(color(navigation_color)).shadow(shadow()).flex().flex_col().justify_center().items_center().gap(px(10.)).text_color(color(t.muted)).children(["chevron-up", "chevron-down"].into_iter().map(|name| div().opacity(0.4).child(icon(name, t.muted, 18.)))))
             .child(div().w_full().max_w(px(1136.)).min_h_full().bg(color(t.detail)).flex().flex_col()
             .child(div().flex_shrink_0().pt(px(36.)).pl(px(82.)).pr(px(64.)).pb(px(8.)).relative()
@@ -1340,7 +1348,7 @@ impl Desktop {
                 .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(36.)).min_h(px(37.)).child(title)
                     .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).pt(px(10.25)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
                         .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(icon("layers", 0x696b6e, 16.))))
-                .when(!self.summary.is_empty(), |d| d.child(div().pt(px(8.)).text_size(px(13.)).line_height(px(19.5)).font_weight(FontWeight::MEDIUM).text_color(color(t.muted)).child(self.summary.clone()))).layout_key(&self.layout, "task.header", None))
+                .when(!self.summary.is_empty(), |d| d.child(self.task_summary_view(cx))).layout_key(&self.layout, "task.header", None))
             .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
 
                 .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
@@ -1486,6 +1494,7 @@ impl Desktop {
                             this.open_task_field(label, window, cx);
                         }))
                     })
+                    .when(label == "ID", |d| d.tooltip(|_,cx|cx.new(|_|task_fields::TicketTooltip).into()))
                     .when(label == "Status", |d| {
                         d.cursor_pointer().on_click(cx.listener(|this, _, window, cx| {
                             cx.stop_propagation();
@@ -1739,6 +1748,7 @@ impl Render for Desktop {
                 }
             }))
             .capture_key_down(cx.listener(Self::key_down))
+            .on_click(cx.listener(|this,_,_,cx|{if this.task_fields.summary_open {this.task_fields.summary_open=false;cx.notify();}}))
             .child(
                 div()
                     .flex_1()

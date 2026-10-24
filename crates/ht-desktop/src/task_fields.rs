@@ -3,10 +3,12 @@ use crate::shortcuts::Action;
 use chrono::{Datelike, Local, NaiveDate, TimeZone, Timelike};
 use gpui::MouseButton;
 use ht_core::TaskPatch;
+use serde_json::Value;
 
 pub(super) struct TaskFields {
     query: Entity<TextInput>,
     due: Option<DuePicker>,
+    pub summary_open: bool,
 }
 struct DuePicker {
     task: i64,
@@ -32,7 +34,11 @@ impl TaskFields {
             cx.notify();
         })
         .detach();
-        Self { query, due: None }
+        Self {
+            query,
+            due: None,
+            summary_open: false,
+        }
     }
 }
 fn at_local(date: NaiveDate, hour: u32, minute: u32) -> Option<String> {
@@ -82,6 +88,26 @@ fn due_presets(now: chrono::DateTime<Local>) -> Vec<(String, Option<String>)> {
     .filter_map(|(name, date, hour)| Some((name.into(), Some(at_local(date, hour, 0)?))))
     .collect()
 }
+pub(super) struct TicketTooltip;
+impl Render for TicketTooltip {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        let modifier = if cfg!(target_os = "macos") {
+            "CMD"
+        } else {
+            "CTRL"
+        };
+        div()
+            .p(px(8.))
+            .bg(color(0x202124))
+            .text_color(color(0xffffff))
+            .rounded(px(4.))
+            .text_size(px(12.))
+            .flex()
+            .flex_col()
+            .child(format!("Copy task title & ID  {modifier}+I"))
+            .child(format!("Copy task ID  {modifier}+SHIFT+I"))
+    }
+}
 impl Desktop {
     pub(super) fn open_task_field(
         &mut self,
@@ -128,7 +154,83 @@ impl Desktop {
             }))
             .layout_key(&self.layout, "task.project.goto", None)
     }
+    pub(super) fn task_summary_view(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = self.colors;
+        let markdown = self
+            .detail
+            .as_ref()
+            .and_then(|detail| {
+                let extra = &detail.task.extra;
+                if let Some(summary) = extra.get("ai_summary") {
+                    summary["content"].as_str()
+                } else {
+                    extra
+                        .get("Task_Summary")
+                        .and_then(Value::as_array)
+                        .and_then(|items| items.first())
+                        .and_then(|item| item["content"].as_str())
+                        .or_else(|| extra.get("summary").and_then(Value::as_str))
+                }
+            })
+            .unwrap_or("");
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(
+            &mut html,
+            pulldown_cmark::Parser::new_ext(
+                markdown,
+                pulldown_cmark::Options::ENABLE_STRIKETHROUGH
+                    | pulldown_cmark::Options::ENABLE_TABLES,
+            ),
+        );
+        div()
+            .id("task-summary")
+            .pt(px(8.))
+            .relative()
+            .text_size(px(13.))
+            .line_height(px(19.5))
+            .text_color(color(t.muted))
+            .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
+            .child(
+                div()
+                    .id("task-summary-toggle")
+                    .cursor_pointer()
+                    .child(if self.task_fields.summary_open {
+                        SharedString::from("Summary")
+                    } else {
+                        self.summary.clone()
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.task_fields.summary_open = !this.task_fields.summary_open;
+                        cx.notify();
+                    }))
+                    .layout_key(&self.layout, "task.summary.toggle", None),
+            )
+            .when(self.task_fields.summary_open, |d| {
+                d.child(
+                    gpui::deferred(
+                        div()
+                            .id("task-summary-full")
+                            .absolute()
+                            .top(px(28.))
+                            .left_0()
+                            .right_0()
+                            .p(px(16.))
+                            .bg(color(t.detail))
+                            .shadow(shadow())
+                            .child(RichText::parse(&html, t).element())
+                            .layout_key(
+                                &self.layout,
+                                "task.summary.full",
+                                Some(markdown.to_owned()),
+                            ),
+                    )
+                    .with_priority(1),
+                )
+            })
+            .into_any_element()
+    }
     pub(super) fn show_due_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.task_fields.summary_open = false;
         let Some(task) = self
             .selected_task()
             .and_then(|id| self.db.task(id).ok().flatten())
@@ -235,6 +337,15 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) -> bool {
         if self.task_fields.due.is_none() {
+            if self.screen == Screen::Task
+                && self.task_fields.summary_open
+                && event.keystroke.key == "escape"
+            {
+                self.task_fields.summary_open = false;
+                cx.notify();
+                cx.stop_propagation();
+                return true;
+            }
             return false;
         }
         let key = &event.keystroke;
@@ -636,5 +747,40 @@ pub(super) mod tests {
             .with_timezone(&Local);
         assert_eq!(date.date_naive(), today + chrono::Duration::days(1));
         assert_eq!(date.hour(), 9);
+    }
+}
+
+#[cfg(test)]
+mod summary_tests {
+    use super::*;
+    use crate::ui::shell::tests::{click, draw, measured};
+    use crate::ui::task_fields::tests::desktop;
+    use gpui::VisualTestContext;
+    use serde_json::json;
+    #[gpui::test]
+    fn task_summary_i_click_escape_preserve_full_markdown_without_requesting_ai(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{
+            let mut v=desktop(window,cx);v.db.apply_task(&json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","Task_Summary":[{"content":"## Overview\n- **First** item\n- Second é🙂"}]})).unwrap();v.reload();v
+        });
+        let mut cx = VisualTestContext::from_window(view.into(), cx);
+        draw(view, &mut cx);
+        cx.simulate_keystrokes("i");
+        assert_eq!(
+            measured(view, &mut cx, "task.summary.full")["text"],
+            "## Overview\n- **First** item\n- Second é🙂"
+        );
+        cx.simulate_keystrokes("escape");
+        click(view, &mut cx, "task.summary.toggle");
+        view.read_with(&mut cx, |this, _| {
+            assert!(this.task_fields.summary_open);
+            assert!(this.db.mutations().unwrap().is_empty());
+        })
+        .unwrap();
+        click(view, &mut cx, "task.summary.toggle");
+        view.read_with(&mut cx, |this, _| assert!(!this.task_fields.summary_open))
+            .unwrap();
     }
 }

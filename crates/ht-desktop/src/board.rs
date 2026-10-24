@@ -2,6 +2,15 @@ use super::*;
 use crate::shortcuts::Action;
 use gpui::MouseButton;
 
+pub(super) struct ReturnTo {
+    screen: Screen,
+    board: i64,
+    column: usize,
+    selected: usize,
+    split: usize,
+    notification: Option<i64>,
+}
+
 pub(super) struct BoardActions {
     pub search: Entity<TextInput>,
     pub search_text: String,
@@ -40,6 +49,43 @@ pub(super) fn search_matches(task: &TaskView, query: &str) -> bool {
             .contains(query)
 }
 impl Desktop {
+    pub(super) fn remember_task_origin(&mut self) {
+        if self.screen == Screen::Task {
+            return;
+        }
+        self.interaction.return_to = Some(ReturnTo {
+            screen: self.screen,
+            board: self.options.board,
+            column: self.column,
+            selected: self.selected,
+            split: self.split,
+            notification: if self.screen == Screen::Inbox {
+                self.selection_id()
+            } else {
+                None
+            },
+        });
+    }
+    pub(super) fn return_from_task(&mut self, cx: &mut Context<Self>) {
+        if let Some(origin) = self.interaction.return_to.take() {
+            self.options.board = origin.board;
+            self.column = origin.column;
+            self.split = origin.split;
+            self.switch(origin.screen, cx);
+            self.split = origin.split.min(self.splits.len().saturating_sub(1));
+            if origin.screen == Screen::Inbox {
+                self.filter_inbox();
+            }
+            self.selected = origin
+                .notification
+                .and_then(|id| self.filtered.iter().position(|&i| self.inbox[i].id == id))
+                .unwrap_or(origin.selected);
+            self.clamp_selection();
+            cx.notify();
+        } else {
+            self.switch(self.previous, cx);
+        }
+    }
     pub(super) fn board_key(
         &mut self,
         event: &KeyDownEvent,
@@ -373,8 +419,8 @@ mod tests {
         view.update(&mut cx, |this, window, cx| {
             this.db
                 .apply_response(&json!({"success":true,"user_notifications":[
-                    {"id":101,"taskId":1,"projectId":15,"status":"Normal"},
-                    {"id":102,"taskId":2,"projectId":15,"status":"Normal"}
+                    {"id":101,"taskId":1,"projectId":15,"status":"Normal","createdAt":"2026-01-01T00:00:00Z"},
+                    {"id":102,"taskId":2,"projectId":15,"status":"Normal","createdAt":"2026-01-02T00:00:00Z"}
                 ]}))
                 .unwrap();
             this.reload();
@@ -392,5 +438,50 @@ mod tests {
             assert_eq!(this.db.task(2).unwrap().unwrap().title, "Other");
         })
         .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod navigation_tests {
+    use super::*;
+    use crate::ui::task_fields::tests::desktop;
+    use serde_json::json;
+    #[gpui::test]
+    fn escape_returns_to_same_searched_board_column_and_focused_card(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let mut v = desktop(window, cx);
+            v.screen = Screen::Board;
+            v.reload();
+            v.column = 1;
+            v
+        });
+        cx.simulate_keystrokes("enter escape");
+        view.read_with(cx, |this, _| {
+            assert_eq!(this.screen, Screen::Board);
+            assert_eq!(this.column, 1);
+            assert_eq!(this.selected_task(), Some(3));
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
+    }
+    #[gpui::test]
+    fn escape_returns_to_same_inbox_notification_not_first_row(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view,cx)=cx.add_window_view(|window,cx|{
+            let mut v=desktop(window,cx);
+            v.db.apply_response(&json!({"success":true,"user_notifications":[
+                {"id":101,"taskId":1,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-01T00:00:00Z"},
+                {"id":102,"taskId":2,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-02T00:00:00Z"}
+            ]})).unwrap();v.screen=Screen::Inbox;v.reload();v.split=v.splits.iter().position(|s|s=="All").unwrap();v.filter_inbox();v.selected=1;v
+        });
+        cx.simulate_keystrokes("enter escape");
+        view.read_with(cx, |this, _| {
+            assert_eq!(this.screen, Screen::Inbox);
+            assert_eq!(this.splits[this.split], "All");
+            assert_eq!(this.selection_id(), Some(101));
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
     }
 }
