@@ -229,7 +229,8 @@ asset regression fails on the earlier incorrectly subsetted faces in that run's
 macOS job (`167 passed; 1 failed`, missing typographic family), demonstrating a
 real negative control; the four corrected faces are downloaded without local
 conversion. Only runtime font/shader sources and tests are vendored; the
-unrelated upstream Criterion benchmark and its dependency are omitted.
+unrelated upstream Criterion benchmark sources and direct dev dependency are
+omitted. Cargo still locks the optional upstream benchmark feature graph.
 
 The patched backend is an explicit workspace member so Cargo can run its
 text-system unit target. Its upstream GPU unit target is not auto-selected on
@@ -312,8 +313,12 @@ Acceptance F1–F4 and the superseded B3/B4 handoff are closed by these CI artif
 and the final SHA-bound receipt. F011 is unchanged. No VPS build, test, app or
 test-copy execution and no owner-laptop access occurred.
 
-Final dependency review removes the upstream benchmark feature from the vendored
-GPUI test dependency: it uses the existing `test-support` APIs instead of pulling
-24 unrelated benchmark packages into resolution. Linux CI also requires
-`git diff --exit-code -- Cargo.lock` after workspace/backend tests, so successful
-checks cannot silently depend on an uncommitted regenerated lock file.
+Final dependency review switches the vendored GPUI test dependency from
+benchmark support to the existing `test-support` APIs. Cargo still resolves the
+optional upstream benchmark feature graph for this workspace member, even when
+the feature is not selected. Its 24 package records are pinned by copying the
+exact Cargo.lock diff emitted by GitHub run 40103510354 (not by running Cargo on
+the VPS). The new lock contract failed on that real drift while all 28 text
+tests passed. Linux CI requires `git diff --exit-code -- Cargo.lock` after
+workspace/backend tests, so green checks cannot silently use an uncommitted
+regenerated lock.
