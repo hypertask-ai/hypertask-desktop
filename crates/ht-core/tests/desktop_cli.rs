@@ -27,6 +27,7 @@ struct Server {
     saved_status: u16,
     split: bool,
     refuse_second: bool,
+    other_user: bool,
 }
 impl Default for Server {
     fn default() -> Self {
@@ -37,11 +38,18 @@ impl Default for Server {
             saved_status: 200,
             split: false,
             refuse_second: false,
+            other_user: false,
         }
     }
 }
 impl Transport for Server {
     fn get(&mut self, path: &str) -> Result<Response, TransportError> {
+        if path == "/user/context" {
+            return Ok(Response {
+                status: 200,
+                body: json!({"success":true,"user":{"id":if self.other_user {4036}else{985}}}),
+            });
+        }
         assert_eq!(path, defaults_request(7283).path);
         Ok(Response {
             status: 200,
@@ -388,5 +396,30 @@ fn split_writer_saves_each_ticket_and_reports_partial_failure_without_duplicate_
                 json!([])
             }
         );
+    }
+}
+
+#[test]
+fn compose_and_saved_comment_queue_refuse_a_different_bearer_account() {
+    for write in [
+        Write::ComposeTask {
+            project_id: 7283,
+            text: "Do not retarget".into(),
+            time_zone: "UTC".into(),
+        },
+        Write::CommentAction {
+            task_id: 60253,
+            comment_id: 7,
+            change: CommentWrite::Saved { public: false },
+        },
+    ] {
+        let mut db = db();
+        let id = db.enqueue(write, 100).unwrap();
+        let mut server = Server {
+            other_user: true,
+            ..Default::default()
+        };
+        assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Failed(id));
+        assert!(server.calls.is_empty());
     }
 }

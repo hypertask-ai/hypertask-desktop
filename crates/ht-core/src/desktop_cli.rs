@@ -196,6 +196,13 @@ pub(crate) fn compose(
     if db.current_user_id() != payload["user_id"].as_i64() {
         return refused(403);
     }
+    let identity = transport.get("/user/context")?;
+    if !(200..300).contains(&identity.status) {
+        return Ok(identity);
+    }
+    if identity.body["success"] != true || identity.body["user"]["id"] != payload["user_id"] {
+        return refused(403);
+    }
     let project = &payload["project"];
     let cache_key = format!("compose-prepared:{key}");
     let prepared = db

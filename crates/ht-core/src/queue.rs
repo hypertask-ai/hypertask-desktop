@@ -463,7 +463,13 @@ impl Db {
                         row.payload_json["task_id"].as_i64().unwrap(),
                         row.payload_json["before"]["projectId"].as_i64().or_else(|| self.task(row.payload_json["task_id"].as_i64().unwrap()).ok().flatten().map(|t|t.project_id)).unwrap_or(0),
                         row.payload_json["comment_id"].as_i64().unwrap(), public, false);
-                    match transport.mutate(&request.method, &request.path, &request.body, &row.client_id) {
+                    let verified = match transport.get("/user/context") {
+                        Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true && response.body["user"]["id"] == row.payload_json["user_id"] => true,
+                        _ => false,
+                    };
+                    let response = if verified {transport.mutate(&request.method, &request.path, &request.body, &row.client_id)}
+                        else {Ok(Response {status:403,body:json!({"success":false})})};
+                    match response {
                         Ok(Response {status:200, body}) if body["saved"]["commentId"] == row.payload_json["comment_id"] => Ok(Response {status:200,body:json!({"success":true,"active":true,"saved":body["saved"]})}),
                         Ok(Response {status:201, body}) if body.as_object().is_some_and(|v|v.is_empty()) => Ok(Response {status:201,body:json!({"success":true,"active":false})}),
                         Ok(Response {status, ..}) if (400..500).contains(&status) => Ok(Response {status,body:json!({"success":false})}),

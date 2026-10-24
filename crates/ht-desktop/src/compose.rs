@@ -12,6 +12,8 @@ pub(super) struct Compose {
     choice: usize,
     project: i64,
     pending: Option<String>,
+    identity_loading: bool,
+    identity_generation: u64,
     error: Option<String>,
 }
 impl Compose {
@@ -37,11 +39,17 @@ impl Compose {
             choice: 0,
             project: 0,
             pending: None,
+            identity_loading: false,
+            identity_generation: 0,
             error: None,
         }
     }
 }
 impl Desktop {
+    pub(super) fn invalidate_compose_identity(&mut self) {
+        self.compose.identity_generation += 1;
+        self.compose.identity_loading = false;
+    }
     pub(super) fn compose_open(&self) -> bool {
         self.compose.open
     }
@@ -75,6 +83,67 @@ impl Desktop {
             };
         }
         window.focus(&self.compose.input.focus_handle(cx), cx);
+        if !self.options.offline {
+            self.compose_identity(window, cx);
+        }
+        cx.notify();
+    }
+    fn compose_identity(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(token) = self.cli_token() else {
+            self.compose.error = Some("Sign in before composing a task.".into());
+            return;
+        };
+        self.compose.identity_generation += 1;
+        let generation = self.compose.identity_generation;
+        self.compose.identity_loading = true;
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = ht_core::Http::new(token)
+                .and_then(|http| http.json_request("GET", "/user/context", None))
+                .ok()
+                .filter(|v| v["success"] == true)
+                .and_then(|v| v["user"]["id"].as_i64().filter(|id| *id > 0));
+            let _ = send.send(result);
+        });
+        cx.spawn_in(window, async move |view, cx| {
+            loop {
+                match receive.try_recv() {
+                    Ok(user) => {
+                        let _ = view.update(cx, |this, cx| {
+                            this.apply_compose_identity(generation, user, cx)
+                        });
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => {
+                        cx.background_executor()
+                            .timer(Duration::from_millis(50))
+                            .await
+                    }
+                    Err(_) => break,
+                }
+            }
+        })
+        .detach();
+    }
+    fn apply_compose_identity(
+        &mut self,
+        generation: u64,
+        user: Option<i64>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.compose.identity_generation != generation {
+            return;
+        }
+        self.compose.identity_loading = false;
+        if let Some(id) = user {
+            let _ = self.db.kv_set("current-user-id", &id.to_string());
+            self.compose.error = None;
+        } else {
+            self.compose.error = Some(
+                "Could not verify your account. Your note is still here; reopen New Task to retry."
+                    .into(),
+            );
+        }
         cx.notify();
     }
     fn close_compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -214,7 +283,10 @@ impl Desktop {
         true
     }
     fn send_compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
-        if self.compose.pending.is_some() || self.compose.input.read(cx).content.trim().is_empty() {
+        if self.compose.pending.is_some()
+            || self.compose.identity_loading
+            || self.compose.input.read(cx).content.trim().is_empty()
+        {
             return;
         }
         let text = self.compose.input.read(cx).content.to_string();
@@ -588,5 +660,32 @@ mod tests {
             assert_eq!(rows[0].payload_json["text"], "Mouse note");
         })
         .unwrap();
+    }
+    #[gpui::test]
+    fn fresh_inbox_compose_waits_for_identity_and_ignores_a_previous_login_reply(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(desktop);
+        view.update_in(cx, |this, window, cx| {
+            this.db.kv_set("current-user-id", "").unwrap();
+            this.screen = Screen::Inbox;
+            this.open_compose(window, cx);
+            this.compose
+                .input
+                .update(cx, |input, cx| input.set_content("Fresh note".into(), cx));
+            this.compose.identity_generation = 2;
+            this.compose.identity_loading = true;
+            this.send_compose(window, cx);
+            assert!(this.db.mutations().unwrap().is_empty());
+            this.apply_compose_identity(1, Some(4036), cx);
+            assert!(this.db.current_user_id().is_none());
+            this.apply_compose_identity(2, Some(985), cx);
+            this.send_compose(window, cx);
+            assert_eq!(this.db.mutations().unwrap()[0].payload_json["user_id"], 985);
+            this.invalidate_compose_identity();
+            this.apply_compose_identity(2, Some(4036), cx);
+            assert_eq!(this.db.current_user_id(), Some(985));
+        });
     }
 }
