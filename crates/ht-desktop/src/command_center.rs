@@ -203,6 +203,16 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         "Help" => 7,
         _ => 8,
     });
+    let task_order: &[&str] = if screen == Screen::Task {
+        &["assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","priorityModal","labelmodal","estimateModal","moveToColumn","movetasktodifferentboard","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask","followtask","unfollowtask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId","duplicateTask","duplicateTaskToBoard"]
+    } else {
+        &["createTask","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","assignUser","blockedByPerson","assignToMe","addSubTask","viewSubTask","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","labelmodal","estimateModal","priorityModal","moveToColumn","movetasktodifferentboard","followtask","unfollowtask","renameTask","duplicateTask","duplicateTaskToBoard","archiveTask","deleteTask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId"]
+    };
+    // Keep other groups stable while using the web's context-specific task order.
+    let task_positions: Vec<_> = rows.iter().enumerate().filter(|(_,row)|row.group=="Task").map(|(index,_)|index).collect();
+    let mut task_rows: Vec<_> = task_positions.iter().map(|index|rows[*index].clone()).collect();
+    task_rows.sort_by_key(|row|task_order.iter().position(|key|*key==row.key).unwrap_or(usize::MAX));
+    for (index,row) in task_positions.into_iter().zip(task_rows) {rows[index]=row;}
     rows
 }
 
@@ -468,6 +478,12 @@ mod tests {
         assert!(filter(&rows, "arcive unknown-no-match").is_empty());
         assert!(filter(&rows, "zz").is_empty());
         assert_eq!(filter(&rows, "copy")[0].key, "copyformattedTaskLink");
+    }
+    #[test]
+    fn added_task_command_families_follow_web_context_order_without_exposing_untargeted_actions() {
+        let keys=["assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","priorityModal","labelmodal","estimateModal","moveToColumn","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask"];
+        let rows=commands(Screen::Task,true);let actual:Vec<_>=rows.iter().filter(|row|keys.contains(&row.key.as_str())).map(|row|row.key.as_str()).collect();assert_eq!(actual,keys);
+        let rows=commands(Screen::Inbox,false);for key in keys{assert!(!rows.iter().any(|row|row.key==key));}
     }
     #[test]
     fn no_task_commands_without_target_and_no_hidden_noops() {
