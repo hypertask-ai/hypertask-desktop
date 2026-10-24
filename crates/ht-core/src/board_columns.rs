@@ -147,7 +147,10 @@ impl Db {
                     else {current["sectionId"]==snapshot["section"]["id"] && current["section"]==change.body["newSection"]["section_title"]};
                 if still_optimistic {
                     let fields:&[&str]=if deleting {&["sectionId","section","sectionChangedAt"]}else{&["section"]};
-                    for field in fields {current[*field]=task[*field].clone();}self.upsert_task(&current)?;
+                    for field in fields {
+                        current[*field]=if *field=="section" {json!(task["section"].as_str().or(snapshot["section"]["section_title"].as_str()).unwrap_or(""))}else{task[*field].clone()};
+                    }
+                    self.upsert_task(&current)?;
                 }
             }
         }

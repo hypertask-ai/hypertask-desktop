@@ -91,3 +91,16 @@ fn created_column_accepts_the_webs_nullable_project_view_without_keeping_provisi
     assert_eq!(db.drain_once(&mut Server{status:200,path:"/api/section/create",body:json!({"projectId":15,"title":"Review"}),reply:json!({"section":section(12,"Review","A0300"),"project_view":null}),calls:0,user:42},100).unwrap(),Drain::Applied(id));
     let project=db.board_project(15).unwrap();assert!(project["project_view"].is_null());assert!(!project["section"].as_array().unwrap().iter().any(|section|section["id"]==-id));assert_eq!(db.board(15).unwrap().last().unwrap().id,12);
 }
+
+#[test]
+fn refused_rename_and_delete_restore_missing_legacy_task_section_as_a_string() {
+    for deleted in [false,true] {for status in [401,403] {
+        let mut db=Db::memory().unwrap();seed(&mut db);
+        db.apply_response(&json!({"success":true,"tasks":[{"id":1,"projectId":15,"sectionId":10,"section":null,"title":"Task","status":"Normal"}]})).unwrap();
+        let fields=if deleted{json!({"deleted":true})}else{json!({"section_title":"Backlog"})};
+        let body=json!({"projectId":15,"userId":42,"sectionId":10,"newSection":fields});
+        let id=db.enqueue(Write::View{change:ViewWrite{project:15,route:"column-update".into(),body}},100).unwrap();
+        assert_eq!(db.drain_once(&mut Server{status,path:"/api/section/update",body:json!({"userId":42,"sectionId":10,"newSection":fields}),reply:Value::Null,calls:0,user:42},100).unwrap(),Drain::Failed(id));
+        assert_eq!(db.task(1).unwrap().unwrap().section,"Todo");assert_eq!(db.task(1).unwrap().unwrap().section_id,Some(10));
+    }}
+}
