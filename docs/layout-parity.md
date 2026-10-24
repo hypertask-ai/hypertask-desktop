@@ -234,3 +234,19 @@ text-system unit target. Its upstream GPU unit target is not auto-selected on
 all hosts: Linux CI explicitly selects the text-system tests (including both
 new metric/cluster regressions). Original workspace tests, real layout dumps
 and both strict Chromium assertions remain required and unchanged.
+
+Intermediate native dump proof (run
+[40100723328](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40100723328),
+SHA `74684c577d5fc09754ea88f6651f220f12cae685`): matched **42 → 37**, dense
+**74 → 71**. All six tab boxes close and the composer is 154px, but the three
+footer positions remain 2–4px off. New section/board-title boxes are synthetic
+label differences (YESTERDAY versus LAST WEEK, Synthetic Board versus QA Team
+Board), not new source-supported UI changes. Native text tests exposed a
+fractional kerning/ceil drift, so shaping adjustments now use the same pixel
+grid as normal FreeType advances. Fixed-pitch keycap fonts retain fractional
+advances (`src/components/Common/kbd.tsx`, the web kbd element's monospace font;
+`BottomSettings_QuickTips.tsx:405-408` supplies the 12px size). CI records the
+actual browser keycap widths as additional diagnostics. The inherited wrap-hit
+regression now injects its historical one-ulp boundary explicitly instead of
+assuming that font rounding will still produce that error naturally; its
+out-of-width hit assertion remains mandatory.

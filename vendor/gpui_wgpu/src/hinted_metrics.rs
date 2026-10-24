@@ -74,7 +74,8 @@ impl HintedMetrics {
     }
 
     pub(super) fn advances(&mut self, size: f32, glyph: u16) -> Option<(f32, f32)> {
-        if !size.is_finite() || size <= 0.0 {
+        // Fixed-pitch keycap/code fonts retain the browser's fractional spacing.
+        if ft::FT_IS_FIXED_WIDTH(self.face) || !size.is_finite() || size <= 0.0 {
             return None;
         }
         let key = (size.to_bits(), glyph);

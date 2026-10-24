@@ -56,14 +56,24 @@ try {
         );
       }
     }
+    result.keycaps = {};
+    for (const [name, family] of [
+      ['embedded', 'WebMono'],
+      ['source', 'ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace'],
+    ]) {
+      canvas.font = `600 12px ${family}`;
+      result.keycaps[name] = Object.fromEntries(['CTRL', 'K', 'Enter', 'TAB', 'N / Shift+C'].map(text => [text, canvas.measureText(text).width]));
+    }
     document.body.style.fontFamily = 'WebPlex';
     document.body.style.fontKerning = 'none';
     result.withoutKerning = measure();
     return result;
-  }, Object.fromEntries([
+  }, { ...Object.fromEntries([
     ['WebFullStatic', 'evidence/web-fonts'],
     ['WebLatinStatic', 'evidence/web-fonts/latin-probe'],
-  ].map(([family, path]) => [family, Object.fromEntries([400, 600].map(weight => [weight, readFileSync(`${path}/IBMPlexSans-${weight}.ttf`).toString('base64')]))])));
+  ].map(([family, path]) => [family, Object.fromEntries([400, 600].map(weight => [weight, readFileSync(`${path}/IBMPlexSans-${weight}.ttf`).toString('base64')]))])),
+  WebMono: { 600: readFileSync('crates/ht-desktop/assets/fonts/LiberationMono-Bold.ttf').toString('base64') },
+  });
   const inbox = JSON.parse(readFileSync('evidence/layout/parity/inbox.json', 'utf8'));
   const elements = Object.fromEntries(inbox.elements.map(e => [e.key, e]));
   const probes = [

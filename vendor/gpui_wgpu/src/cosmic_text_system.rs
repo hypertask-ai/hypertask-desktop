@@ -861,6 +861,7 @@ impl CosmicTextSystemState {
     #[cfg(target_os = "linux")]
     fn hint_layout(&mut self, layout: &mut cosmic_text::LayoutLine) {
         let mut shifts = vec![0.0; layout.glyphs.len()];
+        let mut hinted = false;
         for (index, glyph) in layout.glyphs.iter().enumerate() {
             // Shaping can make marks zero-width even when the font has an advance.
             if glyph.w == 0.0 {
@@ -880,7 +881,7 @@ impl CosmicTextSystemState {
                 }
                 self.hinted_metrics.insert(key, metrics);
             }
-            let Some((hinted, linear)) = self
+            let Some((advance, linear)) = self
                 .hinted_metrics
                 .get_mut(&key)
                 .and_then(Option::as_mut)
@@ -888,10 +889,14 @@ impl CosmicTextSystemState {
             else {
                 continue;
             };
-            // Keep HarfRust's kerning/ligature adjustments at FreeType's 26.6
-            // precision; replacing the shaped width outright would discard them.
-            let kern = ((glyph.w - linear) * 64.0).round() / 64.0;
-            shifts[index] = hinted + kern - glyph.w;
+            // Normal hinted advances and shaping adjustments share the pixel
+            // grid; retaining fractional kerning here reintroduces ceil drift.
+            let kern = (glyph.w - linear).round();
+            shifts[index] = advance + kern - glyph.w;
+            hinted = true;
+        }
+        if !hinted {
+            return;
         }
         // Apply advances in visual order without changing logical cluster order.
         let mut shift = 0.0;
@@ -1728,8 +1733,35 @@ mod tests {
         }];
         let lines =
             window_text_system.shape_text(text, gpui::px(14.), &runs, Some(gpui::px(4.)), None)?;
-        let line = &lines[0];
-        let width = line.unwrapped_layout.width;
+        let original = &lines[0];
+        let unwrapped = &original.unwrapped_layout;
+        let width = unwrapped.width;
+        let mut shaped_runs = unwrapped.runs.clone();
+        let run_ix = shaped_runs.len() - 1;
+        let glyph_ix = shaped_runs[run_ix].glyphs.len() - 1;
+        let trailing = &mut shaped_runs[run_ix].glyphs[glyph_ix];
+        assert_eq!(trailing.index, original.text.len() - '\u{200b}'.len_utf8());
+        // Explicitly reproduce the old ulp error even when hinted metrics have
+        // eliminated it. The control must keep exercising the out-of-width hit.
+        trailing.position.x = gpui::px(f32::from(width).next_up());
+        let boundary = gpui::WrapBoundary { run_ix, glyph_ix };
+        let mut wrap_boundaries: smallvec::SmallVec<[gpui::WrapBoundary; 1]> =
+            original.wrap_boundaries().into();
+        if !wrap_boundaries.contains(&boundary) {
+            wrap_boundaries.push(boundary);
+        }
+        let line = gpui::WrappedLineLayout {
+            unwrapped_layout: Arc::new(LineLayout {
+                font_size: unwrapped.font_size,
+                width,
+                ascent: unwrapped.ascent,
+                descent: unwrapped.descent,
+                runs: shaped_runs,
+                len: unwrapped.len,
+            }),
+            wrap_boundaries,
+            wrap_width: Some(gpui::px(4.)),
+        };
         let boundary_glyph = |row: usize| {
             let boundary = line.wrap_boundaries()[row];
             &line.runs()[boundary.run_ix].glyphs[boundary.glyph_ix]
