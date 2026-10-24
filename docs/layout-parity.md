@@ -109,3 +109,12 @@ in CI. It checks the full Google-family source against every glyph metric in the
 web's Latin subset, and checks that no character from any existing embedded
 face is lost. Only the resulting full-coverage font artifacts are candidates
 for desktop embedding; the narrow web subset is not substituted wholesale.
+
+Font generation proof: run
+[40091185028](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40091185028),
+`web-source-fonts/source.json`: all four weights retain **891** mapped characters,
+cover all **232** web-subset characters with **zero** advance/bearing differences,
+and lose **zero** existing characters. The four full-coverage `.ttf` files were
+downloaded from that CI artifact and embedded without local conversion or build.
+The previous filenames were mislabeled (400/500/600/700 contained OS/2 weights
+500/400/700/600); a Rust CI regression now checks their declared weights.
