@@ -1,0 +1,152 @@
+{
+  "success": true,
+  "projects": [
+    {
+      "id": 15,
+      "title": "Synthetic Board"
+    }
+  ],
+  "sections": [
+    {
+      "id": 1,
+      "projectId": 15,
+      "section_title": "Bugs",
+      "ranking": "1",
+      "visibility": true,
+      "deleted": false
+    },
+    {
+      "id": 2,
+      "projectId": 15,
+      "section_title": "Doing",
+      "ranking": "2",
+      "visibility": true,
+      "deleted": false
+    },
+    {
+      "id": 3,
+      "projectId": 15,
+      "section_title": "Done",
+      "ranking": "3",
+      "visibility": true,
+      "deleted": false
+    }
+  ],
+  "tasks": [
+    {
+      "id": 101,
+      "projectId": 15,
+      "boardTitle": "Synthetic Board",
+      "title": "Synthetic card one",
+      "ticketNumber": "QA-101",
+      "sectionId": 1,
+      "section": "Bugs",
+      "status": "Normal",
+      "description": "",
+      "createdAt": "2026-10-23T12:00:00Z",
+      "updatedAt": "2026-10-23T12:00:41Z",
+      "createdBy": {
+        "id": 1,
+        "displayName": "Synthetic User"
+      },
+      "assignees": [],
+      "labels": [],
+      "Task_Summary": []
+    },
+    {
+      "id": 100,
+      "projectId": 15,
+      "boardTitle": "Synthetic Board",
+      "title": "Synthetic card two",
+      "ticketNumber": "QA-100",
+      "sectionId": 1,
+      "section": "Bugs",
+      "status": "Normal",
+      "description": "",
+      "createdAt": "2026-10-23T12:00:00Z",
+      "updatedAt": "2026-10-23T12:00:40Z",
+      "createdBy": {
+        "id": 1,
+        "displayName": "Synthetic User"
+      },
+      "assignees": [],
+      "labels": [],
+      "Task_Summary": []
+    },
+    {
+      "id": 103,
+      "projectId": 16,
+      "boardTitle": "Synthetic Board",
+      "title": "Synthetic reminder task",
+      "ticketNumber": "QA-103",
+      "sectionId": 1,
+      "section": "Bugs",
+      "status": "Normal",
+      "description": "",
+      "createdAt": "2026-10-23T12:00:00Z",
+      "updatedAt": "2026-10-23T12:00:43Z",
+      "createdBy": {
+        "id": 1,
+        "displayName": "Synthetic User"
+      },
+      "assignees": [],
+      "labels": [],
+      "Task_Summary": [
+        {
+          "content": "Synthetic reminder summary."
+        }
+      ]
+    }
+  ],
+  "user_notifications": [
+    {
+      "id": 1,
+      "taskId": 103,
+      "projectId": 16,
+      "userId": 1,
+      "status": "Normal",
+      "seen": true,
+      "createdAt": "2026-10-23T12:00:00Z",
+      "type": "TaskUpdateDescription",
+      "fromUser": {
+        "displayName": "Synthetic User"
+      }
+    }
+  ],
+  "structuredData": {
+    "tabs": [
+      {
+        "project": "Important"
+      },
+      {
+        "project": "Agents"
+      },
+      {
+        "project": "MyBoard"
+      },
+      {
+        "project": "QA Team Board"
+      },
+      {
+        "project": "All"
+      }
+    ],
+    "data": [
+      [
+        0
+      ],
+      [
+        0
+      ],
+      [
+        0
+      ],
+      [
+        0
+      ],
+      [
+        0
+      ]
+    ]
+  }
+}

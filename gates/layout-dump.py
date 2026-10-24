@@ -37,7 +37,7 @@ FIELDS = {
 ENV = {**os.environ, "WAYLAND_DISPLAY": ""}
 
 
-def validate(path, screen, theme, width=1440, height=900):
+def validate(path, screen, theme, width=1440, height=900, sparse=False):
     dump = json.loads(path.read_text())
     assert set(dump) == {"screen", "theme", "width", "height", "elements", "missing"}, dump
     assert dump["screen"] == screen and dump["theme"] == theme, dump
@@ -61,9 +61,17 @@ def validate(path, screen, theme, width=1440, height=900):
     required = COMMON | KEYS[screen]
     if screen == "inbox":
         assert elements["inbox.tab.active"]["x"] == elements["inbox.tab.0"]["x"]
-    if screen == "board":
+    if screen == "board" and not sparse:
         assert elements["board.card.0.badge"]["text"] == "In inbox", elements["board.card.0.badge"]
         assert elements["board.card.0.meta"]["text"] == "2", elements["board.card.0.meta"]
+    if sparse:
+        absent = {
+            "inbox": {"inbox.tab.5"} | {f"inbox.row.{i}" for i in range(1, 5)},
+            "board": {"board.column.3", "board.card.0.badge", "board.card.0.label", "board.card.0.meta"} | {f"board.card.{i}" for i in range(2, 5)},
+            "task": {"task.comment.0", "task.comment.0.author", "task.comment.0.body"},
+        }[screen]
+        assert missing == absent, missing
+        required -= absent
     assert required <= elements.keys(), f"unmeasured native elements: {required - elements.keys()}"
     assert elements["rail"]["x"] == 0 and elements["rail"]["w"] == 48, elements["rail"]
     assert elements["main"]["x"] == 0 and elements["main"]["w"] == width - 420, elements["main"]
@@ -146,5 +154,15 @@ with tempfile.TemporaryDirectory(prefix="ht-layout-") as tmp:
             app.communicate(timeout=10)
     invalid = subprocess.run([*args[:-1], str(Path(tmp) / "absent/layout.json"), "--exit-after-ready"], env=ENV, capture_output=True, text=True, timeout=60)
     assert invalid.returncode != 0 and "layout dump failed" in invalid.stderr, invalid
+    parity_db = str(Path(tmp) / "parity.db")
+    subprocess.run([ROOT / "target/release/ht-core-cli", "--db", parity_db, "import-fixtures", ROOT / "gates/fixtures/layout-graphite"], check=True)
+    parity_out = OUT / "parity"
+    parity_out.mkdir(exist_ok=True)
+    for screen in KEYS:
+        path = parity_out / f"{screen}.json"
+        args = [str(APP), "--db", parity_db, "--offline", "--screen", screen, "--board", "15", "--task", "103", "--theme", "graphite", "--window-size", "1920x1009", "--dump-layout", str(path), "--exit-after-ready"]
+        result = subprocess.run(args, env=ENV, capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0 and "READY" in result.stdout, result
+        validate(path, screen, "graphite", 1920, 1009, sparse=True)
     assert not errors, "\n".join(errors)
 print("LAYOUT_DUMP_OK: all screens, all themes, Graphite 1920x1009, hold, exit and write failure", flush=True)
