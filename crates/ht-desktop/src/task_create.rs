@@ -1,5 +1,6 @@
 use super::*;
 use serde_json::{Value, json};
+use chrono::{Datelike, NaiveDate, TimeZone};
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
 enum Field {
     Board,
@@ -28,6 +29,9 @@ pub(super) struct Create {
     loading: bool,
     generation: u64,
     initial: Value,
+    custom_date: bool,
+    month: NaiveDate,
+    selected_date: NaiveDate,
 }
 impl Create {
     pub fn new(cx: &mut Context<Desktop>) -> Self {
@@ -56,6 +60,9 @@ impl Create {
             loading: false,
             generation: 0,
             initial: Value::Null,
+            custom_date: false,
+            month: chrono::Local::now().date_naive().with_day(1).unwrap(),
+            selected_date: chrono::Local::now().date_naive(),
         }
     }
 }
@@ -281,21 +288,22 @@ impl Desktop {
                     .map(|value| (value["displayName"].as_str().unwrap_or("").into(), value))
                     .collect()
             }
-            Some(Field::DueDate | Field::StartDate) => {
+            Some(field @ (Field::DueDate | Field::StartDate)) => {
                 let query = self.create_task.date.read(cx).content.trim();
-                if query.is_empty() {
-                    std::iter::once(("Reset".into(), Value::Null))
-                        .chain(
-                            super::task_fields::due_presets(chrono::Local::now())
-                                .into_iter()
-                                .map(|(name, value)| (name, json!(value))),
-                        )
-                        .collect()
+                let mut choices = if query.is_empty() {
+                    let key = if field == Field::DueDate { "dueDate" } else { "startDate" };
+                    let mut choices = vec![];
+                    if !self.create_task.fields[key].is_null() { choices.push(("Reset".into(), Value::Null)); }
+                    if field == Field::DueDate {
+                        if let Some(last) = self.db.kv_get(&format!("due-last:{}", self.db.current_user_id().unwrap_or(0))).ok().flatten().filter(|date| chrono::DateTime::parse_from_rfc3339(date).is_ok()) { choices.push(("last used".into(), json!(last))); }
+                    }
+                    choices.extend(super::task_fields::due_presets(chrono::Local::now()).into_iter().map(|(name, value)| (name, json!(value))));
+                    choices
                 } else {
-                    super::task_fields::parse_due(query, chrono::Local::now().date_naive())
-                        .map(|value| vec![(query.into(), json!(value))])
-                        .unwrap_or_default()
-                }
+                    super::task_fields::parse_due(query, chrono::Local::now().date_naive()).map(|value| vec![(query.into(), json!(value))]).unwrap_or_default()
+                };
+                if field == Field::DueDate { choices.push(("Pick a custom date".into(), json!({"custom":true}))); }
+                choices
             }
             _ => vec![],
         }
@@ -304,6 +312,14 @@ impl Desktop {
         let Some((_, value)) = self.create_choices(cx).get(index).cloned() else {
             return;
         };
+        if value["custom"] == true {
+            self.create_task.custom_date = true;
+            self.create_task.selected_date = self.create_task.fields["dueDate"].as_str().and_then(|date| chrono::DateTime::parse_from_rfc3339(date).ok()).map(|date| date.with_timezone(&chrono::Local).date_naive()).unwrap_or_else(|| chrono::Local::now().date_naive());
+            self.create_task.month = self.create_task.selected_date.with_day(1).unwrap();
+            window.focus(&self.focus, cx);
+            cx.notify();
+            return;
+        }
         match self.create_task.picker {
             Some(Field::Board) => {
                 self.create_task.project = value.as_i64().unwrap();
@@ -314,7 +330,10 @@ impl Desktop {
                     self.load_create_board(cx);
                 }
             }
-            Some(Field::DueDate) => self.create_task.fields["dueDate"] = value,
+            Some(Field::DueDate) => {
+                if let Some(date) = value.as_str() { let _ = self.db.kv_set(&format!("due-last:{}", self.db.current_user_id().unwrap_or(0)), date); }
+                self.create_task.fields["dueDate"] = value;
+            }
             Some(Field::StartDate) => self.create_task.fields["startDate"] = value,
             Some(Field::Column) => self.create_task.section = value.as_i64().unwrap(),
             Some(Field::Priority) => {
@@ -361,6 +380,7 @@ impl Desktop {
             return;
         }
         self.create_task.picker = Some(field);
+        self.create_task.custom_date = false;
         self.create_task.choice = 0;
         if matches!(field, Field::DueDate | Field::StartDate) {
             self.create_task
@@ -436,6 +456,47 @@ impl Desktop {
             }
         }
         cx.notify();
+    }
+    fn confirm_create_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(date) = self.create_task.selected_date.and_hms_opt(9, 0, 0).and_then(|date| chrono::Local.from_local_datetime(&date).earliest()) else { return; };
+        let date = date.to_rfc3339();
+        let _ = self.db.kv_set(&format!("due-last:{}", self.db.current_user_id().unwrap_or(0)), &date);
+        self.create_task.fields["dueDate"] = json!(date);
+        self.create_task.custom_date = false;
+        self.create_task.picker = None;
+        window.focus(&self.create_task.title.focus_handle(cx), cx);
+        cx.notify();
+    }
+    fn create_date_calendar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let sunday = self.db.kv_get("calendarSettingsAtom").ok().flatten().and_then(|value| serde_json::from_str::<Value>(&value).ok()).is_none_or(|settings| settings["weekStartsOn"] != "monday");
+        let mut months = div().flex().gap(px(16.));
+        for index in 0..2 {
+            let month = self.create_task.month.checked_add_months(chrono::Months::new(index)).unwrap_or(self.create_task.month);
+            let first = month - chrono::Duration::days(if sunday { month.weekday().num_days_from_sunday() } else { month.weekday().num_days_from_monday() } as i64);
+            let mut calendar = div().flex().flex_col()
+                .child(div().flex().justify_between()
+                    .child(div().id(("create-date-prev", index as usize)).cursor_pointer().child("‹").on_click(cx.listener(|this, _, _, cx| { this.create_task.month = this.create_task.month.checked_sub_months(chrono::Months::new(1)).unwrap_or(this.create_task.month); cx.notify(); })))
+                    .child(month.format("%B %Y").to_string())
+                    .child(div().id(("create-date-next", index as usize)).cursor_pointer().child("›").on_click(cx.listener(|this, _, _, cx| { this.create_task.month = this.create_task.month.checked_add_months(chrono::Months::new(1)).unwrap_or(this.create_task.month); cx.notify(); }))));
+            calendar = calendar.child(div().flex().children((0..7).map(|day| div().w(px(28.)).child(if sunday { ["Su","Mo","Tu","We","Th","Fr","Sa"][day] } else { ["Mo","Tu","We","Th","Fr","Sa","Su"][day] }))));
+            for week in 0..6 {
+                let mut row = div().flex();
+                for day in 0..7 {
+                    let date = first + chrono::Duration::days(week * 7 + day);
+                    row = row.child(div().id(("create-date-day", index as usize * 42 + (week * 7 + day) as usize)).w(px(28.)).h(px(28.)).cursor_pointer()
+                        .when(date == self.create_task.selected_date, |d| d.bg(color(self.colors.active)))
+                        .when(date.month() != month.month(), |d| d.text_color(color(self.colors.muted)))
+                        .child(date.day().to_string()).on_click(cx.listener(move |this, _, _, cx| { this.create_task.selected_date = date; cx.notify(); })));
+                }
+                calendar = calendar.child(row);
+            }
+            months = months.child(calendar);
+        }
+        div().flex().flex_col().gap(px(8.)).child("SHIFT+ESC to go back").child(self.create_task.selected_date.format("%b %d, %Y").to_string()).child(months)
+            .child(div().flex().justify_end().gap(px(12.))
+                .child(div().id("create-date-back").cursor_pointer().child("Back").on_click(cx.listener(|this, _, window, cx| { this.create_task.custom_date = false; window.focus(&this.create_task.date.focus_handle(cx), cx); cx.notify(); })))
+                .child(div().id("create-date-confirm").cursor_pointer().child("Confirm").on_click(cx.listener(|this, _, window, cx| this.confirm_create_date(window, cx)))))
+            .into_any_element()
     }
     fn submit_create_task(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.create_task.pending.is_some()
@@ -534,6 +595,22 @@ impl Desktop {
             return false;
         }
         let key = &event.keystroke;
+        if self.create_task.custom_date {
+            if key.key == "escape" {
+                self.create_task.custom_date = false;
+                if !key.modifiers.shift { self.create_task.picker = None; }
+                window.focus(&self.create_task.date.focus_handle(cx), cx);
+            } else if key.key == "enter" && (key.modifiers.control || key.modifiers.platform) {
+                self.confirm_create_date(window, cx);
+            } else {
+                let delta = match key.key.as_str() { "left" => -1, "right" => 1, "up" => -7, "down" => 7, _ => 0 };
+                self.create_task.selected_date += chrono::Duration::days(delta);
+                if self.create_task.selected_date < self.create_task.month || self.create_task.selected_date >= self.create_task.month.checked_add_months(chrono::Months::new(2)).unwrap_or(self.create_task.month) { self.create_task.month = self.create_task.selected_date.with_day(1).unwrap(); }
+            }
+            cx.stop_propagation();
+            cx.notify();
+            return true;
+        }
         match key.key.as_str() {
             "escape" if self.create_task.pending.is_none() => {
                 if self.create_task.picker.take().is_none() {
@@ -668,9 +745,9 @@ impl Desktop {
             self.create_task.picker,
             Some(Field::DueDate | Field::StartDate)
         ) {
-            content = content.child(self.create_task.date.clone());
+            content = if self.create_task.custom_date { content.child(self.create_date_calendar(cx)) } else { content.child(self.create_task.date.clone()) };
         }
-        if self.create_task.picker.is_some() {
+        if self.create_task.picker.is_some() && !self.create_task.custom_date {
             content = content.children(self.create_choices(cx).into_iter().enumerate().map(
                 |(index, (label, _))| {
                     div()
@@ -935,4 +1012,55 @@ mod tests {
             assert!(this.db.mutations().unwrap().is_empty());
         });
     }
+    #[gpui::test]
+    fn create_custom_due_calendar_confirms_nine_am_and_mocked_refusals_preserve_date_and_draft(cx: &mut gpui::TestAppContext) {
+        struct CalendarServer { status: u16, date: Value }
+        impl ht_core::Transport for CalendarServer {
+            fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> { ht_core::Transport::get(&mut Server(self.status), path) }
+            fn post(&mut self, path: &str, body: &Value, key: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                assert_eq!(body["dueDate"], self.date);
+                ht_core::Transport::post(&mut Server(self.status), path, body, key)
+            }
+        }
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        for status in [401, 403, 200] {
+            view.update_in(cx, |this, window, cx| {
+                this.invalidate_task_create(cx);
+                this.open_create_task(window, cx);
+                this.create_task.title.update(cx, |input, cx| input.set_content("New form task".into(), cx));
+                this.create_task.description.update(cx, |input, cx| input.set_html("<p>Draft description</p>", cx));
+                this.create_picker(Field::Priority, window, cx); this.choose_create_field(2, window, cx);
+                this.create_picker(Field::DueDate, window, cx);
+                assert!(!this.create_choices(cx).iter().any(|(name,_)|name=="Reset"));
+                let custom = this.create_choices(cx).iter().position(|(name,_)|name=="Pick a custom date").unwrap();
+                this.choose_create_field(custom, window, cx);
+                assert!(this.create_task.custom_date);
+                this.create_task.selected_date = NaiveDate::from_ymd_opt(2026, 12, 15).unwrap();
+                this.confirm_create_date(window, cx);
+                let date = this.create_task.fields["dueDate"].clone();
+                let local = chrono::DateTime::parse_from_rfc3339(date.as_str().unwrap()).unwrap().with_timezone(&chrono::Local);
+                assert_eq!(local.date_naive(), NaiveDate::from_ymd_opt(2026,12,15).unwrap());
+                assert_eq!(local.time(), chrono::NaiveTime::from_hms_opt(9,0,0).unwrap());
+                assert!(!this.create_task.custom_date); assert!(this.create_task.picker.is_none());
+                this.create_picker(Field::DueDate, window, cx);
+                assert!(this.create_choices(cx).iter().any(|(name,_)|name=="Reset"));
+                assert!(this.create_choices(cx).iter().any(|(name,value)|name=="last used" && *value==date));
+                this.create_task.picker = None;
+                this.submit_create_task(window, cx);
+                let id = this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap().id;
+                assert_eq!(this.db.task(-id).unwrap().unwrap().due_date.as_deref(), date.as_str());
+                this.db.drain_once(&mut CalendarServer { status, date:date.clone() }, chrono::Utc::now().timestamp()+1).unwrap();
+                assert!(!this.poll_create_task(window, cx));
+                assert!(this.db.task(-id).unwrap().is_none());
+                if status != 200 {
+                    assert!(this.create_task.open);
+                    assert_eq!(this.create_task.fields["dueDate"], date);
+                    assert_eq!(this.create_task.title.read(cx).content.as_ref(), "New form task");
+                    assert_eq!(this.create_task.error.as_deref(), Some("Task could not be created"));
+                }
+            });
+        }
+    }
+
 }
