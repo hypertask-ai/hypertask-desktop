@@ -18,6 +18,8 @@ struct Request {
 pub(super) struct Settings {
     webhooks: webhooks::Webhooks,
     section: &'static str,
+    calendar_sunday: bool,
+    calendar_weekends: bool,
     search: Entity<TextInput>,
     scroll: ScrollHandle,
     board: i64,
@@ -41,7 +43,13 @@ pub(super) struct Settings {
     requests: Vec<Request>,
 }
 impl Settings {
-    pub fn new(cx: &mut Context<Desktop>) -> Self {
+    pub fn new(db: &Db, cx: &mut Context<Desktop>) -> Self {
+        let calendar: Value = db
+            .kv_get("calendarSettingsAtom")
+            .ok()
+            .flatten()
+            .and_then(|value| serde_json::from_str(&value).ok())
+            .unwrap_or(Value::Null);
         let search =
             cx.new(|cx| TextInput::new(String::new(), "Search settings", color(0x8e9093), cx));
         cx.observe(&search, |_, _, cx| cx.notify()).detach();
@@ -59,6 +67,8 @@ impl Settings {
         Self {
             webhooks: webhooks::Webhooks::new(cx),
             section: "general",
+            calendar_sunday: calendar["weekStartsOn"] == "sunday",
+            calendar_weekends: calendar["showWeekends"].as_bool().unwrap_or(false),
             search,
             scroll: ScrollHandle::new(),
             board: 0,
@@ -87,6 +97,7 @@ impl Settings {
 const SECTIONS: &[(&str, &str, &str)] = &[
     ("profile", "general", "General"),
     ("profile", "appearance", "Appearance"),
+    ("profile", "calendar", "Calendar"),
     ("team", "skills", "Skills"),
     ("board", "board-general", "General"),
     ("board", "board-members", "Members"),
@@ -480,6 +491,7 @@ impl Desktop {
             "board-members" => self.member_settings(),
             "board-files" => self.file_settings(),
             "skills" | "board-skills" => self.skill_settings(cx),
+            "calendar" => self.calendar_settings(cx),
             "appearance" => div().flex().flex_col().gap(px(4.))
                 .child(div().text_color(color(t.muted)).child("APPEARANCE"))
                 .children([
@@ -520,6 +532,89 @@ impl Desktop {
 }
 
 impl Desktop {
+    fn calendar_settings(&self, cx: &mut Context<Self>) -> AnyElement {
+        let t = self.colors;
+        let settings = &self.shell.settings_state;
+        div()
+            .flex()
+            .flex_col()
+            .gap(px(12.))
+            .child("Calendar")
+            .child(
+                div()
+                    .flex()
+                    .items_center()
+                    .justify_between()
+                    .child("Week starts on")
+                    .child(
+                        div().flex().gap(px(4.)).children(
+                            [(false, "Monday"), (true, "Sunday")].into_iter().map(
+                                |(sunday, label)| {
+                                    let selected = settings.calendar_sunday == sunday;
+                                    div()
+                                        .id(label)
+                                        .p(px(8.))
+                                        .rounded(px(4.))
+                                        .cursor_pointer()
+                                        .when(selected, |d| d.bg(color(t.active)))
+                                        .child(label)
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            this.shell.settings_state.calendar_sunday = sunday;
+                                            this.save_calendar_settings(cx);
+                                        }))
+                                        .layout_key(
+                                            &self.layout,
+                                            format!("settings.calendar.{label}"),
+                                            Some(label.into()),
+                                        )
+                                },
+                            ),
+                        ),
+                    ),
+            )
+            .child(
+                div()
+                    .id("calendar-weekends")
+                    .p(px(8.))
+                    .cursor_pointer()
+                    .child(if settings.calendar_weekends {
+                        "Show weekends    ✓"
+                    } else {
+                        "Show weekends"
+                    })
+                    .on_click(cx.listener(|this, _, _, cx| {
+                        this.shell.settings_state.calendar_weekends =
+                            !this.shell.settings_state.calendar_weekends;
+                        this.save_calendar_settings(cx);
+                    }))
+                    .layout_key(
+                        &self.layout,
+                        "settings.calendar.weekends",
+                        Some(
+                            if settings.calendar_weekends {
+                                "Show weekends    ✓"
+                            } else {
+                                "Show weekends"
+                            }
+                            .into(),
+                        ),
+                    ),
+            )
+            .into_any_element()
+    }
+
+    fn save_calendar_settings(&mut self, cx: &mut Context<Self>) {
+        let settings = &self.shell.settings_state;
+        let value = serde_json::json!({
+            "weekStartsOn": if settings.calendar_sunday { "sunday" } else { "monday" },
+            "showWeekends": settings.calendar_weekends,
+        });
+        if let Err(error) = self.db.kv_set("calendarSettingsAtom", &value.to_string()) {
+            self.shell.settings_state.error = Some(error.to_string());
+        }
+        cx.notify();
+    }
+
     fn select_settings(
         &mut self,
         section: &'static str,
@@ -1817,6 +1912,66 @@ mod more_tests {
         })
         .unwrap();
         assert!(!measured(view, &mut cx, "settings.theme.0")["bg"].is_null());
+    }
+
+    #[gpui::test]
+    fn settings_calendar_local_preferences_click_persist_and_reload(cx: &mut TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.nav.calendar");
+        assert_eq!(
+            measured(view, &mut cx, "settings.title")["text"],
+            "Calendar"
+        );
+        assert!(!measured(view, &mut cx, "settings.calendar.Monday")["bg"].is_null());
+        assert_eq!(
+            measured(view, &mut cx, "settings.calendar.weekends")["text"],
+            "Show weekends"
+        );
+        click(view, &mut cx, "settings.calendar.Sunday");
+        assert!(!measured(view, &mut cx, "settings.calendar.Sunday")["bg"].is_null());
+        click(view, &mut cx, "settings.calendar.weekends");
+        assert_eq!(
+            measured(view, &mut cx, "settings.calendar.weekends")["text"],
+            "Show weekends    ✓"
+        );
+        view.update(&mut cx, |this, _, cx| {
+            let value: Value =
+                serde_json::from_str(&this.db.kv_get("calendarSettingsAtom").unwrap().unwrap())
+                    .unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({"weekStartsOn": "sunday", "showWeekends": true})
+            );
+            this.shell.settings_state = Settings::new(&this.db, cx);
+            cx.notify();
+        })
+        .unwrap();
+        click(view, &mut cx, "settings.nav.calendar");
+        assert!(!measured(view, &mut cx, "settings.calendar.Sunday")["bg"].is_null());
+        assert_eq!(
+            measured(view, &mut cx, "settings.calendar.weekends")["text"],
+            "Show weekends    ✓"
+        );
+        click(view, &mut cx, "settings.calendar.Monday");
+        click(view, &mut cx, "settings.calendar.weekends");
+        click(view, &mut cx, "settings.back");
+        click(view, &mut cx, "rail.icon.12");
+        assert!(!measured(view, &mut cx, "settings.calendar.Monday")["bg"].is_null());
+        assert_eq!(
+            measured(view, &mut cx, "settings.calendar.weekends")["text"],
+            "Show weekends"
+        );
+        view.read_with(&cx, |this, _| {
+            let value: Value =
+                serde_json::from_str(&this.db.kv_get("calendarSettingsAtom").unwrap().unwrap())
+                    .unwrap();
+            assert_eq!(
+                value,
+                serde_json::json!({"weekStartsOn": "monday", "showWeekends": false})
+            );
+        })
+        .unwrap();
     }
 
     #[gpui::test]

@@ -82,7 +82,7 @@ impl Shell {
             choice: 0,
             recent: db.kv_get("boardSortMode").ok().flatten().as_deref() == Some("lastUsed"),
             scroll: ScrollHandle::new(),
-            settings_state: settings::Settings::new(cx),
+            settings_state: settings::Settings::new(db, cx),
             token: None,
             theme_preference: db.kv_get("theme").ok().flatten(),
         }
