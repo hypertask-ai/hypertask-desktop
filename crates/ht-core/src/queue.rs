@@ -228,7 +228,9 @@ impl Db {
             }
             "web_create" => {
                 let body = &payload["body"];
-                self.upsert_task(&json!({"id":-id,"projectId":body["projectId"],"sectionId":body["sectionId"],"section":body.get("section").or_else(||body.get("section_title")),"title":body["title"],"ranking":body["ranking"],"status":"Normal","pending":true,"createdBy":null}))?;
+                let labels=body["tags"].as_array().cloned().unwrap_or_default();
+                let assignees:Vec<_>=body["assignees"].as_array().into_iter().flatten().map(|person|if person.get("uid").is_some(){json!({"userId":person["id"],"user":person})}else{json!({"userId":person["userId"],"agentId":person["id"],"agent":person})}).collect();
+                self.upsert_task(&json!({"id":-id,"projectId":body["projectId"],"sectionId":body["sectionId"],"section":body.get("section").or_else(||body.get("section_title")),"title":body["title"],"ranking":body["ranking"],"status":"Normal","pending":true,"createdBy":null,"priority":body["priority"],"estimate":body["estimate"],"labels":labels,"assignees":assignees}))?;
             }
             "board_write" => {
                 if let crate::BoardWrite::PositionTask { task, section, title, ranking, .. } = serde_json::from_value(payload["change"].clone())? {

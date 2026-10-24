@@ -398,6 +398,9 @@ impl Desktop {
             .db
             .board_project(self.options.board)
             .unwrap_or(Value::Null);
+        if !project["project_view"].is_object() {
+            return div().into_any_element();
+        }
         let views = project["project_view"]["allViews"]
             .as_array()
             .cloned()

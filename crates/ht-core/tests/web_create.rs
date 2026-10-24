@@ -21,7 +21,7 @@ impl Transport for Server {
         if self.status == 0 {
             return Err(TransportError::Timeout);
         }
-        let task = json!({"id":51,"projectId":15,"sectionId":10,"section":"Todo","title":body["title"],"ranking":body["ranking"],"status":"Normal"});
+        let task = json!({"id":51,"projectId":15,"sectionId":10,"section":"Todo","title":body["title"],"ranking":body["ranking"],"priority":body["priority"],"estimate":body["estimate"],"status":"Normal"});
         Ok(Response {
             status: self.status,
             body: if path.ends_with("Globally") {
@@ -60,7 +60,12 @@ fn inline_create_uses_web_route_body_active_filters_ranking_and_rolls_back_denia
                 )
                 .unwrap();
             let key = db.mutations().unwrap()[0].client_id.clone();
-            assert_eq!(db.board(15).unwrap()[0].cards.len(), 2);
+            let visible = db.board(15).unwrap();
+            assert_eq!(visible[0].cards.len(), if filtered { 1 } else { 2 });
+            if filtered {
+                assert_eq!(visible[0].cards[0].id, -id);
+                assert_eq!(visible[0].cards[0].extra["priority"]["priority_index"], 2);
+            }
             assert!(db.task(-id).unwrap().is_some());
             drop(db);
             let mut db = Db::open(file.path()).unwrap();
