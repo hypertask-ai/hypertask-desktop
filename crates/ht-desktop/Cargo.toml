@@ -4,7 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["lazy-theme-fonts"]
+default = ["lazy-theme-fonts", "ht-core/bounded-sync-cache"]
 lazy-theme-fonts = []
 
 [dependencies]

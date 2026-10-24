@@ -6,6 +6,7 @@ license.workspace = true
 
 [features]
 default = []
+bounded-sync-cache = []
 realtime-ws = ["dep:tungstenite"]
 
 [dependencies]

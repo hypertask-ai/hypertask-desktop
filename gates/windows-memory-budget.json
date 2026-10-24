@@ -1,11 +1,15 @@
 {
-  "BaselineRevision": "f34cbdc21b90ce6561843d518f0fd1080391fbb8",
-  "BaselineRun": "https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40059480037",
-  "BaselineInboxWorkingSet64": 62394368,
-  "InboxWorkingSet64": 65514086,
+  "BaselineRevision": "9871cc2f9f1530a7cbcdbdef59e2415425538445",
+  "BaselineRun": "https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40113971853",
+  "BaselineInboxWorkingSet64": 62476288,
+  "InboxWorkingSet64": 63725813,
   "DisplayWidth": 1920,
   "DisplayHeight": 1080,
   "ClientWidth": 1920,
   "ClientHeight": 1009,
-  "Dpi": 96
+  "Dpi": 96,
+  "BaselineBoardWorkingSet64": 73166848,
+  "BoardWorkingSet64": 74630184,
+  "BaselineTaskWorkingSet64": 80048128,
+  "TaskWorkingSet64": 81649090
 }

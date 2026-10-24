@@ -164,7 +164,7 @@ jobs:
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p ht-desktop -p ht-core
         if: github.head_ref != 'mem2'
-      - name: Build identical code with eager fonts and three swap-chain buffers
+      - name: Build identical code with eager fonts, three buffers and the original sync cache
         if: github.head_ref == 'mem2'
         run: cargo build --release --no-default-features -p ht-desktop -p ht-core -p gpui_windows --features gpui_windows/triple-buffer
       - name: Measure historical release
@@ -202,7 +202,7 @@ jobs:
         if: github.event_name == 'pull_request' && (github.head_ref == 'ram2' || github.head_ref == 'mem2')
       - name: Compare memory optimization pixels and layout
         if: github.event_name == 'pull_request' && github.head_ref == 'mem2'
-        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json --compare evidence/memory-proof/windows-memory-${{ github.event.pull_request.head.sha }}
+        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json --require-improvement --compare evidence/memory-proof/windows-memory-${{ github.event.pull_request.head.sha }}
       # PR 11 predates shipped UI additions; pixel identity is only the ram2 optimization contract.
       - name: Validate historical and fixed receipts; compare PR 11 pixels
         if: github.event_name == 'pull_request' && github.head_ref == 'ram2'

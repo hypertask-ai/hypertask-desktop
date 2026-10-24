@@ -651,3 +651,22 @@ fn fidelity_upgrades_list_only_database_and_persists_authors_summary_and_drafts(
     }
     assert!(db.task(102).unwrap().unwrap().extra["ai_summary"].is_null());
 }
+
+#[test]
+fn bounded_sync_cache_evicts_pages_without_losing_persisted_offline_content() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let mut db = Db::open(file.path()).unwrap();
+    let description = "offline content ".repeat(1024);
+    for id in 1..=128 {
+        db.apply_task(&json!({"id":id,"title":format!("task {id}"),"projectId":15,
+            "status":"Normal","description":description})).unwrap();
+    }
+    if cfg!(feature = "bounded-sync-cache") {
+        assert!(db.memory_usage().unwrap()["SqliteCacheBytes"].as_u64().unwrap() < 600_000);
+    }
+    drop(db);
+    let db = Db::open(file.path()).unwrap();
+    for id in 1..=128 {
+        assert_eq!(db.task_detail(id).unwrap().unwrap().task.description, description);
+    }
+}

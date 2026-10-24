@@ -94,6 +94,10 @@ impl Db {
     fn from_connection(conn: Connection) -> Result<Self> {
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
+        if cfg!(feature = "bounded-sync-cache") {
+            // Bound the connection's page cache, not the durable sync data.
+            conn.execute_batch("PRAGMA cache_size=-512;")?;
+        }
         conn.execute_batch(crate::generated::SQLITE_DDL)?;
         conn.execute_batch(
             "CREATE INDEX IF NOT EXISTS task_board ON Task(projectId, status, sectionId, updatedAt);
