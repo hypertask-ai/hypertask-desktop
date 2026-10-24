@@ -420,6 +420,7 @@ impl Desktop {
                 };
                 self.interaction.bulk.extend(ids);
             }
+            ReviewUnread => self.start_unread_review(window,cx),
             BulkArchive => self.bulk_archive(false, cx),
             Remind | BulkRemind => {
                 let ids = if action == BulkRemind { self.interaction.bulk.iter().copied().collect() }

@@ -8,6 +8,7 @@ pub(super) struct InboxActions {
     pub search_text: String,
     searching: bool,
     split_ids: Option<Vec<std::collections::BTreeSet<i64>>>,
+    pub review: Option<super::inbox_review::Review>,
     reminder_query: Entity<TextInput>,
     reminder: Option<Reminder>,
 }
@@ -30,7 +31,7 @@ impl InboxActions {
             if let Some(reminder) = &mut this.inbox_actions.reminder { reminder.choice = 0; }
             cx.notify();
         }).detach();
-        Self { search, search_text: String::new(), searching: false, split_ids: None, reminder_query, reminder: None }
+        Self { search, search_text: String::new(), searching: false, split_ids: None, review: None, reminder_query, reminder: None }
     }
 }
 pub(super) fn search_matches(n: &InboxItem, query: &str) -> bool {

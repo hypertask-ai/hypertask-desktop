@@ -45,6 +45,9 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     if task && screen == Screen::Task {
         task_commands(&mut add);
     }
+    if screen == Screen::Inbox {
+        add("swipeThroughUnread","Swipe through unread","Inbox","","review unread notifications",ReviewUnread);
+    }
     add(
         "copyCurrentPageUrl",
         "Copy current page URL",

@@ -33,6 +33,7 @@ pub enum Action {
     BulkArchive,
     Remind,
     BulkRemind,
+    ReviewUnread,
     MoveColumn,
     Priority,
     Assign,

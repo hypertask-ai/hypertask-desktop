@@ -64,6 +64,9 @@ mod shell;
 #[path = "comment_drafts.rs"]
 mod comment_drafts;
 
+#[path = "inbox_review.rs"]
+mod inbox_review;
+
 #[path = "inbox.rs"]
 mod inbox;
 
@@ -569,6 +572,7 @@ impl Desktop {
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.unread_review_key(event,window,cx) {return;}
         if self.shell_key(event, window, cx) {
             return;
         }
@@ -1682,6 +1686,7 @@ impl Render for Desktop {
         }
         self.prepare_comment_readers(window,cx);
         self.restore_comment_draft(cx);
+        if self.inbox_actions.review.is_some() {return self.unread_review_screen(cx).into_any_element();}
         if let Some(sidebar) = &self.ai_sidebar {
             let task = (self.screen != Screen::Board)
                 .then(|| self.selected_task())
