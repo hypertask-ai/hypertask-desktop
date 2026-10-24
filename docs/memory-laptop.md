@@ -88,9 +88,12 @@ Both builds keep compact task reads, visible-column culling, lazy theme fonts
 and the bounded SQLite cache. Demo and heavy data, hashes and limits stay fixed.
 CI compares exact RGB/layout between builds, unchanged renderer/font payloads,
 a successful one-shot receipt for every sample, and median working sets at 8 s
-and after a forced GPUI scene rebuild/render plus 22 further seconds. Warm residency
+and after a real restore/maximize cycle plus 22 further seconds. Warm residency
 must remain at least 10% below control on every screen; private commit must not
-regress by more than 5%. This does not prove interactive navigation latency.
+regress by more than 5%. Each restore and maximize must update the actual renderer receipt, and final
+geometry must match. This does not prove interactive navigation latency.
+The initial external force-render message was rejected by GPUI's validation
+token; its apparently successful CI run is not accepted as warm-render proof.
 
 The shared read-only inspector also captures private/shareable/shared resident
 axes, image/mapped/private regions and GPU counters on CI. A missing GPU counter

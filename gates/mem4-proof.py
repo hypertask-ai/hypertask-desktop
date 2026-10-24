@@ -37,8 +37,9 @@ for screen in ('inbox', 'board', 'task'):
         print(f'MEM4_UNIMPROVED_WARM_CONTROL_REJECTED {screen}')
     else:
         raise AssertionError('Warm gate accepted an unchanged working set')
-    assert all(0 <= r['WarmRenderMilliseconds'] < 5000 for r in new + old)
-    print(f'MEM4_WARM_RENDER_MS {screen}: control={statistics.median(r["WarmRenderMilliseconds"] for r in old):.3f} optimized={statistics.median(r["WarmRenderMilliseconds"] for r in new):.3f}')
+    assert all(r['WarmRendererReceiptUpdated'] is True for r in new + old)
+    assert all(0 < r['WarmRestoreMaximizeMilliseconds'] < 10000 for r in new + old)
+    print(f'MEM4_RESTORE_MAXIMIZE_MS {screen}: control={statistics.median(r["WarmRestoreMaximizeMilliseconds"] for r in old):.3f} optimized={statistics.median(r["WarmRestoreMaximizeMilliseconds"] for r in new):.3f}')
     assert statistics.median(r['WarmPrivateMemorySize64'] for r in new) <= statistics.median(r['WarmPrivateMemorySize64'] for r in old) * 1.05
     # No shrinking textures, altering buffers or fonts to pass the residency gate.
     for suffix in ('', '.fonts'):
