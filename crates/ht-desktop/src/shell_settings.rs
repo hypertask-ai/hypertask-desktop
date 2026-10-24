@@ -785,7 +785,7 @@ impl Desktop {
                 let result = token
                     .ok_or_else(|| anyhow::anyhow!("Sign in to continue"))
                     .and_then(ht_core::Http::new)
-                    .and_then(|http| http.json_request(job.method, &job.path, job.body.as_ref()))
+                    .and_then(|http| http.json_request("GET", &job.path, None))
                     .map_err(|error| error.to_string());
                 let _ = send.send(result);
             });

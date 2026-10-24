@@ -112,7 +112,7 @@ Additional exact boundaries found while reconciling the remaining P1 rows:
 | B20 | `POST /api/tasks/uploadUrl`, `POST /api/tasks/uploadFinalize`, `pages/api/tasks/uploadUrl.ts:1-5`, `uploadFinalize.ts:1-5`: `taskWriteHandler` -> `getSessionUser`, `lib/api/task-writes/route.ts:89`. Fallback `POST /api/tasks/n8nUpload`, `pages/api/tasks/n8nUpload.ts:102-108`: `getSessionUser`. | F125's task-editor attachment upload contract is session-only; no pretend upload or substituted agent attachment contract. |
 | B21 | `POST /api/tours/update`, `pages/api/tours/update.ts:15-18`: `verifySession(req.cookies[SESSION_COOKIE])`; `lib/tours/hooks/useTour.tsx:130-133` and `useTourStatus.ts:67-74` persist start/completion/skip here. Onboarding/welcome requires board/team context from B2 (`components/generalCommandActions.ts:101-108`, `commandDispatcher.ts:610-614`). | F336/F339/F340/F341 remain blocked, including durable tutorial status and real task-writer prerequisites; no fake completed local tour. |
 | B22 | `POST /api/search/document`, `pages/api/search/document.ts:30-37`: `getSessionUser`. Web search chips/project scopes feed this route (`hooks/Search/useSearch.ts:151,310`). | F401 retains contextual cached search, but full search is blocked. MCP task search is not the mixed web document/search-chip response contract. |
-| B23 | Legacy shell's team/favorite read contracts are B2/B17 (`components/sidebars/LeftSidebar` and `components/sidebars/RightSidebar`); `commandDispatcher.ts:490-493` switches the entire shell, not rail expansion. | F226 cannot reproduce the old authenticated shell with absent board/team/favorite metadata. Do not mislabel `[` expansion as old/new design parity. |
+| B23 | Legacy shell's team/favorite read contracts are B2/B17 (`components/sidebars/leftSidebar.tsx:28-37,91-92` and `components/sidebars/RightSidebar/index.tsx`); `commandDispatcher.ts:490-493` switches the entire shell, not rail expansion. | F226 cannot reproduce the old authenticated shell with absent board/team/favorite metadata. Do not mislabel `[` expansion as old/new design parity. |
 
 F033 remains partial with B2/B17 team/favorite gaps; F010 remains partial with
 unavailable command contracts (B1–B23 and AI A1–A9), not a full command-set claim.
@@ -153,6 +153,10 @@ Clearing queued native edits alone would not implement that contract.
 Bearer route evidence for the allowlist (relative to web `src`):
 `lib/mcp/operations/user/profile/operation.ts:40-47`,
 `lib/mcp/operations/skills/operation.ts:71-87`,
+`lib/mcp/operations/skills/[skill_id]/operation.ts:89-94`,
+`lib/mcp/operations/skills/import/operation.ts:24-28`,
+`lib/mcp/operations/projects/[projectId]/members/operation.ts:109-120`,
+`lib/mcp/operations/projects/[projectId]/instructions/operation.ts:63-70`,
 `lib/mcp/operations/projects/archive/operation.ts:20-23,88`,
 `lib/mcp/operations/webhooks/operation.ts:150-154,293-294`;
 these use `validateMcpRouteAuth` (aliased as `validateMcpAuth`), not web cookies.

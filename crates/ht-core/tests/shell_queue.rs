@@ -76,3 +76,15 @@ fn shell_queue_rejects_cookie_routes_and_route_injection_before_enqueue() {
     ] { assert!(ShellWrite::new(42,method,path,Some(json!({}))).is_err(), "{method} {path}"); }
     assert!(ShellWrite::new(0,"PATCH","/user/profile",Some(json!({}))).is_err());
 }
+
+#[test]
+fn shell_queue_invalid_archive_success_rolls_back_receipt_and_does_not_claim_completion() {
+    let mut db = Db::memory().unwrap();
+    let id = db.enqueue(Write::Shell { request:ShellWrite::new(42,"POST","/projects/archive",Some(json!({"project_id":15,"status":"Archive"}))).unwrap() },100).unwrap();
+    let key = db.mutations().unwrap()[0].client_id.clone();
+    let mut server = Server { status:200, body:json!({"success":true}), method:"POST".into(),path:"/projects/archive".into(),sent:json!({"project_id":15,"status":"Archive"}),user:42,keys:vec![] };
+    assert_eq!(db.drain_once(&mut server,100).unwrap(), Drain::Retrying(id));
+    assert!(db.take_shell_result(&key).unwrap().is_none());
+    assert!(db.projects().unwrap().is_empty());
+    assert_eq!(db.mutations().unwrap()[0].last_error.as_deref(),Some("invalid success response"));
+}

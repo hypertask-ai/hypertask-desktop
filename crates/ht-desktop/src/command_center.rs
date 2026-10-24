@@ -124,6 +124,18 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         });
     }
     shell_commands(&mut rows);
+    rows.sort_by_key(|row| match row.group {
+        "Task" if screen == Screen::Task => 0,
+        "Board" if screen == Screen::Board => 0,
+        "Navigate" => 1,
+        "App shell" => 2,
+        "Task" => 3,
+        "Board" => 4,
+        "Appearance" => 5,
+        "Settings" => 6,
+        "Help" => 7,
+        _ => 8,
+    });
     rows
 }
 
@@ -387,6 +399,20 @@ mod tests {
         assert!(edit_distance_one("archive", "archvie"));
         assert!(edit_distance_one("graphte", "graphite"));
         assert!(!edit_distance_one("ab", "cd"));
+    }
+    #[test]
+    fn shell_command_groups_follow_web_context_order_and_settings_payloads() {
+        for (screen, first) in [(Screen::Inbox, "Navigate"), (Screen::Board, "Board"), (Screen::Task, "Task")] {
+            let rows = commands(screen, true);
+            assert_eq!(rows[0].group, first);
+            let position = |group| rows.iter().position(|row| row.group == group).unwrap();
+            assert!(position("Appearance") < position("Settings"));
+            assert!(position("Settings") < position("Help"));
+            assert_eq!(rows.iter().filter(|row| row.key == "boardSettings").count(), 1);
+            for (key, section) in [("settingsCalendarShowWeekends", "calendar"), ("settingsLearnQuickTips", "learn"), ("boardSettings", "board-general")] {
+                assert_eq!(rows.iter().find(|row| row.key == key).unwrap().action, CommandAction::Shell(ShellCommand::Settings(section)));
+            }
+        }
     }
     #[test]
     fn usage_matches_web_decay_and_never_duplicates_frequent_results() {
