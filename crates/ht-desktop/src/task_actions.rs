@@ -199,19 +199,16 @@ impl Desktop {
                 match receive.try_recv() {
                     Ok(result) => {
                         let _ = view.update(cx, |this, cx| {
-                            if this.task_actions.load_generation != generation
-                                || this.db.current_user_id() != Some(user)
-                                || this.cli_token().as_deref() != Some(expected.as_str())
-                            {
+                            if this.cli_token().as_deref() != Some(expected.as_str()) {
                                 return;
                             }
-                            match result.and_then(|source| {
-                                this.db.cache_task_relations(user, task, &source)
-                            }) {
-                                Ok(()) => this.reload(),
-                                Err(error) => this.error = Some(error.to_string()),
-                            }
-                            cx.notify();
+                            this.apply_task_action_details(
+                                generation,
+                                user,
+                                task,
+                                result.map_err(|error| error.to_string()),
+                                cx,
+                            );
                         });
                         break;
                     }
@@ -221,6 +218,29 @@ impl Desktop {
             }
         })
         .detach();
+    }
+    fn apply_task_action_details(
+        &mut self,
+        generation: u64,
+        user: i64,
+        task: i64,
+        result: Result<Value, String>,
+        cx: &mut Context<Self>,
+    ) {
+        if self.task_actions.load_generation != generation
+            || self.db.current_user_id() != Some(user)
+        {
+            return;
+        }
+        match result.and_then(|source| {
+            self.db
+                .cache_task_relations(user, task, &source)
+                .map_err(|error| error.to_string())
+        }) {
+            Ok(()) => self.reload(),
+            Err(error) => self.error = Some(error),
+        }
+        cx.notify();
     }
     pub(super) fn task_relations_rows(
         &self,
@@ -436,6 +456,9 @@ impl Desktop {
             chrono::Utc::now().timestamp(),
         ) {
             Ok(id) => {
+                // An older detail read must not replace this write after its queue row resolves.
+                self.task_actions.load_generation += 1;
+                self.task_actions.loaded = None;
                 let row = self
                     .db
                     .mutations()
@@ -931,6 +954,27 @@ mod tests {
                 }
             })
             .unwrap();
+        }
+    }
+    #[gpui::test]
+    fn prewrite_task_detail_replies_cannot_overwrite_accepted_or_refused_commands(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        for status in [200, 401, 403] {
+            view.update(&mut cx,|this,window,cx|{
+                this.db.apply_task(&json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","waitingOnUserId":null})).unwrap();
+                let old_generation=this.task_actions.load_generation;
+                let change=TaskAction::WaitingOn(Some(7));this.queue_task_action(1,change.clone(),window,cx);
+                assert!(this.task_actions.load_generation>old_generation);assert!(this.task_actions.loaded.is_none());
+                this.db.drain_once(&mut Server(status,change),chrono::Utc::now().timestamp()+1).unwrap();this.poll_task_action(window,cx);
+                let before=this.db.task(1).unwrap().unwrap();let error=this.error.clone();
+                this.apply_task_action_details(old_generation,42,1,Ok(json!({"id":1,"relatedFromTasks":[],"relatedToTasks":[],"waitingOnUserId":99})),cx);
+                this.apply_task_action_details(old_generation,42,1,Err("Old read refused".into()),cx);
+                assert_eq!(this.db.task(1).unwrap().unwrap(),before);assert_eq!(this.error,error);
+                this.apply_task_action_details(this.task_actions.load_generation,42,1,Ok(json!({"id":1,"relatedFromTasks":[],"relatedToTasks":[],"recurrence":"Daily"})),cx);
+                assert_eq!(this.db.task(1).unwrap().unwrap().extra["recurrence"],"Daily","current-generation read is the positive control");
+            }).unwrap();
         }
     }
 }
