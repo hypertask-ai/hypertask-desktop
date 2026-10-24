@@ -39,6 +39,7 @@ pub(super) struct Views {
     pub(super) builtin: std::collections::BTreeMap<i64, String>,
     decisions: bool,
     previous_builtin: Option<(i64, String)>,
+    self_filter: bool,
     support_pending: bool,
     query: Entity<TextInput>,
     query_text: String,
@@ -71,6 +72,7 @@ impl Views {
             builtin: Default::default(),
             decisions: false,
             previous_builtin: None,
+            self_filter: false,
             support_pending: false,
             query,
             query_text: String::new(),
@@ -85,6 +87,7 @@ impl Desktop {
         self.views.builtin.clear();
         self.views.decisions = false;
         self.views.previous_builtin = None;
+        self.views.self_filter = false;
         self.views.people = None;
         self.views.support_pending = false;
         self.views.loaded = 0;
@@ -834,18 +837,16 @@ impl Desktop {
                         self.load_view_support(true, window, cx);
                         return;
                     }
+                    if kind == "AssignedToMe" {
+                        self.toggle_self_filter(window, cx);
+                        return;
+                    }
                     let mut filters = settings["board_filters"]["addedFilters"]
                         .as_array()
                         .cloned()
                         .unwrap_or_default();
                     if filters.iter().any(|filter| filter["type"] == kind) {
                         filters.retain(|filter| filter["type"] != kind);
-                    } else if kind == "AssignedToMe" {
-                        let Some(user) = self.db.current_user_id() else {
-                            return;
-                        };
-                        filters.retain(|filter| filter["type"] != "Assignees");
-                        filters.push(json!({"type":"Assignees","searchPayload":[{"id":user,"uid":"current-user"}],"match":"ANY"}));
                     } else {
                         filters.push(json!({"type":kind,"searchPayload":[]}));
                     }
@@ -1073,6 +1074,69 @@ impl Desktop {
         });
         self.queue_view("unsaved-view", settings, window, cx);
     }
+    fn toggle_self_filter(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(user) = self.db.current_user_id() else {
+            return;
+        };
+        let project = self
+            .db
+            .board_project(self.options.board)
+            .unwrap_or(Value::Null);
+        let people = self.views.people.as_ref().unwrap_or(&project);
+        let person = std::iter::once(&people["owner"])
+            .chain(
+                people["members"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .map(|member| &member["user"]),
+            )
+            .find(|person| person["id"] == user && person["uid"].is_string())
+            .cloned();
+        let Some(person) = person else {
+            if self.views.people.is_none() && !self.options.offline {
+                self.views.self_filter = true;
+                self.load_view_support(false, window, cx);
+            } else {
+                self.error = Some("Could not load your board profile".into());
+                cx.notify();
+            }
+            return;
+        };
+        let mut settings = self.view_settings();
+        let mut filters = settings["board_filters"]["addedFilters"]
+            .as_array()
+            .cloned()
+            .unwrap_or_default();
+        if let Some(filter) = filters
+            .iter_mut()
+            .find(|filter| filter["type"] == "Assignees")
+        {
+            let mut values = filter["searchPayload"]
+                .as_array()
+                .cloned()
+                .unwrap_or_default();
+            if values
+                .iter()
+                .any(|person| person["id"] == user && person.get("uid").is_some())
+            {
+                values.retain(|person| !(person["id"] == user && person.get("uid").is_some()));
+            } else {
+                values.push(person);
+            }
+            filter["searchPayload"] = json!(values);
+            filters.retain(|filter| {
+                filter["type"] != "Assignees"
+                    || filter["searchPayload"]
+                        .as_array()
+                        .is_some_and(|values| !values.is_empty())
+            });
+        } else {
+            filters.push(json!({"type":"Assignees","searchPayload":[person],"match":"ANY"}));
+        }
+        settings["board_filters"]["addedFilters"] = json!(filters);
+        self.queue_view("unsaved-view", settings, window, cx);
+    }
     fn load_view_support(&mut self, timers: bool, window: &mut Window, cx: &mut Context<Self>) {
         if self.views.support_pending {
             return;
@@ -1157,11 +1221,15 @@ impl Desktop {
                                         this.queue_view("unsaved-view", settings, window, cx);
                                     } else {
                                         this.views.people = Some(data);
+                                        if std::mem::take(&mut this.views.self_filter) {
+                                            this.toggle_self_filter(window, cx);
+                                        }
                                     }
                                 }
                                 Err(error) => {
                                     this.error = Some(error);
                                     this.views.people = None;
+                                    this.views.self_filter = false;
                                 }
                             }
                             cx.notify();
@@ -1811,6 +1879,19 @@ mod advanced_control_tests {
         assert!(!this.poll_view(window, cx));
         if status != 200 {
             assert_eq!(this.error.as_deref(), Some("Board access denied"));
+        }
+    }
+    #[gpui::test]
+    fn assigned_to_me_uses_real_profile_and_toggles_only_self_preserving_other_values_and_match(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        for status in [401, 403, 200] {
+            view.update_in(cx,|this,window,cx|{
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{"unsavedView":{"board_filters":{"addedFilters":[{"type":"Assignees","searchPayload":[{"id":7,"uid":"other-real-uid"}],"match":"ALL"}],"matchFilters":"ANY"}}}]}}]})).unwrap();this.views.people=Some(json!({"owner":{"id":42,"uid":"actual-owner-uid","displayName":"Owner"},"members":[]}));this.open_view_panel(Panel::Filters,window,cx);let before=this.view_settings();let index=this.view_choices().iter().position(|(_,value)|*value=="AssignedToMe").unwrap();this.choose_view_option(index,window,cx);
+            let filter=this.view_settings()["board_filters"]["addedFilters"][0].clone();assert_eq!(filter["match"],"ALL");assert_eq!(filter["searchPayload"][0]["id"],7);assert_eq!(filter["searchPayload"][1]["uid"],"actual-owner-uid");settle(this,status,window,cx);if status!=200{assert_eq!(this.view_settings(),before);}else{this.toggle_self_filter(window,cx);settle(this,200,window,cx);assert_eq!(this.view_settings(),before);}
+        });
         }
     }
     #[gpui::test]
