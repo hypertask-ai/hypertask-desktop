@@ -14,8 +14,12 @@ pub enum CommandAction {
     Shortcut(Action),
     Theme(ThemeName),
     Board(i64),
+    BoardForm(BoardAction),
     Shell(ShellCommand),
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BoardAction { AddColumn, RenameColumn, DeleteColumn, RenameBoard, MoveTask }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ShellCommand {

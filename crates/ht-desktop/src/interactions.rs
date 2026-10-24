@@ -38,6 +38,7 @@ enum ChoiceAction {
     Task(i64),
     Board(i64),
     Delete,
+    CreateLabel,
 }
 pub(super) struct Interaction {
     pub modal: Option<Modal>,
@@ -430,6 +431,7 @@ impl Desktop {
                 self.show_inbox_reminder(ids,window,cx);
             }
             MoveColumn => self.show_modal(Modal::Column, window, cx),
+            MoveBoard => self.open_board_form(crate::command_center::BoardAction::MoveTask, window, cx),
             Assign => self.show_modal(Modal::Assign, window, cx),
             Tags => self.show_modal(Modal::Tags, window, cx),
             Priority => self.show_modal(Modal::Priority, window, cx),
@@ -559,11 +561,12 @@ impl Desktop {
         let id = if self.screen == Screen::Inbox {
             self.selection_id()
         } else {
-            self.selected_task().and_then(|task| self.inbox.iter().find(|n| n.task_id == Some(task)).map(|n| n.id))
+            self.selected_task().and_then(|task| self.db.inbox().ok()?.iter().find(|n| n.task_id == Some(task)).map(|n| n.id))
         };
         if let Some(notification_id) = id {
             return self.enqueue(Write::InboxArchive { notification_id }, cx);
         }
+        if self.screen == Screen::Board { self.error = Some("This task is not in inbox".into()); cx.notify(); }
         true
     }
     fn bulk_archive(&mut self, tasks: bool, cx: &mut Context<Self>) {
@@ -943,6 +946,10 @@ impl Desktop {
             None => vec![],
         }
         .into_iter()
+        .chain((self.interaction.modal == Some(Modal::Tags) && !query.trim().is_empty()
+            && self.selected_task().and_then(|id| self.db.task(id).ok().flatten()).is_some_and(|task| {
+                !self.db.project_labels(task.project_id).unwrap_or_default().iter().any(|label| label["value"].as_str().or(label["name"].as_str()).is_some_and(|name|name.eq_ignore_ascii_case(query.trim())))
+            })).then(|| Choice { name:format!("Create tag \"{}\"", query.trim()), action:ChoiceAction::CreateLabel }))
         .filter(|c| {
             matches!(
                 self.interaction.modal,
@@ -969,6 +976,7 @@ impl Desktop {
                 let _ = self.db.kv_set("command-usage", &usage.to_string());
             }
         }
+        let query = self.interaction.query.read(cx).content.trim().to_owned();
         self.close_modal(window, cx);
         match choice.action {
             ChoiceAction::Command(CommandAction::Shortcut(action)) => {
@@ -994,6 +1002,12 @@ impl Desktop {
             }
             ChoiceAction::Command(CommandAction::Shell(action)) => {
                 self.run_shell_command(action, window, cx);
+            }
+            ChoiceAction::Command(CommandAction::BoardForm(action)) => self.open_board_form(action, window, cx),
+            ChoiceAction::CreateLabel => {
+                if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
+                    self.enqueue(Write::Board { change: ht_core::BoardWrite::CreateTaskLabel { project:task.project_id, task:task.id, name:query } }, cx);
+                }
             }
             ChoiceAction::Command(CommandAction::Theme(theme)) => {
                 self.apply_named_theme(theme, cx);
@@ -1093,7 +1107,7 @@ impl Desktop {
                             task_id,
                             patch: TaskPatch::Status(Status::Deleted),
                         },
-                        ChoiceAction::Command(_)
+                        ChoiceAction::Command(_) | ChoiceAction::CreateLabel
                         | ChoiceAction::Task(_)
                         | ChoiceAction::Board(_) => {
                             unreachable!()

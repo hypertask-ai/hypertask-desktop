@@ -74,6 +74,8 @@ mod inbox;
 mod comments;
 #[path = "task_fields.rs"]
 mod task_fields;
+#[path = "board_mutations.rs"]
+mod board_mutations;
 #[path = "board.rs"]
 mod board;
 
@@ -115,6 +117,7 @@ pub struct Desktop {
     interaction: interactions::Interaction,
     task_fields: task_fields::TaskFields,
     board_actions: board::BoardActions,
+    board_forms: board_mutations::Forms,
     comment_actions: comment_actions::CommentActions,
     comment_drafts: comment_drafts::CommentDrafts,
     moving: bool,
@@ -230,6 +233,7 @@ impl Desktop {
             interaction: interactions::Interaction::new(cx),
             task_fields: task_fields::TaskFields::new(cx),
             board_actions: board::BoardActions::new(cx),
+            board_forms: board_mutations::Forms::new(cx),
             comment_actions: comment_actions::CommentActions::new(cx),
             comment_drafts: comment_drafts::CommentDrafts::default(),
             moving: false,
@@ -586,7 +590,7 @@ impl Desktop {
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.unread_review_key(event,window,cx) {return;}
         if self.comment_reader_key(event, window, cx) { return; }
-        if self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
+        if self.board_form_key(event, window, cx) || self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
         if self.inbox_key(event, window, cx) { return; }
         if self.shell_key(event, window, cx) {
             return;
@@ -756,13 +760,11 @@ impl Desktop {
 
     fn board_screen(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
         let t = self.colors;
-        let title = self
-            .columns
-            .iter()
-            .flat_map(|c| &c.cards)
-            .find(|t| !t.board_title.is_empty())
-            .map(|t| t.board_title.as_str())
-            .unwrap_or("Board");
+        let title = self.db.projects().unwrap_or_default().into_iter()
+            .find(|project| project["id"] == self.options.board)
+            .and_then(|project| project["title"].as_str().or(project["name"].as_str()).map(str::to_owned))
+            .or_else(|| self.columns.iter().flat_map(|c| &c.cards).find(|task| !task.board_title.is_empty()).map(|task|task.board_title.clone()))
+            .unwrap_or_else(|| "Board".into());
         let count: usize = self.columns.iter().map(|c| c.cards.len()).sum();
         let sidebar_width = self
             .ai_sidebar
@@ -1777,6 +1779,7 @@ impl Render for Desktop {
             .child(self.comment_overlay(cx))
             .child(self.inbox_reminder_overlay(cx))
             .child(self.due_date_overlay(cx))
+            .child(self.board_form_overlay(cx))
             .into_any_element()
     }
 }

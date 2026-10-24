@@ -159,6 +159,51 @@ impl Desktop {
             .layout_key(&self.layout, "board.bulk", None)
     }
     pub(super) fn add_board_commands(&self, rows: &mut Vec<crate::command_center::Command>) {
+        if self.screen == Screen::Board {
+            for (key, name, action) in [
+                (
+                    "addColumn",
+                    "Add board column",
+                    crate::command_center::BoardAction::AddColumn,
+                ),
+                (
+                    "renameColumn",
+                    "Rename board column",
+                    crate::command_center::BoardAction::RenameColumn,
+                ),
+                (
+                    "deleteColumn",
+                    "Delete board column",
+                    crate::command_center::BoardAction::DeleteColumn,
+                ),
+                (
+                    "renameBoard",
+                    "Rename board",
+                    crate::command_center::BoardAction::RenameBoard,
+                ),
+            ] {
+                rows.push(crate::command_center::Command {
+                    key: key.into(),
+                    name: name.into(),
+                    group: "Board",
+                    keys: String::new(),
+                    keywords: "board column",
+                    action: crate::command_center::CommandAction::BoardForm(action),
+                });
+            }
+        }
+        if self.selected_task().is_some() {
+            rows.push(crate::command_center::Command {
+                key: "moveTaskToBoard".into(),
+                name: "Move to board".into(),
+                group: "Task",
+                keys: "SHIFT M".into(),
+                keywords: "move task another board",
+                action: crate::command_center::CommandAction::BoardForm(
+                    crate::command_center::BoardAction::MoveTask,
+                ),
+            });
+        }
         if self.screen != Screen::Board || self.interaction.bulk.is_empty() {
             return;
         }

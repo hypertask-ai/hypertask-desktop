@@ -35,6 +35,7 @@ pub enum Action {
     BulkRemind,
     ReviewUnread,
     MoveColumn,
+    MoveBoard,
     Priority,
     Assign,
     Tags,
@@ -123,6 +124,7 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
             Some(Action::SelectAll { all_splits })
         }
         ("e", false, true, false) if screen == Screen::Inbox => Some(Action::BulkArchive),
+        ("m", false, true, false) => Some(Action::MoveBoard),
         ("h", false, true, false) if screen == Screen::Inbox => Some(Action::BulkRemind),
         ("h", false, false, false) if screen != Screen::Board => Some(Action::Remind),
         ("h" | "left", false, true, false) if screen != Screen::Inbox => Some(Action::MoveLeft),
@@ -200,7 +202,7 @@ mod tests {
     }
     #[test]
     fn contextual_bindings_and_aliases_match_web() {
-        assert_eq!(key("e", Screen::Board, false), Some(Action::Rename));
+        assert_eq!(key("e", Screen::Board, false), Some(Action::ArchiveNotification));
         assert_eq!(
             key("e", Screen::Inbox, false),
             Some(Action::ArchiveNotification)

@@ -1,6 +1,8 @@
 pub mod ai_chat;
 pub mod auth;
 mod catalog;
+mod board_write;
+pub use board_write::BoardWrite;
 mod comment_write;
 mod editor_queue;
 pub use editor_queue::{DraftType, ImproveCommand, EditorResult};
