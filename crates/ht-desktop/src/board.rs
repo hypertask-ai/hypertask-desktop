@@ -110,7 +110,7 @@ impl Desktop {
     }
     pub(super) fn drop_card(&mut self, task: i64, column: usize, before: Option<i64>, cx: &mut Context<Self>) {
         let Some(target) = self.columns.get(column) else { return; };
-        let cards: Vec<_> = target.cards.iter().filter(|card| card.id != task).collect();
+        let cards: Vec<_> = target.cards.iter().filter(|card| card.id != task && card.status != Status::Archive).collect();
         let index = before.and_then(|id| cards.iter().position(|card| card.id == id)).unwrap_or(cards.len());
         let rank = |i: usize| cards.get(i).and_then(|card| card.extra.get("ranking")).and_then(serde_json::Value::as_str);
         let ranking = match ht_core::task_rank(index.checked_sub(1).and_then(rank), rank(index)) {

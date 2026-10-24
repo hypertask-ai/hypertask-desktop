@@ -41,6 +41,9 @@ pub(super) struct Views {
     previous_builtin: Option<(i64, String)>,
     self_filter: bool,
     support_pending: bool,
+    archived_board: Option<(i64, i64)>,
+    archived_loading: bool,
+    archived_generation: u64,
     query: Entity<TextInput>,
     query_text: String,
     month: NaiveDate,
@@ -74,6 +77,9 @@ impl Views {
             previous_builtin: None,
             self_filter: false,
             support_pending: false,
+            archived_board: None,
+            archived_loading: false,
+            archived_generation: 0,
             query,
             query_text: String::new(),
             month: chrono::Local::now().date_naive().with_day(1).unwrap(),
@@ -88,6 +94,9 @@ impl Desktop {
         self.views.decisions = false;
         self.views.previous_builtin = None;
         self.views.self_filter = false;
+        self.views.archived_board = None;
+        self.views.archived_loading = false;
+        self.views.archived_generation += 1;
         self.views.people = None;
         self.views.support_pending = false;
         self.views.loaded = 0;
@@ -163,6 +172,59 @@ impl Desktop {
             }
         })
         .detach();
+    }
+    pub(super) fn show_archived_on_board(&self) -> bool {
+        self.view_settings()["board_show_archived"].as_bool().unwrap_or_else(|| self.db.kv_get("showArchivedOnBoard").ok().flatten().as_deref() == Some("true"))
+    }
+    pub(super) fn toggle_archived_on_board(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.views.pending.is_some() || !self.board_metadata_ready(cx) { return; }
+        let mut settings = self.view_settings();
+        let next = !self.show_archived_on_board();
+        if settings["board_show_archived"].is_null() {
+            if let Err(error) = self.db.kv_set("showArchivedOnBoard", if next { "true" } else { "false" }) { self.error = Some(error.to_string()); return; }
+        }
+        settings["board_show_archived"] = json!(next);
+        self.queue_view("unsaved-view", settings, window, cx);
+        if next { self.views.archived_board = None; }
+        self.load_archived_on_board(cx);
+    }
+    pub(super) fn load_archived_on_board(&mut self, cx: &mut Context<Self>) {
+        let board = self.options.board;
+        let Some(user) = self.db.current_user_id() else { return; };
+        if self.options.offline || !self.show_archived_on_board() || self.views.archived_loading || self.views.archived_board == Some((user, board)) { return; }
+        let Some(token) = self.cli_token() else { return; };
+        self.views.archived_loading = true;
+        let expected = token.clone();
+        self.views.archived_generation += 1;
+        let generation = self.views.archived_generation;
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = ht_core::Http::new(token).and_then(|mut http| ht_core::board_views::archived_tasks(&mut http, board)).map_err(|error| error.to_string());
+            let _ = send.send(result);
+        });
+        cx.spawn(async move |view, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(50)).await;
+                match receive.try_recv() {
+                    Ok(result) => {
+                        let _ = view.update(cx, |this, cx| {
+                            if this.views.archived_generation != generation { return; }
+                            this.views.archived_loading = false;
+                            if this.options.board != board || this.db.current_user_id() != Some(user) || this.cli_token().as_deref() != Some(expected.as_str()) { return; }
+                            this.views.archived_board = Some((user, board));
+                            match result.and_then(|tasks| this.db.apply_archived_board_tasks(user, board, &tasks).map_err(|error| error.to_string())) {
+                                Ok(()) => this.reload(),
+                                Err(error) => this.error = Some(error),
+                            }
+                            cx.notify();
+                        });
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
+                    _ => break,
+                }
+            }
+        }).detach();
     }
     pub(super) fn board_metadata_ready(&mut self, cx: &mut Context<Self>) -> bool {
         if self.options.offline {
@@ -1879,6 +1941,27 @@ mod advanced_control_tests {
         assert!(!this.poll_view(window, cx));
         if status != 200 {
             assert_eq!(this.error.as_deref(), Some("Board access denied"));
+        }
+    }
+    #[gpui::test]
+    fn archived_command_queues_full_unsaved_view_and_refusal_restores_the_previous_override(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        for status in [401, 403, 200] {
+            view.update_in(cx, |this, window, cx| {
+                this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"default_view":{"id":"default","board_show_archived":false},"user_project_views":[{}]}}]})).unwrap();
+                this.db.apply_archived_board_tasks(42, 15, &[json!({"id":4,"projectId":15,"sectionId":10,"title":"Archived","status":"Archive","archivedAt":"2026-01-01T00:00:00Z"})]).unwrap();
+                this.switch(Screen::Board, cx);
+                let before = this.view_settings();
+                this.run_shell_command(crate::command_center::ShellCommand::ArchivedOnBoard, window, cx);
+                assert!(this.show_archived_on_board());
+                assert!(this.columns.iter().flat_map(|column| &column.cards).any(|task| task.id == 4));
+                let row = this.db.mutations().unwrap().into_iter().find(|row| row.status != "failed").unwrap();
+                assert_eq!(row.payload_json["change"]["body"]["board_show_archived"], true);
+                settle(this, status, window, cx);
+                assert_eq!(this.show_archived_on_board(), status == 200);
+                if status != 200 { assert_eq!(this.view_settings(), before); }
+            });
         }
     }
     #[gpui::test]

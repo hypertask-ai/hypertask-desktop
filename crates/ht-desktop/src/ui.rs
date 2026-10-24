@@ -1036,6 +1036,7 @@ impl Desktop {
             || self.interaction.bulk.contains(&task.id);
         let title = task.title.clone();
         let id = task.id;
+        let archived = task.status == Status::Archive;
         let labels = task
             .extra
             .get("labels")
@@ -1043,13 +1044,14 @@ impl Desktop {
             .filter(|v| !v.is_empty());
         div()
             .id(("task-card", id as u64))
-            .when(id>0, |d|d.on_drag(board::CardDrag { task: id, title: title.clone() }, |drag, _, _, cx| cx.new(|_| drag.clone())))
+            .when(id>0 && task.status != Status::Archive, |d|d.on_drag(board::CardDrag { task: id, title: title.clone() }, |drag, _, _, cx| cx.new(|_| drag.clone())))
             .on_drop(cx.listener(move |this, drag: &board::CardDrag, _, cx| {
                 cx.stop_propagation();
-                if drag.task != id { this.drop_card(drag.task, column, Some(id), cx); }
+                if !archived && drag.task != id { this.drop_card(drag.task, column, Some(id), cx); }
             }))
             .px(px(8.))
             .pb(px(16.))
+            .when(task.status == Status::Archive, |d| d.opacity(0.5))
             .child(
                 div()
                     .id("card")
@@ -1754,7 +1756,7 @@ impl Render for Desktop {
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
         }
-        if self.screen==Screen::Board {self.load_board_views(cx);}
+        if self.screen==Screen::Board {self.load_board_views(cx);self.load_archived_on_board(cx);}
         self.prepare_comment_readers(window,cx);
         self.restore_comment_draft(cx);
         if self.inbox_actions.review.is_some() {return self.unread_review_screen(cx).into_any_element();}

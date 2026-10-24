@@ -169,6 +169,16 @@ impl Db {
             Ok(())
         })
     }
+    pub fn apply_archived_board_tasks(&mut self, user: i64, project: i64, tasks: &[Value]) -> Result<()> {
+        ensure!(self.current_user_id() == Some(user), "Board response belongs to another account");
+        ensure!(tasks.iter().all(|task| task["projectId"] == project && task["status"] == "Archive" && task["id"].as_i64().is_some_and(|id| id > 0)), "Invalid archived tasks");
+        self.transaction(|db| {
+            for task in tasks { db.upsert_task(task)?; }
+            db.kv_set(&format!("web-archived-tasks:{user}:{project}"), &serde_json::to_string(&tasks.iter().map(|task| &task["id"]).collect::<Vec<_>>())?)?;
+            db.reapply_pending()?;
+            Ok(())
+        })
+    }
     pub fn board_project(&self, project: i64) -> Result<Value> {
         let mut value=self.raw("Project", &json!(project))?.context("Board is unavailable")?;
         value["section"]=json!(self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 ORDER BY ranking,id",[project])?);
@@ -489,5 +499,20 @@ mod date_sort_tests{
     fn date_sort_uses_instants_and_keeps_the_webs_per_mode_missing_value_order(){
         let rows=vec![json!({"id":1,"createdAt":"2026-10-01T08:00:00Z","dueDate":"2026-10-01T08:00:00Z","lastCommentAt":"2026-10-01T08:00:00Z","assignees":[]}),json!({"id":2,"createdAt":"2026-10-01T09:00:00+02:00","dueDate":"2026-10-01T09:00:00+02:00","lastCommentAt":"2026-10-01T09:00:00+02:00","assignees":[{"user":{"displayName":"Amy"}}]}),json!({"id":3})];
         for(mode,order,expected)in [("DueDate","Ascending",vec![2,1,3]),("DueDate","Descending",vec![1,2,3]),("CreatedAt","Ascending",vec![3,2,1]),("TimeOnBoard","Descending",vec![3,2,1]),("TimeWithoutComment","Descending",vec![2,1,3]),("Assignee","Ascending",vec![2,1,3])]{let mut tasks=rows.clone();filter_sort(&mut tasks,&json!({"board_sorting_mode":mode,"board_sorting_order":order}),&json!({}),&[]);assert_eq!(tasks.iter().map(|task|task["id"].as_i64().unwrap()).collect::<Vec<_>>(),expected,"{mode}");}
+    }
+}
+
+pub fn archived_tasks(transport: &mut impl Transport, project: i64) -> Result<Vec<Value>> {
+    let response = transport.get(&format!("/api/tasks/getArchivedTasksByProject?projectId={project}"))?;
+    ensure!(response.status == 200, "{}", response.body["message"].as_str().or(response.body["error"].as_str()).unwrap_or("Could not load archived tasks"));
+    let tasks = response.body.as_array().context("Could not load archived tasks")?;
+    ensure!(tasks.iter().all(|task| task["projectId"] == project && task["status"] == "Archive" && task["id"].as_i64().is_some_and(|id| id > 0)), "Invalid archived tasks");
+    Ok(tasks.clone())
+}
+
+pub(crate) fn sort_archived(tasks: &mut Vec<Value>, settings: &Value, project: &Value) {
+    filter_sort(tasks, settings, project, &[]);
+    if settings["board_sorting_mode"] == "Manual" {
+        tasks.sort_by_key(|task| std::cmp::Reverse(timestamp(task.get("archivedAt").filter(|date| !date.is_null()).unwrap_or(&task["updatedAt"])).unwrap_or(0)));
     }
 }

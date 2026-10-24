@@ -42,6 +42,7 @@ pub enum ShellCommand {
     Subtasks,
     EmptyColumns,
     HideColumn,
+    ArchivedOnBoard,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -145,6 +146,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     }
     shell_commands(&mut rows);
     for(key,name,group,keys,keywords,action)in [
+        ("toggleArchivedOnBoard","Show archived tasks on board","Board","G  X","show hide toggle archive archived completed tasks board visibility",ShellCommand::ArchivedOnBoard),
         ("createTask","Create task","Board","C","create add new task ticket issue todo work item",ShellCommand::CreateTask),
         ("hideColumn","Hide board column","Board","","hide conceal column status section board kanban visibility remove from view",ShellCommand::HideColumn),
         ("manageColumns","Manage board columns","Board","","columns visibility show hide",ShellCommand::Columns),

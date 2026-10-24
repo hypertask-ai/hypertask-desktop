@@ -300,6 +300,15 @@ impl Db {
         if let Some(builtin)=builtin{tasks.retain(|task|crate::board_views::builtin_matches(builtin,task,&project,self.current_user_id(),chrono::Utc::now().timestamp()));}
         crate::board_views::filter_sort(&mut tasks,&settings,&project,&running);
         tasks.retain(|task|match settings["board_subtask_setting"].as_str(){Some("None"|"Parent")=>task["parentTask"].is_null(),Some("Card")=>task["parentTask"].is_null() || task["subTasks"].as_array().is_some_and(|subtasks|!subtasks.is_empty()),_=>true});
+        let show_archived = settings["board_show_archived"].as_bool().unwrap_or(self.kv_get("showArchivedOnBoard")?.as_deref() == Some("true"));
+        if show_archived {
+            let mut archived = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Archive'", [project_id])?;
+            if let Some(ids) = self.kv_get(&format!("web-archived-tasks:{}:{project_id}", self.current_user_id().unwrap_or(0)))?.and_then(|value| serde_json::from_str::<Vec<Value>>(&value).ok()) {
+                archived.retain(|task| ids.contains(&task["id"]));
+            }
+            crate::board_views::sort_archived(&mut archived, &settings, &project);
+            tasks.extend(archived);
+        }
         let cards = tasks
             .into_iter()
             .map(task_view)

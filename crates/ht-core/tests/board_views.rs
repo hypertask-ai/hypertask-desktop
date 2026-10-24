@@ -288,3 +288,56 @@ fn running_filter_uses_board_summary_for_all_actors_and_excludes_finished_only_t
     }
     for status in [200,401,403]{let result=board_views::running_timers(&mut Timers(status),15);if status==200{let rows=result.unwrap();assert_eq!(rows.as_array().unwrap().iter().map(|entry|entry["taskId"].as_i64().unwrap()).collect::<Vec<_>>(),vec![2,3]);}else{assert_eq!(result.unwrap_err().to_string(),"Forbidden");}}
 }
+
+#[test]
+fn archived_board_read_requires_real_array_scope_and_auth_and_never_synthesizes_tasks() {
+    struct Archived { status: u16, body: Value }
+    impl Transport for Archived {
+        fn get(&mut self, path: &str) -> Result<Response, TransportError> {
+            assert_eq!(path, "/api/tasks/getArchivedTasksByProject?projectId=15");
+            Ok(Response { status: self.status, body: self.body.clone() })
+        }
+        fn post(&mut self, _: &str, _: &Value, _: &str) -> Result<Response, TransportError> { panic!("read only") }
+    }
+    for status in [200, 401, 403] {
+        let tasks = json!([{"id":3,"projectId":15,"sectionId":10,"title":"Archived","status":"Archive","ranking":"A0010","archivedAt":"2026-10-01T00:00:00Z"}]);
+        let result = board_views::archived_tasks(&mut Archived { status, body: if status == 200 { tasks } else { json!({"message":"Board access denied"}) } }, 15);
+        let mut db = Db::memory().unwrap(); seed(&mut db);
+        if status == 200 {
+            db.apply_archived_board_tasks(42, 15, &result.unwrap()).unwrap();
+            assert!(db.task(3).unwrap().is_some());
+            assert!(db.apply_archived_board_tasks(99, 15, &[]).is_err());
+        } else {
+            assert_eq!(result.unwrap_err().to_string(), "Board access denied");
+            assert!(db.task(3).unwrap().is_none());
+        }
+    }
+    for body in [json!({}), json!([{"id":3,"projectId":16,"status":"Archive"}]), json!([{"id":3,"projectId":15,"status":"Normal"}])] {
+        assert!(board_views::archived_tasks(&mut Archived { status: 200, body }, 15).is_err());
+    }
+}
+
+#[test]
+fn archived_board_toggle_is_queued_optimistic_and_refusals_restore_visibility_after_restart() {
+    for status in [200, 401, 403] {
+        let file = tempfile::NamedTempFile::new().unwrap(); let mut db = Db::open(file.path()).unwrap(); seed(&mut db);
+        let mut before = db.board_project(15).unwrap();
+        before["project_view"]["default_view"] = json!({"id":"default","board_show_archived":false});
+        db.apply_response(&json!({"success":true,"projects":[before.clone()]})).unwrap();
+        db.apply_archived_board_tasks(42, 15, &[
+            json!({"id":3,"projectId":15,"sectionId":10,"title":"Older","status":"Archive","ranking":"A0001","archivedAt":"2026-01-01T00:00:00Z"}),
+            json!({"id":4,"projectId":15,"sectionId":10,"title":"Newer","status":"Archive","ranking":"A0999","archivedAt":"2026-06-01T00:00:00Z"}),
+        ]).unwrap();
+        assert_eq!(db.board(15).unwrap()[0].cards.len(), 2);
+        let mut body = board_views::settings(&before); body["projectId"] = json!(15); body["baseViewId"] = Value::Null; body["board_show_archived"] = json!(true);
+        db.enqueue(Write::View { change: ViewWrite { project:15, route:"unsaved-view".into(), body:body.clone() } }, 100).unwrap();
+        assert_eq!(db.board(15).unwrap()[0].cards.iter().map(|card|card.id).collect::<Vec<_>>(), vec![1,2,4,3]);
+        drop(db); let mut db = Db::open(file.path()).unwrap();
+        let mut reply = before["project_view"].clone(); reply["user_project_views"][0]["unsavedView"] = body.clone();
+        db.drain_once(&mut Server { status, path:"/api/projects/views/unsaved-view".into(), body, reply }, 101).unwrap();
+        assert_eq!(db.board(15).unwrap()[0].cards.len(), if status == 200 {4} else {2});
+        if status != 200 { assert_eq!(db.board_project(15).unwrap()["project_view"], before["project_view"]); }
+        db.apply_archived_board_tasks(42, 15, &[]).unwrap();
+        assert_eq!(db.board(15).unwrap()[0].cards.len(), 2);
+    }
+}

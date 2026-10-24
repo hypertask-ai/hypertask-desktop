@@ -8,6 +8,7 @@ pub enum Action {
     CreateTask,
     SortView,
     FilterView,
+    ArchivedOnBoard,
     StarComment,
     PinComment,
     Back,
@@ -180,6 +181,7 @@ pub fn sequence(key: &str, shifted: bool, screen: Screen) -> Option<Action> {
         "g" if screen != Screen::Task => Some(if shifted { Action::Last } else { Action::First }),
         "i" => Some(Action::Inbox),
         "b" => Some(Action::Board),
+        "x" if screen != Screen::Inbox => Some(Action::ArchivedOnBoard),
         "t" if matches!(screen, Screen::Inbox | Screen::Task) => Some(Action::Board),
         _ => None,
     }
@@ -301,7 +303,7 @@ mod tests {
             );
             assert_eq!(sequence("i", false, screen), Some(Inbox));
             assert_eq!(sequence("b", false, screen), Some(Board));
-            assert_eq!(sequence("x", false, screen), None);
+            assert_eq!(sequence("x", false, screen), if screen == Screen::Inbox { None } else { Some(ArchivedOnBoard) });
             assert_eq!(key("ctrl-shift-,", screen, true), Some(DiscardDraft));
             assert_eq!(
                 key("ctrl-alt-shift-enter", screen, true),
