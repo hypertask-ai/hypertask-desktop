@@ -85,7 +85,7 @@ fn compact_inbox_uses_current_title_and_ticket_without_materializing_description
 }
 
 #[test]
-fn compact_inbox_omits_only_hidden_task_bodies_and_preserves_full_store() {
+fn compact_inbox_keeps_rendered_metadata_and_preserves_full_store() {
     let mut db = Db::memory().unwrap();
     let task = json!({"id":1,"projectId":15,"title":"Current","ticketNumber":"MEM-1","status":"Normal",
         "description":"large ".repeat(10000),"attachments":[{"url":"https://example.org/large.png"}],
@@ -101,9 +101,11 @@ fn compact_inbox_omits_only_hidden_task_bodies_and_preserves_full_store() {
     let full = db.inbox().unwrap();
     let rows = db.inbox_rows().unwrap();
     let mut expected = serde_json::to_value(&full).unwrap();
-    for key in ["description", "attachments", "pullRequests", "savedContent", "customFieldValues", "followers", "sub_tasks"] {
-        expected[0]["rawJson"]["task"].as_object_mut().unwrap().remove(key);
-    }
+    expected[0]["rawJson"]["task"] = json!({
+        "id":task["id"],"title":task["title"],"ticketNumber":task["ticketNumber"],
+        "projectId":task["projectId"],"uniqueIndex":task["uniqueIndex"],"status":task["status"],
+        "dueDate":task["dueDate"],"priority":task["priority"],"estimate":task["estimate"],"taskLabels":task["taskLabels"]
+    });
     assert_eq!(serde_json::to_value(&rows).unwrap(), expected);
     assert_eq!(db.inbox().unwrap()[0].raw_json, full[0].raw_json);
     assert_eq!(db.task(1).unwrap().unwrap().description, task["description"].as_str().unwrap());

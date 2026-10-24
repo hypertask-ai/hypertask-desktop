@@ -367,7 +367,7 @@ impl Db {
     /// Row metadata only; the complete notification and task stay in the sync store.
     pub fn inbox_rows(&self) -> Result<Vec<InboxItem>> {
         if !cfg!(feature = "compact-task-reads") { return self.inbox(); }
-        self.read_inbox("json_remove(n.raw_json, '$.task.description', '$.task.attachments', '$.task.pullRequests', '$.task.savedContent', '$.task.customFieldValues', '$.task.followers', '$.task.sub_tasks')")
+        self.read_inbox("CASE WHEN json_type(n.raw_json, '$.task')='object' THEN json_set(n.raw_json, '$.task', json_object('id', json_extract(n.raw_json, '$.task.id'), 'title', json_extract(n.raw_json, '$.task.title'), 'ticketNumber', json_extract(n.raw_json, '$.task.ticketNumber'), 'projectId', json_extract(n.raw_json, '$.task.projectId'), 'uniqueIndex', json_extract(n.raw_json, '$.task.uniqueIndex'), 'status', json_extract(n.raw_json, '$.task.status'), 'dueDate', json_extract(n.raw_json, '$.task.dueDate'), 'priority', json_extract(n.raw_json, '$.task.priority'), 'estimate', json_extract(n.raw_json, '$.task.estimate'), 'taskLabels', json_extract(n.raw_json, '$.task.taskLabels'))) ELSE n.raw_json END")
     }
 
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {

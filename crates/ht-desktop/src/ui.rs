@@ -48,6 +48,9 @@ enum Editing {
     ExistingComment,
 }
 
+#[path = "board_viewport.rs"]
+mod board_viewport;
+
 #[path = "memory_owners.rs"]
 mod memory_owners;
 
@@ -857,6 +860,7 @@ impl Desktop {
                 div()
                     .id("board-columns")
                     .track_scroll(&self.board_scroll)
+                    .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
                     .overflow_x_scroll()
                     .flex_1()
                     .min_h_0()
@@ -981,7 +985,7 @@ impl Desktop {
                                             ),
                                     ),
                             )
-                            .child(
+                            .when(self.board_column_visible(i, column_width, board_width), |d| d.child(
                                 list(
                                     self.column_lists[i].clone(),
                                     cx.processor(move |this, row: usize, _, cx| {
@@ -990,7 +994,7 @@ impl Desktop {
                                 )
                                 .flex_1()
                                 .min_h_0(),
-                            )
+                            ))
                             .layout_key(&self.layout, format!("board.column.{i}"), None)
                     })),
             )

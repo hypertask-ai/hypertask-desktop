@@ -4,8 +4,9 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["lazy-theme-fonts", "ht-core/bounded-sync-cache", "ht-core/compact-task-reads"]
+default = ["visible-board-columns", "lazy-theme-fonts", "ht-core/bounded-sync-cache", "ht-core/compact-task-reads"]
 lazy-theme-fonts = []
+visible-board-columns = []
 
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["profiler"] }

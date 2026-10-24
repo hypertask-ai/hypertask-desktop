@@ -24,7 +24,10 @@ remain mandatory. The additional heavy limits are strictly below 100,000,000 byt
   be added to it as if independent.
 - `*-owners.app.json`: exact live/peak *requested Rust allocation* counters, frontend data
   counts, serialized payload lower bounds counted without allocating a second serialized
-  copy, RichText payloads and AI history/open-transcript content. Rust heap also includes
+  copy, retained attachment counts, RichText payloads and AI history/open-transcript content.
+  `DataReads` records the allocator's net live requested-byte delta across the inbox/board
+  reads (not peak/transient reads; concurrent background allocation may contribute).
+  Rust heap also includes
   GPUI text-layout objects; it does not isolate their private layout-cache allocations.
 - `*-owners.store.json`: SQLite cache/schema/statement memory, persisted raw JSON and
   description sizes, and whether the compact-read optimization was compiled in. Persisted
@@ -32,8 +35,8 @@ remain mandatory. The additional heavy limits are strictly below 100,000,000 byt
 - `*-owners.fonts.json`: registered face count and font bytes.
 
 This client currently uses initials, not decoded avatar photos, and its description reader
-is text-only. Source images are 16× their displayed pixel area (avatars 1024², description
-images 2560×1440 versus 640×360), but attributing that hypothetical decoded size to app RAM
+is text-only. Description sources are 16× the declared displayed pixel area
+(2560×1440 versus 640×360); avatar sources are 1024², but attributing that hypothetical decoded size to app RAM
 would be false. The receipt explicitly flags these absent decoders; the image atlas still
 accounts for images the application actually renders (such as the logo). No image quality
 or visible content is reduced to meet the budget.
@@ -42,7 +45,10 @@ or visible content is reduced to meet the budget.
 
 The `compact-task-reads` feature (enabled by the desktop by default) reads only current
 stored title/ticket columns for inbox items and streams board cards with the non-displayed
-HTML description removed *in SQLite before Rust deserialization*. Each card moves into its
+HTML description and hidden attachment/PR/custom-field/follower/subtask bodies removed
+*in SQLite before Rust deserialization*. Inbox rows similarly omit only hidden nested task
+bodies; comment previews, actor photos/identity, split membership and all rendered metadata
+are retained. The full `inbox()` API is unchanged. Each card moves into its
 column instead of keeping a full-board JSON tree plus another cloned card set. Legacy
 same-name section membership, card ordering and all remaining fields are preserved.
 Task details, editing, search, sync and offline persistence still retain full descriptions.
