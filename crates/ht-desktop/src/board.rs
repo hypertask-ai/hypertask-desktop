@@ -625,3 +625,35 @@ mod navigation_tests {
         });
     }
 }
+
+#[cfg(test)]
+mod subtask_property_tests {
+    use super::*;
+    use crate::ui::task_fields::tests::desktop;
+    use serde_json::json;
+    #[gpui::test]
+    fn all_five_subtask_modes_render_web_parent_count_and_child_properties_and_preserve_click_playlist(cx:&mut gpui::TestAppContext){
+        cx.update(crate::input::init);
+        let(view,cx)=cx.add_window_view(|window,cx|desktop(window,cx));
+        for mode in ["None","Flattened_Card","Flattened","Parent","Card"]{
+            view.update_in(cx,|this,_,cx|{
+                this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"user_project_views":[{"unsavedView":{"board_subtask_setting":mode}}]}}],"tasks":[
+                    {"id":1,"projectId":15,"sectionId":10,"ticketNumber":"HT-1","title":"Parent","status":"Normal","subTasks":[{"id":2,"projectId":15,"uniqueIndex":2,"ticketNumber":"HT-2","title":"Child","status":"Normal"},{"id":3,"projectId":15,"uniqueIndex":3,"ticketNumber":"HT-3","title":"Done child","status":"Archive"}]},
+                    {"id":2,"projectId":15,"sectionId":10,"ticketNumber":"HT-2","title":"Child","status":"Normal","parentTask":{"id":1,"ticketNumber":"HT-1","title":"Parent"}},
+                    {"id":3,"projectId":15,"sectionId":10,"title":"Done child","status":"Archive"}
+                ]})).unwrap();this.switch(Screen::Board,cx);
+            });
+            cx.draw(point(px(0.),px(0.)),gpui::size(px(1440.),px(900.)),|_,_|view.clone().into_element());
+            let elements=view.read_with(cx,|this,_|this.layout.as_ref().unwrap().borrow().interaction_elements());
+            let has=|suffix:&str|elements.iter().any(|element|element["key"].as_str().is_some_and(|key|key.ends_with(suffix)));
+            assert_eq!(has(".subtask-count"),mode!="None","{mode}");
+            assert_eq!(has(".parent"),matches!(mode,"Flattened"|"Flattened_Card"),"{mode}");
+            assert_eq!(has(".subtask.0"),matches!(mode,"Card"|"Flattened_Card"),"{mode}");
+            if matches!(mode,"Card"|"Flattened_Card"){
+                let row=elements.iter().find(|element|element["key"]=="board.card.0.subtask.0").unwrap();
+                cx.simulate_click(point(px(row["x"].as_f64().unwrap() as f32+28.),px(row["y"].as_f64().unwrap() as f32+8.)),Default::default());
+                view.read_with(cx,|this,_|{assert_eq!(this.screen,Screen::Task);assert_eq!(this.options.task,1);assert_eq!(this.interaction.playlist,vec![1,2,3]);assert!(this.db.mutations().unwrap().is_empty());});
+            }
+        }
+    }
+}

@@ -71,3 +71,13 @@ fn checkout_cannot_replay_an_uncertain_creation_and_malformed_key_ack_never_succ
     assert_eq!(db.drain_once(&mut web,100).unwrap(),Drain::Retrying(id));assert_eq!(db.drain_once(&mut web,101).unwrap(),Drain::Failed(id));assert_eq!(web.calls.iter().filter(|path|path.ends_with("checkout")).count(),1);assert!(db.take_shell_result(&key).unwrap().unwrap()["error"].as_str().unwrap().contains("uncertain"));
     let body=json!({"teamId":"team","provider":"openai","enabled":false});let id=db.enqueue(Write::Shell{request:ShellWrite::new(42,"POST","/api/teams/byokKeys",Some(body.clone())).unwrap()},102).unwrap();web.status=200;web.path=Some("/api/teams/byokKeys".into());web.body=body;web.reply=json!({"success":true});assert_eq!(db.drain_once(&mut web,102).unwrap(),Drain::Retrying(id));
 }
+
+#[test]
+fn old_account_web_settings_queue_cannot_send_with_an_old_still_valid_bearer() {
+    let mut db=Db::memory().unwrap();db.kv_set("current-user-id","42").unwrap();
+    let body=json!({"teamId":"team","provider":"openai","enabled":false});
+    let id=db.enqueue(Write::Shell{request:ShellWrite::new(42,"POST","/api/teams/byokKeys",Some(body.clone())).unwrap()},100).unwrap();
+    db.kv_set("current-user-id","99").unwrap();
+    let mut web=server();web.path=Some("/api/teams/byokKeys".into());web.body=body;web.reply=json!({"ok":true});
+    assert_eq!(db.drain_once(&mut web,100).unwrap(),Drain::Failed(id));assert_eq!(web.calls,vec!["/user/context"]);
+}

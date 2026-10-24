@@ -1030,6 +1030,10 @@ impl Desktop {
         let title = task.title.clone();
         let id = task.id;
         let archived = task.status == Status::Archive;
+        let settings = self.view_settings();
+        let subtask_mode = settings["board_subtask_setting"].as_str().unwrap_or("Flattened_Card");
+        let subtasks = task.extra.get("subTasks").and_then(|value| value.as_array()).filter(|tasks| !tasks.is_empty());
+        let parent = task.extra.get("parentTask").filter(|task| task.is_object() && matches!(subtask_mode, "Flattened" | "Flattened_Card"));
         let labels = task
             .extra
             .get("labels")
@@ -1104,6 +1108,13 @@ impl Desktop {
                     .flex()
                     .flex_col()
                     .gap(px(6.))
+                    .when_some(parent, |d, parent| {
+                        let text = format!("{}: {}", parent["ticketNumber"].as_str().unwrap_or(""), parent["title"].as_str().unwrap_or(""));
+                        d.child(div().id(("card-parent", id as u64)).flex().gap(px(8.)).p(px(4.)).text_size(px(11.)).text_color(color(t.muted))
+                            .child(icon("corner-left-up", t.muted, 12.)).child(text.clone())
+                            .on_click(cx.listener(move |this, _, _, cx| { cx.stop_propagation(); this.column=column; this.selected=row; this.open_task(id,cx); }))
+                            .layout_key(&self.layout, format!("board.card.{index}.parent"), Some(text)))
+                    })
                     .cursor_pointer()
                     .hover(|d| {
                         d.bg(color(if active {
@@ -1158,6 +1169,7 @@ impl Desktop {
                                         task.ticket_number.clone(),
                                     ),
                             )
+                            .when(subtask_mode != "None", |d| d.when_some(subtasks, |d, tasks| d.child(div().flex().gap(px(4.)).child(icon("corner-left-up", t.muted, 14.)).child(tasks.len().to_string()).layout_key(&self.layout, format!("board.card.{index}.subtask-count"), Some(tasks.len().to_string())))))
                             .child(div().flex_1())
                             .when(id>0,|d|d.child(self.card_controls(id, column, row, cx)))
                             .when(self.inbox.iter().any(|n| n.task_id == Some(id)), |d| {
@@ -1330,6 +1342,19 @@ impl Desktop {
                             ),
                         )
                     })
+                    .when(matches!(subtask_mode, "Flattened_Card" | "Card"), |d| d.when_some(subtasks, |d, tasks| {
+                        let playlist: Vec<_> = std::iter::once(id).chain(tasks.iter().filter_map(|task| task["id"].as_i64())).collect();
+                        d.child(div().flex().flex_col().children(tasks.iter().enumerate().map(|(i, task)| {
+                            let text = format!("{} {}", task["ticketNumber"].as_str().unwrap_or(""), task["title"].as_str().unwrap_or(""));
+                            let playlist=playlist.clone();
+                            div().id(("card-subtask", (index*1000+i) as u64)).flex().items_start().gap(px(8.)).text_size(px(11.)).line_height(px(16.5)).text_color(color(t.muted))
+                                .child(icon("check", if task["status"] == "Archive" {0x008000} else {0x696b6e}, 12.))
+                                .child(div().child(text.clone()).cursor_pointer().on_click(cx.listener(move|this,_,_,cx| {
+                                    cx.stop_propagation();this.column=column;this.selected=row;this.open_task(id,cx);this.interaction.playlist=playlist.clone();
+                                })))
+                                .layout_key(&self.layout, format!("board.card.{index}.subtask.{i}"), Some(text))
+                        })))
+                    }))
                     .layout_key(&self.layout, format!("board.card.{index}"), None),
             )
             .into_any_element()

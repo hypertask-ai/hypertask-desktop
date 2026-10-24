@@ -556,7 +556,7 @@ impl Db {
             let (method, path, body) = request.request();
             match transport.get("/user/context") {
                 Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true => {
-                    if response.body["user"]["id"] == request.user_id {
+                    if response.body["user"]["id"] == request.user_id && (!path.starts_with("/api/") || self.current_user_id() == Some(request.user_id)) {
                         if path == "/api/stripe/session/checkout" {
                             if row.payload_json["attempted"] == true { Ok(Response { status:409, body:json!({"message":"Checkout result uncertain; try again."}) }) }
                             else {

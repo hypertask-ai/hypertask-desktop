@@ -160,6 +160,7 @@ impl AssetSource for Assets {
             "archive-x",
             "clock",
             "circle-check",
+            "check",
             "layers",
             "paperclip",
             "mic",
