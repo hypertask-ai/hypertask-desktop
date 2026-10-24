@@ -246,3 +246,18 @@ fn ranked_web_move_sends_desktop_bearer_and_route_denial_does_not_destroy_login(
         thread.join().unwrap();
     }
 }
+
+#[test]
+fn native_task_creation_routes_send_exact_web_json_and_bearer_on_accept_and_refusal() {
+    for path in ["/api/tasks/create", "/api/tasks/createGlobally"] { for status in [200,401,403] {
+        let (url, thread, receive) = server(status,"{\"newTask\":{\"id\":51}}");
+        let mut http=Http::with_base(&url,"desktop-create-token".into()).unwrap();
+        let body=json!({"projectId":15,"sectionId":10,"section_title":"Todo","title":"é & task","ranking":"A0100","userId":42,"assignees":[]});
+        assert_eq!(http.post(path,&body,"create-key").unwrap().status,status);
+        let request=receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(request.starts_with(&format!("POST {path} HTTP/1.1")));
+        assert!(request.to_lowercase().contains("authorization: bearer desktop-create-token\r\n"));
+        assert_eq!(serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),body);
+        thread.join().unwrap();
+    }}
+}

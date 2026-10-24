@@ -962,6 +962,9 @@ impl Desktop {
                                     .child(div().flex_1())
                                     .child(
                                         div()
+                                            .id(("board-add-task", c.id as u64))
+                                            .cursor_pointer()
+                                            .on_click(cx.listener({ let section = c.id; move |this, _, window, cx| this.start_board_create(section, window, cx) }))
                                             .size(px(10.))
                                             .flex_shrink_0()
                                             .relative()
@@ -990,6 +993,7 @@ impl Desktop {
                                             ),
                                     ),
                             )
+                            .when_some(self.board_create_input(c.id), |d,input|d.child(input))
                             .child(
                                 list(
                                     self.column_lists[i].clone(),

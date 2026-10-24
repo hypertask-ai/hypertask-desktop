@@ -21,6 +21,9 @@ pub(super) struct ReturnTo {
 
 pub(super) struct BoardActions {
     pub search: Entity<TextInput>,
+    create_input: Entity<TextInput>,
+    create_section: Option<i64>,
+    create_pending: Option<String>,
     pub search_text: String,
     pub searching: bool,
     pub project: i64,
@@ -38,7 +41,9 @@ impl BoardActions {
             cx.notify();
         })
         .detach();
+        let create_input = cx.new(|cx| TextInput::new(String::new(), "Task title", color(0x8e9093), cx));
         Self {
+            create_input, create_section: None, create_pending: None,
             search,
             search_text: String::new(),
             searching: false,
@@ -57,6 +62,47 @@ pub(super) fn search_matches(task: &TaskView, query: &str) -> bool {
             .contains(query)
 }
 impl Desktop {
+    pub(super) fn start_board_create(&mut self, section: i64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.board_actions.create_pending.is_some() { return; }
+        self.board_actions.create_section = Some(section);
+        window.focus(&self.board_actions.create_input.focus_handle(cx), cx);
+        cx.notify();
+    }
+    pub(super) fn board_create_input(&self, section: i64) -> Option<AnyElement> {
+        (self.board_actions.create_section == Some(section)).then(|| div().p(px(8.)).child(self.board_actions.create_input.clone()).layout_key(&self.layout, "board.create.input", None).into_any_element())
+    }
+    fn submit_board_create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.board_actions.create_pending.is_some() { return; }
+        let Some(section) = self.board_actions.create_section else { return; };
+        let title = self.board_actions.create_input.read(cx).content.to_string();
+        if title.trim().is_empty() { return; }
+        match self.db.enqueue(Write::CreateTask {project_id:self.options.board,section_id:section,title,top:true},chrono::Utc::now().timestamp()) {
+            Ok(id) => {
+                self.board_actions.create_pending = self.db.mutations().ok().and_then(|rows|rows.into_iter().find(|r|r.id==id)).map(|r|r.client_id);
+                self.reload(); self.request_sync();
+                if !self.options.offline { cx.spawn_in(window, async move |view,cx| {
+                    loop {
+                        cx.background_executor().timer(Duration::from_millis(100)).await;
+                        if !view.update_in(cx, |this,window,cx| this.poll_board_create(window,cx)).unwrap_or(false) {break;}
+                    }
+                }).detach(); }
+            },
+            Err(error) => self.error = Some(error.to_string()),
+        }
+        cx.notify();
+    }
+    pub(super) fn poll_board_create(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(key) = self.board_actions.create_pending.as_ref().map(|key|format!("create-result:{key}")) else {return false;};
+        let Some(value) = self.db.kv_get(&key).ok().flatten().and_then(|s|serde_json::from_str::<serde_json::Value>(&s).ok()) else {return true;};
+        self.board_actions.create_pending = None;
+        self.reload();
+        if value["error"].is_null() {
+            self.board_actions.create_section = None;
+            self.board_actions.create_input.update(cx,|input,cx|input.reset(window,cx));
+            window.focus(&self.focus,cx);
+        }
+        cx.notify(); false
+    }
     pub(super) fn drop_card(&mut self, task: i64, column: usize, before: Option<i64>, cx: &mut Context<Self>) {
         let Some(target) = self.columns.get(column) else { return; };
         let cards: Vec<_> = target.cards.iter().filter(|card| card.id != task).collect();
@@ -116,6 +162,14 @@ impl Desktop {
             return false;
         }
         let key = &event.keystroke;
+        if self.board_actions.create_section.is_some() {
+            match key.key.as_str() {
+                "escape" if self.board_actions.create_pending.is_none() => { self.board_actions.create_section=None; window.focus(&self.focus,cx); cx.notify(); },
+                "enter" => self.submit_board_create(window,cx),
+                _ => return true,
+            }
+            cx.stop_propagation(); return true;
+        }
         let ctrl = key.modifiers.control || key.modifiers.platform;
         if ctrl && key.key == "f" && !key.modifiers.shift && !key.modifiers.alt {
             if self.board_actions.project != self.options.board {
@@ -336,6 +390,49 @@ mod tests {
         let mut cx = VisualTestContext::from_window(view.into(), cx);
         draw(view, &mut cx);
         (view, cx)
+    }
+    #[gpui::test]
+    fn column_add_is_real_inline_input_and_denial_keeps_title_without_phantom_card(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        click(view, &mut cx, "board.column.0.add");
+        cx.simulate_input("New daily task"); cx.simulate_keystrokes("enter enter");
+        view.update(&mut cx,|this,window,cx|{
+            assert_eq!(this.db.mutations().unwrap().len(),1);
+            assert_eq!(this.db.mutations().unwrap()[0].kind,"web_create");
+            assert_eq!(this.columns.iter().map(|c|c.cards.len()).sum::<usize>(),4);
+            struct Denied;
+            impl ht_core::Transport for Denied {
+                fn get(&mut self,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{Ok(ht_core::http::Response{status:200,body:json!({"success":true,"user":{"id":42}})})}
+                fn post(&mut self,path:&str,_:&serde_json::Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{assert_eq!(path,"/api/tasks/create");Ok(ht_core::http::Response{status:403,body:json!({"message":"Forbidden"})})}
+            }
+            this.db.drain_once(&mut Denied,chrono::Utc::now().timestamp()+1).unwrap();
+            assert!(!this.poll_board_create(window,cx));
+            assert_eq!(this.board_actions.create_input.read(cx).content.as_ref(),"New daily task");
+            assert_eq!(this.columns.iter().map(|c|c.cards.len()).sum::<usize>(),3);
+            assert!(this.board_actions.create_section.is_some());
+        }).unwrap();
+        cx.simulate_keystrokes("escape");
+        view.read_with(&mut cx,|this,_|assert!(this.board_actions.create_section.is_none())).unwrap();
+    }
+    #[gpui::test]
+    fn real_card_drag_to_another_column_queues_ranked_web_move_without_opening_task(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        let source=crate::ui::shell::tests::measured(view,&mut cx,"board.card.0.title");
+        let target=crate::ui::shell::tests::measured(view,&mut cx,"board.column.1");
+        let from=point(px(source["x"].as_f64().unwrap() as f32+20.),px(source["y"].as_f64().unwrap() as f32+5.));
+        let to=point(px(target["x"].as_f64().unwrap() as f32+80.),px(target["y"].as_f64().unwrap() as f32+400.));
+        cx.simulate_mouse_down(from,MouseButton::Left,Default::default());
+        cx.simulate_mouse_move(point(from.x+px(10.),from.y+px(10.)),MouseButton::Left,Default::default());
+        draw(view,&mut cx);
+        cx.simulate_mouse_move(to,MouseButton::Left,Default::default());
+        draw(view,&mut cx);
+        cx.simulate_mouse_up(to,MouseButton::Left,Default::default());
+        view.read_with(&mut cx,|this,_|{
+            assert_eq!(this.screen,Screen::Board);
+            let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),1);
+            assert_eq!(rows[0].payload_json["change"]["PositionTask"]["section"],11);
+            assert_eq!(this.db.task(1).unwrap().unwrap().section_id,Some(11));
+        }).unwrap();
     }
     #[gpui::test]
     fn board_checkbox_selects_without_opening_and_card_click_preserves_selection(

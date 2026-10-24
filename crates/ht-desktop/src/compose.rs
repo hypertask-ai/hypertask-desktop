@@ -348,9 +348,8 @@ impl Desktop {
         };
         self.compose.pending = None;
         if let Some(error) = value["error"].as_str() {
-            self.compose.error = Some(format!(
-                "Couldn’t create the task ({error}). Your note is still here."
-            ));
+            let _ = error;
+            self.compose.error = Some("Couldn’t create the task. Your note is still here. Try again.".into());
         } else if let Some(id) = value["tasks"][0]["id"].as_i64() {
             let _ = self
                 .db

@@ -276,24 +276,24 @@ pub(crate) fn compose(
             tasks.push(task);
             continue;
         }
-        let mut body = json!({"project_id":project["id"],"section_id":prepared["placement"]["sectionId"],"title":draft.title,"description":draft.description});
-        if let Some(priority) = draft.priority {
-            body["priority"] = json!(priority);
-        }
-        if let Some(estimate) = draft.estimate {
-            body["estimate"] = json!(estimate);
-        }
-        if let Some(date) = &draft.due_date {
-            body["due_date"] = json!(date);
-        }
-        if !draft.labels.is_empty() {
-            body["labels"] = json!(draft.labels);
-        }
-        // Stable per-draft key and frozen body allow a lost create acknowledgement to be replayed safely.
-        let response = transport.post("/tasks/create", &body, &format!("{key}-{index}"))?;
-        if response.status == 409 {
-            return Err(TransportError::Timeout);
-        }
+        let mut body = crate::task_create::view_defaults(project);
+        body["userId"] = payload["user_id"].clone(); body["projectId"] = project["id"].clone();
+        body["projectIdentifier"] = project.get("uniqueIdentifier").filter(|v|!v.is_null()).cloned().unwrap_or(json!("TASK"));
+        body["sectionId"] = prepared["placement"]["sectionId"].clone(); body["section_title"] = prepared["placement"]["section"].clone();
+        body["ranking"] = prepared["placement"]["ranking"].clone(); body["title"] = json!(draft.title); body["description"] = json!(draft.description);
+        body["fullScreenTask"] = json!(true); body["requestKind"] = json!("compose-task");
+        if body["priority"].is_null() { if let Some(value) = draft.priority.and_then(crate::task_create::priority) {body["priority"]=value;} }
+        if body["estimate"].is_null() { if let Some(value) = draft.estimate.and_then(crate::task_create::estimate) {body["estimate"]=value;} }
+        if let Some(date) = &draft.due_date { body["writerDueDate"] = json!(date); body["writerTimeZone"] = payload["time_zone"].clone(); }
+        if !draft.labels.is_empty() && body["tags"].as_array().is_none_or(|tags|tags.is_empty()) { body["writerLabelIds"] = json!(draft.labels); }
+        let sent_key = format!("compose-sent:{key}:{index}");
+        if db.kv_get(&sent_key).ok().flatten().is_some() { return refused(409); }
+        db.kv_set(&sent_key, "true").map_err(|_|TransportError::InvalidResponse)?;
+        let response = match transport.post("/api/tasks/createGlobally", &body, &format!("{key}-{index}")) {
+            Ok(response) => response,
+            Err(_) => return refused(409),
+        };
+        if response.status == 409 { return refused(409); }
         if !(200..300).contains(&response.status) {
             if crate::queue::permanent(response.status) && !tasks.is_empty() {
                 failed_titles = drafts[index..]
@@ -304,8 +304,8 @@ pub(crate) fn compose(
             }
             return Ok(response);
         }
-        let task = &response.body["task"];
-        if response.body["success"] != true || task["id"].as_i64().is_none_or(|id| id <= 0) {
+        let task = &response.body["newTask"];
+        if task["id"].as_i64().is_none_or(|id| id <= 0) {
             return Err(TransportError::InvalidResponse);
         }
         db.kv_set(&receipt_key, &task.to_string())

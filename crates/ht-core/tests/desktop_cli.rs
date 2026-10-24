@@ -77,9 +77,9 @@ impl Transport for Server {
                     json!({"tasks":[{"title":"Written","description":"<p>Body</p>"}]})
                 },
             }),
-            "/tasks/create" => {
-                assert_eq!(body["project_id"], 7283);
-                assert_eq!(body["section_id"], 11);
+            "/api/tasks/createGlobally" => {
+                assert_eq!(body["projectId"], 7283);
+                assert_eq!(body["sectionId"], 11);
                 if self.create_failure {
                     self.create_failure = false;
                     return Err(TransportError::Timeout);
@@ -93,7 +93,7 @@ impl Transport for Server {
                 }
                 Ok(Response {
                     status: 200,
-                    body: json!({"success":true,"task":{"id":9+index,"title":body["title"],"description":body["description"],"projectId":7283,"status":"Normal"}}),
+                    body: json!({"newTask":{"id":9+index,"title":body["title"],"description":body["description"],"projectId":7283,"status":"Normal"}}),
                 })
             }
             "/api/savedContent/toggleSaved" => {
@@ -128,14 +128,10 @@ fn compose_writer_defaults_and_create_are_real_durable_queue_operations() {
         .unwrap();
     let key = db.mutations().unwrap()[0].client_id.clone();
     let mut server = Server {
-        create_failure: true,
+        create_failure: false,
         ..Default::default()
     };
-    assert_eq!(
-        db.drain_once(&mut server, 100).unwrap(),
-        Drain::Retrying(id)
-    );
-    assert_eq!(db.drain_once(&mut server, 101).unwrap(), Drain::Applied(id));
+    assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Applied(id));
     assert_eq!(
         server
             .calls
@@ -147,10 +143,13 @@ fn compose_writer_defaults_and_create_are_real_durable_queue_operations() {
     let creates: Vec<_> = server
         .calls
         .iter()
-        .filter(|c| c.0 == "/tasks/create")
+        .filter(|c| c.0 == "/api/tasks/createGlobally")
         .collect();
-    assert_eq!(creates.len(), 2);
-    assert_eq!(creates[0], creates[1]);
+    assert_eq!(creates.len(), 1);
+    assert_eq!(creates[0].1["section_title"], "Todo");
+    assert_eq!(creates[0].1["ranking"], "a");
+    assert_eq!(creates[0].1["fullScreenTask"], true);
+    assert_eq!(creates[0].1["requestKind"], "compose-task");
     assert_eq!(db.task(9).unwrap().unwrap().title, "Written");
     let result: Value = serde_json::from_str(
         &db.kv_get(&format!("compose-result:{key}"))
@@ -183,7 +182,7 @@ fn unavailable_writer_falls_back_to_original_note_like_web_not_an_empty_task() {
     let create = &server
         .calls
         .iter()
-        .find(|c| c.0 == "/tasks/create")
+        .find(|c| c.0 == "/api/tasks/createGlobally")
         .unwrap()
         .1;
     assert_eq!(create["title"], "é & note\nnext");
@@ -291,7 +290,7 @@ fn rust_writes_production_contract_requests_without_credentials() {
 }
 
 #[test]
-fn compose_frozen_payload_and_comment_toggle_safety_survive_restart() {
+fn compose_uncertain_create_and_comment_toggle_are_not_replayed_after_restart() {
     let file = tempfile::NamedTempFile::new().unwrap();
     let mut db = Db::open(file.path()).unwrap();
     seed(&mut db);
@@ -311,11 +310,12 @@ fn compose_frozen_payload_and_comment_toggle_safety_survive_restart() {
     };
     assert_eq!(
         db.drain_once(&mut server, 100).unwrap(),
-        Drain::Retrying(id)
+        Drain::Failed(id)
     );
     drop(db);
     let mut db = Db::open(file.path()).unwrap();
-    assert_eq!(db.drain_once(&mut server, 101).unwrap(), Drain::Applied(id));
+    assert_eq!(db.drain_once(&mut server, 101).unwrap(), Drain::Empty);
+    assert_eq!(server.calls.iter().filter(|c|c.0 == "/api/tasks/createGlobally").count(),1);
     assert_eq!(
         server
             .calls
@@ -374,7 +374,7 @@ fn split_writer_saves_each_ticket_and_reports_partial_failure_without_duplicate_
             server
                 .calls
                 .iter()
-                .filter(|c| c.0 == "/tasks/create")
+                .filter(|c| c.0 == "/api/tasks/createGlobally")
                 .count(),
             2
         );
