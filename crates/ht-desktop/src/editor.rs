@@ -16,7 +16,7 @@ pub(super) struct EditorState {
     ai_menu: bool,
     pub(super) dragging: Option<Vec<usize>>,
     job: Option<(i64, i64)>,
-    capture: Capture,
+    pub(super) capture: Capture,
 }
 #[derive(Clone)]
 struct Dialog {
@@ -1552,7 +1552,7 @@ mod tests {
             let pos=center("editor-ai-toggle",cx);cx.simulate_click(pos,Default::default());cx.run_until_parked();
             let pos=center(&format!("ai-command-{i}"),cx);cx.simulate_click(pos,Default::default());
             view.read_with(cx,|input,_|{assert_eq!(input.selected_range,0..5);assert!(!input.editor.as_ref().unwrap().ai_menu);assert_eq!(input.html(),"<p>Whole <strong>é🙂</strong> draft</p>");});
-            let events=events.borrow();let EditorRequest::Improve{command:actual,html}=events.last().unwrap();assert_eq!(actual,command);assert_eq!(html,"<p>Whole <strong>é🙂</strong> draft</p>");
+            let events=events.borrow();let EditorRequest::Improve{command:actual,html}=events.last().unwrap();assert_eq!(*actual,*command);assert_eq!(html,"<p>Whole <strong>é🙂</strong> draft</p>");
         }
     }
     #[gpui::test]

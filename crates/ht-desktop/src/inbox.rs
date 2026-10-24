@@ -620,3 +620,31 @@ mod tests {
         }
     }
 }
+
+#[cfg(test)]
+mod composer_tests {
+    use super::*;
+    use crate::ui::shell::tests::{click,draw};
+    use gpui::{VisualTestContext,WindowHandle};
+    use serde_json::json;
+    #[gpui::test]
+    fn composer_snooze_and_remove_notification_are_real_buttons_without_comment_writes(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        for snooze in [true,false] {
+            let view:WindowHandle<Desktop>=cx.add_window(|window,cx|{
+                let mut db=Db::memory().unwrap();db.kv_set("current-user-id","42").unwrap();
+                db.apply_response(&json!({"success":true,"tasks":[{"id":1,"projectId":15,"title":"First","status":"Normal"},{"id":2,"projectId":15,"title":"Next","status":"Normal"}],"user_notifications":[{"id":101,"taskId":1,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-02T00:00:00Z"},{"id":102,"taskId":2,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
+                let options=Options::parse(["--offline","--screen","inbox","--task","1","--board","15"].map(String::from)).unwrap();
+                let mut v=Desktop::new(db,options,window,cx);v.split=v.splits.iter().position(|s|s=="All").unwrap();v.filter_inbox();v.open_task(1,cx);
+                v.layout=Some(Rc::new(RefCell::new(LayoutDump::default())));v.ready_scheduled=true;v
+            });
+            let mut cx=VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
+            click(view,&mut cx,if snooze{"task.composer.snooze"}else{"task.composer.remove-notification"});
+            if snooze {
+                view.read_with(&mut cx,|this,_|{assert_eq!(this.inbox_actions.reminder.as_ref().unwrap().ids,vec![101]);assert!(this.db.mutations().unwrap().is_empty());}).unwrap();
+                cx.simulate_keystrokes("enter");
+            }
+            view.read_with(&mut cx,|this,_|{assert_eq!(this.options.task,2);let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0].kind,if snooze{"inbox_remind"}else{"inbox_archive"});assert_eq!(rows[0].payload_json["notification_ids"],json!([101]));}).unwrap();
+        }
+    }
+}

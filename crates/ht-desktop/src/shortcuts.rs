@@ -318,6 +318,6 @@ mod tests {
             assert_eq!(key("ctrl-alt-enter", screen, true), None);
         }
         assert_eq!(key("cmd-d", Screen::Task, false), None);
-        assert_eq!(key("shift-h", Screen::Inbox, false), Some(BulkRemind));
+        assert_eq!(key("shift-h", Screen::Inbox, false), Some(Action::BulkRemind));
     }
 }
