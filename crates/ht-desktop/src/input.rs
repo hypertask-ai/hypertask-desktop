@@ -35,6 +35,7 @@ impl TextInput {
     pub fn read_only_comment(mut self, html: &str, cx: &mut Context<Self>) -> Self {
         self=self.multiline_editor();self.set_html(html,cx);self.read_only=true;self
     }
+    pub fn has_selection(&self) -> bool { !self.selected_range.is_empty() }
     fn quote_selection(&mut self, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {return;}
         if let Some(editor)=&self.editor {

@@ -118,13 +118,15 @@ impl Desktop {
         let Some((_,remind_at))=self.reminder_choices(cx).get(index).cloned() else {return;};
         let Some(reminder)=self.inbox_actions.reminder.as_ref() else {return;};
         let ids=reminder.ids.clone();
-        if self.enqueue(Write::InboxRemind{notification_ids:ids.clone(),remind_at:remind_at.clone()},cx) {
-            let _=self.db.kv_set("inbox-last-reminder",&remind_at);
-            for id in ids { self.interaction.bulk.remove(&id); }
-            self.inbox_actions.reminder=None;
-            window.focus(&self.focus,cx);
-            if self.screen==Screen::Task && self.previous==Screen::Inbox {self.playlist_step(1,cx);}
+        for chunk in ids.chunks(100) {
+            if !self.enqueue(Write::InboxRemind{notification_ids:chunk.to_vec(),remind_at:remind_at.clone()},cx) {return;}
+            for id in chunk {self.interaction.bulk.remove(id);}
+            if let Some(reminder)=&mut self.inbox_actions.reminder {reminder.ids.retain(|id|!chunk.contains(id));}
         }
+        let _=self.db.kv_set("inbox-last-reminder",&remind_at);
+        self.inbox_actions.reminder=None;
+        window.focus(&self.focus,cx);
+        if self.screen==Screen::Task && self.previous==Screen::Inbox {self.playlist_step(1,cx);}
     }
     pub(super) fn inbox_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
         let key=&event.keystroke;

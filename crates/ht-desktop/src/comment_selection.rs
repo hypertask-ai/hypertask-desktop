@@ -34,7 +34,7 @@ impl Desktop {
         let key=&event.keystroke;
         if key.key=="k" && (key.modifiers.control||key.modifiers.platform) {return false;}
         if key.key=="escape" {window.focus(&self.focus,cx);cx.stop_propagation();cx.notify();}
-        let _=reader;
+        if !reader.read(cx).has_selection() && key.key!="escape" {return false;}
         true
     }
 }

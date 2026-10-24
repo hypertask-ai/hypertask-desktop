@@ -443,7 +443,11 @@ impl Db {
                 db.fail_editor(row.id,&row.kind,&row.payload_json,&result.1)?;
                 if matches!(row.kind.as_str(), "inbox_seen" | "inbox_remind") {
                     for before in row.payload_json["before"].as_array().context("missing inbox rollback")? {
-                        db.upsert("Notification", before)?;
+                        let mut current = db.raw("Notification", &before["id"])?.context("notification is not cached")?;
+                        // Upserts merge missing fields: explicitly clear optimistic fields absent in the snapshot.
+                        let fields = if row.kind == "inbox_seen" { ["seen", "unreadCount"] } else { ["status", "archivedAt"] };
+                        for field in fields { current[field] = before[field].clone(); }
+                        db.upsert("Notification", &current)?;
                     }
                     db.reapply_pending()?;
                 }
