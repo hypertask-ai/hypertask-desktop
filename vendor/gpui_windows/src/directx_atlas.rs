@@ -168,7 +168,13 @@ impl DirectXAtlasTextures {
             AtlasTextureKind::Polychrome => &self.polychrome_textures,
             AtlasTextureKind::Subpixel => &self.subpixel_textures,
         };
-        let edge = (256 << textures.textures.iter().flatten().count().min(2)) as i32;
+        // Keep ClearType glyph positions unchanged: repacking can change a
+        // filtered channel by one quantization level even with identical glyphs.
+        let edge = if kind == AtlasTextureKind::Subpixel {
+            1024
+        } else {
+            (256 << textures.textures.iter().flatten().count().min(2)) as i32
+        };
         let default_size = Size {
             width: DevicePixels(edge),
             height: DevicePixels(edge),
@@ -410,6 +416,13 @@ mod tests {
             unsafe { texture.texture.GetDesc(&mut desc) };
             assert_eq!((desc.Width, desc.Height), (edge, edge));
         }
+        let texture = lock.backend.push_texture(
+            Size { width: DevicePixels(64), height: DevicePixels(64) },
+            AtlasTextureKind::Subpixel,
+        ).expect("unchanged ClearType atlas");
+        let mut desc = D3D11_TEXTURE2D_DESC::default();
+        unsafe { texture.texture.GetDesc(&mut desc) };
+        assert_eq!((desc.Width, desc.Height), (1024, 1024));
         let texture = lock.backend.push_texture(
             Size { width: DevicePixels(1500), height: DevicePixels(1200) },
             AtlasTextureKind::Monochrome,
