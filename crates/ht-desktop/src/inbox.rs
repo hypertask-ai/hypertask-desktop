@@ -638,6 +638,18 @@ mod tests {
         cx.simulate_keystrokes("ctrl-r");
         view.read_with(&mut cx,|this,cx|{assert_eq!(this.options.task,2);assert!(this.editing==Editing::Comment);assert_eq!(this.db.mutations().unwrap()[1].kind,"inbox_seen");assert!(!this.comment_input.read(cx).content.contains("101"));}).unwrap();
     }
+    #[gpui::test]
+    fn bulk_remind_over_one_hundred_rows_queues_bounded_requests_without_dropping_selection(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view,cx)=cx.add_window_view(|window,cx|{let mut v=desktop(window,cx);seed(&mut v);v});
+        view.update_in(cx,|this,window,cx|{
+            let notifications=(1..=101).map(|id|json!({"id":id,"taskId":id+1000,"projectId":15,"status":"Normal","seen":false,"createdAt":"2026-01-01T00:00:00Z"})).collect::<Vec<_>>();
+            this.db.apply_response(&json!({"success":true,"user_notifications":notifications})).unwrap();this.reload();
+            this.interaction.bulk=(1..=101).collect();this.run_shortcut(Action::BulkRemind,window,cx);
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx,|this,_|{let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),2);assert_eq!(rows.iter().map(|m|m.payload_json["notification_ids"].as_array().unwrap().len()).collect::<Vec<_>>(),vec![100,1]);assert!(this.interaction.bulk.is_empty());assert!(this.inbox_actions.reminder.is_none());});
+    }
     #[test]
     fn reminder_presets_match_web_local_hours_week_boundary_and_two_week_nine_am() {
         for hour in [0,8,9,16,17,20,21,23] {
