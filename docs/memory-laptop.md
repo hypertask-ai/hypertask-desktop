@@ -91,7 +91,11 @@ a successful one-shot receipt for every sample, and median working sets at 8 s
 and after a real restore/maximize cycle plus 22 further seconds. Warm residency
 must remain at least 10% below control on every screen; private commit must not
 regress by more than 5%. Each restore and maximize must update the actual renderer receipt, and final
-geometry must match. This does not prove interactive navigation latency.
+geometry must match. Warm screenshots are captured after settling, and must
+match between builds after the identical resize interaction. They are not
+compared with the pre-resize state: resizing legitimately changes chat scroll
+anchors (for example the existing jump-to-bottom indicator). Warm resident
+maps are also captured, after the independent warm counters. This does not prove interactive navigation latency.
 The initial external force-render message was rejected by GPUI's validation
 token; its apparently successful CI run is not accepted as warm-render proof.
 

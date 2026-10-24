@@ -44,11 +44,14 @@ for screen in ('inbox', 'board', 'task'):
     # No shrinking textures, altering buffers or fonts to pass the residency gate.
     for suffix in ('', '.fonts'):
         assert load(current / f'{screen}-3-owners{suffix}.json') == load(control / f'{screen}-3-owners{suffix}.json')
-    with Image.open(current / f'{screen}.png') as early, Image.open(current / f'{screen}-warm.png') as warm:
-        assert early.size == warm.size
-        assert ImageChops.difference(early.convert('RGB'), warm.convert('RGB')).getbbox() is None
+    # Resizing legitimately changes scroll-anchor state; compare the identical
+    # interaction on both builds, never an early state with a later state.
+    with Image.open(control / f'{screen}-warm.png') as before_image, Image.open(current / f'{screen}-warm.png') as after_image:
+        assert before_image.size == after_image.size
+        assert ImageChops.difference(before_image.convert('RGB'), after_image.convert('RGB')).getbbox() is None, f'{screen}: warm pixels changed between builds'
+    print(f'MEM4_WARM_VISUAL_IDENTICAL {screen}')
     for label, folder in [('before', control), ('after', current)]:
-        snapshot = load(folder / f'{screen}-inspection.json')
+        snapshot = load(folder / f'{screen}-warm-inspection.json')
         totals = {key: sum(r[key] for r in snapshot['Regions']) for key in
                   ('ResidentBytes', 'PrivateResidentBytes', 'ShareableResidentBytes', 'SharedResidentBytes')}
         assert totals['ResidentBytes'] == totals['PrivateResidentBytes'] + totals['ShareableResidentBytes']

@@ -147,6 +147,12 @@ foreach ($round in 1..3) {
                 if ($warmRect.Right -ne $rect.Right -or $warmRect.Bottom -ne $rect.Bottom) { throw 'Warm geometry changed' }
                 $rows[-1] | Add-Member -NotePropertyName WarmRestoreMaximizeMilliseconds -NotePropertyValue $renderTime.Elapsed.TotalMilliseconds
                 $rows[-1] | Add-Member -NotePropertyName WarmRendererReceiptUpdated -NotePropertyValue $true
+                # The first resized frame can still contain the restored-size
+                # surface. Capture only after the final maximized frame settles.
+                Start-Sleep -Seconds 22
+                $p.Refresh()
+                $rows[-1] | Add-Member -NotePropertyName WarmWorkingSet64 -NotePropertyValue $p.WorkingSet64
+                $rows[-1] | Add-Member -NotePropertyName WarmPrivateMemorySize64 -NotePropertyValue $p.PrivateMemorySize64
                 $bmp = New-Object System.Drawing.Bitmap ($rect.Right), ($rect.Bottom)
                 $g = [System.Drawing.Graphics]::FromImage($bmp)
                 $dc = $g.GetHdc()
@@ -155,10 +161,10 @@ foreach ($round in 1..3) {
                 } finally { $g.ReleaseHdc($dc) }
                 if ($round -eq 3) { $bmp.Save((Join-Path $Out "$screen-warm.png")) }
                 $g.Dispose(); $bmp.Dispose()
-                Start-Sleep -Seconds 22
-                $p.Refresh()
-                $rows[-1] | Add-Member -NotePropertyName WarmWorkingSet64 -NotePropertyValue $p.WorkingSet64
-                $rows[-1] | Add-Member -NotePropertyName WarmPrivateMemorySize64 -NotePropertyValue $p.PrivateMemorySize64
+                if ($round -eq 3) {
+                    & "$PSScriptRoot/windows-memory-inspect.ps1" -ProcessId $p.Id |
+                        Set-Content (Join-Path $Out "$screen-warm-inspection.json") -Encoding UTF8
+                }
             }
         } finally {
             Remove-Item Env:GPUI_MEMORY_RECEIPT -ErrorAction SilentlyContinue
