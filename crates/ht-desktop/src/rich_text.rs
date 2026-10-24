@@ -100,7 +100,7 @@ impl RichText {
             for span in &b.spans {
                 let range = at..at + span.text.len();
                 let mut style = mark_style(&span.marks, theme);
-                if b.tag.name.starts_with('h') {
+                if matches!(b.tag.name.as_str(), "h1" | "h2" | "h3") {
                     style.font_weight = Some(if b.tag.name == "h3" {
                         FontWeight::MEDIUM
                     } else {
@@ -181,7 +181,9 @@ impl RichText {
                     .when(i > 0, |d| d.mt(px(6.3)))
                     .when(b.depth > 0, |d| d.ml(px(16. * b.depth as f32)))
                     .when(b.quote, |d| {
-                        d.border_l_2().border_color(color(0x515050)).pl(px(16.))
+                        d.border_l(px(3.))
+                            .border_color(gpui::rgba(0xffffff80))
+                            .pl(px(16.))
                     })
                     .when(b.code, |d| {
                         d.p(px(16.)).bg(color(b.background)).rounded(px(4.))

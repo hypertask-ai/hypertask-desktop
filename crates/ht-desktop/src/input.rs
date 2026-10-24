@@ -138,6 +138,9 @@ impl TextInput {
     }
 
     fn vertical(&mut self, direction: isize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.editor_navigate(direction, cx) {
+            return;
+        }
         if !self.multiline {
             cx.propagate();
             return;
@@ -260,6 +263,9 @@ impl TextInput {
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
+            if self.paste_link(&text, window, cx) {
+                return;
+            }
             let text = if self.multiline {
                 text.replace("\r\n", "\n")
             } else {
@@ -497,6 +503,7 @@ impl EntityInputHandler for TextInput {
         self.selection_reversed = false;
         self.marked_range.take();
         self.update_slash(range.start, new_text);
+        self.autolink(new_text);
         window.notify_text_input_changed(&self.focus_handle);
         cx.notify();
     }
@@ -848,8 +855,8 @@ impl Element for TextElement {
             }
             if row.quote {
                 decorations.push(fill(
-                    Bounds::new(point(left - px(16.), top), size(px(2.), line_height)),
-                    rgba(0x515050ff),
+                    Bounds::new(point(left - px(16.), top), size(px(3.), line_height)),
+                    rgba(0xffffff80),
                 ));
             }
             if !row.prefix.is_empty() {
@@ -969,10 +976,11 @@ impl Element for TextElement {
 
 impl Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
-        let menu = self.editor_menu(cx);
+        let menu = self.editor_menu(_window, cx);
         div()
             .flex()
             .flex_col()
+            .relative()
             .key_context(if self.editor_newlines {
                 "TextInput MultilineEditor"
             } else {
@@ -1017,10 +1025,12 @@ impl Render for TextInput {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .w_full()
-            .overflow_hidden()
             .line_height(px(24.))
             .child(TextElement { input: cx.entity() })
-            .children(menu)
+            .children(
+                menu.into_iter()
+                    .map(|menu| gpui::deferred(menu).with_priority(1)),
+            )
     }
 }
 

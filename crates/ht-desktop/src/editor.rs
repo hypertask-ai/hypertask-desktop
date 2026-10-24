@@ -11,6 +11,7 @@ pub(super) struct EditorState {
     scroll: ScrollHandle,
     dialog: Option<Dialog>,
     pub comment: bool,
+    palette: bool,
 }
 #[derive(Clone)]
 struct Dialog {
@@ -104,6 +105,7 @@ impl EditorState {
             scroll: ScrollHandle::new(),
             dialog: None,
             comment: false,
+            palette: false,
         }
     }
 }
@@ -215,6 +217,9 @@ impl TextInput {
                     .marks
                     .clone()
                     .unwrap_or_else(|| e.document.marks_at(range.start));
+                if name != "code" && marks.iter().any(|m| m.name == "code") {
+                    return;
+                }
                 let enabled = set || !marks.iter().any(|m| m.name == name);
                 marks.retain(|m| m.name != name && (name != "code" || !enabled));
                 if enabled {
@@ -240,7 +245,11 @@ impl TextInput {
                 e.marks = None;
             }
         } else {
-            e.document.format(range, format);
+            if set && format == Format::CodeBlock {
+                self.selected_range = e.document.code_block(range);
+            } else {
+                e.document.format(range, format);
+            }
             e.marks = None;
         }
         self.content = e.document.text().into();
@@ -276,10 +285,34 @@ impl TextInput {
             Command::Emoji => self.open_editor_dialog(DialogKind::Emoji, window, cx),
         }
     }
+    pub(super) fn editor_navigate(&mut self, direction: isize, cx: &mut Context<Self>) -> bool {
+        let count = self.slash_items().len();
+        if count == 0 {
+            return false;
+        }
+        let e = self.editor.as_mut().unwrap();
+        e.choice = (e.choice as isize + direction).rem_euclid(count as isize) as usize;
+        e.scroll.scroll_to_item(e.choice);
+        cx.notify();
+        true
+    }
     pub(super) fn editor_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if self.editor.is_none() {
             return false;
         }
+        if let Some(dialog) = self.editor.as_ref().and_then(|e| e.dialog.clone()) {
+            let emoji = if dialog.kind == DialogKind::Emoji {
+                crate::emoji::emojis(dialog.input.read(cx).content.as_ref())
+                    .first()
+                    .and_then(|e| e["emoji"].as_str())
+                    .map(str::to_owned)
+            } else {
+                None
+            };
+            self.finish_editor_dialog(emoji, window, cx);
+            return true;
+        }
+
         if !self.slash_items().is_empty() {
             let items = self.slash_items();
             let choice = self.editor.as_ref().unwrap().choice.min(items.len() - 1);
@@ -297,6 +330,71 @@ impl TextInput {
         window.notify_text_input_changed(&self.focus_handle);
         cx.notify();
         true
+    }
+    fn highlight_color(&mut self, color: &str, window: &mut Window, cx: &mut Context<Self>) {
+        self.remember_edit();
+        let range = self.selected_range.clone();
+        let e = self.editor.as_mut().unwrap();
+        let current = e.document.has_mark(range.clone(), "mark")
+            && e.document.marks_at(range.start).iter().any(|m| {
+                m.name == "mark" && m.attrs.iter().any(|(k, v)| k == "data-color" && v == color)
+            });
+        e.document.set_mark(
+            range,
+            Tag {
+                name: "mark".into(),
+                attrs: vec![
+                    ("data-color".into(), color.into()),
+                    (
+                        "style".into(),
+                        format!("background-color: {color}; color: inherit"),
+                    ),
+                ],
+            },
+            !current,
+        );
+        window.notify_text_input_changed(&self.focus_handle);
+        cx.notify();
+    }
+    pub(super) fn paste_link(
+        &mut self,
+        text: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
+        if self.editor.is_none() || self.selected_range.is_empty() {
+            return false;
+        }
+        let Some(href) = autolink_url(text) else {
+            return false;
+        };
+        self.remember_edit();
+        self.editor
+            .as_mut()
+            .unwrap()
+            .document
+            .link(self.selected_range.clone(), &href);
+        window.notify_text_input_changed(&self.focus_handle);
+        cx.notify();
+        true
+    }
+    pub(super) fn autolink(&mut self, inserted: &str) {
+        let Some(e) = &mut self.editor else {
+            return;
+        };
+        if !inserted.chars().any(char::is_whitespace) && !inserted.contains("://") {
+            return;
+        }
+        let mut at = 0;
+        for word in self.content.split_inclusive(char::is_whitespace) {
+            let trimmed = word.trim_end().trim_end_matches([',', '.', '!', ';', ':']);
+            if let Some(href) = autolink_url(trimmed) {
+                if !e.document.marks_at(at).iter().any(|m| m.name == "code") {
+                    e.document.link(at..at + trimmed.len(), &href);
+                }
+            }
+            at += word.len();
+        }
     }
     fn open_editor_dialog(
         &mut self,
@@ -371,7 +469,25 @@ impl TextInput {
                 let Some(emoji) = emoji else {
                     return;
                 };
+                let start = self.selected_range.start;
                 self.replace_text_in_range(None, &emoji, window, cx);
+                if let Some(item) = crate::emoji::emojis("")
+                    .into_iter()
+                    .find(|e| e["emoji"].as_str() == Some(&emoji))
+                {
+                    let name = item["id"].as_str().unwrap();
+                    self.editor.as_mut().unwrap().document.set_mark(
+                        start..start + emoji.len(),
+                        Tag {
+                            name: "span".into(),
+                            attrs: vec![
+                                ("data-name".into(), name.into()),
+                                ("data-type".into(), "emoji".into()),
+                            ],
+                        },
+                        true,
+                    );
+                }
             }
         }
         self.close_editor_dialog(window, cx);
@@ -472,9 +588,34 @@ impl TextInput {
             cx.stop_propagation();
         }
     }
-    pub(super) fn editor_menu(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn editor_menu(&self, window: &Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let Some(e) = &self.editor else {
             return vec![];
+        };
+        if !self.focus_handle.is_focused(window)
+            && !e
+                .dialog
+                .as_ref()
+                .is_some_and(|d| d.input.focus_handle(cx).is_focused(window))
+        {
+            return vec![];
+        }
+        let theme = crate::theme::THEMES[if window.text_style().color.l > 0.5 {
+            1
+        } else {
+            0
+        }];
+        let top = self.last_layout.as_ref().map_or(px(0.), |l| {
+            let row = l.row(self.cursor_offset().min(l.text.len()));
+            l.rows[row].top + l.rows[row].height
+        });
+        let top = if self
+            .last_bounds
+            .is_some_and(|b| b.top() + top + px(320.) > window.viewport_size().height)
+        {
+            (top - px(320.)).max(px(0.))
+        } else {
+            top
         };
         let mut out = vec![];
         if let Some(dialog) = &e.dialog {
@@ -486,8 +627,8 @@ impl TextInput {
             let mut body = div()
                 .id("editor-dialog")
                 .p(px(12.))
-                .bg(rgba(0x333b47ff))
-                .text_color(gpui::white())
+                .bg(crate::theme::color(theme.comment))
+                .text_color(crate::theme::color(theme.text))
                 .flex()
                 .flex_col()
                 .gap(px(8.))
@@ -524,7 +665,11 @@ impl TextInput {
                     div()
                         .id("editor-dialog-confirm")
                         .cursor_pointer()
-                        .child("OK")
+                        .child(if dialog.kind == DialogKind::Link {
+                            format!("Link to \"{}\"", dialog.input.read(cx).content)
+                        } else {
+                            "OK".into()
+                        })
                         .on_mouse_down(
                             MouseButton::Left,
                             cx.listener(|this, _, window, cx| {
@@ -534,7 +679,14 @@ impl TextInput {
                         ),
                 );
             }
-            return vec![body.into_any_element()];
+            return vec![
+                body.absolute()
+                    .left_0()
+                    .top(top)
+                    .w(px(360.))
+                    .shadow_md()
+                    .into_any_element(),
+            ];
         }
         let items = self.slash_items();
         if !items.is_empty() {
@@ -544,8 +696,8 @@ impl TextInput {
                 .overflow_y_scroll()
                 .track_scroll(&e.scroll)
                 .p(px(8.))
-                .bg(rgba(0x333b47ff))
-                .text_color(gpui::white())
+                .bg(crate::theme::color(theme.comment))
+                .text_color(crate::theme::color(theme.text))
                 .flex()
                 .flex_col()
                 .children(items.iter().enumerate().map(|(choice, &index)| {
@@ -554,7 +706,9 @@ impl TextInput {
                         .id(("slash-choice", index))
                         .p(px(6.))
                         .cursor_pointer()
-                        .when(choice == e.choice, |d| d.bg(rgba(0x4f5766ff)))
+                        .when(choice == e.choice, |d| {
+                            d.bg(crate::theme::color(theme.hover))
+                        })
                         .child(title)
                         .child(div().text_size(px(12.)).child(description))
                         .on_mouse_down(
@@ -570,8 +724,63 @@ impl TextInput {
                         .text_size(px(12.))
                         .child("↑ ↓ to navigate    Enter to select"),
                 );
-            out.push(list.into_any_element());
+            out.push(
+                list.absolute()
+                    .left_0()
+                    .top(top)
+                    .w(px(360.))
+                    .shadow_md()
+                    .into_any_element(),
+            );
         } else if !self.selected_range.is_empty() {
+            if e.palette {
+                let palette = div()
+                    .id("editor-highlight-colors")
+                    .absolute()
+                    .left_0()
+                    .top(top)
+                    .flex()
+                    .gap(px(8.))
+                    .p(px(8.))
+                    .bg(crate::theme::color(theme.comment))
+                    .text_color(crate::theme::color(theme.text))
+                    .child(
+                        div()
+                            .id("highlight-back")
+                            .cursor_pointer()
+                            .child("Back")
+                            .on_mouse_down(
+                                MouseButton::Left,
+                                cx.listener(|this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    this.editor.as_mut().unwrap().palette = false;
+                                    cx.notify();
+                                }),
+                            ),
+                    )
+                    .children(
+                        ["#ffc078", "#8ce99a", "#74c0fc", "#b197fc", "#ff0000"]
+                            .into_iter()
+                            .enumerate()
+                            .map(|(i, color)| {
+                                let rgb = u32::from_str_radix(&color[1..], 16).unwrap();
+                                div()
+                                    .id(("highlight-color", i))
+                                    .size(px(24.))
+                                    .rounded(px(4.))
+                                    .bg(crate::theme::color(rgb))
+                                    .cursor_pointer()
+                                    .on_mouse_down(
+                                        MouseButton::Left,
+                                        cx.listener(move |this, _, window, cx| {
+                                            cx.stop_propagation();
+                                            this.highlight_color(color, window, cx);
+                                        }),
+                                    )
+                            }),
+                    );
+                return vec![palette.into_any_element()];
+            }
             let buttons = [
                 ("B", Format::Bold),
                 ("I", Format::Italic),
@@ -599,6 +808,11 @@ impl TextInput {
                             MouseButton::Left,
                             cx.listener(move |this, _, window, cx| {
                                 cx.stop_propagation();
+                                if format == Format::Highlight {
+                                    this.editor.as_mut().unwrap().palette = true;
+                                    cx.notify();
+                                    return;
+                                }
                                 this.apply_format(
                                     format,
                                     matches!(format, Format::Code),
@@ -638,7 +852,18 @@ impl TextInput {
                             }),
                         ),
                 );
-            out.push(toolbar.into_any_element());
+            out.push(
+                toolbar
+                    .absolute()
+                    .left_0()
+                    .top(top)
+                    .max_w(px(560.))
+                    .p(px(8.))
+                    .bg(crate::theme::color(theme.comment))
+                    .text_color(crate::theme::color(theme.text))
+                    .shadow_md()
+                    .into_any_element(),
+            );
         }
         out
     }
@@ -659,8 +884,11 @@ impl TextInput {
                 if start < stop {
                     let mut run = default.clone();
                     run.len = stop - start;
-                    if b.tag.name.starts_with('h') {
+                    if matches!(b.tag.name.as_str(), "h1" | "h2") {
                         run.font.weight = FontWeight::SEMIBOLD;
+                    }
+                    if b.tag.name == "h3" {
+                        run.font.weight = FontWeight::MEDIUM;
                     }
                     let theme = crate::theme::THEMES[if default.color.l > 0.5 { 1 } else { 0 }];
                     let style = crate::rich_text::mark_style(&s.marks, theme);
@@ -700,6 +928,27 @@ impl TextInput {
         }
         runs
     }
+}
+
+fn autolink_url(text: &str) -> Option<String> {
+    if text
+        .chars()
+        .any(|c| c.is_whitespace() || c.is_control() || matches!(c, '<' | '>' | '"'))
+    {
+        return None;
+    }
+    let href = if text.starts_with("http://") || text.starts_with("https://") {
+        text.to_owned()
+    } else if text.starts_with("www.") {
+        format!("http://{text}")
+    } else {
+        return None;
+    };
+    let host = href.split("://").nth(1)?.split(['/', '?', '#']).next()?;
+    if host.is_empty() || host.starts_with('.') || host.ends_with('.') || host.contains('@') {
+        return None;
+    }
+    Some(href)
 }
 
 fn youtube_html(url: &str) -> Option<String> {
@@ -873,7 +1122,12 @@ mod tests {
         cx.simulate_keystrokes("enter");
         cx.simulate_input("rocket");
         cx.simulate_keystrokes("enter");
-        view.read_with(cx, |input, _| assert_eq!(input.html(), "<p>🚀</p>"));
+        view.read_with(cx, |input, _| {
+            assert_eq!(
+                input.html(),
+                "<p><span data-name=\"rocket\" data-type=\"emoji\">🚀</span></p>"
+            )
+        });
     }
     #[test]
     fn youtube_embed_is_local_web_html_not_a_fabricated_bearer_endpoint() {
@@ -889,5 +1143,71 @@ mod tests {
         );
         assert!(youtube_html("https://youtube.com.evil.example/watch?v=abcd").is_none());
         assert!(youtube_html("javascript:alert(1)").is_none());
+    }
+    #[gpui::test]
+    fn links_autolink_paste_selection_palette_and_dialog_are_rich_transactions(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(init);
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).comment_editor()
+        });
+        view.update_in(cx, |input, window, cx| {
+            window.focus(&input.focus_handle, cx)
+        });
+        cx.simulate_input("https://example.com ");
+        view.read_with(cx, |input, _| {
+            assert!(input.html().contains("href=\"https://example.com\""))
+        });
+        view.update_in(cx, |input, window, cx| {
+            input.reset(window, cx);
+            input.replace_text_in_range(None, "selected", window, cx);
+            input.selected_range = 0..8;
+            assert!(input.paste_link("https://example.org", window, cx));
+            assert_eq!(input.content.as_ref(), "selected");
+            input.highlight_color("#74c0fc", window, cx);
+            assert!(input.html().contains("data-color=\"#74c0fc\""));
+            input.open_editor_dialog(DialogKind::Link, window, cx);
+        });
+        cx.simulate_input("example.net");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |input, _| {
+            assert!(input.html().contains("href=\"http://example.net\""));
+            assert!(!input.html().contains("<mark"));
+            assert_eq!(Document::parse(&input.html()).html(), input.html());
+        });
+        cx.simulate_keystrokes("ctrl-z");
+        view.read_with(cx, |input, _| {
+            assert!(input.html().contains("data-color=\"#74c0fc\""))
+        });
+    }
+    #[gpui::test]
+    fn rich_editor_geometry_uses_heading_sizes_list_gutters_and_document_offsets(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).multiline_editor()
+        });
+        view.update_in(cx, |input, window, cx| {
+            input.set_html(
+                "<h1>Title é🙂</h1><ol><li><p>First</p></li><li><p>Second</p></li></ol>",
+                cx,
+            );
+            window.focus(&input.focus_handle, cx);
+        });
+        cx.run_until_parked();
+        view.update_in(cx, |input, window, cx| {
+            let l = input.last_layout.as_ref().unwrap();
+            assert_eq!(l.rows[0].font_size, px(24.));
+            assert_eq!(l.rows[1].prefix, "1.");
+            assert_eq!(l.rows[2].prefix, "2.");
+            assert!(l.rows[1].indent > px(0.));
+            let start = input.content.find("First").unwrap();
+            let bounds = input.last_bounds.unwrap();
+            let range = input.range_to_utf16(&(start..start + 5));
+            let rect = input.bounds_for_range(range, bounds, window, cx).unwrap();
+            assert!(rect.left() > bounds.left());
+            assert!(rect.top() > bounds.top());
+        });
     }
 }

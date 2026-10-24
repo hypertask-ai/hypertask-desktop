@@ -28,7 +28,7 @@ impl CommentActions {
 
     pub fn new(cx: &mut Context<Desktop>) -> Self {
         let input = cx.new(|cx| {
-            TextInput::new(String::new(), "Comment", color(0x8e9093), cx).comment_editor()
+            TextInput::new(String::new(), "Comment", color(0x8e9093), cx).multiline_editor()
         });
         let query = cx.new(|cx| TextInput::new(String::new(), "Search", color(0x8e9093), cx));
         cx.observe(&input, |_, _, cx| cx.notify()).detach();
