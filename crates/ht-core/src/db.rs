@@ -287,15 +287,24 @@ impl Db {
     }
 
     pub fn board(&self, project_id: i64) -> Result<Vec<BoardColumn>> {
-        let sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
+        let mut sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
+        let project=self.board_project(project_id).unwrap_or(Value::Null);
+        let settings=crate::board_views::settings(&project);
+        if let Some(columns)=settings["board_columns_view"].as_array(){
+            sections.retain(|section|columns.iter().any(|column|column.get("id").or_else(||column.get("sectionId"))==section.get("id") && column["visibility"]==true));
+
+        }
         let mut tasks = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Normal' ORDER BY ranking ASC,updatedAt DESC,id ASC", [project_id])?;
-        if let Some(project)=self.raw("Project",&json!(project_id))? {let running=self.kv_get("web-running-timers")?.and_then(|value|serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();crate::board_views::filter_sort(&mut tasks,&crate::board_views::settings(&project),&project,&running);}
+        let running=self.kv_get(&format!("web-running-timers:{}",self.current_user_id().unwrap_or(0)))?.and_then(|value|serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();
+        crate::board_views::filter_sort(&mut tasks,&settings,&project,&running);
+        tasks.retain(|task|match settings["board_subtask_setting"].as_str(){Some("None"|"Parent")=>task["parentTask"].is_null(),Some("Card")=>task["parentTask"].is_null() || task["subTasks"].as_array().is_some_and(|subtasks|!subtasks.is_empty()),_=>true});
         let cards = tasks
             .into_iter()
             .map(task_view)
             .collect::<Result<Vec<_>>>()?;
         sections
             .into_iter()
+            .filter(|section|settings["board_empty_sections"]!="Hidden" || cards.iter().any(|task|task.section_id==section["id"].as_i64() || (task.section_id.is_none() && task.section==section["section_title"].as_str().unwrap_or(""))))
             .map(|s| {
                 let id = integer(&s, "id")?;
                 let title = s["section_title"]

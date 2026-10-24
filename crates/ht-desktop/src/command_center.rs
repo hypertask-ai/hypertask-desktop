@@ -38,6 +38,10 @@ pub enum ShellCommand {
     ValueMatch,
     SortTimeInColumn,
     SortLastComment,
+    Columns,
+    Subtasks,
+    EmptyColumns,
+    HideColumn,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -142,6 +146,10 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     shell_commands(&mut rows);
     for(key,name,group,keys,keywords,action)in [
         ("createTask","Create task","Board","C","create add new task ticket issue todo work item",ShellCommand::CreateTask),
+        ("hideColumn","Hide board column","Board","","hide conceal column status section board kanban visibility remove from view",ShellCommand::HideColumn),
+        ("manageColumns","Manage board columns","Board","","columns visibility show hide",ShellCommand::Columns),
+        ("subtaskSettings","Sub-task Settings","Board","","subtask checklist settings",ShellCommand::Subtasks),
+        ("toggleEmptyColumns","Hide empty board columns","Board","","empty columns sections hide show toggle blank empty column visibility collapse",ShellCommand::EmptyColumns),
         ("sortBoard","Sort board","Board","SHIFT S","sort order arrange board kanban tasks priority date size",ShellCommand::Sort),
         ("ShowFilterHtc","Filters","Navigate","SHIFT F","filter narrow refine search view rules conditions matching tasks",ShellCommand::Filters),
         ("toggleFilterValueMatch","Filter values: match any or all","Board","","filter values match any all labels tags assignees both either",ShellCommand::ValueMatch),

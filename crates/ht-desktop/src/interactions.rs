@@ -756,6 +756,7 @@ impl Desktop {
         let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
         self.add_comment_commands(&mut rows);
         self.add_board_commands(&mut rows);
+        if let Some(row)=rows.iter_mut().find(|row|row.key=="toggleEmptyColumns"){row.name=if self.view_settings()["board_empty_sections"]=="Hidden"{"Show empty board columns"}else{"Hide empty board columns"}.into();}
         if self.ai_sidebar.is_some() {
             for (key, name, action) in [
                 ("pinAiChatOpen", "Pin AI chat open", Action::PinAiChat),

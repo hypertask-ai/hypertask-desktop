@@ -13,6 +13,8 @@ pub(super) enum Panel {
     BlockedByPerson,
     Date(&'static str),
     ValueMatch,
+    Columns,
+    Subtasks,
     Save,
     SavePrivate,
     SaveTeam,
@@ -238,7 +240,7 @@ impl Desktop {
         self.views.pending = None;
         self.reload();
         if result["error"].is_null() {
-            if !matches!(self.views.panel,Some(Panel::Sort|Panel::Priority|Panel::Size|Panel::Labels|Panel::Assignees|Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson|Panel::ValueMatch)) {self.views.panel=None;window.focus(&self.focus,cx);}
+            if !matches!(self.views.panel,Some(Panel::Sort|Panel::Priority|Panel::Size|Panel::Labels|Panel::Assignees|Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson|Panel::ValueMatch|Panel::Columns)) {self.views.panel=None;window.focus(&self.focus,cx);}
         }else{
             self.error=Some(match self.views.pending_route.as_str(){
                 "rename-view"=>"Error renaming view".into(),"delete-view"=>"Error deleting view".into(),"update-order"=>"Unable to save view order".into(),"reset-order"=>"Unable to reset view order".into(),"set-default-order"=>"Unable to set the default view order".into(),_=>result["error"].as_str().unwrap_or("Could not save the view").into()
@@ -260,6 +262,8 @@ impl Desktop {
                 choices.extend(ht_core::board_views::ordered_views(&project).into_iter().map(|view|(view["title"].as_str().unwrap_or("Untitled view").into(),view)));
                 choices
             }
+            Some(Panel::Subtasks)=>[("Hide on board, show on task page","None"),("Show as card property and flattened list combined","Flattened_Card"),("Show as flattened list","Flattened"),("Show only parents","Parent"),("Show as card property","Card")].into_iter().map(|(name,value)|(name.into(),json!(value))).collect(),
+            Some(Panel::Columns)=>self.db.board_project(self.options.board).ok().into_iter().flat_map(|project|project["section"].as_array().cloned().unwrap_or_default()).filter(|section|section["deleted"]!=true).map(|section|(section["section_title"].as_str().unwrap_or("").into(),section)).collect(),
             Some(Panel::Sort) => ht_core::board_views::SORT_MODES.iter().map(|(name,value)|((*name).into(),json!(value))).collect(),
             Some(Panel::Filters) => [
                 ("Clear all filters","Clear"),("Toggle Match Criteria","Match"),("Updated by","UpdatedBy"),("Created by","CreatedBy"),("Has unread notifications","Unread"),("Tasks assigned to me","AssignedToMe"),("Due date","DueDate"),("Priority","Priority"),("Assignees","Assignees"),("Blocked by person","BlockedByPerson"),("Tags","Labels"),("Task Size","Size"),("Date updated at","UpdatedRange"),("Date created at","CreatedAt"),("Present in inbox","Inbox"),("Stale without comment","NoRecentComment"),("Stale in column","StuckInColumn"),("Has a running timer","RunningTimer"),("Stale on board","StaleOnBoard"),("Not stale","NotStale")
@@ -359,6 +363,8 @@ impl Desktop {
                 if project["project_view"]["default_view_id"]==json!(self.views.editing){return;}
                 self.queue_view("delete-view",json!({"viewId":self.views.editing}),window,cx);return;
             }
+            Some(Panel::Subtasks)=>settings["board_subtask_setting"]=value,
+            Some(Panel::Columns)=>{let mut columns=settings["board_columns_view"].as_array().cloned().unwrap_or_default();if let Some(column)=columns.iter_mut().find(|column|column.get("id").or_else(||column.get("sectionId"))==value.get("id")){column["visibility"]=json!(column["visibility"]!=true);}else{let mut column=value;column["visibility"]=json!(true);columns.push(column);}settings["board_columns_view"]=json!(columns);},
             Some(Panel::Sort) => {
                 let mode=value.as_str().unwrap();
                 let mut levels=self.sort_levels();
@@ -432,6 +438,12 @@ impl Desktop {
         }
         self.queue_view("unsaved-view", settings, window, cx);
     }
+    pub(super) fn toggle_empty_columns(&mut self,window:&mut Window,cx:&mut Context<Self>){
+        let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);let setting=if self.view_settings()["board_empty_sections"]=="Hidden"{"Show"}else{"Hidden"};
+        let target=project["project_view"]["user_project_views"][0]["appliedView"]["id"].as_str().or_else(||project["project_view"]["default_view"]["id"].as_str());
+        if let Some(id)=target{self.queue_view("update-view",json!({"viewId":id,"updateMode":"personal-empty-sections","view_settings":{"board_empty_sections":setting}}),window,cx);}else{let mut settings=self.view_settings();settings["board_empty_sections"]=json!(setting);self.queue_view("unsaved-view",settings,window,cx);}
+    }
+    pub(super) fn hide_current_column(&mut self,window:&mut Window,cx:&mut Context<Self>){let Some(id)=self.columns.get(self.column).map(|column|column.id)else{return;};let mut settings=self.view_settings();for column in settings["board_columns_view"].as_array_mut().into_iter().flatten(){if column.get("id").or_else(||column.get("sectionId"))==Some(&json!(id)){column["visibility"]=json!(false);}}self.queue_view("unsaved-view",settings,window,cx);}
     pub(super) fn command_sort(&mut self,mode:&str,window:&mut Window,cx:&mut Context<Self>){self.save_sort_levels(vec![json!({"mode":mode,"order":"Descending"})],window,cx);}
     fn sort_levels(&self)->Vec<Value>{let settings=self.view_settings();if settings["board_sorting_mode"]=="Manual"{return vec![];}let mut levels=vec![json!({"mode":settings["board_sorting_mode"],"order":settings["board_sorting_order"]})];levels.extend(settings["board_sorting_stack"].as_array().into_iter().flatten().cloned());levels}
     fn save_sort_levels(&mut self,levels:Vec<Value>,window:&mut Window,cx:&mut Context<Self>){let mut settings=self.view_settings();settings["board_sorting_mode"]=levels.first().map(|level|level["mode"].clone()).unwrap_or(json!("Manual"));if let Some(level)=levels.first(){settings["board_sorting_order"]=level["order"].clone();}settings["board_sorting_stack"]=json!(levels.into_iter().skip(1).collect::<Vec<_>>());self.queue_view("unsaved-view",settings,window,cx);}
@@ -442,7 +454,7 @@ impl Desktop {
         std::thread::spawn(move||{let result=ht_core::Http::new(token).and_then(|mut http|if timers{ht_core::board_views::running_timers(&mut http)}else{ht_core::board_views::filter_people(&mut http,board)}).map_err(|error|error.to_string());let _=send.send(result);});
         cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(50)).await;match receive.try_recv(){Ok(result)=>{let _=view.update_in(cx,|this,window,cx|{
             if this.views.generation!=generation{return;}this.views.support_pending=false;if this.options.board!=board || this.cli_token().as_deref()!=Some(expected_token.as_str()){return;}
-            match result{Ok(data)=>{if timers{let _=this.db.kv_set("web-running-timers",&data.to_string());let mut settings=this.view_settings();let mut filters=settings["board_filters"]["addedFilters"].as_array().cloned().unwrap_or_default();if filters.iter().any(|filter|filter["type"]=="RunningTimer"){filters.retain(|filter|filter["type"]!="RunningTimer");}else{filters.push(json!({"type":"RunningTimer","searchPayload":[]}));}settings["board_filters"]["addedFilters"]=json!(filters);this.queue_view("unsaved-view",settings,window,cx);}else{this.views.people=Some(data);}},Err(error)=>{this.error=Some(error);this.views.people=None;}}cx.notify();});break;},Err(std::sync::mpsc::TryRecvError::Empty)=>(),_=>break}}}).detach();
+            match result{Ok(data)=>{if timers{let _=this.db.kv_set(&format!("web-running-timers:{}",this.db.current_user_id().unwrap_or(0)),&data.to_string());let mut settings=this.view_settings();let mut filters=settings["board_filters"]["addedFilters"].as_array().cloned().unwrap_or_default();if filters.iter().any(|filter|filter["type"]=="RunningTimer"){filters.retain(|filter|filter["type"]!="RunningTimer");}else{filters.push(json!({"type":"RunningTimer","searchPayload":[]}));}settings["board_filters"]["addedFilters"]=json!(filters);this.queue_view("unsaved-view",settings,window,cx);}else{this.views.people=Some(data);}},Err(error)=>{this.error=Some(error);this.views.people=None;}}cx.notify();});break;},Err(std::sync::mpsc::TryRecvError::Empty)=>(),_=>break}}}).detach();
     }
     pub(super) fn view_key(
         &mut self,
@@ -689,7 +701,7 @@ mod advanced_control_tests {
     fn actor_date_match_and_sort_stack_controls_queue_web_settings_and_rollback_both_refusals(cx:&mut gpui::TestAppContext){
         cx.update(crate::input::init);
         let(view,cx)=cx.add_window_view(|window,cx|desktop(window,cx));
-        for status in [401,403,200]{for panel in [Panel::CreatedBy,Panel::UpdatedBy,Panel::BlockedByPerson,Panel::Date("DueDate"),Panel::Date("CreatedAt"),Panel::Date("UpdatedRange"),Panel::ValueMatch,Panel::Sort]{view.update_in(cx,|this,window,cx|{
+        for status in [401,403,200]{for panel in [Panel::CreatedBy,Panel::UpdatedBy,Panel::BlockedByPerson,Panel::Date("DueDate"),Panel::Date("CreatedAt"),Panel::Date("UpdatedRange"),Panel::ValueMatch,Panel::Sort,Panel::Columns,Panel::Subtasks]{view.update_in(cx,|this,window,cx|{
             this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}}]})).unwrap();this.reload();
             this.views.people=Some(json!({"owner":{"id":42,"uid":"u42","displayName":"Owner"},"members":[],"boardAgents":[{"id":"agent","displayName":"Helper"}]}));
             this.open_view_panel(panel,window,cx);

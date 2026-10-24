@@ -260,7 +260,7 @@ impl Db {
                 let body = &payload["body"];
                 let labels=body["tags"].as_array().cloned().unwrap_or_default();
                 let assignees:Vec<_>=body["assignees"].as_array().into_iter().flatten().map(|person|if person.get("uid").is_some(){json!({"userId":person["id"],"user":person})}else{json!({"userId":person["userId"],"agentId":person["id"],"agent":person})}).collect();
-                self.upsert_task(&json!({"id":-id,"projectId":body["projectId"],"sectionId":body["sectionId"],"section":body.get("section").or_else(||body.get("section_title")),"title":body["title"],"ranking":body["ranking"],"status":"Normal","pending":true,"createdBy":null,"priority":body["priority"],"estimate":body["estimate"],"labels":labels,"assignees":assignees,"description_":{"content":body["description"]},"dueDate":body["dueDate"],"startDate":body["startDate"]}))?;
+                self.upsert_task(&json!({"id":-id,"projectId":body["projectId"],"sectionId":body["sectionId"],"section":body.get("section").or_else(||body.get("section_title")),"title":body["title"],"ranking":body["ranking"],"status":"Normal","pending":true,"createdBy":null,"priority":body["priority"],"estimate":body["estimate"],"labels":labels,"assignees":assignees,"description":body["description"].as_str().unwrap_or(""),"description_":{"content":body["description"]},"dueDate":body["dueDate"],"startDate":body["startDate"]}))?;
             }
             "board_write" => {
                 if let crate::BoardWrite::PositionTask { task, section, title, ranking, .. } = serde_json::from_value(payload["change"].clone())? {
@@ -727,7 +727,10 @@ impl Db {
                 "web_view" => {
                     let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
                     let view=&body["view"];
-                    if matches!(change.route.as_str(),"update-order"|"reset-order"|"set-default-order") {
+                    if change.route=="update-view" && change.body["updateMode"]=="personal-empty-sections"{
+                        ensure!(view["viewId"]==change.body["viewId"] && matches!(view["board_empty_sections"].as_str(),Some("Show"|"Hidden")),"Wrong empty-column acknowledgement");
+                        let mut project=db.board_project(change.project)?;let mut authoritative=change.clone();authoritative.body["view_settings"]["board_empty_sections"]=view["board_empty_sections"].clone();authoritative.optimistic(&mut project);db.upsert("Project",&project)?;
+                    }else if matches!(change.route.as_str(),"update-order"|"reset-order"|"set-default-order") {
                         let mut project=db.board_project(change.project)?;
                         match change.route.as_str(){
                             "set-default-order"=>{ensure!(view["defaultViewOrder"].is_array(),"Missing default order acknowledgement");project["project_view"]["default_view_order"]=view["defaultViewOrder"].clone();}

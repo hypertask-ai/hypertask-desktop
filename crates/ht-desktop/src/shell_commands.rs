@@ -9,6 +9,10 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::HideColumn=>self.hide_current_column(window,cx),
+            ShellCommand::Columns=>self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx),
+            ShellCommand::Subtasks=>self.open_view_panel(crate::ui::board_views::Panel::Subtasks,window,cx),
+            ShellCommand::EmptyColumns=>self.toggle_empty_columns(window,cx),
             ShellCommand::CreateTask=>self.open_create_task(window,cx),
             ShellCommand::Sort=>self.open_view_panel(crate::ui::board_views::Panel::Sort,window,cx),
             ShellCommand::Filters=>self.open_view_panel(crate::ui::board_views::Panel::Filters,window,cx),

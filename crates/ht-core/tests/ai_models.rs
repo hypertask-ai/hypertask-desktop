@@ -67,3 +67,16 @@ fn family_effort_nearest_reset_and_custom_labels_use_the_web_catalog(){
     assert_eq!(config.families().iter().filter(|model|model["family"]=="gpt-6-luna").count(),1);
     assert_eq!(config.label(ai_models::option("custom").unwrap()),"My endpoint");
 }
+
+#[test]
+fn every_catalog_effort_and_reset_id_uses_the_team_queue_and_restores_both_refusals(){
+    struct Picker{status:u16,id:String}
+    impl Transport for Picker{
+        fn get(&mut self,path:&str)->Result<Response,TransportError>{assert_eq!(path,"/user/context");Ok(Response{status:200,body:json!({"success":true,"user":{"id":42}})})}
+        fn post(&mut self,path:&str,body:&Value,_:&str)->Result<Response,TransportError>{assert_eq!(path,"/api/users/preferences");assert_eq!(body,&json!({"aiModelPreferences":{"aiChat":self.id},"aiModelPreferencesTeamId":"team"}));Ok(Response{status:self.status,body:if self.status==200{json!({"settings":{"aiModelPreferences":{"teams":{"team":{"aiChat":self.id}}}}})}else{json!({"error":"Unauthorized"})}})}
+    }
+    for model in ai_models::catalog(){for status in [200,401,403]{
+        let mut db=Db::memory().unwrap();db.kv_set("current-user-id","42").unwrap();let before=json!({"aiModelPreferences":{"teams":{"team":{"aiChat":"gpt-6-luna"}}}});db.cache_web_preferences(42,&before).unwrap();let id=model["id"].as_str().unwrap();db.enqueue_web_preferences(42,&before,json!({"aiModelPreferences":{"aiChat":id},"aiModelPreferencesTeamId":"team"}),100).unwrap();assert_eq!(db.web_preferences().unwrap()["aiModelPreferences"]["teams"]["team"]["aiChat"],id);
+        db.drain_once(&mut Picker{status,id:id.into()},101).unwrap();assert_eq!(db.web_preferences().unwrap()["aiModelPreferences"]["teams"]["team"]["aiChat"],if status==200{id}else{"gpt-6-luna"});
+    }}
+}

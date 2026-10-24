@@ -49,6 +49,11 @@ impl ViewWrite {
         {
             view["user_project_views"] = json!([{}]);
         }
+        if self.route=="update-view" && self.body["updateMode"]=="personal-empty-sections"{
+            let patch=|row:&mut Value|{if row["id"]==self.body["viewId"]{if row["ViewLastUsed"].as_array().is_none_or(|rows|rows.is_empty()){row["ViewLastUsed"]=json!([{}]);}row["ViewLastUsed"][0]["board_empty_sections"]=self.body["view_settings"]["board_empty_sections"].clone();}};
+            for row in view["allViews"].as_array_mut().into_iter().flatten(){patch(row);}
+            patch(&mut view["default_view"]);for row in view["user_project_views"].as_array_mut().into_iter().flatten(){patch(&mut row["appliedView"]);}return;
+        }
         match self.route.as_str() {
             "unsaved-view" => view["user_project_views"][0]["unsavedView"] = self.body.clone(),
             "rename-view"|"update-view"=>{
@@ -106,6 +111,8 @@ pub fn settings(project: &Value) -> Value {
             *value = v.clone();
         }
     }
+    let base=row.get("appliedView").filter(|view|view.is_object()).unwrap_or(&project["project_view"]["default_view"]);
+    if let Some(personal)=std::iter::once(base).chain(project["project_view"]["allViews"].as_array().into_iter().flatten()).find(|view|view["id"]==base["id"] && matches!(view["ViewLastUsed"][0]["board_empty_sections"].as_str(),Some("Show"|"Hidden"))){settings["board_empty_sections"]=personal["ViewLastUsed"][0]["board_empty_sections"].clone();}
     settings
 }
 pub fn load(transport: &mut impl Transport, project: i64) -> Result<(i64, Value)> {
@@ -163,8 +170,9 @@ impl Db {
         })
     }
     pub fn board_project(&self, project: i64) -> Result<Value> {
-        self.raw("Project", &json!(project))?
-            .context("Board is unavailable")
+        let mut value=self.raw("Project", &json!(project))?.context("Board is unavailable")?;
+        if !value["section"].is_array(){value["section"]=json!(self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 ORDER BY ranking,id",[project])?);}
+        Ok(value)
     }
 }
 

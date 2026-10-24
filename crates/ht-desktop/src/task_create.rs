@@ -185,10 +185,17 @@ impl Desktop {
                 .collect(),
             Some(Field::Column) => self
                 .db
-                .board(self.create_task.project)
-                .unwrap_or_default()
+                .board_project(self.create_task.project)
+                .ok()
                 .into_iter()
-                .map(|column| (column.title, json!(column.id)))
+                .flat_map(|project| project["section"].as_array().cloned().unwrap_or_default())
+                .filter(|column| column["deleted"] != true && column["visibility"] == true)
+                .map(|column| {
+                    (
+                        column["section_title"].as_str().unwrap_or("").into(),
+                        column["id"].clone(),
+                    )
+                })
                 .collect(),
             Some(Field::Priority) => (0..5)
                 .filter_map(ht_core::task_create::priority)
