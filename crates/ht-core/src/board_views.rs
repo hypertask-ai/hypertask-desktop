@@ -17,7 +17,7 @@ impl ViewWrite {
         ensure!(
             matches!(
                 self.route.as_str(),
-                "rename-view" | "delete-view" | "unsaved-view"
+                "smart-split-create" | "smart-split-edit" | "smart-split-delete" | "rename-view" | "delete-view" | "unsaved-view"
                     | "switch-view"
                     | "create-view"
                     | "update-view"
@@ -28,10 +28,14 @@ impl ViewWrite {
             ),
             "Unsupported view mutation"
         );
+        if self.smart_split() { self.validate_smart_split()?; }
         Ok(())
     }
     pub fn request(&self)->Result<(&'static str,String,Value)> {
         self.validate()?;
+        if self.smart_split() {
+            return Ok((match self.route.as_str() { "smart-split-create" => "POST", "smart-split-edit" => "PATCH", _ => "DELETE" }, "/api/projects/views/smart-split".into(), self.body.clone()));
+        }
         if self.route=="delete-view" {
             let id=self.body["viewId"].as_str().filter(|id|!id.is_empty()).context("Select a saved view")?;
             let query=url::form_urlencoded::Serializer::new(String::new()).append_pair("viewId",id).append_pair("projectId",&self.project.to_string()).finish();
@@ -39,6 +43,7 @@ impl ViewWrite {
         }else{Ok(("POST",format!("/api/projects/views/{}",if self.route=="rename-view"{"delete-rename-view"}else{&self.route}),self.body.clone()))}
     }
     pub(crate) fn optimistic(&self, project: &mut Value) {
+        if self.smart_split() { self.optimistic_smart_split(project); return; }
         let view = &mut project["project_view"];
         if !view.is_object() {
             *view = json!({"projectId":self.project,"user_project_views":[{}]});
@@ -158,6 +163,8 @@ impl Db {
             if project["project_view"].is_object() {
                 project["project_view"]["allViews"] = body["allViews"].clone();
             }
+            if let Some(labels) = body.get("desktop_smart_labels") { project["desktop_smart_labels"] = labels.clone(); }
+            if let Some(error) = body.get("desktop_smart_labels_error") { project["desktop_smart_labels_error"] = error.clone(); }
             db.upsert("Project", &project)?;
             for section in project["section"].as_array().into_iter().flatten() {
                 db.upsert("Section", section)?;

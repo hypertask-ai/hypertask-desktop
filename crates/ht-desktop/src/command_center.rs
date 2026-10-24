@@ -43,6 +43,7 @@ pub enum ShellCommand {
     EmptyColumns,
     HideColumn,
     ArchivedOnBoard,
+    SmartSplit,
     DuplicateTask(bool),
 }
 
@@ -152,6 +153,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     }
     shell_commands(&mut rows);
     for(key,name,group,keys,keywords,action)in [
+        ("createSmartSplit","Add smart split","Board","","add create smart split ai prompt automatic view label tag",ShellCommand::SmartSplit),
         ("toggleArchivedOnBoard","Show archived tasks on board","Board","G  X","show hide toggle archive archived completed tasks board visibility",ShellCommand::ArchivedOnBoard),
         ("createTask","Create task","Board","C","create add new task ticket issue todo work item",ShellCommand::CreateTask),
         ("hideColumn","Hide board column","Board","","hide conceal column status section board kanban visibility remove from view",ShellCommand::HideColumn),

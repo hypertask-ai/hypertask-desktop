@@ -350,3 +350,24 @@ fn native_model_settings_handoff_uses_same_web_routes_bearer_and_refusal_statuse
         let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("POST {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-settings-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
     }}
 }
+
+#[test]
+fn smart_split_methods_send_the_desktop_bearer_to_exact_web_route_and_preserve_denial() {
+    for (route, method, accepted) in [("smart-split-create", "POST", 201), ("smart-split-edit", "PATCH", 200), ("smart-split-delete", "DELETE", 200)] {
+        for status in [accepted, 401, 403] {
+            let body = if method == "DELETE" { json!({"projectId":15,"viewId":"smart"}) } else if method == "POST" { json!({"projectId":15,"name":"Daily","prompt":"My daily tasks"}) } else { json!({"projectId":15,"viewId":"smart","name":"Daily","prompt":"My daily tasks"}) };
+            let change = ht_core::ViewWrite { project:15, route:route.into(), body:body.clone() };
+            let (actual_method, path, request_body) = change.request().unwrap();
+            let (url, thread, receive) = server(status, "{\"message\":\"Sign in to manage smart splits\"}");
+            let mut http = Http::with_base(&url, "desktop-smart-split-token".into()).unwrap();
+            let response = http.mutate(actual_method, &path, &request_body, "smart-split-client").unwrap();
+            assert_eq!(response.status, status);
+            assert_eq!(response.body["message"], "Sign in to manage smart splits");
+            let request = receive.recv_timeout(Duration::from_secs(5)).unwrap();
+            assert!(request.starts_with(&format!("{method} /api/projects/views/smart-split HTTP/1.1\r\n")));
+            assert!(request.to_ascii_lowercase().contains("authorization: bearer desktop-smart-split-token\r\n"));
+            assert_eq!(serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(), body);
+            thread.join().unwrap();
+        }
+    }
+}

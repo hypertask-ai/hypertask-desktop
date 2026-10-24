@@ -105,6 +105,18 @@ impl Db {
                 change.validate()?;
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_view" && row.payload_json["change"]["project"]==change.project), "wait for the previous view update to finish");
                 let user=db.current_user_id().context("Unauthorized")?;
+                if change.smart_split() {
+                    let project = db.board_project(change.project)?;
+                    if change.route == "smart-split-create" {
+                        ensure!(project["project_view"]["default_view"].is_object(), "This board does not have a default view");
+                    } else {
+                        let views = project["project_view"]["allViews"].as_array().context("Smart split details are still loading")?;
+                        let labels = project["desktop_smart_labels"].as_array().context("Smart split details are still loading")?;
+                        let view = views.iter().find(|view| view["id"] == change.body["viewId"]).context("Smart split not found")?;
+                        ensure!(crate::smart_splits::label(view, labels, views).is_some(), "This smart tag is linked to multiple views and cannot be edited safely");
+                        ensure!(change.route != "smart-split-delete" || project["project_view"]["default_view_id"] != change.body["viewId"], "Choose another default view before deleting this smart split");
+                    }
+                }
                 (format!("view:{}",change.project),"web_view",json!({"user_id":user,"change":change,"before":db.board_project(change.project)?,"attempted":false}))
             }
             Write::FavoriteSlot { index, project_id } => {
@@ -489,9 +501,9 @@ impl Db {
         } else if row.kind == "web_view" {
             let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
             change.validate()?;
-            if change.route=="create-view" && (row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1)) {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
+            if matches!(change.route.as_str(),"create-view"|"smart-split-create") && (row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1)) {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
                 Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => {
-                    if change.route=="create-view" {
+                    if matches!(change.route.as_str(),"create-view"|"smart-split-create") {
                         let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);
                         self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;
                     }
@@ -503,7 +515,7 @@ impl Db {
                 Err(error) => Err(error),
                 Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
                 _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
-            }}.map(|r|if r.status==200 {Response{status:200,body:json!({"success":true,"view":r.body})}}else{r})
+            }}.map(|r|if (200..300).contains(&r.status) && r.body["success"] != false {Response{status:r.status,body:json!({"success":true,"view":r.body})}}else{r})
         } else if row.kind == "web_favorite_slot" {
             match transport.get("/user/context") {
                 Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate(row.payload_json["method"].as_str().context("Missing favorite method")?,"/api/favorites/addEditFavorites",&row.payload_json["body"],&row.client_id),
@@ -669,7 +681,9 @@ impl Db {
                     if db.current_user_id()==row.payload_json["user_id"].as_i64(){
                         let before=&row.payload_json["before"];
                         let mut current=db.board_project(before["id"].as_i64().context("missing board")?)?;
-                        current["project_view"]=before["project_view"].clone();db.upsert("Project",&current)?;db.reapply_pending()?;
+                        current["project_view"]=before["project_view"].clone();
+                        if row.payload_json["change"]["route"].as_str().is_some_and(|route| route.starts_with("smart-split-")) { current["desktop_smart_labels"] = before["desktop_smart_labels"].clone(); }
+                        db.upsert("Project",&current)?;db.reapply_pending()?;
                     }
                     db.kv_set(&format!("view-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
                 }
@@ -752,7 +766,12 @@ impl Db {
                 "web_view" => {
                     let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
                     let view=&body["view"];
-                    if change.route=="update-view" && change.body["updateMode"]=="personal-empty-sections"{
+                    if change.smart_split() {
+                        let mut project = db.board_project(change.project)?;
+                        change.resolve_smart_split(&mut project, view)?;
+                        db.upsert("Project", &project)?;
+                        db.request_refetch("board", change.project)?;
+                    }else if change.route=="update-view" && change.body["updateMode"]=="personal-empty-sections"{
                         ensure!(view["viewId"]==change.body["viewId"] && matches!(view["board_empty_sections"].as_str(),Some("Show"|"Hidden")),"Wrong empty-column acknowledgement");
                         let mut project=db.board_project(change.project)?;let mut authoritative=change.clone();authoritative.body["view_settings"]["board_empty_sections"]=view["board_empty_sections"].clone();authoritative.optimistic(&mut project);db.upsert("Project",&project)?;
                     }else if matches!(change.route.as_str(),"update-order"|"reset-order"|"set-default-order") {

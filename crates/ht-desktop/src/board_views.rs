@@ -22,6 +22,8 @@ pub(super) enum Panel {
     SaveTeam,
     Manage,
     RenameView,
+    SmartSplit,
+    DeleteSmartSplit,
     DeleteView,
 }
 #[derive(Clone)]
@@ -38,6 +40,7 @@ pub(super) struct Views {
     generation: u64,
     pub panel: Option<Panel>,
     input: Entity<TextInput>,
+    prompt: Entity<TextInput>,
     pending: Option<String>,
     choice: usize,
     editing: Option<String>,
@@ -60,6 +63,9 @@ pub(super) struct Views {
 impl Views {
     pub fn new(cx: &mut Context<Desktop>) -> Self {
         let input = cx.new(|cx| TextInput::new(String::new(), "View name", color(0x8e9093), cx));
+        let prompt = cx.new(|cx| TextInput::new(String::new(), "Describe which tasks belong in this split", color(0x8e9093), cx).multiline());
+        cx.observe(&prompt, |_, _, cx| cx.notify()).detach();
+        cx.observe(&input, |_, _, cx| cx.notify()).detach();
         let query = cx.new(|cx| TextInput::new(String::new(), "Search…", color(0x8e9093), cx));
         cx.observe(&query, |this, query, cx| {
             this.views.query_text = query.read(cx).content.to_string();
@@ -74,6 +80,7 @@ impl Views {
             generation: 0,
             panel: None,
             input,
+            prompt,
             pending: None,
             choice: 0,
             editing: None,
@@ -134,6 +141,10 @@ impl Desktop {
         std::thread::spawn(move || {
             let result = ht_core::Http::new(token).and_then(|mut http| {
                 let (user, mut body) = ht_core::board_views::load(&mut http, board)?;
+                match ht_core::smart_splits::labels(&mut http, board) {
+                    Ok(labels) => { body["desktop_smart_labels"] = labels; body["desktop_smart_labels_error"] = Value::Null; }
+                    Err(error) => { body["desktop_smart_labels"] = Value::Null; body["desktop_smart_labels_error"] = json!(error.to_string()); }
+                }
                 body["desktop_decisions"] = json!(
                     ht_core::Transport::get(&mut http, "/api/flags")
                         .ok()
@@ -304,7 +315,7 @@ impl Desktop {
         ) {
             self.views
                 .input
-                .update(cx, |input, cx| input.set_content(String::new(), cx));
+                .update(cx, |input, cx| { input.configure("View name", false, cx); input.set_content(String::new(), cx); });
             window.focus(&self.views.input.focus_handle(cx), cx);
         } else if Self::view_searchable(panel) {
             window.focus(&self.views.query.focus_handle(cx), cx);
@@ -358,6 +369,10 @@ impl Desktop {
             chrono::Utc::now().timestamp(),
         ) {
             Ok(id) => {
+                if route.starts_with("smart-split-") {
+                    self.views.input.update(cx, |input, cx| input.set_read_only(true, cx));
+                    self.views.prompt.update(cx, |input, cx| input.set_read_only(true, cx));
+                }
                 self.views.pending_route = route.into();
                 self.views.pending = self
                     .db
@@ -407,9 +422,15 @@ impl Desktop {
             return true;
         };
         self.views.pending = None;
+        self.views.input.update(cx, |input, cx| input.set_read_only(false, cx));
+        self.views.prompt.update(cx, |input, cx| input.set_read_only(false, cx));
         self.reload();
         if result["error"].is_null() {
             self.views.previous_builtin = None;
+            if self.views.pending_route.starts_with("smart-split-") {
+                self.views.loaded = 0;
+                self.load_board_views(cx);
+            }
             if !matches!(
                 self.views.panel,
                 Some(
@@ -786,6 +807,16 @@ impl Desktop {
                     return;
                 }
                 if value["id"].as_str().is_some_and(|id| id.starts_with("builtin:")) { return; }
+                let project = self.db.board_project(self.options.board).unwrap_or(Value::Null);
+                let cached_labels = self.db.project_labels(self.options.board).unwrap_or_default();
+                let Some(labels) = project["desktop_smart_labels"].as_array().or_else(|| self.options.offline.then_some(&cached_labels)) else {
+                    self.error = Some(project["desktop_smart_labels_error"].as_str().unwrap_or("Smart split details are still loading").into());
+                    cx.notify(); return;
+                };
+                let views = project["project_view"]["allViews"].as_array().cloned().unwrap_or_default();
+                if ht_core::smart_splits::label(&value, labels, &views).is_some() {
+                    self.open_smart_split(Some(value), window, cx); return;
+                }
                 self.views.editing = value["id"].as_str().map(str::to_owned);
                 self.open_view_panel(Panel::RenameView, window, cx);
                 self.views.input.update(cx, |input, cx| {
@@ -1323,6 +1354,9 @@ impl Desktop {
         if self.views.panel.is_none() {
             return false;
         }
+        if matches!(self.views.panel, Some(Panel::SmartSplit | Panel::DeleteSmartSplit)) {
+            return self.smart_split_key(event, window, cx);
+        }
         match event.keystroke.key.as_str() {
             "escape" if event.keystroke.modifiers.shift => {
                 let next = match self.views.panel {
@@ -1556,6 +1590,7 @@ impl Desktop {
         let Some(panel) = self.views.panel else {
             return div().into_any_element();
         };
+        if matches!(panel, Panel::SmartSplit | Panel::DeleteSmartSplit) { return self.smart_split_overlay(cx); }
         let t = self.colors;
         let title = match panel {
             Panel::Sort => "Sort",
@@ -1569,6 +1604,7 @@ impl Desktop {
             Panel::SavePrivate => "Save as view for me only",
             Panel::Manage => "Manage views",
             Panel::RenameView => "View settings",
+            Panel::SmartSplit | Panel::DeleteSmartSplit => unreachable!(),
             Panel::DeleteView => "Delete this view? That cannot be undone.",
             _ => "Filter",
         };
@@ -2119,5 +2155,144 @@ mod advanced_control_tests {
             assert_eq!(this.view_choices(),vec![("Manual".into(),json!("Manual"))]);assert!(this.views.pending.is_none());assert_eq!(this.sort_levels().len(),3);
             let mut levels=this.sort_levels();levels.remove(0);this.save_sort_levels(levels,window,cx);settle(this,200,window,cx);assert_eq!(this.view_settings()["board_sorting_mode"],"Title");
         });
+    }
+}
+
+impl Desktop {
+    pub(super) fn open_smart_split(&mut self, view: Option<Value>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.views.pending.is_some() || !self.board_metadata_ready(cx) { return; }
+        let project = self.db.board_project(self.options.board).unwrap_or(Value::Null);
+        let prompt = if let Some(view) = &view {
+            let labels = project["desktop_smart_labels"].as_array().cloned().unwrap_or_default();
+            let views = project["project_view"]["allViews"].as_array().cloned().unwrap_or_default();
+            let Some(label) = ht_core::smart_splits::label(view, &labels, &views) else { return; };
+            label["ai_prompt"].as_str().unwrap_or("").to_owned()
+        } else { String::new() };
+        self.error = None;
+        self.views.editing = view.as_ref().and_then(|view| view["id"].as_str().map(str::to_owned));
+        self.views.panel = Some(Panel::SmartSplit);
+        self.views.input.update(cx, |input, cx| { input.configure("Name this split", false, cx); input.set_read_only(false, cx); input.set_content(view.as_ref().and_then(|view| view["title"].as_str()).unwrap_or("").into(), cx); });
+        self.views.prompt.update(cx, |input, cx| { input.set_read_only(false, cx); input.set_content(prompt, cx); });
+        window.focus(&self.views.input.focus_handle(cx), cx);
+        cx.notify();
+    }
+    fn save_smart_split(&mut self, delete: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.views.pending.is_some() { return; }
+        let mut body = json!({"projectId":self.options.board});
+        if let Some(id) = &self.views.editing { body["viewId"] = json!(id); }
+        let route = if delete { "smart-split-delete" } else {
+            body["name"] = json!(self.views.input.read(cx).content.trim());
+            let prompt = self.views.prompt.read(cx).content.to_string();
+            if prompt.encode_utf16().count() > 1000 { self.error = Some("Keep the prompt to 1,000 characters or fewer".into()); cx.notify(); return; }
+            body["prompt"] = json!(prompt.trim());
+            if self.views.editing.is_some() { "smart-split-edit" } else { "smart-split-create" }
+        };
+        self.error = None;
+        if delete { self.views.panel = Some(Panel::SmartSplit); }
+        self.queue_view(route, body, window, cx);
+    }
+    fn close_smart_split(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.views.pending.is_some() { return; }
+        if self.views.panel == Some(Panel::DeleteSmartSplit) { self.views.panel = Some(Panel::SmartSplit); }
+        else if self.views.editing.is_some() { self.open_view_panel(Panel::Manage, window, cx); }
+        else { self.views.panel = None; window.focus(&self.focus, cx); }
+        cx.notify();
+    }
+    fn smart_split_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.views.pending.is_some() { cx.stop_propagation(); return true; }
+        match event.keystroke.key.as_str() {
+            "escape" => self.close_smart_split(window, cx),
+            "enter" if self.views.panel == Some(Panel::DeleteSmartSplit) => self.save_smart_split(true, window, cx),
+            "enter" if event.keystroke.modifiers.control || event.keystroke.modifiers.platform || self.views.input.focus_handle(cx).is_focused(window) => self.save_smart_split(false, window, cx),
+            "tab" => { if self.views.input.focus_handle(cx).is_focused(window) { window.focus(&self.views.prompt.focus_handle(cx), cx); } else { window.focus(&self.views.input.focus_handle(cx), cx); } },
+            _ => return true,
+        }
+        cx.stop_propagation(); true
+    }
+    fn smart_split_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
+        let editing = self.views.editing.is_some();
+        let pending = self.views.pending.is_some();
+        let count = self.views.prompt.read(cx).content.encode_utf16().count();
+        let can_save = self.views.panel == Some(Panel::SmartSplit) && !pending && !self.views.input.read(cx).content.trim().is_empty() && !self.views.prompt.read(cx).content.trim().is_empty() && count <= 1000;
+        let mut content = div().flex().flex_col().gap(px(12.))
+            .child(div().flex().justify_between().child(if editing { "Edit smart split" } else { "Add smart split" }).child(div().id("smart-split-close").cursor_pointer().child(if editing { "←" } else { "×" }).on_click(cx.listener(|this, _, window, cx| this.close_smart_split(window, cx))).layout_key(&self.layout,"board.smart-split.close",None)))
+            .child("Name").child(self.views.input.clone())
+            .child("Matching prompt").child(div().min_h(px(96.)).child(self.views.prompt.clone()))
+            .child(div().flex().justify_between().text_color(color(self.colors.muted)).child("AI keeps the split updated as tasks change.").child(format!("{count}/1000")))
+            .child(div().flex().justify_between()
+                .when(editing, |d| d.child(div().id("smart-split-delete").cursor_pointer().child("Delete smart split").on_click(cx.listener(|this, _, _, cx| { if this.views.pending.is_none() { this.views.panel = Some(Panel::DeleteSmartSplit); cx.notify(); } })).layout_key(&self.layout,"board.smart-split.delete",None)))
+                .child(div().id("smart-split-save").cursor_pointer().when(!can_save, |d| d.opacity(0.5)).child(if pending { "Saving…" } else if editing { "Save   CTRL+ENTER" } else { "Create   CTRL+ENTER" }).on_click(cx.listener(move |this, _, window, cx| { if can_save { this.save_smart_split(false, window, cx); } })).layout_key(&self.layout,"board.smart-split.save",None)))
+            .when_some(self.error.clone(), |d, error| d.child(div().text_color(color(0xcf222e)).child(error)));
+        if self.views.panel == Some(Panel::DeleteSmartSplit) {
+            content = content.child(div().p(px(12.)).flex().flex_col().gap(px(8.))
+                .child(format!("Delete {}? Its hidden smart tag is also removed.",self.views.input.read(cx).content))
+                .child(div().id("smart-split-confirm-delete").cursor_pointer().child("Delete smart split").on_click(cx.listener(|this, _, window, cx| this.save_smart_split(true, window, cx))).layout_key(&self.layout,"board.smart-split.confirm-delete",None))
+                .child(div().id("smart-split-cancel-delete").cursor_pointer().child("Cancel").on_click(cx.listener(|this, _, window, cx| this.close_smart_split(window, cx))).layout_key(&self.layout,"board.smart-split.cancel-delete",None)));
+        }
+        div().absolute().inset_0().bg(rgba(0x00000040)).flex().items_center().justify_center()
+            .on_mouse_down(gpui::MouseButton::Left,cx.listener(|this, _, window, cx| this.close_smart_split(window,cx)))
+            .child(div().id("smart-split-dialog").w(px(560.)).p(px(24.)).bg(color(self.colors.comment)).rounded(px(6.))
+                .on_mouse_down(gpui::MouseButton::Left,|_,_,cx|cx.stop_propagation()).child(content).layout_key(&self.layout,"board.smart-split.dialog",None)).into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod smart_split_tests {
+    use super::*;
+    use crate::ui::{task_fields::tests::desktop, shell::tests::{click, draw, measured}};
+    struct Server(u16, &'static str, Value);
+    impl ht_core::Transport for Server {
+        fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> { assert_eq!(path,"/user/context"); Ok(ht_core::http::Response {status:200,body:json!({"success":true,"user":{"id":42}})}) }
+        fn post(&mut self,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> { self.mutate("POST",path,body,key) }
+        fn mutate(&mut self,method:&str,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
+            assert_eq!(method,self.1); assert_eq!(path,"/api/projects/views/smart-split"); assert_eq!(body["projectId"],15); assert!(!key.is_empty());
+            Ok(ht_core::http::Response {status:self.0,body:if self.0<300 {self.2.clone()} else {json!({"message":"Sign in to manage smart splits"})}})
+        }
+    }
+    fn seed(this:&mut Desktop) {
+        this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","desktop_smart_labels":[{"id":"smart","projectId":15,"value":"Bugs","ai_prompt":"Broken tasks"}],"project_view":{"id":"pv","projectId":15,"default_view":{"id":"default"},"default_view_id":"default","allViews":[{"id":"smart","title":"Bugs","board_filters":{"addedFilters":[{"type":"Labels","searchPayload":[{"id":"smart","value":"Bugs"}]}]}}],"user_project_views":[{}]}}]})).unwrap(); this.screen=Screen::Board; this.reload();
+    }
+    #[gpui::test]
+    fn smart_split_palette_form_uses_real_name_prompt_focus_and_preserves_refused_edits(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});
+        let mut cx=gpui::VisualTestContext::from_window(view.into(),cx); draw(view,&mut cx);
+        for status in [401,403,201] {
+            cx.simulate_keystrokes("ctrl-k"); cx.simulate_input("Add smart split"); cx.simulate_keystrokes("enter"); draw(view,&mut cx); measured(view,&mut cx,"board.smart-split.dialog");
+            cx.simulate_input("Urgent bugs"); cx.simulate_keystrokes("tab"); cx.simulate_input("Broken urgent tasks"); cx.simulate_keystrokes("ctrl-enter ctrl-enter escape");
+            view.update(&mut cx,|this,window,cx|{
+                let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();
+                assert_eq!(row.payload_json["change"]["body"],json!({"projectId":15,"name":"Urgent bugs","prompt":"Broken urgent tasks"}));
+                assert_eq!(this.views.panel,Some(Panel::SmartSplit)); assert!(this.views.pending.is_some());
+                let reply=json!({"view":{"id":"new","title":"Urgent bugs","slug":"urgent-bugs","project_view_id":"pv"},"label":{"id":"new","projectId":15,"value":"Urgent bugs","ai_prompt":"Broken urgent tasks"}});
+                this.db.drain_once(&mut Server(status,"POST",reply),chrono::Utc::now().timestamp()+1).unwrap(); assert!(!this.poll_view(window,cx));
+                if status>=300 { assert_eq!(this.views.panel,Some(Panel::SmartSplit)); assert_eq!(this.views.input.read(cx).content.as_ref(),"Urgent bugs"); assert_eq!(this.views.prompt.read(cx).content.as_ref(),"Broken urgent tasks"); assert_eq!(this.error.as_deref(),Some("Sign in to manage smart splits")); }
+                else { assert!(this.views.panel.is_none()); assert_eq!(this.db.board_project(15).unwrap()["project_view"]["allViews"][1]["id"],"new"); }
+            }).unwrap();
+            if status>=300 { cx.simulate_keystrokes("escape"); }
+        }
+    }
+    #[gpui::test]
+    fn smart_split_manage_edit_and_confirmed_delete_keep_paired_tag_and_rollback_refusals(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});
+        let mut cx=gpui::VisualTestContext::from_window(view.into(),cx); draw(view,&mut cx);
+        for delete in [false,true] { for status in [401,403,200] {
+            view.update(&mut cx,|this,window,cx|{seed(this);this.open_view_panel(Panel::Manage,window,cx);let index=this.view_choices().iter().position(|(_,view)|view["id"]=="smart").unwrap();this.choose_view_option(index,window,cx);assert_eq!(this.views.panel,Some(Panel::SmartSplit));assert_eq!(this.views.prompt.read(cx).content.as_ref(),"Broken tasks");}).unwrap(); draw(view,&mut cx);
+            if delete {
+                click(view,&mut cx,"board.smart-split.delete"); click(view,&mut cx,"board.smart-split.cancel-delete");
+                view.read_with(&cx,|this,_|assert!(!this.db.mutations().unwrap().iter().any(|row|row.status!="failed"))).unwrap();
+                click(view,&mut cx,"board.smart-split.delete"); click(view,&mut cx,"board.smart-split.confirm-delete");
+            } else { cx.simulate_keystrokes("ctrl-a"); cx.simulate_input("Urgent bugs"); click(view,&mut cx,"board.smart-split.save"); }
+            view.update(&mut cx,|this,window,cx|{
+                let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap(); assert_eq!(row.payload_json["change"]["body"]["viewId"],"smart");
+                this.db.drain_once(&mut Server(status,if delete {"DELETE"} else {"PATCH"},json!({"success":true,"slug":"urgent-bugs"})),chrono::Utc::now().timestamp()+1).unwrap();this.poll_view(window,cx);
+                let project=this.db.board_project(15).unwrap();
+                if status>=300 {assert_eq!(project["project_view"]["allViews"][0]["title"],"Bugs");assert_eq!(project["desktop_smart_labels"][0]["ai_prompt"],"Broken tasks");assert_eq!(this.views.panel,Some(Panel::SmartSplit));}
+                else if delete {assert_eq!(project["project_view"]["allViews"],json!([]));assert_eq!(project["desktop_smart_labels"],json!([]));}
+                else {assert_eq!(project["project_view"]["allViews"][0]["title"],"Urgent bugs");assert_eq!(project["desktop_smart_labels"][0]["value"],"Urgent bugs");}
+                this.views.panel=None;
+            }).unwrap();
+        }}
     }
 }
