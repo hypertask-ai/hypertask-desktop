@@ -630,7 +630,7 @@ impl Db {
                     Some("/api/stripe/cancelSubscription") => response.body["message"] == "Success",
                     _ => false,
                 };
-                if (200..300).contains(&response.status) && valid && response.body["success"] != false { response.body["success"] = json!(true); }
+                if (200..300).contains(&response.status) { let success = valid && response.body["success"] != false; if response.body.is_object() { response.body["success"] = json!(success); } }
                 response
             })
         } else if row.kind == "board_write" && row.payload_json["change"]["PositionTask"].is_object() {
@@ -638,6 +638,7 @@ impl Db {
                 Response { status: response.status, body: json!({"success":true,"task":response.body}) }
             } else { response })
         } else { response };
+        let response_status = response.as_ref().ok().map(|response| response.status);
         let result = match response {
             Ok(Response { status, body }) if (200..300).contains(&status) => {
                 match ensure_success(&body)
@@ -699,7 +700,7 @@ impl Db {
                         let mut payload = row.payload_json.clone(); payload["body"].as_object_mut().unwrap().remove("apiKey");
                         db.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?", params![payload.to_string(), row.id])?;
                     }
-                    db.kv_set(&format!("shell-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
+                    db.kv_set(&format!("shell-result:{}", row.client_id), &json!({"error":result.1,"status":response_status}).to_string())?;
                 }
                 db.fail_editor(row.id,&row.kind,&row.payload_json,&result.1)?;
                 if matches!(row.kind.as_str(), "inbox_seen" | "inbox_remind") {

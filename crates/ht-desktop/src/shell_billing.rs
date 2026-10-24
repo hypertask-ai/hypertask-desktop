@@ -30,7 +30,8 @@ impl Billing {
         for (id, placeholder) in [("custom", "API key"), ("baseUrl", "https://api.example.com/v1"), ("modelId", "Model id, e.g. llama-4-70b")] {
             inputs.insert(id.into(), cx.new(|cx| { let input = TextInput::new(String::new(), placeholder, color(0x8e9093), cx); if id == "custom" { input.secret() } else { input } }));
         }
-        Self { team:None, snapshot:None, loading:false, generation:0, bound:false, applying:false, yearly:false, confirm_free:false, ensured:false, inputs, revisions:BTreeMap::new(), previous:None, tests:BTreeMap::new(), custom_gdpr:false, observed:BTreeMap::new() }
+        let observed = inputs.keys().map(|field| (field.clone(), String::new())).collect();
+        Self { team:None, snapshot:None, loading:false, generation:0, bound:false, applying:false, yearly:false, confirm_free:false, ensured:false, inputs, revisions:BTreeMap::new(), previous:None, tests:BTreeMap::new(), custom_gdpr:false, observed }
     }
 }
 impl Desktop {
@@ -46,7 +47,7 @@ impl Desktop {
     }
     pub(super) fn clear_billing(&mut self, cx: &mut Context<Self>) {
         let b = &mut self.shell.settings_state.billing;
-        b.generation += 1; b.snapshot = None; b.team = None; b.loading = false; b.ensured = false; b.tests.clear(); b.previous = None; b.revisions.clear(); b.custom_gdpr = false; b.observed.clear(); b.applying = true;
+        b.generation += 1; b.snapshot = None; b.team = None; b.loading = false; b.ensured = false; b.tests.clear(); b.previous = None; b.revisions.clear(); b.custom_gdpr = false; b.observed = b.inputs.keys().map(|field| (field.clone(), String::new())).collect(); b.applying = true;
         for input in b.inputs.values() { input.update(cx, |input, cx| input.set_content(String::new(), cx)); }
         b.applying = false;
     }
@@ -103,7 +104,7 @@ impl Desktop {
                 if snapshot.user["id"].as_i64() != self.db.current_user_id() || snapshot.team["id"].as_str() != self.shell.settings_state.billing.team.as_deref() { return; }
                 let b = &mut self.shell.settings_state.billing;
                 for input in b.inputs.values() { input.update(cx, |input, cx| input.set_read_only(!snapshot.manage_keys(), cx)); }
-                b.yearly = snapshot.yearly();
+                if b.snapshot.as_ref().is_none_or(|previous| previous.billing_interval() != snapshot.billing_interval()) { b.yearly = snapshot.yearly(); }
                 b.applying = true;
                 let custom = snapshot.keys["keys"].as_array().into_iter().flatten().find(|row| row["provider"] == "custom");
                 for key in ["baseUrl", "modelId"] {
@@ -177,9 +178,11 @@ impl Desktop {
         let provider = request.body.as_ref().and_then(|body| body["provider"].as_str()).unwrap_or("").to_owned();
         match result {
             Err(error) => {
+                let status = error.strip_prefix("HTTP ").and_then(|error| error.split(':').next()).and_then(|status|status.parse::<u16>().ok());
+                let message = error.split_once(": ").filter(|_|status.is_some()).map(|(_,message)|message.to_owned()).unwrap_or_else(||error.clone());
                 self.rollback_billing();
-                if request.path == "/api/settings/byok-test" { self.shell.settings_state.billing.tests.insert(provider, json!({"result":"error","status":if error.contains("401"){Some(401)}else if error.contains("403"){Some(403)}else{None},"elapsedMs":0,"model":""})); }
-                self.shell.settings_state.error = Some(match request.path.as_str() { "/api/stripe/session/checkout" => "Could not open checkout".into(), "/api/stripe/cancelSubscription" => "Could not switch to Free Plan".into(), _ => error });
+                if request.path == "/api/settings/byok-test" { self.shell.settings_state.billing.tests.insert(provider, json!({"result":"error","status":status,"elapsedMs":0,"model":""})); }
+                self.shell.settings_state.error = Some(match request.path.as_str() { "/api/stripe/session/checkout" => "Could not open checkout".into(), "/api/stripe/cancelSubscription" => "Could not switch to Free Plan".into(), _ => message });
             }
             Ok(value) if request.path == "/api/settings/byok-test" => { self.shell.settings_state.billing.previous = None; self.shell.settings_state.billing.tests.insert(provider, value); }
             Ok(value) if request.path == "/api/stripe/session/checkout" => {
@@ -190,6 +193,7 @@ impl Desktop {
             Ok(_) => {
                 let b = &mut self.shell.settings_state.billing; b.previous = None;
                 if let Some(body) = request.body.as_ref().filter(|_| request.path == "/api/teams/byokKeys") {
+                    if body["clearSecret"] == true { b.tests.remove(&provider); }
                     b.applying = true;
                     let sent = body["apiKey"].as_str();
                     if b.inputs.contains_key(&provider) && (body["clearSecret"] == true || sent.is_some_and(|sent| b.inputs[&provider].read(cx).content.trim() == sent)) { b.observed.insert(provider.clone(), String::new()); b.inputs[&provider].update(cx, |input, cx| input.set_content(String::new(), cx)); }
@@ -240,9 +244,8 @@ impl Desktop {
             }
             row = row.child(div().when(!snapshot.manage_keys(), |d|d.opacity(0.45)).child(b.inputs[&source].clone()))
                 .child(div().id(("byok-test",index)).cursor_pointer().child(if source=="custom"{"Test endpoint"}else{"Test key"}).on_click(cx.listener({let source=source.clone();move|this,_,window,cx| {if let Some(body)=this.billing_key_body(&source,true,cx){this.billing_write("/api/settings/byok-test",body,window,cx);}}})))
-                .child(test_copy(b.tests.get(&source)))
-                .layout_key(&self.layout,format!("settings.byok.{source}"),None);
-            content=content.child(row);
+                .child(test_copy(b.tests.get(&source)));
+            content=content.child(row.layout_key(&self.layout,format!("settings.byok.{source}"),None));
         }
         content.into_any_element()
     }
@@ -253,7 +256,7 @@ impl Desktop {
             let current=id==plan; let exact=current && (id=="Free" || snapshot.billing_interval()==Some(b.yearly));
             let rank=|id:&str|match id{"Free"=>0,"BYOK"=>1,"AI"=>2,_=>3};
             let label=if !snapshot.owner(){"Owner only"}else if current{"Switch"}else if rank(id)>rank(&plan){"Upgrade"}else{"Downgrade"};
-            content=content.child(div().flex().gap(px(12.)).child(name).child(if b.yearly{annual}else{monthly}).child(if id=="Free"{if snapshot.flags["htpr-7551-start-plan-checkout"]==true{"Free plan"}else{"/ 14 days"}}else if b.yearly{"per user / year"}else{"per user / month"})
+            content=content.child(div().flex().gap(px(12.)).child(name).child(if b.yearly{annual}else{monthly}).child(if id=="Free"{if snapshot.flags.is_null(){"Checking plan access…"}else if snapshot.flags["htpr-7551-start-plan-checkout"]==true{"Free plan"}else{"/ 14 days"}}else if b.yearly{"per user / year"}else{"per user / month"})
                 .when(current,|d|d.child("Current"))
                 .when(exact && id=="BYOK",|d|d.child(div().id("plan-api-keys").cursor_pointer().child("API keys").on_click(cx.listener(|this,_,window,cx|this.select_settings("apiKeys",window,cx)))))
                 .when(!exact,|d|d.child(div().id(("billing-plan",index)).child(label).when(snapshot.owner() && !busy,|d|d.cursor_pointer().on_click(cx.listener(move|this,_,window,cx|{
@@ -329,4 +332,31 @@ mod tests {
             assert_eq!(this.shell.settings_state.billing.confirm_free,status!=200);if status!=200{assert_eq!(this.shell.settings_state.error.as_deref(),Some("Could not switch to Free Plan"));}
         });}
     }
+    #[gpui::test]
+    fn key_autosave_observes_real_edits_debounces_latest_value_and_keeps_refused_secret(cx:&mut gpui::TestAppContext){
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(|window,cx|desktop(window,cx));
+        for status in [401,403,200]{
+            view.update_in(cx,|this,window,cx|{
+                prepare(this,window,cx);this.load_billing(window,cx);
+                this.shell.settings_state.billing.observed.insert("openai".into(),String::new());
+                this.shell.settings_state.billing.inputs["openai"].update(cx,|input,cx|input.set_content(String::new(),cx));
+            });
+            cx.run_until_parked();
+            view.read_with(cx,|this,_|assert!(!this.db.mutations().unwrap().iter().any(|row|row.status!="failed")));
+            view.update_in(cx,|this,_,cx|this.shell.settings_state.billing.inputs["openai"].update(cx,|input,cx|input.set_content("first-fixture".into(),cx)));
+            cx.run_until_parked();cx.executor().advance_clock(Duration::from_millis(500));cx.run_until_parked();
+            view.read_with(cx,|this,_|assert!(!this.db.mutations().unwrap().iter().any(|row|row.status!="failed")));
+            view.update_in(cx,|this,_,cx|this.shell.settings_state.billing.inputs["openai"].update(cx,|input,cx|input.set_content("latest-fixture".into(),cx)));
+            cx.run_until_parked();cx.executor().advance_clock(Duration::from_millis(599));cx.run_until_parked();
+            view.read_with(cx,|this,_|assert!(!this.db.mutations().unwrap().iter().any(|row|row.status!="failed")));
+            cx.executor().advance_clock(Duration::from_millis(1));cx.run_until_parked();
+            view.update_in(cx,|this,window,cx|{
+                let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();
+                let body=json!({"teamId":"target-team","provider":"openai","apiKey":"latest-fixture"});assert_eq!(row.payload_json["body"],body);
+                settle(this,status,"/api/teams/byokKeys",body,json!({"ok":true}),window,cx);
+                assert_eq!(this.shell.settings_state.billing.inputs["openai"].read(cx).content.as_ref(),if status==200{""}else{"latest-fixture"});
+            });cx.run_until_parked();
+        }
+    }
+
 }

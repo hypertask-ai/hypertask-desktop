@@ -1,5 +1,5 @@
 use crate::{Result, Transport};
-use anyhow::{Context, ensure};
+use anyhow::ensure;
 use serde_json::{Value, json};
 
 #[derive(Clone, Debug)]

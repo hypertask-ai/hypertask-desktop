@@ -824,7 +824,9 @@ impl Desktop {
         let Some(request) = self.shell.settings_state.pending.clone().filter(|request| request.client_id.is_some()) else { return false; };
         match self.db.take_shell_result(request.client_id.as_deref().unwrap()) {
             Ok(Some(result)) => {
-                let result = if let Some(error) = result["error"].as_str() { Err(error.to_owned()) } else { Ok(result["value"].clone()) };
+                let result = if let Some(error) = result["error"].as_str() {
+                    Err(if request.path.starts_with("/api/") { result["status"].as_u64().map(|status| format!("HTTP {status}: {error}")).unwrap_or_else(|| error.to_owned()) } else { error.to_owned() })
+                } else { Ok(result["value"].clone()) };
                 self.settings_result(request, result, window, cx);
                 false
             }
