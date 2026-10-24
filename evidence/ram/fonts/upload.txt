@@ -1,0 +1,2 @@
+PUT_OK C:\Users\valen\AppData\Local\Temp\htram\ht-ram.exe
+PUT_OK C:\Users\valen\AppData\Local\Temp\htram\ram-measure.ps1

@@ -1,0 +1,125 @@
+﻿{
+    "ExeSHA256":  "CB38F42AB99D3D06F47F6D292F38611E68DE9E20A868F98F8E1AC20B2A3DAFC6",
+    "DatabaseSHA256":  "D1AD00EB47B806478B7192BDEFD64B623B811E7AD80BE54084A1DFDC12B3D8A6",
+    "DisplayWidth":  1920,
+    "DisplayHeight":  1080,
+    "Samples":  [
+                    {
+                        "Screen":  "inbox",
+                        "Run":  1,
+                        "Pid":  17984,
+                        "WorkingSet64":  81051648,
+                        "PrivateMemorySize64":  59899904,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    },
+                    {
+                        "Screen":  "board",
+                        "Run":  1,
+                        "Pid":  16376,
+                        "WorkingSet64":  81104896,
+                        "PrivateMemorySize64":  59920384,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    },
+                    {
+                        "Screen":  "task",
+                        "Run":  1,
+                        "Pid":  7512,
+                        "WorkingSet64":  82165760,
+                        "PrivateMemorySize64":  60755968,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    },
+                    {
+                        "Screen":  "inbox",
+                        "Run":  2,
+                        "Pid":  17012,
+                        "WorkingSet64":  81063936,
+                        "PrivateMemorySize64":  59916288,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    },
+                    {
+                        "Screen":  "board",
+                        "Run":  2,
+                        "Pid":  8436,
+                        "WorkingSet64":  81043456,
+                        "PrivateMemorySize64":  59805696,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    },
+                    {
+                        "Screen":  "task",
+                        "Run":  2,
+                        "Pid":  26232,
+                        "WorkingSet64":  82239488,
+                        "PrivateMemorySize64":  60829696,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    },
+                    {
+                        "Screen":  "inbox",
+                        "Run":  3,
+                        "Pid":  26024,
+                        "WorkingSet64":  81022976,
+                        "PrivateMemorySize64":  59908096,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    },
+                    {
+                        "Screen":  "board",
+                        "Run":  3,
+                        "Pid":  27184,
+                        "WorkingSet64":  81092608,
+                        "PrivateMemorySize64":  59850752,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    },
+                    {
+                        "Screen":  "task",
+                        "Run":  3,
+                        "Pid":  16888,
+                        "WorkingSet64":  85880832,
+                        "PrivateMemorySize64":  62623744,
+                        "ClientWidth":  1920,
+                        "ClientHeight":  1009,
+                        "Dpi":  96,
+                        "Maximized":  true
+                    }
+                ],
+    "Medians":  [
+                    {
+                        "Screen":  "inbox",
+                        "WorkingSet64":  81051648,
+                        "PrivateMemorySize64":  59908096
+                    },
+                    {
+                        "Screen":  "board",
+                        "WorkingSet64":  81092608,
+                        "PrivateMemorySize64":  59850752
+                    },
+                    {
+                        "Screen":  "task",
+                        "WorkingSet64":  82239488,
+                        "PrivateMemorySize64":  60829696
+                    }
+                ],
+    "ResizeMinimizeRestore":  true
+}

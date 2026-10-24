@@ -1,0 +1,3 @@
+PUT_OK C:\Users\valen\AppData\Local\Temp\htram\artifact.zip
+
+✓ Written to C:\Users\valen\AppData\Local\Temp\htram\ram-measure.ps1
