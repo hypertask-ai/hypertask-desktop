@@ -25,6 +25,8 @@ struct Server {
     create_failure: bool,
     writer_failure: bool,
     saved_status: u16,
+    split: bool,
+    refuse_second: bool,
 }
 impl Default for Server {
     fn default() -> Self {
@@ -33,6 +35,8 @@ impl Default for Server {
             create_failure: false,
             writer_failure: false,
             saved_status: 200,
+            split: false,
+            refuse_second: false,
         }
     }
 }
@@ -59,7 +63,11 @@ impl Transport for Server {
         match path {
             "/api/ai/task-writer" => Ok(Response {
                 status: if self.writer_failure { 500 } else { 200 },
-                body: json!({"tasks":[{"title":"Written","description":"<p>Body</p>"}]}),
+                body: if self.split {
+                    json!({"tasks":[{"title":"First","description":"<p>One</p>"},{"title":"Second","description":"<p>Two</p>"}]})
+                } else {
+                    json!({"tasks":[{"title":"Written","description":"<p>Body</p>"}]})
+                },
             }),
             "/tasks/create" => {
                 assert_eq!(body["project_id"], 7283);
@@ -68,9 +76,16 @@ impl Transport for Server {
                     self.create_failure = false;
                     return Err(TransportError::Timeout);
                 }
+                let index = key.rsplit('-').next().unwrap().parse::<i64>().unwrap();
+                if self.refuse_second && index == 1 {
+                    return Ok(Response {
+                        status: 403,
+                        body: json!({"success":false}),
+                    });
+                }
                 Ok(Response {
                     status: 200,
-                    body: json!({"success":true,"task":{"id":9,"title":body["title"],"description":body["description"],"projectId":7283,"status":"Normal"}}),
+                    body: json!({"success":true,"task":{"id":9+index,"title":body["title"],"description":body["description"],"projectId":7283,"status":"Normal"}}),
                 })
             }
             "/api/savedContent/toggleSaved" => {
@@ -220,6 +235,7 @@ fn saved_comment_toggle_handles_200_and_201_and_never_retries_uncertain_writes()
 }
 #[test]
 fn mention_contract_encodes_query_and_preserves_notification_ids_and_task_links() {
+    assert!(mention_html(&json!({"type":"name","name":"Missing ID"})).is_none());
     assert_eq!(
         mentions_request(7283, "").path,
         "/api/tasks/searchByParam?param=all&projectId=7283"
@@ -245,7 +261,10 @@ fn mention_contract_encodes_query_and_preserves_notification_ids_and_task_links(
 #[test]
 fn rust_writes_production_contract_requests_without_credentials() {
     let project = json!({"id":7283});
-    let comment = std::env::var("HT_QA_COMMENT_ID").ok().and_then(|s|s.parse::<i64>().ok()).unwrap_or(7);
+    let comment = std::env::var("HT_QA_COMMENT_ID")
+        .ok()
+        .and_then(|s| s.parse::<i64>().ok())
+        .unwrap_or(7);
     let requests = json!({
         "defaults":defaults_request(7283),
         "writer":writer_request(&project,"HTPR-7381 desktop contract probe: describe checking a status indicator. One task only; do not create any task.","UTC"),
@@ -320,4 +339,54 @@ fn compose_frozen_payload_and_comment_toggle_safety_survive_restart() {
     let before = server.calls.len();
     assert_eq!(db.drain_once(&mut server, 104).unwrap(), Drain::Failed(id));
     assert_eq!(server.calls.len(), before);
+}
+
+#[test]
+fn split_writer_saves_each_ticket_and_reports_partial_failure_without_duplicate_creation() {
+    for refuse_second in [false, true] {
+        let mut db = db();
+        let id = db
+            .enqueue(
+                Write::ComposeTask {
+                    project_id: 7283,
+                    text: "two tasks".into(),
+                    time_zone: "UTC".into(),
+                },
+                100,
+            )
+            .unwrap();
+        let key = db.mutations().unwrap()[0].client_id.clone();
+        let mut server = Server {
+            split: true,
+            refuse_second,
+            ..Default::default()
+        };
+        assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Applied(id));
+        assert_eq!(
+            server
+                .calls
+                .iter()
+                .filter(|c| c.0 == "/tasks/create")
+                .count(),
+            2
+        );
+        let result: Value = serde_json::from_str(
+            &db.kv_get(&format!("compose-result:{key}"))
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(
+            result["tasks"].as_array().unwrap().len(),
+            if refuse_second { 1 } else { 2 }
+        );
+        assert_eq!(
+            result["failedTitles"],
+            if refuse_second {
+                json!(["Second"])
+            } else {
+                json!([])
+            }
+        );
+    }
 }

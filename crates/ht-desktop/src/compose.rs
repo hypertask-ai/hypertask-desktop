@@ -289,7 +289,19 @@ impl Desktop {
             self.interaction.modal = None;
             self.open_task(id, cx);
             window.focus(&self.focus, cx);
-            if value["writerFailed"] == true {
+            if let Some(failed) = value["failedTitles"]
+                .as_array()
+                .filter(|rows| !rows.is_empty())
+            {
+                self.error = Some(format!(
+                    "Only the saved tickets were created. Could not save: {}",
+                    failed
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .collect::<Vec<_>>()
+                        .join(", ")
+                ));
+            } else if value["writerFailed"] == true {
                 self.error=Some("The task writer was unavailable; your original note was saved as the title and description.".into());
             }
         }

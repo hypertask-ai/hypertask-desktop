@@ -43,8 +43,8 @@ the storageState → browser consent → one-time code → CLI token exchange fl
 It keeps the token in memory, uses bearer-only native fetch for contracts, and
 prints status/short shapes only. Its optional `--seed` creates a temporary QA
 comment only after defaults authorizes; pass that ID as CI `qa_comment_id` to
-produce unchanged Rust request fixtures, then remove the probe comment after
-star/pin cleanup. Never use fixture ID 7 as a real QA target without seeding.
+produce unchanged Rust request fixtures, the probe removes that comment after
+star/pin cleanup, including on a failed contract. Never use fixture ID 7 as a real QA target without seeding.
 
 ## Comments: authorized writes and local behavior
 

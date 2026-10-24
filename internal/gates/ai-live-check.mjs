@@ -123,32 +123,50 @@ try {
     assert.equal(fixtures.star.body.projectId,7283);
     assert.equal(fixtures.pin.body.type,'Public');
     assert.equal(fixtures.star.body.type,'Private');
-    if (mode === '--diagnose') {
-      const results=[];
-      for (const name of ['defaults','writer','mentions','star','pin']) results.push(await run(name,fixtures[name]));
-      assert(results.every(result=>result.status>=200 && result.status<300));
-    } else {
-    const defaults=await run('defaults',fixtures.defaults);
-    assert(Number.isInteger(defaults.value.sectionId) && typeof defaults.value.ranking==='string');
-    const mentions=await run('mentions',fixtures.mentions);
-    assert(Array.isArray(mentions.value));
-    const writer=await run('writer',fixtures.writer);
-    assert(typeof writer.value==='string' ? writer.value.includes('ai-generated-task-title') && !/^event:\s*(?:error|done)\b/m.test(writer.value) : Array.isArray(writer.value.tasks) && writer.value.tasks.length>0);
-    // Begin from a known empty QA-only saved state; cleanup also runs after a failed acknowledgement.
+    const commentId=Number(fixtures.star.body.commentId);
+    assert(Number.isSafeInteger(commentId) && commentId>0);
+    assert.equal(fixtures.pin.body.commentId,fixtures.star.body.commentId);
+    const targetResponse=await fetch(`${origin}/api/mcp/comments?task_id=60253&limit=100&sort_order=desc`,{headers,redirect:'error',signal:AbortSignal.timeout(30_000)});
+    assert.equal(targetResponse.status,200);
+    const targetBody=await targetResponse.json();
+    const target=targetBody.comments.find(comment=>Number(comment.id)===commentId);
+    const ownedProbe=target?.creatorId===qaUserId && target?.text==='<p>HTPR-7381 temporary desktop contract probe</p>';
+    // Diagnostic ID 7 must be absent, otherwise only our own seeded comment may be toggled.
+    assert(ownedProbe || (mode==='--diagnose' && !target));
+    let cleanupFailed=false;
     try {
-      await run('unstar-before',fixtures.unstar);
-      await run('unpin-before',fixtures.unpin);
-      const star=await run('star',fixtures.star);
-      assert.equal(star.status,200); assert(star.value.saved);
-      const pin=await run('pin',fixtures.pin);
-      assert.equal(pin.status,200); assert(pin.value.saved);
+      if (mode === '--diagnose') {
+        const results=[];
+        for (const name of ['defaults','writer','mentions','star','pin']) results.push(await run(name,fixtures[name]));
+        assert(results.every(result=>result.status>=200 && result.status<300));
+      } else {
+        const defaults=await run('defaults',fixtures.defaults);
+        assert(Number.isInteger(defaults.value.sectionId) && typeof defaults.value.ranking==='string');
+        const mentions=await run('mentions',fixtures.mentions);
+        assert(Array.isArray(mentions.value));
+        const writer=await run('writer',fixtures.writer);
+        assert(typeof writer.value==='string' ? writer.value.includes('ai-generated-task-title') && !/^event:\s*(?:error|done)\b/m.test(writer.value) : Array.isArray(writer.value.tasks) && writer.value.tasks.length>0);
+        await run('unstar-before',fixtures.unstar);
+        await run('unpin-before',fixtures.unpin);
+        const star=await run('star',fixtures.star);
+        assert.equal(star.status,200); assert(star.value.saved);
+        const pin=await run('pin',fixtures.pin);
+        assert.equal(pin.status,200); assert(pin.value.saved);
+      }
     } finally {
-      const star=await run('unstar',fixtures.unstar);
-      const pin=await run('unpin',fixtures.unpin);
-      assert.equal(star.status,201); assert.equal(pin.status,201);
+      if (ownedProbe) {
+        // Attempt every cleanup even when a preceding route or cleanup fails.
+        for (const name of ['unstar','unpin']) {
+          try { const result=await run(name,fixtures[name]); assert.equal(result.status,201); }
+          catch {cleanupFailed=true;}
+        }
+        const deleted=await fetch(`${origin}/api/mcp/comments/${commentId}`,{method:'DELETE',headers,redirect:'error',signal:AbortSignal.timeout(30_000)});
+        console.log(`delete-probe ${deleted.status} {comment:true}`);
+        cleanupFailed ||= !deleted.ok;
+      }
+      assert(!cleanupFailed);
     }
     console.log('compose-contract 200 {routes:4,tasksCreated:0,cleaned:true}');
-    }
   } else {
   const response = await fetch(`${origin}/api/ai/chat/stream`, {
     method: 'POST', redirect: 'error', signal: AbortSignal.timeout(310_000),

@@ -257,6 +257,7 @@ pub(crate) fn compose(
     let drafts: Vec<Draft> = serde_json::from_value(prepared["drafts"].clone())
         .map_err(|_| TransportError::InvalidResponse)?;
     let mut tasks = vec![];
+    let mut failed_titles = vec![];
     for (index, draft) in drafts.iter().enumerate() {
         let receipt_key = format!("compose-created:{key}:{index}");
         if let Some(task) = db
@@ -283,7 +284,17 @@ pub(crate) fn compose(
         }
         // Stable per-draft key and frozen body allow a lost create acknowledgement to be replayed safely.
         let response = transport.post("/tasks/create", &body, &format!("{key}-{index}"))?;
+        if response.status == 409 {
+            return Err(TransportError::Timeout);
+        }
         if !(200..300).contains(&response.status) {
+            if crate::queue::permanent(response.status) && !tasks.is_empty() {
+                failed_titles = drafts[index..]
+                    .iter()
+                    .map(|draft| draft.title.clone())
+                    .collect();
+                break;
+            }
             return Ok(response);
         }
         let task = &response.body["task"];
@@ -292,21 +303,24 @@ pub(crate) fn compose(
         }
         db.kv_set(&receipt_key, &task.to_string())
             .map_err(|_| TransportError::InvalidResponse)?;
+        db.upsert_task(task)
+            .map_err(|_| TransportError::InvalidResponse)?;
         tasks.push(task.clone());
     }
     Ok(Response {
         status: 200,
-        body: json!({"success":true,"tasks":tasks,"writerFailed":prepared["writerFailed"]}),
+        body: json!({"success":true,"tasks":tasks,"writerFailed":prepared["writerFailed"],"failedTitles":failed_titles}),
     })
 }
 
 pub fn mention_html(item: &Value) -> Option<String> {
     let kind = item["type"].as_str()?;
     let name = item["name"].as_str()?;
-    let id = item["id"]
-        .as_str()
-        .map(str::to_owned)
-        .unwrap_or_else(|| item["id"].to_string());
+    let id = match &item["id"] {
+        Value::String(id) if !id.is_empty() => id.clone(),
+        Value::Number(id) if id.as_i64().is_some_and(|id| id > 0) => id.to_string(),
+        _ => return None,
+    };
     let (label, data_id, text, extra, href) = match kind {
         "name" | "agent" => (
             format!("{kind}-{id}"),
@@ -318,6 +332,9 @@ pub fn mention_html(item: &Value) -> Option<String> {
         "task" => {
             let project = item["project_id"].as_i64()?;
             let index = item["index"].as_i64()?;
+            if project <= 0 || index <= 0 {
+                return None;
+            }
             let text = format!("{} {name}", item["ticketNumber"].as_str().unwrap_or(""));
             (
                 "task".into(),
