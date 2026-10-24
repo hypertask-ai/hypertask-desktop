@@ -46,8 +46,22 @@ fn skills_from_response(value: &Value) -> Vec<Value> {
     rows.sort_by_key(|skill| skill["name"].as_str().unwrap_or("").to_lowercase());
     rows
 }
+fn fetch_skills(
+    transport: &mut impl Transport,
+    project: Option<i64>,
+) -> Result<Vec<Value>, String> {
+    let path = project.map_or_else(
+        || "/skills".into(),
+        |project| format!("/skills?project_id={project}"),
+    );
+    let response = transport.get(&path).map_err(|error| error.to_string())?;
+    if !(200..300).contains(&response.status) || response.body["success"] != true {
+        return Err("Skills unavailable".into());
+    }
+    Ok(skills_from_response(&response.body))
+}
 impl AiSidebar {
-    fn poll_skills(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn poll_skills(&mut self, cx: &mut Context<Self>) {
         let project = self
             .scope
             .as_ref()
@@ -99,21 +113,13 @@ impl AiSidebar {
             thread::spawn(move || {
                 let result = (|| {
                     let mut http = Http::new(token).map_err(|error| error.to_string())?;
-                    let path = project.map_or_else(
-                        || "/skills".into(),
-                        |project| format!("/skills?project_id={project}"),
-                    );
-                    let response = http.get(&path).map_err(|error| error.to_string())?;
-                    if !(200..300).contains(&response.status) || response.body["success"] != true {
-                        return Err("Skills unavailable".into());
-                    }
-                    Ok(skills_from_response(&response.body))
+                    fetch_skills(&mut http, project)
                 })();
                 let _ = send.send(result);
             });
         }
     }
-    fn skill_choices(&self, cx: &App) -> Vec<Value> {
+    pub(super) fn skill_choices(&self, cx: &App) -> Vec<Value> {
         if self.input.read(cx).slash_token().is_none()
             || self.skills.dismissed.as_deref() == Some(self.input.read(cx).content.as_ref())
         {
@@ -153,7 +159,12 @@ impl AiSidebar {
         self.skills.choice = 0;
         cx.notify();
     }
-    fn skill_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn skill_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if !self.input.focus_handle(cx).is_focused(window) {
             return;
         }
@@ -188,7 +199,7 @@ impl AiSidebar {
         cx.notify();
         cx.stop_propagation();
     }
-    fn skill_menu(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
+    pub(super) fn skill_menu(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
         let choices = self.skill_choices(cx);
         let t = self.colors;
         div()
@@ -238,6 +249,63 @@ mod tests {
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0]["name"], "Board");
         assert!(skills_from_response(&json!({"skills":[]})).is_empty());
+    }
+    #[test]
+    fn slash_skill_reads_use_exact_scoped_bearer_route_and_deny_without_fabrication() {
+        struct Catalog {
+            project: Option<i64>,
+            status: u16,
+        }
+        impl Transport for Catalog {
+            fn get(
+                &mut self,
+                path: &str,
+            ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                assert_eq!(
+                    path,
+                    self.project.map_or_else(
+                        || "/skills".into(),
+                        |project| format!("/skills?project_id={project}")
+                    )
+                );
+                Ok(ht_core::http::Response {
+                    status: self.status,
+                    body: json!({"success":self.status==200,"skills":[{"slug":"review","name":"Review","enabled":true}]}),
+                })
+            }
+            fn post(
+                &mut self,
+                _: &str,
+                _: &Value,
+                _: &str,
+            ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                panic!("skill insertion must never write or send")
+            }
+        }
+        for project in [None, Some(15)] {
+            assert_eq!(
+                fetch_skills(
+                    &mut Catalog {
+                        project,
+                        status: 200
+                    },
+                    project
+                )
+                .unwrap()
+                .len(),
+                1
+            );
+            assert!(
+                fetch_skills(
+                    &mut Catalog {
+                        project,
+                        status: 403
+                    },
+                    project
+                )
+                .is_err()
+            );
+        }
     }
     #[gpui::test]
     fn ai_slash_skill_unicode_filter_navigation_escape_and_insert_never_send(

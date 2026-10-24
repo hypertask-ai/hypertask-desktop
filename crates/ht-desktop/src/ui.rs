@@ -1783,6 +1783,7 @@ impl Render for Desktop {
                     sidebar.update(cx, |sidebar, cx| sidebar.resize_end(event, window, cx));
                 }
             }))
+            .child(self.task_summary_overlay(window, cx))
             .child(self.ai_panel(window, cx))
             .child(self.shell_reopen(cx))
             .child(self.shell_overlay(window, cx))
@@ -1984,8 +1985,8 @@ fn inbox_metadata(task: &serde_json::Value) -> String {
     parts.join(" · ")
 }
 
-fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    let markdown = if let Some(summary) = extra.get("ai_summary") {
+fn full_task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> &str {
+    if let Some(summary) = extra.get("ai_summary") {
         summary["content"].as_str().unwrap_or("")
     } else {
         extra
@@ -1995,7 +1996,11 @@ fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
             .and_then(|v| v["content"].as_str())
             .or_else(|| extra.get("summary").and_then(|v| v.as_str()))
             .unwrap_or("")
-    };
+    }
+}
+
+fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
+    let markdown = full_task_summary(extra);
     let first = markdown
         .lines()
         .map(str::trim)

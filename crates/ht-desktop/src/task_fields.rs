@@ -3,12 +3,12 @@ use crate::shortcuts::Action;
 use chrono::{Datelike, Local, NaiveDate, TimeZone, Timelike};
 use gpui::MouseButton;
 use ht_core::TaskPatch;
-use serde_json::Value;
 
 pub(super) struct TaskFields {
     query: Entity<TextInput>,
     due: Option<DuePicker>,
     pub summary_open: bool,
+    summary_bounds: Rc<std::cell::Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
 }
 struct DuePicker {
     task: i64,
@@ -38,6 +38,7 @@ impl TaskFields {
             query,
             due: None,
             summary_open: false,
+            summary_bounds: Rc::new(std::cell::Cell::new(None)),
         }
     }
 }
@@ -157,32 +158,7 @@ impl Desktop {
     }
     pub(super) fn task_summary_view(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = self.colors;
-        let markdown = self
-            .detail
-            .as_ref()
-            .and_then(|detail| {
-                let extra = &detail.task.extra;
-                if let Some(summary) = extra.get("ai_summary") {
-                    summary["content"].as_str()
-                } else {
-                    extra
-                        .get("Task_Summary")
-                        .and_then(Value::as_array)
-                        .and_then(|items| items.first())
-                        .and_then(|item| item["content"].as_str())
-                        .or_else(|| extra.get("summary").and_then(Value::as_str))
-                }
-            })
-            .unwrap_or("");
-        let mut html = String::new();
-        pulldown_cmark::html::push_html(
-            &mut html,
-            pulldown_cmark::Parser::new_ext(
-                markdown,
-                pulldown_cmark::Options::ENABLE_STRIKETHROUGH
-                    | pulldown_cmark::Options::ENABLE_TABLES,
-            ),
-        );
+        let anchor = self.task_fields.summary_bounds.clone();
         div()
             .id("task-summary")
             .pt(px(8.))
@@ -206,29 +182,56 @@ impl Desktop {
                     }))
                     .layout_key(&self.layout, "task.summary.toggle", None),
             )
-            .when(self.task_fields.summary_open, |d| {
-                d.child(
-                    gpui::deferred(
-                        div()
-                            .id("task-summary-full")
-                            .absolute()
-                            .top(px(28.))
-                            .left_0()
-                            .right_0()
-                            .p(px(16.))
-                            .bg(color(t.detail))
-                            .shadow(shadow())
-                            .child(RichText::parse(&html, t).element())
-                            .layout_key(
-                                &self.layout,
-                                "task.summary.full",
-                                Some(markdown.to_owned()),
-                            ),
-                    )
-                    .with_priority(1),
+            .child(
+                gpui::canvas(
+                    move |bounds, _, _| anchor.set(Some(bounds)),
+                    |_, _, _, _| {},
                 )
-            })
+                .absolute()
+                .size_full(),
+            )
             .into_any_element()
+    }
+    pub(super) fn task_summary_overlay(
+        &self,
+        window: &Window,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let Some(bounds) = self
+            .task_fields
+            .summary_bounds
+            .get()
+            .filter(|_| self.screen == Screen::Task && self.task_fields.summary_open)
+        else {
+            return div().into_any_element();
+        };
+        let markdown = self
+            .detail
+            .as_ref()
+            .map_or("", |detail| full_task_summary(&detail.task.extra));
+        let mut html = String::new();
+        pulldown_cmark::html::push_html(
+            &mut html,
+            pulldown_cmark::Parser::new_ext(
+                markdown,
+                pulldown_cmark::Options::ENABLE_STRIKETHROUGH
+                    | pulldown_cmark::Options::ENABLE_TABLES,
+            ),
+        );
+        div()
+            .id("task-summary-full")
+            .absolute()
+            .left(bounds.origin.x)
+            .top(bounds.origin.y + px(28.))
+            .w(bounds.size.width)
+            .max_h((window.viewport_size().height - bounds.origin.y - px(40.)).max(px(80.)))
+            .overflow_y_scroll()
+            .p(px(16.))
+            .bg(color(self.colors.detail))
+            .shadow(shadow())
+            .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
+            .child(RichText::parse(&html, self.colors).element())
+            .layout_key(&self.layout, "task.summary.full", Some(markdown.to_owned()))
     }
     pub(super) fn show_due_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.task_fields.summary_open = false;
@@ -619,7 +622,9 @@ pub(super) mod tests {
             cx.simulate_input(query);
             cx.run_until_parked();
             click(view, &mut cx, "command.choice.0");
-            cx.simulate_keystrokes("escape");
+            if field != 7 {
+                cx.simulate_keystrokes("escape");
+            }
         }
         view.read_with(&mut cx, |this, _| {
             let task = this.db.task(1).unwrap().unwrap();
