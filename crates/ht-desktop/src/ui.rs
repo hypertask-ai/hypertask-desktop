@@ -1265,8 +1265,11 @@ impl Desktop {
                             d.child(
                                 div()
                                     .text_size(px(11.))
-                                    .text_color(color(t.accent))
-                                    .child("Draft"),
+                                    .line_height(px(22.))
+                                    .font_weight(FontWeight::MEDIUM)
+                                    .text_color(color(0xc2cfa5))
+                                    .child("Draft")
+                                    .layout_key(&self.layout, format!("board.card.{index}.draft"), Some("Draft".into())),
                             )
                         },
                     )
@@ -1365,7 +1368,7 @@ impl Desktop {
                     .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == 0 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
-                            .child(self.creator.clone()).when(d.task.extra.get("hasDescriptionDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child("Draft")).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
+                            .child(div().child(self.creator.clone()).layout_key(&self.layout, "task.description.author", Some(self.creator.to_string()))).when(d.task.extra.get("hasDescriptionDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child(div().child("Draft").layout_key(&self.layout, "task.description.draft", Some("Draft".into())))).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
                         .child(div().pt(px(8.)).min_h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.focused_editor(Editing::Description, cx))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
@@ -1964,6 +1967,13 @@ fn inbox_date(value: Option<&str>) -> String {
 }
 
 fn creator_name(extra: &serde_json::Map<String, serde_json::Value>) -> String {
+    if let Some(name) = extra.get("agent").and_then(|agent| agent["displayName"].as_str())
+        .filter(|name| !name.is_empty())
+        .or_else(|| extra.get("createdBy").and_then(|creator| creator.pointer("/agent/displayName"))
+            .and_then(|name| name.as_str()).filter(|name| !name.is_empty()))
+    {
+        return name.to_owned();
+    }
     ["createdBy", "user", "creator"]
         .into_iter()
         .find_map(|key| {
@@ -2210,3 +2220,7 @@ mod tests {
         );
     }
 }
+
+#[cfg(test)]
+#[path = "data_fidelity_tests.rs"]
+mod data_fidelity_tests;

@@ -1,0 +1,150 @@
+{
+  "sections": {
+    "success": true,
+    "projectId": 15,
+    "sections": [
+      {
+        "id": 1,
+        "projectId": 15,
+        "section_title": "Todo",
+        "ranking": "A",
+        "visibility": true,
+        "deleted": false
+      }
+    ]
+  },
+  "list": {
+    "success": true,
+    "tasks": [
+      {
+        "projectId": 15,
+        "boardTitle": "Fidelity board",
+        "section": "Todo",
+        "sectionId": 1,
+        "status": "Normal",
+        "description": "<p>Published description</p>",
+        "createdAt": "2026-10-19T12:00:00Z",
+        "updatedAt": "2026-10-20T12:00:00Z",
+        "id": 101,
+        "title": "Human-authored task",
+        "ticketNumber": "FID-101"
+      },
+      {
+        "projectId": 15,
+        "boardTitle": "Fidelity board",
+        "section": "Todo",
+        "sectionId": 1,
+        "status": "Normal",
+        "description": "<p>Published description</p>",
+        "createdAt": "2026-10-19T12:00:00Z",
+        "updatedAt": "2026-10-20T12:00:00Z",
+        "id": 102,
+        "title": "Agent-authored task",
+        "ticketNumber": "FID-102"
+      },
+      {
+        "projectId": 15,
+        "boardTitle": "Fidelity board",
+        "section": "Todo",
+        "sectionId": 1,
+        "status": "Normal",
+        "description": "<p>Published description</p>",
+        "createdAt": "2026-10-19T12:00:00Z",
+        "updatedAt": "2026-10-20T12:00:00Z",
+        "id": 103,
+        "title": "Unattributed task",
+        "ticketNumber": "FID-103"
+      }
+    ],
+    "total": 3
+  },
+  "detail": {
+    "success": true,
+    "tasks": [
+      {
+        "projectId": 15,
+        "boardTitle": "Fidelity board",
+        "section": "Todo",
+        "sectionId": 1,
+        "status": "Normal",
+        "description": "<p>Published description</p>",
+        "createdAt": "2026-10-19T12:00:00Z",
+        "updatedAt": "2026-10-20T12:00:00Z",
+        "id": 101,
+        "title": "Human-authored task",
+        "createdBy": {
+          "id": 7,
+          "displayName": "Real Human",
+          "email": "human@example.test"
+        },
+        "ai_summary": {
+          "content": "## Summary\n- **Stored** summary, not generated. [1]\n- Another item.",
+          "updated_at": "2026-10-20T13:00:00Z"
+        },
+        "ticketNumber": "FID-101"
+      },
+      {
+        "projectId": 15,
+        "boardTitle": "Fidelity board",
+        "section": "Todo",
+        "sectionId": 1,
+        "status": "Normal",
+        "description": "<p>Published description</p>",
+        "createdAt": "2026-10-19T12:00:00Z",
+        "updatedAt": "2026-10-20T12:00:00Z",
+        "id": 102,
+        "title": "Agent-authored task",
+        "createdBy": {
+          "id": 7,
+          "displayName": "Agent Owner",
+          "email": "owner@example.test",
+          "agent": {
+            "id": "runner",
+            "displayName": "Actual Runner"
+          }
+        },
+        "agent": {
+          "id": "runner",
+          "displayName": "Actual Runner"
+        },
+        "ai_summary": null,
+        "ticketNumber": "FID-102"
+      },
+      {
+        "projectId": 15,
+        "boardTitle": "Fidelity board",
+        "section": "Todo",
+        "sectionId": 1,
+        "status": "Normal",
+        "description": "<p>Published description</p>",
+        "createdAt": "2026-10-19T12:00:00Z",
+        "updatedAt": "2026-10-20T12:00:00Z",
+        "id": 103,
+        "title": "Unattributed task",
+        "ticketNumber": "FID-103"
+      }
+    ],
+    "total": 3
+  },
+  "drafts": {
+    "success": true,
+    "drafts": [
+      {
+        "id": 1,
+        "taskId": 101,
+        "draftType": "description",
+        "text": "<p>Private description draft</p>"
+      },
+      {
+        "id": 2,
+        "taskId": 101,
+        "draftType": "comment",
+        "text": "<p>Private comment draft</p>"
+      }
+    ]
+  },
+  "emptyDrafts": {
+    "success": true,
+    "drafts": []
+  }
+}

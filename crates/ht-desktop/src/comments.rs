@@ -55,7 +55,8 @@ impl Desktop {
                         div()
                             .text_size(px(12.))
                             .text_color(color(t.muted))
-                            .child("Draft"),
+                            .child("Draft")
+                            .layout_key(&self.layout, "task.composer.draft", Some("Draft".into())),
                     )
                 },
             )
