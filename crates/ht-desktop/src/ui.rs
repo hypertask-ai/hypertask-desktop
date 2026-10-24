@@ -462,6 +462,7 @@ impl Desktop {
     }
 
     fn switch(&mut self, screen: Screen, cx: &mut Context<Self>) {
+        self.exit_ai_fullscreen(cx);
         if self.auto_board && screen == Screen::Board {
             Self::resolve_board(&self.db, &mut self.options);
             let _ = self
@@ -580,7 +581,9 @@ impl Desktop {
                 sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
                 return;
             }
-            if sidebar.read(cx).has_focus(window, cx) {
+            if sidebar.read(cx).has_focus(window, cx)
+                || (sidebar.read(cx).mode() == crate::ai_sidebar::DisplayMode::Fullscreen
+                    && !((event.keystroke.modifiers.control || event.keystroke.modifiers.platform) && event.keystroke.key == "k")) {
                 return;
             }
         }

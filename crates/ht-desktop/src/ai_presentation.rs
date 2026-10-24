@@ -128,6 +128,8 @@ impl AiSidebar {
         self.presentation.mode = mode;
         self.set_open(true, cx);
         self.more_menu = false;
+        self.history_menu = false;
+        self.model_menu = false;
     }
 
     pub fn exit_fullscreen(&mut self, cx: &mut Context<Self>) {

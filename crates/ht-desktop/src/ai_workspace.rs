@@ -39,6 +39,14 @@ impl Desktop {
             .into_any_element()
     }
 
+    pub(super) fn exit_ai_fullscreen(&mut self, cx: &mut Context<Self>) {
+        if let Some(sidebar) = &self.ai_sidebar {
+            if sidebar.read(cx).mode() == DisplayMode::Fullscreen {
+                sidebar.update(cx, |sidebar, cx| sidebar.exit_fullscreen(cx));
+            }
+        }
+    }
+
     pub(super) fn ai_command(&mut self, action: Action, cx: &mut Context<Self>) {
         if let Some(sidebar) = &self.ai_sidebar {
             sidebar.update(cx, |sidebar, cx| match action {
@@ -156,5 +164,11 @@ mod tests {
         cx.simulate_input("Open AI chat full screen");
         cx.simulate_keystrokes("enter");
         assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 1440.);
+        let selected = view.read_with(&mut cx, |this, _| this.selected).unwrap();
+        cx.simulate_keystrokes("j");
+        view.read_with(&mut cx, |this, _| assert_eq!(this.selected, selected))
+            .unwrap();
+        cx.simulate_keystrokes("2");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
     }
 }
