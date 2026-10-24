@@ -156,3 +156,16 @@ Bearer route evidence for the allowlist (relative to web `src`):
 `lib/mcp/operations/projects/archive/operation.ts:20-23,88`,
 `lib/mcp/operations/webhooks/operation.ts:150-154,293-294`;
 these use `validateMcpRouteAuth` (aliased as `validateMcpAuth`), not web cookies.
+
+| Ref | Exact route(s) and auth boundary | Consequence |
+| --- | --- | --- |
+| B24 | `POST /api/comments/deleteCommentById`, `pages/api/comments/deleteCommentById.ts:13-18,28-36`: `getSessionUser`; bearer `DELETE /api/mcp/comments/[id]`, `lib/mcp/operations/comments/[comment_id]/operation.ts:460-474`, has stricter owner/HyperAI permission. | F112 retains real queued own-comment delete; broader web author permissions are blocked. |
+| B25 | `POST /api/savedContent/toggleSaved`, `pages/api/savedContent/toggleSaved.ts:14-18`: `getSessionUser`. | F115/F116 comment star/pin have no equivalent human-bearer mutation; no local fake pin/star. |
+| B26 | `POST /api/ai/task-writer`, `app/api/ai/task-writer/route.ts:41-44`: `getAiRequestUser` -> `hasOAuthAccessTokenClaims` (`app/api/ai/_lib/requestUser.ts:28`); creation defaults `GET /api/tasks/createGlobally` use `taskWriteHandler` -> `getSessionUser` (`lib/api/task-writes/route.ts:89`). | F001/F002/F003/F011 web compose remains blocked; the different MCP JSON-draft writer is not substituted. |
+
+The final inventory retains full-row blockers as the primary `blocked` status,
+with the implemented subset described alongside it. This includes F010/F033,
+F112, F401/F403/F404, F432/F435, F463/F470/F475/F479/F482/F487/F643;
+relabeling them does not remove the existing working client behavior.
+Nine newly implemented P1 rows await shell2 CI before inventory promotion:
+F197, F210, F252, F304, F334, F335, F337, F343, F434.

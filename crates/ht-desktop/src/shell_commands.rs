@@ -95,6 +95,14 @@ mod tests {
             ("boardSettings", "board-general"),
             ("settingsCli", "cli"),
             ("settingsShortcuts", "shortcuts"),
+            ("settingsGeneral", "general"),
+            ("settingsAppearance", "appearance"),
+            ("settingsSkills", "skills"),
+            ("settingsBoardMembers", "board-members"),
+            ("settingsBoardAi", "board-ai"),
+            ("settingsBoardSkills", "board-skills"),
+            ("settingsBoardFiles", "board-files"),
+            ("settingsLearn", "learn"),
         ] {
             command(view, &mut cx, key);
             view.read_with(&cx, |this, _| {
