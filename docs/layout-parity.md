@@ -361,7 +361,7 @@ assignee metadata was rendered as a separate row below the title. Web
 `src/components/PageComponents/Kanban/KanbanTaskComponents/TaskTopRow.tsx:68-83,93-134`
 places both in the ticket row, including alongside the optional inbox badge.
 `TaskTopRow.tsx:69` supplies its 4px item gap;
-`KanbanTaskComponents/CommentAndAssignees.tsx:17-19` and
+`KanbanTaskComponents/CommentAndAssignees.tsx:15-19` and
 `TaskTopRow.tsx:148-159` give comment/assignee height 22px via
 `tailwind.config.ts:27` (`h-labelComponent`) and avatar `size=22`.
 `TaskDraggableContainer.tsx:94-96` supplies the existing 6px gap between card rows.
@@ -384,3 +384,16 @@ The ten matched residuals were individually checked against source:
 The other 24 matched differences are the unchanged live collector's eight
 unsampled rail keys per screen. No control is removed and neither collector,
 comparer nor fixture is modified to manufacture a count reduction.
+
+
+The inbox-only checkpoint is independently green at SHA
+`2358b8c734a5b78f07c4d6bffbfb87157e3a0ff9`, CI
+[40105979341](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40105979341):
+Ubuntu, Windows x64, macOS, Windows ARM64 and Windows memory receipt/budget all
+success; the unchanged ram2-only historical baseline is skipped. The new inbox
+visual regression passed on all three test platforms; the strict font and layout
+contracts passed. Downloaded CI artifact `evidence/look-remaining-inbox/parity`
+shows content right edge **1308 → 1340**, actions x **1372** unchanged, and outer
+gap **64 → 32px**. Totals remain **68 raw / 34 matched**, honestly: no synthetic
+text or badge is changed to force a full-box pass. Final board-placement proof
+will be attached to PR 18 with its exact final SHA and CI artifact identity.
