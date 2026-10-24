@@ -77,6 +77,11 @@ mod tests {
         let rows = crate::command_center::commands(Screen::Inbox, false);
         let name = &rows.iter().find(|row| row.key == key).expect(key).name;
         cx.simulate_input(name);
+        let index = view.read_with(cx, |this, _| {
+            let usage = this.db.kv_get("command-usage").unwrap().and_then(|value| serde_json::from_str::<Value>(&value).ok()).unwrap_or(Value::Null);
+            crate::command_center::ranked(&rows, name, &usage, chrono::Utc::now().timestamp_millis()).iter().position(|row| row.key == key).expect("command must match its web name")
+        }).unwrap();
+        for _ in 0..index { cx.simulate_keystrokes("down"); }
         cx.simulate_keystrokes("enter");
         draw(view, cx);
     }
