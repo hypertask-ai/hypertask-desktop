@@ -140,3 +140,21 @@ its raw 42 differences and nine unresolved text-metric boxes remain explicit.
 No screenshot coordinate, font size, padding, comparer tolerance, or dump value
 was changed to hide them. Exact closure needs a separately scoped native font
 metrics/rasterizer investigation, beyond the requested small UI edits.
+
+## Verified partial-result receipt
+
+UI SHA `f9ee7e4fbe2b8acc4d546f1486fd56e0c5879902` passed all five applicable jobs
+in [40094950702](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40094950702).
+Artifact `12560028723` digest
+`sha256:fa0fd7e208c23aa14a185c0f25f027eaf0bbb9151bdf7a66db7b2811e21fc5e6`
+was downloaded and compared again: dense **116 → 74**, structural **83 → 42**,
+with **29 → 0** style-field mismatches. Nine same-label metric boxes are still
+unresolved, so acceptance B3 is abandoned/unmet, not passed. B1/B2/B4 are met;
+three met, one handoff required. PR 16 remains draft. The final documentation-only
+descendant's exact SHA, CI and freshly downloaded comparison are recorded in the
+[handoff receipt](https://github.com/hypertask-ai/hypertask-desktop/pull/16#issuecomment-6384475006).
+
+F011 remains server-blocked under HTPR-7699 and untouched. No app/build/test/test
+copy was run on this VPS and no owner-laptop command was used. The recommended
+next decision is deeper native font-metric work rather than source-unsupported
+UI compensation; this receipt must not be presented as complete part-B parity.
