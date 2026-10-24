@@ -5,7 +5,7 @@ Web contract pinned at `6f9901764d355aba7bfc76e4e62ff255e0b68b31` in sibling `hy
 ## Contract
 
 * `src/components/RTE/Tiptap.ts:135-196`: StarterKit, ordered-list `numbered-list`, task-list `taskList`, multicolor highlight, underline, non-inclusive/autolink/paste links with `_blank`.
-* `src/lib/constants/shortcuts.ts:223-243`: editor chords; `:110` Ctrl+B switches boards outside editing; `:188` discard.
+* `src/lib/constants/shortcuts.ts:223-243`: editor chords; `:109` Ctrl+B switches boards outside editing; `:188` discard.
 * `src/components/RTE/useTaskDetailEditorKeyboard.tsx:62-97`: heading overrides, selected/all inline code and JavaScript code-block override; `:113-117` discard maps create-comment to Comment and other rich-editor modes to Description.
 * `src/components/RTE/Extensions/SlashCommands/SlashCommands.tsx:18-28`: slash anywhere, no required prefix.
 * `src/components/RTE/Extensions/SlashCommands/items.ts:66-320,339-517`: AI command values, video URL prompt, create-comment-only emoji, heading/highlight/list/paragraph/mark commands; Code/Code Block move to the document end.
