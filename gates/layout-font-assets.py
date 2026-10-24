@@ -12,7 +12,7 @@ OUT = Path("evidence/web-fonts")
 OUT.mkdir(parents=True, exist_ok=True)
 SOURCES = {
     "web": ("https://app.hypertask.ai/_next/static/media/26d4368bf94c0ec4-s.woff2", "056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818"),
-    "full": ("https://raw.githubusercontent.com/google/fonts/main/ofl/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf", "3b031aa4216174205bd8471f88a49b91f093169e9e87bd5262242bc5967fe2e3"),
+    "full": ("https://raw.githubusercontent.com/google/fonts/8409f033cd7dee08914990602f0df5f5e70e0c14/ofl/ibmplexsans/IBMPlexSans%5Bwdth%2Cwght%5D.ttf", "3b031aa4216174205bd8471f88a49b91f093169e9e87bd5262242bc5967fe2e3"),
 }
 fonts = {}
 for name, (url, digest) in SOURCES.items():
