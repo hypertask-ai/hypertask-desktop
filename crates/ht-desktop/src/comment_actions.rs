@@ -16,6 +16,7 @@ pub(super) struct CommentActions {
     pub query: Entity<TextInput>,
     pub choice: usize,
     pub collapsed: BTreeSet<i64>,
+    pub readers: BTreeMap<i64,(String,Entity<TextInput>)>,
     all_open: bool,
     picker_scroll: ScrollHandle,
 }
@@ -40,6 +41,7 @@ impl CommentActions {
             query,
             choice: 0,
             collapsed: BTreeSet::new(),
+            readers: BTreeMap::new(),
             all_open: false,
             picker_scroll: ScrollHandle::new(),
         }
@@ -85,6 +87,7 @@ impl Desktop {
     }
 
     pub(super) fn reset_comment_actions(&mut self) {
+        self.comment_actions.readers.clear();
         self.comment_actions.edit_id = None;
         self.comment_actions.delete_id = None;
         self.comment_actions.reaction_id = None;
@@ -654,7 +657,7 @@ impl Desktop {
                     .child(if collapsed {
                         div().child(preview).into_any_element()
                     } else {
-                        body.element().into_any_element()
+                        self.comment_actions.readers.get(&id).map(|(_,reader)|div().child(reader.clone()).on_click(cx.listener(move|this,_,_,cx|{cx.stop_propagation();this.interaction.task_part=i+1;cx.notify();})).into_any_element()).unwrap_or_else(||body.element())
                     })
                     .layout_key(
                         &self.layout,

@@ -160,6 +160,8 @@ impl Db {
                     ensure!(*id > 0 && n["status"] == "Normal" && n["taskId"].as_i64().is_some() && n["projectId"].as_i64().is_some(), "Inbox item is unavailable for a reminder");
                     Ok(n)
                 }).collect::<Result<Vec<_>>>()?;
+                let tasks: Vec<_> = before.iter().filter_map(|n|n["taskId"].as_i64()).collect();
+                let before: Vec<_> = db.inbox()?.into_iter().filter(|n|n.task_id.is_some_and(|id|tasks.contains(&id))).map(|n|n.raw_json).collect();
                 (format!("inbox-reminder:{}", ids[0]), "inbox_remind", json!({"notification_ids":ids,"remind_at":remind_at,"before":before}))
             }
             Write::InboxArchive { notification_id } => {
@@ -251,7 +253,10 @@ impl Db {
                 }
             }
             "inbox_archive" | "inbox_remind" => {
-                for notification_id in payload["notification_ids"]
+                let ids = if kind == "inbox_remind" {
+                    json!(payload["before"].as_array().context("missing inbox rollback")?.iter().map(|n|n["id"].clone()).collect::<Vec<_>>())
+                } else { payload["notification_ids"].clone() };
+                for notification_id in ids
                     .as_array()
                     .context("missing notification ids")?
                 {

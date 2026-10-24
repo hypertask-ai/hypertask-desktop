@@ -3,6 +3,7 @@ use crate::layout::LayoutKey;
 
 impl TextInput {
     pub(super) fn block_drag_handles(&self, cx: &mut Context<Self>) -> Vec<gpui::AnyElement> {
+        if self.read_only {return vec![];}
         let (Some(editor),Some(layout))=(&self.editor,&self.last_layout) else{return vec![];};
         if layout.text!=self.content {return vec![];}
         let blocks=editor.document.drag_blocks();
@@ -62,7 +63,7 @@ mod tests {
         });
         cx.simulate_mouse_down(grip,MouseButton::Left,gpui::Modifiers::default());
         input.read_with(cx,|input,_|assert!(input.editor.as_ref().unwrap().dragging.is_some()));
-        cx.simulate_mouse_move(target,Some(MouseButton::Left),gpui::Modifiers::default());
+        cx.simulate_mouse_move(target,MouseButton::Left,gpui::Modifiers::default());
         cx.simulate_mouse_up(target,MouseButton::Left,gpui::Modifiers::default());
         input.read_with(cx,|input,_|{assert_eq!(input.content.as_ref(),"done\nmove é🙂\nend");assert!(input.html().contains("data-checked=\"true\""));});
         cx.simulate_keystrokes("ctrl-z");

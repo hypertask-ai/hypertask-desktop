@@ -520,6 +520,15 @@ impl Document {
         display_blocks(&self.parts, 0, false, "", false, &mut out);
         out
     }
+    pub fn selection_html(&self, range: Range<usize>) -> String {
+        let text=self.text();
+        if range.is_empty() || range.end>text.len() || !text.is_char_boundary(range.start) || !text.is_char_boundary(range.end) {return String::new();}
+        let (end,offset)=self.location(range.end);
+        let (before,_)=split_parts(&self.parts,&mut 0,end,offset);
+        let (start,offset)=self.location(range.start);
+        let (_,selected)=split_parts(&before,&mut 0,start,offset);
+        let mut html=String::new();html_parts(&selected,&mut html);html
+    }
     pub fn drag_blocks(&self) -> Vec<(Vec<usize>, usize)> {
         fn walk(parts: &[Part], path: &mut Vec<usize>, at: &mut usize, out: &mut Vec<(Vec<usize>,usize)>) {
             for (i, part) in parts.iter().enumerate() {
@@ -1630,5 +1639,19 @@ mod drag_tests {
         assert_eq!(doc.text(),"two\none\nchild\nend");
         assert!(!doc.reorder_block(&[0,0],&[0,0],true));
         let before=doc.html();assert!(!doc.reorder_block(&[999],&[0],false));assert_eq!(doc.html(),before);
+    }
+}
+
+#[cfg(test)]
+mod selection_tests {
+    use super::*;
+    #[test]
+    fn quote_html_crops_unicode_marks_and_nested_blocks_without_quoting_whole_comment() {
+        let doc=Document::parse("<p>before <strong>é🙂 selected</strong> after</p>");
+        let text=doc.text();let start=text.find('é').unwrap();let end=text.find(" after").unwrap();
+        assert_eq!(doc.selection_html(start..end),"<p><strong>é🙂 selected</strong></p>");
+        assert_eq!(doc.selection_html(0..0),"");assert_eq!(doc.selection_html(start+1..end),"");
+        let doc=Document::parse("<ul><li><p>one <em>two</em></p></li><li><p>three</p></li></ul>");
+        assert_eq!(doc.selection_html(4..9),"<ul><li><p><em>two</em></p></li><li><p>t</p></li></ul>");
     }
 }

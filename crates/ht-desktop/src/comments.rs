@@ -67,6 +67,7 @@ impl Desktop {
                     .child(self.comment_input.clone())
                     .layout_key(&self.layout, "task.composer.input", None),
             )
+            .when(!self.task_inbox_ids().is_empty(),|d|d.child(self.composer_inbox_actions(cx)))
             .child(div().flex_1())
             .child(
                 div()

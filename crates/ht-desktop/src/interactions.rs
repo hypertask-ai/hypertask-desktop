@@ -424,7 +424,7 @@ impl Desktop {
             Remind | BulkRemind => {
                 let ids = if action == BulkRemind { self.interaction.bulk.iter().copied().collect() }
                     else if self.screen == Screen::Inbox { self.selection_id().into_iter().collect() }
-                    else { self.inbox.iter().filter(|n|n.task_id==Some(self.options.task)).map(|n|n.id).collect() };
+                    else { self.task_inbox_ids() };
                 self.show_inbox_reminder(ids,window,cx);
             }
             MoveColumn => self.show_modal(Modal::Column, window, cx),
@@ -557,10 +557,7 @@ impl Desktop {
         let id = if self.screen == Screen::Inbox {
             self.selection_id()
         } else {
-            self.inbox
-                .iter()
-                .find(|n| n.task_id == Some(self.options.task))
-                .map(|n| n.id)
+            self.task_inbox_ids().first().copied()
         };
         if let Some(notification_id) = id {
             return self.enqueue(Write::InboxArchive { notification_id }, cx);

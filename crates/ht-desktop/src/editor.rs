@@ -441,6 +441,7 @@ impl TextInput {
         true
     }
     pub(super) fn editor_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if self.read_only {self.quote_selection(cx);return true;}
         if self.editor.is_none() {
             return false;
         }
@@ -695,7 +696,7 @@ impl TextInput {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.editor.is_none() {
+        if self.editor.is_none() || self.read_only {
             return;
         }
         let key = &event.keystroke;
@@ -816,6 +817,12 @@ impl TextInput {
         } else {
             top
         };
+        if self.read_only {
+            if self.selected_range.is_empty() {return vec![];}
+            return vec![div().id("quote-selection").absolute().left_0().top(top).p(px(8.)).bg(crate::theme::color(theme.comment)).text_color(crate::theme::color(theme.text)).shadow_md().cursor_pointer().child("Quote ↵")
+                .on_mouse_down(MouseButton::Left,cx.listener(|this,_,_,cx|{cx.stop_propagation();this.quote_selection(cx);}))
+                .layout_key(&e.capture,"quote-selection",None).into_any_element()];
+        }
         let mut out = vec![];
         if let Some(dialog) = &e.dialog {
             let title = match dialog.kind {
@@ -1533,7 +1540,7 @@ mod tests {
         cx.update(init);
         let (view,cx)=cx.add_window_view(|_,cx|TextInput::new(String::new(),"",gpui::black(),cx).comment_editor());
         let events=Rc::new(RefCell::new(vec![]));let received=events.clone();
-        cx.update(|_,cx|cx.subscribe(&view,move|_,event:&EditorRequest,_,_|received.borrow_mut().push(event.clone())).detach());
+        cx.update(|_,cx|cx.subscribe(&view,move|_,event:&EditorRequest,_|received.borrow_mut().push(event.clone())).detach());
         for (i,(_,command)) in AI_DROPDOWN.iter().enumerate() {
             view.update_in(cx,|input,window,cx|{input.set_html("<p>Whole <strong>é🙂</strong> draft</p>",cx);input.selected_range=0..5;window.focus(&input.focus_handle,cx);});
             cx.run_until_parked();

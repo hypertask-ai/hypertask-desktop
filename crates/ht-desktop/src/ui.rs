@@ -51,6 +51,9 @@ enum Editing {
 #[path = "ai_workspace.rs"]
 mod ai_workspace;
 
+#[path = "comment_selection.rs"]
+mod comment_selection;
+
 #[path = "comment_actions.rs"]
 mod comment_actions;
 #[path = "editor_actions.rs"]
@@ -597,6 +600,7 @@ impl Desktop {
                 return;
             }
         }
+        if self.comment_reader_key(event, window, cx) { return; }
         if self.inbox_key(event, window, cx) { return; }
         if !self.comment_key(event, window, cx) { self.interaction_key(event, window, cx); }
     }
@@ -1691,6 +1695,7 @@ impl Render for Desktop {
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
         }
+        self.prepare_comment_readers(window,cx);
         self.restore_comment_draft(cx);
         if let Some(sidebar) = &self.ai_sidebar {
             let task = (self.screen != Screen::Board)

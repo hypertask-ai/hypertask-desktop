@@ -28,6 +28,21 @@ pub enum EditorRequest {
     },
 }
 impl gpui::EventEmitter<EditorRequest> for TextInput {}
+#[derive(Clone)]
+pub struct QuoteSelection { pub html: String }
+impl gpui::EventEmitter<QuoteSelection> for TextInput {}
+impl TextInput {
+    pub fn read_only_comment(mut self, html: &str, cx: &mut Context<Self>) -> Self {
+        self=self.multiline_editor();self.set_html(html,cx);self.read_only=true;self
+    }
+    fn quote_selection(&mut self, cx: &mut Context<Self>) {
+        if self.selected_range.is_empty() {return;}
+        if let Some(editor)=&self.editor {
+            cx.emit(QuoteSelection{html:editor.document.selection_html(self.selected_range.clone())});
+        }
+    }
+}
+
 
 actions!(
     text_input,
@@ -78,6 +93,7 @@ pub struct TextInput {
     undo: Vec<EditSnapshot>,
     redo: Vec<EditSnapshot>,
     editor: Option<EditorState>,
+    read_only: bool,
 }
 
 impl TextInput {
@@ -103,6 +119,7 @@ impl TextInput {
         } else {
             self.undo.pop()
         };
+        if self.read_only {return;}
         if let Some(snapshot) = snapshot {
             let current = self.snapshot();
             if redo {
@@ -228,7 +245,7 @@ impl TextInput {
     ) {
         if let (Some(layout), Some(bounds)) = (&self.last_layout, self.last_bounds) {
             let row = layout.row_for_y(event.position.y - bounds.top());
-            if let Some(block) = layout.rows[row].task {
+            if let Some(block) = layout.rows[row].task.filter(|_|!self.read_only) {
                 let x = event.position.x - bounds.left();
                 if x >= layout.rows[row].indent - px(24.) && x < layout.rows[row].indent {
                     self.remember_edit();
@@ -239,7 +256,7 @@ impl TextInput {
             }
         }
         self.is_selecting = true;
-        window.request_virtual_keyboard();
+        if !self.read_only {window.request_virtual_keyboard();}
 
         if event.modifiers.shift {
             self.select_to(self.index_for_mouse_position(event.position), window, cx);
@@ -274,6 +291,7 @@ impl TextInput {
     }
 
     fn paste(&mut self, _: &Paste, window: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {return;}
         if let Some(text) = cx.read_from_clipboard().and_then(|item| item.text()) {
             if self.paste_link(&text, window, cx) {
                 return;
@@ -500,6 +518,7 @@ impl EntityInputHandler for TextInput {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.read_only {return;}
         let range = range_utf16
             .as_ref()
             .map(|range_utf16| self.range_from_utf16(range_utf16))
@@ -528,6 +547,7 @@ impl EntityInputHandler for TextInput {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if self.read_only {return;}
         let range = range_utf16
             .as_ref()
             .map(|range_utf16| self.range_from_utf16(range_utf16))
@@ -1104,6 +1124,7 @@ impl TextInput {
             undo: vec![],
             redo: vec![],
             editor: None,
+            read_only: false,
         }
     }
 
