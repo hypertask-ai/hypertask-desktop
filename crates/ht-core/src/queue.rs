@@ -557,7 +557,14 @@ impl Db {
             match transport.get("/user/context") {
                 Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true => {
                     if response.body["user"]["id"] == request.user_id {
-                        transport.mutate(method, path, body, &row.client_id)
+                        if path == "/api/stripe/session/checkout" {
+                            if row.payload_json["attempted"] == true { Ok(Response { status:409, body:json!({"message":"Checkout result uncertain; try again."}) }) }
+                            else {
+                                let mut payload = row.payload_json.clone(); payload["attempted"] = json!(true);
+                                self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?", params![payload.to_string(), row.id])?;
+                                transport.mutate(method, path, body, &row.client_id)
+                            }
+                        } else { transport.mutate(method, path, body, &row.client_id) }
                     } else {
                         Ok(Response { status:403, body:json!({"success":false,"error":"Settings write belongs to another account"}) })
                     }
@@ -613,6 +620,19 @@ impl Db {
                 let task = if row.payload_json["global"] == true {r.body["newTask"].clone()}else{r.body};
                 Response { status:r.status,body:json!({"success":true,"task":task}) }
             } else {r})
+        } else if row.kind == "shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {
+            response.map(|mut response| {
+                let valid = match row.payload_json["path"].as_str() {
+                    Some("/api/teams/byokKeys") => response.body["ok"] == true,
+                    Some("/api/settings/byok-test") => matches!(response.body["result"].as_str(), Some("works" | "invalid" | "no_credit" | "error")) && response.body["elapsedMs"].is_number() && response.body["model"].is_string(),
+                    Some("/api/stripe/ensure-customer") => response.body["stripe_customer_id"].is_string(),
+                    Some("/api/stripe/session/checkout") => response.body["url"].as_str().is_some_and(|url| url::Url::parse(url).is_ok_and(|url| url.scheme() == "https")),
+                    Some("/api/stripe/cancelSubscription") => response.body["message"] == "Success",
+                    _ => false,
+                };
+                if (200..300).contains(&response.status) && valid && response.body["success"] != false { response.body["success"] = json!(true); }
+                response
+            })
         } else if row.kind == "board_write" && row.payload_json["change"]["PositionTask"].is_object() {
             response.map(|response| if (200..300).contains(&response.status) {
                 Response { status: response.status, body: json!({"success":true,"task":response.body}) }
@@ -627,7 +647,7 @@ impl Db {
                     Err(_) => (false, "invalid success response".to_owned()),
                 }
             }
-            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_view" {body["message"].as_str().unwrap_or("Could not save the view").to_owned()} else {format!("HTTP {status}")}),
+            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_view" {body["message"].as_str().unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
             Err(error) => (false, error.to_string()),
         };
         self.transaction(|db| {
@@ -675,6 +695,10 @@ impl Db {
                     db.kv_set(&format!("board-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
                 }
                 if row.kind == "shell_write" {
+                    if row.payload_json["body"]["apiKey"].is_string() {
+                        let mut payload = row.payload_json.clone(); payload["body"].as_object_mut().unwrap().remove("apiKey");
+                        db.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?", params![payload.to_string(), row.id])?;
+                    }
                     db.kv_set(&format!("shell-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
                 }
                 db.fail_editor(row.id,&row.kind,&row.payload_json,&result.1)?;

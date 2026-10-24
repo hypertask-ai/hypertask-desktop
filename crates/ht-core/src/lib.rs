@@ -48,3 +48,5 @@ pub mod ai_context;
 
 pub mod preferences;
 pub mod ai_models;
+
+pub mod team_settings;

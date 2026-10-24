@@ -63,7 +63,7 @@ pub fn load_for_scope(transport:&mut impl Transport,team:Option<&str>,last_team:
     let selected=[settings["aiModelPreferences"]["teams"][team]["aiChat"].as_str(),settings["aiModelPreferences"]["aiChat"].as_str(),features["aiChat"]["model"].as_str(),board_default,Some(default.as_str())].into_iter().flatten().filter_map(option).find(|model|options.iter().any(|o|o["id"]==model["id"])).or_else(||options.iter().find(|m|m["id"]==features["aiChat"]["effectiveModel"])).unwrap_or(&options[0])["id"].as_str().unwrap().to_owned();
     Ok(Configuration{user,team:team.into(),options,selected,settings,byok,plan,default,custom_label:custom_row.and_then(|row|row["modelId"].as_str()).map(|id|id.trim().to_owned())})
 }
-fn plan(team:&Value)->Option<String>{
+pub(crate) fn plan(team:&Value)->Option<String>{
     if team["id"]=="08f79efd-770e-4e32-9728-65e6d29ec893"{return Some("Pro".into());}
     let rows=team["subscriptionPlan"].as_array().cloned().unwrap_or_default();
     let entitles=|row:&&Value|row["subscriptionStatus"].as_str().is_some_and(|s|matches!(s.to_ascii_lowercase().as_str(),"paid"|"active"|"trialing"|"past_due"));

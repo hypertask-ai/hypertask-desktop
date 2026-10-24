@@ -20,9 +20,14 @@ impl Models {
     pub(super) fn new(token:Option<String>)->Self{Self{token,team:None,pending:None,configuration:None,selected:None,previous:None,write:None,failed:false,error:None,pending_team:None,requested:None,submenu:None}}
 }
 #[derive(Clone)]
-pub enum PreferenceRequest { Cache{user:i64,settings:Value}, Save{user:i64,settings:Value,updates:Value} }
+pub enum PreferenceRequest { Cache{user:i64,settings:Value}, Save{user:i64,settings:Value,updates:Value}, Settings{team:String,section:&'static str} }
 impl gpui::EventEmitter<PreferenceRequest> for AiSidebar{}
 impl AiSidebar {
+    pub fn refresh_model_settings(&mut self,cx:&mut Context<Self>){self.models.requested=None;self.retry_models(cx);}
+    fn open_model_team_settings(&mut self,section:&'static str,cx:&mut Context<Self>){
+        let Some(config)=&self.models.configuration else{return;};
+        cx.emit(PreferenceRequest::Settings{team:config.team.clone(),section});self.model_menu=false;self.models.submenu=None;cx.notify();
+    }
     pub(super) fn retry_models(&mut self,cx:&mut Context<Self>){self.models.failed=false;self.load_models(cx);}
     pub(super) fn load_models(&mut self,cx:&mut Context<Self>){
         let team=self.scope.as_ref().and_then(|s|s.team_id.clone());
@@ -66,7 +71,7 @@ impl AiSidebar {
         let Some(config)=&self.models.configuration else{return;};
         let Some(model)=config.options.iter().find(|model|model["id"]==id) else{return;};
         if config.disabled(model){return;}
-        if config.locked(model){cx.open_url("https://app.hypertask.ai/settings/plans");self.model_menu=false;cx.notify();return;}
+        if config.locked(model){self.open_model_team_settings("plans",cx);return;}
         self.models.pending_team=self.models.team.clone();
         self.models.previous=self.models.selected.clone();self.models.selected=Some(id.into());self.models.submenu=None;
         cx.emit(PreferenceRequest::Save{user:config.user,settings:config.settings.clone(),updates:json!({"aiModelPreferences":{"aiChat":id},"aiModelPreferencesTeamId":config.team})});cx.notify();
@@ -90,7 +95,7 @@ impl AiSidebar {
             let family=selected.and_then(|model|model["family"].as_str()).unwrap_or("");
             let no_keys=config.plan.as_deref()==Some("BYOK") && !config.options.iter().any(|model|!config.locked(model));
             if no_keys{
-                menu=menu.child(div().p(px(8.)).text_size(px(11.)).child("No API keys are enabled for this team.").child(div().id("ai-model-api-keys").cursor_pointer().child("Add API keys →").on_click(cx.listener(|this,_,_,cx|{this.model_menu=false;cx.open_url("https://app.hypertask.ai/settings/apiKeys");cx.notify();}))));
+                menu=menu.child(div().p(px(8.)).text_size(px(11.)).child("No API keys are enabled for this team.").child(div().id("ai-model-api-keys").cursor_pointer().child("Add API keys →").on_click(cx.listener(|this,_,_,cx|{this.open_model_team_settings("apiKeys",cx);}))));
             }
             menu=menu.child(div().id("ai-model-submenu").p(px(8.)).cursor_pointer().child(format!("Model    {}  ›",selected.map(|model|config.label(model)).unwrap_or("Select model"))).on_click(cx.listener(|this,_,_,cx|{this.models.submenu=if this.models.submenu==Some(false){None}else{Some(false)};cx.notify();})));
             if self.models.submenu==Some(false){

@@ -8,6 +8,7 @@ impl Desktop {
         cx.subscribe_in(&sidebar,window,|this,sidebar,event:&crate::ai_sidebar::PreferenceRequest,window,cx|{
             use crate::ai_sidebar::PreferenceRequest;
             match event {
+                PreferenceRequest::Settings{team,section}=>this.open_model_settings(team.clone(),section,window,cx),
                 PreferenceRequest::Cache{user,settings}=>{if !this.db.mutations().unwrap_or_default().iter().any(|row|row.kind=="web_preferences" && row.status!="failed"){let _=this.db.cache_web_preferences(*user,settings);}}
                 PreferenceRequest::Save{user,settings,updates}=>{
                     let result=this.db.enqueue_web_preferences(*user,settings,updates.clone(),chrono::Utc::now().timestamp());

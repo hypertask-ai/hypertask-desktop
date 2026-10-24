@@ -185,6 +185,8 @@ fn shell_commands(rows: &mut Vec<Command>) {
         ("settingsLearnQuickTips", "Settings: Quick tips", "Settings", "", "settings quick tips learning help", Settings("learn")),
         ("settingsGeneral", "Settings: General", "Settings", "", "settings general profile personal preferences application", Settings("general")),
         ("settingsAppearance", "Settings: Appearance", "Settings", "", "settings appearance display color scheme personal profile", Settings("appearance")),
+        ("settingsPlans", "Settings: Plans", "Settings", "", "settings plans pricing upgrade downgrade subscription team", Settings("plans")),
+        ("settingsApiKeys", "Settings: Bring your own key", "Settings", "", "settings bring your own key byok ai api credentials provider team", Settings("apiKeys")),
         ("settingsSkills", "Settings: Skills", "Settings", "", "settings skills prompts slash commands library team ai", Settings("skills")),
         ("settingsBoardMembers", "Settings: Members (board)", "Settings", "", "settings board members people permissions access project", Settings("board-members")),
         ("settingsBoardAi", "Settings: Custom instructions", "Settings", "", "settings board custom instructions prompt behavior configure", Settings("board-ai")),
@@ -202,6 +204,18 @@ fn shell_commands(rows: &mut Vec<Command>) {
     ] {
         rows.push(Command { key: key.into(), name: name.into(), group, keys: keys.into(), keywords, action: CommandAction::Shell(action) });
     }
+    for (key, name) in [
+        ("settingsApiKeysOpenaiApiKey", "Settings: OpenAI API key"),
+        ("settingsApiKeysAnthropicApiKey", "Settings: Anthropic API key"),
+        ("settingsApiKeysGoogleApiKey", "Settings: Google API key"),
+        ("settingsApiKeysDeepseekApiKey", "Settings: DeepSeek API key"),
+        ("settingsApiKeysMoonshotKimiApiKey", "Settings: Moonshot (Kimi) API key"),
+        ("settingsApiKeysZAiGlmApiKey", "Settings: Z.ai (GLM) API key"),
+        ("settingsApiKeysAlibabaQwenApiKey", "Settings: Alibaba (Qwen) API key"),
+        ("settingsApiKeysOpenrouterApiKey", "Settings: OpenRouter API key"),
+        ("settingsApiKeysVercelAiGatewayApiKey", "Settings: Vercel AI Gateway API key"),
+        ("settingsApiKeysCustomEndpointOperatesUnderAnEuUsDataAgreement", "Settings: Custom endpoint EU/US agreement"),
+    ] { rows.push(Command { key:key.into(), name:name.into(), group:"Settings", keys:String::new(), keywords:"settings api key use byok", action:CommandAction::Shell(Settings("apiKeys")) }); }
 }
 fn task_commands(
     add: &mut impl FnMut(&'static str, &'static str, &'static str, &'static str, &'static str, Action),

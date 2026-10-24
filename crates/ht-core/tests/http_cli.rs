@@ -330,3 +330,23 @@ fn expanded_create_form_sends_desktop_bearer_and_exact_web_payload_for_accept_an
     let body=serde_json::json!({"userId":42,"projectId":15,"sectionId":10,"section_title":"Todo","projectIdentifier":"HT","fullScreenTask":true,"title":"Expanded","description":"<p>Rich <strong>body</strong></p>","assignees":[],"priority":{"priority_index":2},"dueDate":"2026-12-15T09:00:00Z"});
     for status in [200,401,403]{let(url,thread,receive)=server(status,"{}");let mut http=Http::with_base(&url,"desktop-create-token".into()).unwrap();assert_eq!(http.post("/api/tasks/createGlobally",&body,"create-key").unwrap().status,status);let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with("POST /api/tasks/createGlobally HTTP/1.1"));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-create-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();}
 }
+
+#[test]
+fn native_model_settings_handoff_uses_same_web_routes_bearer_and_refusal_statuses() {
+    for path in ["/api/members/getAllTeamMembers?teamId=team","/api/teams/getTeam?teamId=team","/api/teams/byokKeys?teamId=team","/api/teams/aiProviderSettings?teamId=team"] {
+        for status in [200,401,403] {
+            let (url, thread, receive)=server(status,"{}"); let mut http=Http::with_base(&url,"desktop-settings-token".into()).unwrap(); assert_eq!(http.get(path).unwrap().status,status);
+            let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("GET {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-settings-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));thread.join().unwrap();
+        }
+    }
+    for (path,body) in [
+        ("/api/teams/byokKeys",json!({"teamId":"team","provider":"custom","apiKey":"fixture-secret","baseUrl":"https://example.test/v1","modelId":"model","gdprCompliant":true})),
+        ("/api/settings/byok-test",json!({"teamId":"team","provider":"claude"})),
+        ("/api/stripe/ensure-customer",json!({"teamId":"team"})),
+        ("/api/stripe/session/checkout",json!({"teamId":"team","priceId":"price","mode":"Normal"})),
+        ("/api/stripe/cancelSubscription",json!({"stripe_customer_id":"cus_1"})),
+    ] { for status in [200,401,403] {
+        let (url,thread,receive)=server(status,"{}");let mut http=Http::with_base(&url,"desktop-settings-token".into()).unwrap();assert_eq!(http.post(path,&body,"settings-key").unwrap().status,status);
+        let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("POST {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-settings-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
+    }}
+}
