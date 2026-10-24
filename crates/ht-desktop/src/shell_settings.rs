@@ -336,6 +336,7 @@ impl Desktop {
                         div()
                             .id("settings-content-scroll")
                             .flex_1()
+                            .min_h_0()
                             .overflow_y_scroll()
                             .track_scroll(&self.shell.settings_state.scroll)
                             .flex()
@@ -343,6 +344,7 @@ impl Desktop {
                             .child(
                                 div()
                                     .w_full()
+                                    .min_h_full()
                                     .max_w(px(760.))
                                     .px(px(24.))
                                     .pt(px(20.))
@@ -748,6 +750,19 @@ impl Desktop {
                             &serde_json::json!({"success": true, "projects": [project]}),
                         );
                     }
+                    if let Some(next) = self
+                        .db
+                        .projects()
+                        .unwrap_or_default()
+                        .into_iter()
+                        .find(|p| p["status"] == "Normal")
+                        .and_then(|p| p["id"].as_i64())
+                    {
+                        self.options.board = next;
+                        let _ = self.db.kv_set("last_board", &next.to_string());
+                    } else {
+                        let _ = self.db.kv_set("last_board", "");
+                    }
                     self.shell.settings_state.lifecycle = None;
                     self.close_settings(window, cx);
                     self.switch(Screen::Inbox, cx);
@@ -1005,7 +1020,13 @@ impl Desktop {
     }
 
     fn settings_board_picker(&self, cx: &mut Context<Self>) -> AnyElement {
-        let boards = self.db.projects().unwrap_or_default();
+        let boards: Vec<_> = self
+            .db
+            .projects()
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|b| b["status"].as_str().is_none_or(|status| status == "Normal"))
+            .collect();
         let title = boards
             .iter()
             .find(|b| b["id"] == self.shell.settings_state.board)
@@ -1047,6 +1068,11 @@ impl Desktop {
                                 .as_ref()
                                 .is_some_and(|r| r.method != "GET")
                             {
+                                return;
+                            }
+                            if let Err(error) = this.db.kv_set("last_board", &id.to_string()) {
+                                this.shell.settings_state.error = Some(error.to_string());
+                                cx.notify();
                                 return;
                             }
                             this.shell.settings_state.board = id;
@@ -1133,7 +1159,10 @@ impl Desktop {
                                         .layout_key(
                                             &self.layout,
                                             format!("settings.skill.{id}.enabled"),
-                                            None,
+                                            Some(
+                                                if enabled { "Enabled  ✓" } else { "Enabled" }
+                                                    .into(),
+                                            ),
                                         ),
                                     ),
                             )
@@ -1499,6 +1528,10 @@ mod tests {
             .unwrap();
         click(view, &mut cx, "settings.board-picker");
         click(view, &mut cx, "settings.board.1");
+        view.read_with(&cx, |this, _| {
+            assert_eq!(this.db.kv_get("last_board").unwrap().as_deref(), Some("16"))
+        })
+        .unwrap();
         reply(
             view,
             &mut cx,
@@ -1543,7 +1576,7 @@ mod tests {
         let (view, mut cx) = setup(cx);
         click(view, &mut cx, "rail.icon.12");
         click(view, &mut cx, "settings.tab.team");
-        let skill = serde_json::json!({"id": 42, "name": "Review", "slug": "review", "description": "Check", "body": "Be thorough", "enabled": true, "userId": 1, "projectId": null});
+        let mut skill = serde_json::json!({"id": 42, "name": "Review", "slug": "review", "description": "Check", "body": "Be thorough", "enabled": true, "userId": 1, "projectId": null});
         reply(
             view,
             &mut cx,
@@ -1553,12 +1586,18 @@ mod tests {
         let request = reply(view, &mut cx, serde_json::json!({"success": true}));
         assert_eq!(request.method, "PATCH");
         assert_eq!(request.body.unwrap()["enabled"], false);
+        skill["enabled"] = false.into();
         reply(
             view,
             &mut cx,
             serde_json::json!({"skills": [skill.clone()]}),
         );
+        assert_eq!(
+            measured(view, &mut cx, "settings.skill.42.enabled")["text"],
+            "Enabled"
+        );
         click(view, &mut cx, "settings.skill.42.edit");
+        cx.simulate_input("---\nname: Updated Review\n---\nNew review guidance");
         // Scroll the real settings container to the editor's measured bounds before clicking Save.
         view.update(&mut cx, |this, _, _| {
             this.shell.settings_state.scroll.scroll_to_bottom()
@@ -1571,12 +1610,18 @@ mod tests {
             request.body.unwrap()["markdown"]
                 .as_str()
                 .unwrap()
-                .contains("Be thorough")
+                .contains("New review guidance")
         );
+        skill["name"] = "Updated Review".into();
+        skill["body"] = "New review guidance".into();
         reply(
             view,
             &mut cx,
             serde_json::json!({"skills": [skill.clone()]}),
+        );
+        assert_eq!(
+            measured(view, &mut cx, "settings.skill.42")["text"],
+            "Updated Review"
         );
         view.update(&mut cx, |this, _, _| {
             this.shell
@@ -1589,7 +1634,7 @@ mod tests {
         click(view, &mut cx, "settings.skill.cancel-delete");
         assert_eq!(
             measured(view, &mut cx, "settings.skill.42")["text"],
-            "Review"
+            "Updated Review"
         );
         click(view, &mut cx, "settings.skill.42.delete");
         click(view, &mut cx, "settings.skill.confirm-delete");
@@ -1998,6 +2043,10 @@ mod mutation_tests {
             serde_json::json!({"success": true, "delivered": true}),
         );
         assert_eq!(request.path, "/webhooks/wh1/test");
+        assert_eq!(
+            measured(view, &mut cx, "settings.message")["text"],
+            "Signed test queued"
+        );
         reply(
             view,
             &mut cx,

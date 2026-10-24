@@ -557,6 +557,7 @@ impl Desktop {
         }
         if let Some(sidebar) = &self.ai_sidebar {
             if event.keystroke.modifiers.control && event.keystroke.key == "q" {
+                self.shell.ai_open = true;
                 sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
                 return;
             }

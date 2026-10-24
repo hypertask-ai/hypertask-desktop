@@ -1222,6 +1222,9 @@ mod surface_tests {
         click(view, &mut cx, "rail.icon.6");
         click(view, &mut cx, "shell.ai.reopen");
         assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
+        click(view, &mut cx, "rail.icon.6");
+        cx.simulate_keystrokes("ctrl-q");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
     }
 }
 
@@ -1304,7 +1307,7 @@ mod rail_detail_tests {
     fn inbox_rail_click_displays_unseen_dot_and_active_state(cx: &mut gpui::TestAppContext) {
         let (view, mut cx) = setup(cx);
         view.update(&mut cx, |this, _, _| {
-            this.db.apply_response(&serde_json::json!({"success": true, "notifications": [{"id": 77, "taskId": 101, "seen": false, "status": "Normal", "createdAt": "2026-10-01T00:00:00Z"}]})).unwrap();
+            this.db.apply_response(&serde_json::json!({"success": true, "user_notifications": [{"id": 77, "taskId": 101, "seen": false, "status": "Normal", "createdAt": "2026-10-01T00:00:00Z"}]})).unwrap();
             this.reload();
         }).unwrap();
         click(view, &mut cx, "rail.icon.2");
