@@ -251,7 +251,7 @@ mod fullscreen_tests {
     fn fullscreen_new_chat_does_not_inherit_the_underlying_ticket_scope(cx:&mut gpui::TestAppContext){
         let view=cx.add_window(|window,cx|{let focus=cx.focus_handle();AiSidebar::new(crate::theme::THEMES[1],None,focus,window,cx)});
         view.update(cx,|sidebar,_,cx|{
-            sidebar.scope=Some(Scope{context:DefaultContext{project_id:Some(15),task_id:Some(7),..DefaultContext::default()},team_id:Some("team".into()),label:"Ticket".into(),suggestions:vec![],model_default:None});
+            sidebar.scope=Some(Scope{context:DefaultContext{project_id:Some(15),task_id:Some(7),..DefaultContext::default()},team_id:Some("team".into()),last_team:None,label:"Ticket".into(),suggestions:vec![],model_default:None});
             assert_eq!(sidebar.create_scope(),AiSessionWrite::Create{task:Some(7),project:Some(15)});
             sidebar.set_mode(DisplayMode::Fullscreen,cx);assert_eq!(sidebar.create_scope(),AiSessionWrite::Create{task:None,project:Some(15)});
         }).unwrap();
