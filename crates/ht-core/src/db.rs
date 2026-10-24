@@ -261,6 +261,7 @@ impl Db {
                 recognized = true;
                 db.upsert_task(task)?;
             }
+            db.cache_inbox_structure(response)?;
             ensure!(recognized, "unrecognized response");
             db.reapply_pending()
         })

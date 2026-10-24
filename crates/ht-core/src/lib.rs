@@ -25,3 +25,5 @@ pub use shell_write::ShellWrite;
 pub use worker::Worker;
 
 pub type Result<T> = anyhow::Result<T>;
+
+mod inbox;

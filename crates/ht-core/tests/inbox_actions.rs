@@ -63,3 +63,13 @@ fn inbox_reminders_validate_selection_and_time_before_any_optimistic_write() {
         assert!(db.mutations().unwrap().is_empty());assert_eq!(db.inbox().unwrap().len(),2);
     }
 }
+
+#[test]
+fn inbox_server_split_memberships_are_durable_account_scoped_and_never_guessed_from_titles() {
+    let file=tempfile::NamedTempFile::new().unwrap();let mut db=Db::open(file.path()).unwrap();
+    db.kv_set("current-user-id","42").unwrap();
+    db.apply_response(&json!({"success":true,"user_notifications":[{"id":1,"projectId":15,"status":"Normal","seen":false,"createdAt":"2026-01-01T00:00:00Z"},{"id":2,"projectId":16,"status":"Normal","seen":false,"createdAt":"2026-01-02T00:00:00Z"}],"structuredData":{"tabs":[{"project":"Same","projectId":15},{"project":"Same","projectId":16}],"data":[[1],[0]]}})).unwrap();
+    drop(db);let db=Db::open(file.path()).unwrap();let tabs=db.inbox_splits().unwrap().unwrap();
+    assert_eq!(tabs[0]["ids"],json!([2]));assert_eq!(tabs[1]["ids"],json!([1]));
+    db.kv_set("current-user-id","43").unwrap();assert!(db.inbox_splits().unwrap().is_none());
+}

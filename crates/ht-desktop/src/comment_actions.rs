@@ -657,7 +657,7 @@ impl Desktop {
                     .child(if collapsed {
                         div().child(preview).into_any_element()
                     } else {
-                        self.comment_actions.readers.get(&id).map(|(_,reader)|div().child(reader.clone()).on_click(cx.listener(move|this,_,_,cx|{cx.stop_propagation();this.interaction.task_part=i+1;cx.notify();})).into_any_element()).unwrap_or_else(||body.element())
+                        self.comment_actions.readers.get(&id).map(|(_,reader)|div().id(("comment-reader",id as u64)).child(reader.clone()).on_click(cx.listener(move|this,_,_,cx|{cx.stop_propagation();this.interaction.task_part=i+1;cx.notify();})).into_any_element()).unwrap_or_else(||body.element())
                     })
                     .layout_key(
                         &self.layout,

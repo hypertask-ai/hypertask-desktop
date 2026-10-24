@@ -7,6 +7,7 @@ pub(super) struct InboxActions {
     search: Entity<TextInput>,
     pub search_text: String,
     searching: bool,
+    split_ids: Option<Vec<std::collections::BTreeSet<i64>>>,
     reminder_query: Entity<TextInput>,
     reminder: Option<Reminder>,
 }
@@ -29,7 +30,7 @@ impl InboxActions {
             if let Some(reminder) = &mut this.inbox_actions.reminder { reminder.choice = 0; }
             cx.notify();
         }).detach();
-        Self { search, search_text: String::new(), searching: false, reminder_query, reminder: None }
+        Self { search, search_text: String::new(), searching: false, split_ids: None, reminder_query, reminder: None }
     }
 }
 pub(super) fn search_matches(n: &InboxItem, query: &str) -> bool {
@@ -56,6 +57,27 @@ impl Desktop {
         if let Some(id) = notification.filter(|n| !n.seen).map(|n|n.id) {
             self.enqueue(Write::InboxSeen { notification_id:id }, cx);
         }
+    }
+    pub(super) fn reload_inbox_tabs(&mut self) {
+        if let Ok(Some(tabs))=self.db.inbox_splits() {
+            self.splits=tabs.iter().filter_map(|tab|tab["project"].as_str().map(str::to_owned)).collect();
+            self.inbox_actions.split_ids=Some(tabs.iter().map(|tab|tab["ids"].as_array().into_iter().flatten().filter_map(|id|id.as_i64()).collect()).collect());
+        } else {
+            self.inbox_actions.split_ids=None;
+            self.splits=vec!["Important".into(),"Agents".into()];
+            for n in &self.inbox {
+                if let Some(title)=n.raw_json.pointer("/project/title").and_then(|v|v.as_str()) {
+                    if !self.splits.iter().any(|s|s==title) {self.splits.push(title.into());}
+                }
+            }
+            self.splits[2..].sort_unstable();self.splits.push("All".into());
+        }
+        if self.splits.is_empty() {self.splits.push("All".into());self.inbox_actions.split_ids=None;}
+        self.split=self.split.min(self.splits.len().saturating_sub(1));self.filter_inbox();
+    }
+    pub(super) fn inbox_split_matches(&self,n:&InboxItem,index:usize)->bool {
+        if let Some(ids)=&self.inbox_actions.split_ids {return ids.get(index).is_some_and(|ids|ids.contains(&n.id));}
+        self.splits.get(index).is_some_and(|name|Self::split_matches(n,name))
     }
     pub(super) fn task_inbox_ids(&self) -> Vec<i64> {
         self.db.inbox().unwrap_or_default().iter().filter(|n|n.task_id==Some(self.options.task)).map(|n|n.id).collect()
@@ -167,7 +189,7 @@ impl Desktop {
             let count = self
                 .inbox
                 .iter()
-                .filter(|n| Self::split_matches(n, name))
+                .filter(|n| self.inbox_split_matches(n, i))
                 .count();
             div()
                 .id(("split", i))
@@ -646,5 +668,27 @@ mod composer_tests {
             }
             view.read_with(&mut cx,|this,_|{assert_eq!(this.options.task,2);let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0].kind,if snooze{"inbox_remind"}else{"inbox_archive"});assert_eq!(rows[0].payload_json["notification_ids"],json!([101]));}).unwrap();
         }
+    }
+}
+
+#[cfg(test)]
+mod split_tests {
+    use super::*;
+    use serde_json::json;
+    #[gpui::test]
+    fn inbox_tabs_use_server_memberships_counts_and_same_name_project_identity(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view,cx)=cx.add_window_view(|window,cx|{
+            let mut db=Db::memory().unwrap();db.kv_set("current-user-id","42").unwrap();
+            db.apply_response(&json!({"success":true,"user_notifications":[{"id":1,"status":"Normal","seen":false,"createdAt":"2026-01-01T00:00:00Z"},{"id":2,"status":"Normal","seen":false,"createdAt":"2026-01-02T00:00:00Z"}],"structuredData":{"tabs":[{"project":"Same","projectId":15},{"project":"Same","projectId":16}],"data":[[0],[1]]}})).unwrap();
+            let options=Options::parse(["--offline","--screen","inbox"].map(String::from)).unwrap();
+            let v=Desktop::new(db,options,window,cx);window.focus(&v.focus,cx);v
+        });
+        view.read_with(cx,|this,_|{assert_eq!(this.splits,vec!["Same","Same"]);assert_eq!(this.filtered.len(),1);assert_eq!(this.inbox[this.filtered[0]].id,1);});
+        cx.simulate_keystrokes("tab");
+        view.read_with(cx,|this,_|assert_eq!(this.inbox[this.filtered[0]].id,2));
+        view.update_in(cx,|this,_,cx|{this.enqueue(Write::InboxArchive{notification_id:2},cx);assert!(this.filtered.is_empty());});
+        cx.simulate_keystrokes("shift-tab");
+        view.read_with(cx,|this,_|assert_eq!(this.inbox[this.filtered[0]].id,1));
     }
 }

@@ -248,6 +248,7 @@ impl<T: Transport> Sync<T> {
         let response = successful(self.transport.get("/inbox/list")?)?;
         ensure_success(&response)?;
         self.db.transaction(|db| {
+            db.cache_inbox_structure(&response)?;
             let mut incoming = array(&response, "user_notifications")?.clone();
             if let Some(agents) = response.get("agent_notifications") {
                 incoming.extend(

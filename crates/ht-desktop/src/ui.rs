@@ -337,22 +337,7 @@ impl Desktop {
             self.inbox = self.db.inbox()?;
             match self.screen {
                 Screen::Inbox => {
-                    self.splits = vec!["Important".into(), "Agents".into()];
-                    for n in &self.inbox {
-                        if let Some(title) = n
-                            .raw_json
-                            .pointer("/project/title")
-                            .and_then(|v| v.as_str())
-                        {
-                            if !self.splits.iter().any(|s| s == title) {
-                                self.splits.push(title.to_owned());
-                            }
-                        }
-                    }
-                    self.splits[2..].sort_unstable();
-                    self.splits.push("All".into());
-                    self.split = self.split.min(self.splits.len().saturating_sub(1));
-                    self.filter_inbox();
+                    self.reload_inbox_tabs();
                 }
                 Screen::Board => self.load_columns(self.options.board)?,
                 Screen::Task => {
@@ -433,7 +418,7 @@ impl Desktop {
             .inbox
             .iter()
             .enumerate()
-            .filter(|(_, n)| Self::split_matches(n, &self.splits[self.split]) && inbox::search_matches(n, &self.inbox_actions.search_text))
+            .filter(|(_, n)| self.inbox_split_matches(n, self.split) && inbox::search_matches(n, &self.inbox_actions.search_text))
             .map(|(i, _)| i)
             .collect();
         self.clamp_selection();
