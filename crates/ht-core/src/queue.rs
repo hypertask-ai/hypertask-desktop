@@ -90,7 +90,7 @@ impl Db {
                 change.validate()?;
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_view" && row.payload_json["change"]["project"]==change.project), "wait for the previous view update to finish");
                 let user=db.current_user_id().context("Unauthorized")?;
-                (format!("view:{}",change.project),"web_view",json!({"user_id":user,"change":change,"before":db.board_project(change.project)?}))
+                (format!("view:{}",change.project),"web_view",json!({"user_id":user,"change":change,"before":db.board_project(change.project)?,"attempted":false}))
             }
             Write::FavoriteSlot { index, project_id } => {
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && matches!(row.kind.as_str(),"web_favorites"|"web_favorite_slot")), "wait for the previous favorite update to finish");
@@ -100,7 +100,11 @@ impl Db {
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && matches!(row.kind.as_str(),"web_favorites"|"web_favorite_slot")), "wait for the previous favorite update to finish");
                 ("favorites".into(),"web_favorites",db.prepare_favorites(project_ids)?)
             },
-            Write::CreateTask { project_id, section_id, title, top } => (format!("create:{project_id}"), "web_create", db.prepare_create(*project_id,*section_id,title,*top)?),
+            Write::CreateTask { project_id, section_id, title, top } => {
+                let mut payload=db.prepare_create(*project_id,*section_id,title,*top)?;
+                payload["attempted"]=json!(false);
+                (format!("create:{project_id}"), "web_create", payload)
+            },
             Write::ComposeTask { project_id, text, time_zone } => {
                 ensure!(*project_id > 0 && !text.trim().is_empty(), "choose a board and describe the task");
                 let user = db.current_user_id().context("sign in before composing a task")?;
@@ -460,32 +464,48 @@ impl Db {
         let response = if row.kind == "web_view" {
             let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
             change.validate()?;
-            if change.route=="create-view" && row.attempts>1 {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
-                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.post(&format!("/api/projects/views/{}",change.route),&change.body,&row.client_id),
+            if change.route=="create-view" && (row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1)) {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => {
+                    if change.route=="create-view" {
+                        let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);
+                        self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;
+                    }
+                    transport.post(&format!("/api/projects/views/{}",change.route),&change.body,&row.client_id)
+                },
+                Err(error) => Err(error),
+                Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
                 _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
             }}.map(|r|if r.status==200 {Response{status:200,body:json!({"success":true,"view":r.body})}}else{r})
         } else if row.kind == "web_favorite_slot" {
             match transport.get("/user/context") {
                 Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate(row.payload_json["method"].as_str().context("Missing favorite method")?,"/api/favorites/addEditFavorites",&row.payload_json["body"],&row.client_id),
+                Err(error) => Err(error),
+                Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
                 _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
             }.map(|r|if r.status==200 && (r.body["count"].is_number() || r.body["projectId"]==row.payload_json["body"]["projectId"]) {Response{status:200,body:json!({"success":true})}}else{r})
         } else if row.kind == "web_favorites" {
             match transport.get("/user/context") {
                 Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate("PUT","/api/favorites/reorderFavorites",&row.payload_json["body"],&row.client_id),
+                Err(error) => Err(error),
+                Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
                 _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
             }.map(|r|if r.status==200 && r.body["ok"]==true {Response{status:200,body:json!({"success":true})}}else{r})
         } else if row.kind == "web_create" {
             // Web creation has no idempotency contract: a lost acknowledgement must not create twice.
-            if row.attempts > 1 { Ok(Response {status:409,body:json!({"message":"Creation result uncertain; refresh before trying again"})}) }
+            if row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1) { Ok(Response {status:409,body:json!({"message":"Creation result uncertain; refresh before trying again"})}) }
             else {
                 match transport.get("/user/context") {
                     Ok(identity) if identity.status == 200 && identity.body["success"] == true && self.current_user_id() == row.payload_json["user_id"].as_i64() && identity.body["user"]["id"] == row.payload_json["user_id"] => {
                         let path = if row.payload_json["global"] == true {"/api/tasks/createGlobally"}else{"/api/tasks/create"};
+                        let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);
+                        self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;
                         match transport.post(path, &row.payload_json["body"], &row.client_id) {
                             Ok(response) if response.status < 500 => Ok(response),
                             _ => Ok(Response {status:409,body:json!({"message":"Creation result uncertain; refresh before trying again"})}),
                         }
                     },
+                    Err(error) => Err(error),
+                    Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
                     _ => Ok(Response {status:403,body:json!({"message":"Forbidden"})}),
                 }
             }

@@ -88,6 +88,16 @@ mod tests {
     }
 
     #[gpui::test]
+    fn shell_palette_favorites_opens_the_web_ten_slot_panel_without_a_write(cx: &mut gpui::TestAppContext) {
+        let(view,mut cx)=setup(cx);
+        command(view,&mut cx,"manageFavorites");
+        measured(view,&mut cx,"shell.favorites.manager");
+        view.read_with(&cx,|this,_|assert!(this.db.mutations().unwrap().is_empty())).unwrap();
+        cx.simulate_keystrokes("escape");
+        measured(view,&mut cx,"inbox.tabs");
+    }
+
+    #[gpui::test]
     fn shell_palette_settings_targets_open_without_toggling_controls(cx: &mut gpui::TestAppContext) {
         let (view, mut cx) = setup(cx);
         for (key, section) in [

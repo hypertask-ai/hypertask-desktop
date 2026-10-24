@@ -354,6 +354,17 @@ mod tests {
         view.read_with(&cx,|this,_|{assert_eq!(this.options.board,16);assert!(!this.shell.boards);}).unwrap();
     }
     #[gpui::test]
+    fn favorite_zero_opens_the_tenth_slot_outside_switcher_not_the_first(cx:&mut gpui::TestAppContext) {
+        let(view,mut cx)=setup(cx);
+        view.update(&mut cx,|this,_,_|this.db.cache_sidebar(1,&json!([]),&json!([
+            {"projectId":15,"index":1,"project":{"id":15,"title":"Alpha"}},
+            {"projectId":16,"index":0,"project":{"id":16,"title":"Beta"}}
+        ])).unwrap()).unwrap();
+        cx.simulate_keystrokes(if cfg!(target_os="macos"){"ctrl-0"}else{"alt-0"});
+        view.read_with(&cx,|this,_|{assert_eq!(this.options.board,16);assert_eq!(this.screen,Screen::Board);assert!(!this.shell.boards);}).unwrap();
+    }
+
+    #[gpui::test]
     fn ctrl_b_groups_authoritative_teams_and_favorites_and_queues_real_reordering(
         cx: &mut gpui::TestAppContext,
     ) {
