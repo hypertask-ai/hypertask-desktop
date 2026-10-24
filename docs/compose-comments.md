@@ -32,8 +32,9 @@ No builds, tests, test copies, or app launches run on the VPS or owner laptop.
 
 The supplied QA-owner state is user **4036**, `valentin+qa-owner@hypertask.ai`.
 Its human CLI exchange succeeds and bearer GET comments for task 60253 on board
-7283 returns 200. Bearer GET defaults returns **401**, so that account does not
-currently have the new route authorization. The inherited probe's alternate
+7283 returns 200. The unchanged Rust fixture probe returns **401** from defaults,
+writer, mentions, star, and pin, so that account does not currently have the new
+route authorization. The inherited probe's alternate
 flag-QA identity **985** instead gets **404** for that task. No owner account,
 board membership change, flag write, or cookie-authenticated contract request is
 used to hide this mismatch; no live state was created by the failed seed attempt.
@@ -114,6 +115,7 @@ Paths are relative to the web repository. An implemented subset does not remove 
 
 | Ref / rows | Exact route and auth helper | Reason / retained subset |
 | --- | --- | --- |
+| B17 — F001/F002/F003/F011/F115/F116/F587 live acceptance | The four HTPR-7699 routes use **getDesktopCliTokenUser**, gated by `htpr-7699-desktop-cli-token`. | Native code and CI coverage implemented. QA-owner 4036 has board 7283 access but all four bearer routes return 401; alternate flag-QA 985 gets 404 for the target task. Enable the flag for the board-owning QA account before calling these rows live-QA Done. F011's top ranking/custom-field/empty-task differences remain documented above. |
 | B1 — F058 | GET `/api/notifications/markAsUnseen?notificationId=…&seen=1`: `taskWriteHandler` → `taskWriteRoute` → **getSessionUser** (`src/pages/api/notifications/markAsUnseen.ts:1-5`, `src/lib/api/notification-writes/mark-unseen.ts:62-76`, `src/lib/api/task-writes/route.ts:32-35,89-91`). | Bearer POST `/api/mcp/inbox/seen` only sets **true** (`src/app/api/mcp/inbox/seen/route.ts:82-84`). No bearer unread operation exists. U is not a fake local toggle. Mark-read on open works. |
 | B2 — F056 | POST `/api/ai/audio-transcript`: **getSessionUser**, `src/app/api/ai/audio-transcript/route.ts:98-100`; caller `src/components/RTE/Components/AudioButton.tsx:406`. | Alt+V cannot honestly deliver dictation with the MCP bearer. No simulated recording/transcript. |
 | B3 — F498 | GET/POST `/api/notifications/splits`: `taskWriteHandler` → **getSessionUser**, `src/pages/api/notifications/splits.ts:1-6`, `src/lib/api/notification-writes/splits.ts:31-35,77-81`. | Native reads authoritative tab membership through MCP; cannot persist “Also in Important” settings. |
