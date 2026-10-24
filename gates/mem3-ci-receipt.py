@@ -40,7 +40,9 @@ for job in jobs:
         log = gh('api', f'repos/{REPO}/actions/jobs/{job["databaseId"]}/logs')
         for test in ('compact_cards_preserve_every_display_field_and_full_detail_search_and_store',
                      'compact_board_keeps_duplicate_legacy_section_membership_and_order',
-                     'compact_inbox_uses_current_title_and_ticket_without_materializing_description'):
+                     'compact_inbox_uses_current_title_and_ticket_without_materializing_description',
+                     'compact_inbox_keeps_rendered_metadata_and_preserves_full_store',
+                     'wide_board_culls_only_offscreen_cards_and_restores_them_after_scroll'):
             assert any(test + ' ... ok' in line for line in log.splitlines()), (job['name'], test)
             print(f"CI_TEST_PROVEN {job['name']} {test}")
 proof = next(j for j in jobs if j['name'] == 'Windows memory receipt and budget')

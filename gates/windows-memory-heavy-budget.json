@@ -1,6 +1,6 @@
 {
-  "inboxWorkingSet64": 99000000,
-  "boardWorkingSet64": 99000000,
+  "inboxWorkingSet64": 77136936,
+  "boardWorkingSet64": 98289745,
   "taskWorkingSet64": 99000000,
   "FixtureVersion": 1,
   "MinimumInboxItems": 640,
@@ -32,5 +32,10 @@
     "DescriptionImageAssetCount": 3,
     "EncodedImageAssetBytes": 3328830,
     "FixtureSHA256": "6d4bab0690859ce5a55084c337f702af063ab8649fc7773d939d9d4bb8e6faaa"
-  }
+  },
+  "BaselineRevision": "05bc7fc5f9262de1b63563187d086ef47be4db3d",
+  "BaselineRun": "https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40126115158",
+  "BaselineInboxWorkingSet64": 75624448,
+  "BaselineBoardWorkingSet64": 96362496,
+  "BaselineTaskWorkingSet64": 98131968
 }

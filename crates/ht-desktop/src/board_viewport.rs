@@ -1,11 +1,15 @@
 use super::*;
 
 impl Desktop {
-    pub(super) fn board_column_visible(&self, index: usize, width: f32, viewport: f32) -> bool {
+    pub(super) fn board_column_visible(&self, index: usize, width: f32, board_width: f32, window: &Window, cx: &App) -> bool {
         if !cfg!(feature = "visible-board-columns") { return true; }
         // Keep headers/column boxes laid out for scroll_to_item, but do not shape cards
         // behind the horizontal clip. The selected target must exist before autoscroll.
-        let left = viewport * 0.015 + index as f32 * (width + 16.)
+        let sidebar_width = self.ai_sidebar.as_ref()
+            .filter(|sidebar| self.shell.ai_open && sidebar.read(cx).mode() == crate::ai_sidebar::DisplayMode::Sidebar)
+            .map_or(0., |sidebar| sidebar.read(cx).width());
+        let viewport = f32::from(window.viewport_size().width) - self.shell.width() - sidebar_width;
+        let left = board_width * 0.015 + index as f32 * (width + 16.)
             + f32::from(self.board_scroll.offset().x);
         index == self.column || (left < viewport && left + width > 0.)
     }
@@ -66,6 +70,17 @@ mod tests {
             assert!(elements.iter().any(|e| e["key"] == "board.card.0.title"));
             assert_eq!(this.columns.iter().map(|c| c.cards.len()).sum::<usize>(), 13);
             assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+        view.update(&mut cx, |this, _, cx| {
+            this.ai_sidebar.as_ref().unwrap().update(cx, |sidebar, cx| {
+                sidebar.set_mode(crate::ai_sidebar::DisplayMode::Floating, cx);
+            });
+            cx.notify();
+        }).unwrap();
+        draw(view, &mut cx);
+        view.read_with(&mut cx, |this, _| {
+            let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+            assert!(elements.iter().any(|e| e["key"] == "board.card.4.title"), "floating AI must not shrink the board's clip");
         }).unwrap();
     }
 }

@@ -88,6 +88,8 @@ def check(folder, budget=None):
         print(f'HEAVY_RESIDENT_MAP {screen}: {json.dumps(resident, sort_keys=True)}')
         if budget:
             assert store['CompactTaskReads'] is True, 'Production did not enable compact reads'
+            assert app['InboxRetainedTaskAttachments'] == 0, 'Inbox retained hidden attachment trees'
+            assert app['BoardRetainedAttachments'] == 0, 'Board retained hidden attachment trees'
             if screen != 'inbox':
                 assert app['BoardDescriptionBytes'] == 0, 'Cards retained hidden descriptions'
     if budget:
@@ -103,6 +105,7 @@ def check_limits(data, budget):
     for screen in ('inbox', 'board', 'task'):
         median = next(m for m in data['Medians'] if m['Screen'] == screen)
         assert 0 < budget[f'{screen}WorkingSet64'] < 100_000_000
+        assert budget[f'{screen}WorkingSet64'] == min(99_000_000, budget[f'Baseline{screen.title()}WorkingSet64'] * 102 // 100)
         assert median['WorkingSet64'] <= budget[f'{screen}WorkingSet64'], f'{screen} exceeds heavy budget'
 
 
@@ -132,7 +135,13 @@ if args.compare:
         new_app = load(args.folder / f'{screen}-3-owners.app.json')
         old_store = load(args.compare / f'{screen}-3-owners.store.json')
         assert old_store['CompactTaskReads'] is False
+        assert old_app['InboxRetainedTaskAttachments'] > 0
+        assert new_app['DataReads']['InboxReadNetRequestedBytes'] < old_app['DataReads']['InboxReadNetRequestedBytes']
+        assert new_app['RustLiveRequestedBytes'] < old_app['RustLiveRequestedBytes']
+        assert new_app['RustPeakRequestedBytes'] < old_app['RustPeakRequestedBytes']
         if screen != 'inbox':
+            assert old_app['BoardRetainedAttachments'] > 0
+            assert new_app['DataReads']['BoardReadNetRequestedBytes'] < old_app['DataReads']['BoardReadNetRequestedBytes']
             assert old_app['BoardDescriptionBytes'] == workload(args.compare)['DescriptionBytes']
             assert new_app['BoardDescriptionBytes'] == 0
             assert new_app['RustLiveRequestedBytes'] < old_app['RustLiveRequestedBytes']

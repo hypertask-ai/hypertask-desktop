@@ -985,7 +985,7 @@ impl Desktop {
                                             ),
                                     ),
                             )
-                            .when(self.board_column_visible(i, column_width, board_width), |d| d.child(
+                            .when(self.board_column_visible(i, column_width, board_width, window, cx), |d| d.child(
                                 list(
                                     self.column_lists[i].clone(),
                                     cx.processor(move |this, row: usize, _, cx| {
