@@ -118,7 +118,7 @@ fn parse_sessions(reader: impl Read) -> Result<Vec<Session>> {
     Ok(data.sessions)
 }
 
-#[derive(Clone, Debug, Default, Serialize, PartialEq)]
+#[derive(Clone, Debug, Default, Deserialize, Serialize, PartialEq)]
 pub struct DefaultContext {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub project_id: Option<i64>,

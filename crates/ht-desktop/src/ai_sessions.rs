@@ -19,6 +19,7 @@ pub(super) struct SessionPending {
     quotes: Vec<(String,String)>,
     branch: Option<String>,
     send: Option<String>,
+    context: DefaultContext,
 }
 impl AiSidebar {
     pub fn session_snapshots(&self)->Vec<Value> {
@@ -40,7 +41,7 @@ impl AiSidebar {
         if self.client.is_none(){return;}
         if change.request().is_err(){return;}
         let sessions=self.session_snapshots();
-        self.session_pending=Some(SessionPending{key:None,change:change.clone(),chats:self.chats.clone(),history:self.history.clone(),selected:self.selected,draft:self.input.read(cx).content.to_string(),quotes:self.draft_quotes.clone(),branch,send});
+        self.session_pending=Some(SessionPending{key:None,change:change.clone(),chats:self.chats.clone(),history:self.history.clone(),selected:self.selected,draft:self.input.read(cx).content.to_string(),quotes:self.draft_quotes.clone(),branch,send,context:self.request_context()});
         self.chat_pending=None;self.history_pending=None;
         match &change {
             AiSessionWrite::Create{..}=>{if !self.chats[self.selected].persisted && self.chats[self.selected].messages.is_empty(){self.chats[self.selected]=Chat::new();}else{self.chats.push(Chat::new());self.selected=self.chats.len()-1;}}
@@ -58,7 +59,7 @@ impl AiSidebar {
     }
     fn session_continuation(&self)->Value{
         let Some(p)=&self.session_pending else{return Value::Null;};
-        json!({"chats":p.chats.iter().map(|c|json!({"id":c.id,"title":c.title,"messages":c.messages.iter().map(|m|&m.message).collect::<Vec<_>>(),"persisted":c.persisted})).collect::<Vec<_>>(),"history":p.history.iter().map(|s|s.as_ref()).collect::<Vec<_>>(),"selected":p.selected,"draft":p.draft,"quotes":p.quotes,"branch":p.branch,"send":p.send})
+        json!({"chats":p.chats.iter().map(|c|json!({"id":c.id,"title":c.title,"messages":c.messages.iter().map(|m|&m.message).collect::<Vec<_>>(),"persisted":c.persisted})).collect::<Vec<_>>(),"history":p.history.iter().map(|s|s.as_ref()).collect::<Vec<_>>(),"selected":p.selected,"draft":p.draft,"quotes":p.quotes,"branch":p.branch,"send":p.send,"context":p.context})
     }
     pub fn restore_session_work(&mut self,db:&Db,cx:&mut Context<Self>){
         let Some(user)=db.current_user_id() else{return;};
@@ -71,36 +72,41 @@ impl AiSidebar {
         let selected=(saved["selected"].as_u64().unwrap_or(0) as usize).min(chats.len()-1);
         self.chats=chats.clone();self.selected=selected;
         self.input.update(cx,|input,cx|input.set_content(saved["draft"].as_str().unwrap_or("").into(),cx));
-        self.session_pending=Some(SessionPending{key:Some(key.into()),change,chats,history:saved["history"].as_array().into_iter().flatten().filter_map(|v|serde_json::from_value::<Session>(v.clone()).ok()).map(Arc::new).collect(),selected,draft:saved["draft"].as_str().unwrap_or("").into(),quotes:serde_json::from_value(saved["quotes"].clone()).unwrap_or_default(),branch:saved["branch"].as_str().map(str::to_owned),send:saved["send"].as_str().map(str::to_owned)});
+        self.session_pending=Some(SessionPending{key:Some(key.into()),change,chats,history:saved["history"].as_array().into_iter().flatten().filter_map(|v|serde_json::from_value::<Session>(v.clone()).ok()).map(Arc::new).collect(),selected,draft:saved["draft"].as_str().unwrap_or("").into(),quotes:serde_json::from_value(saved["quotes"].clone()).unwrap_or_default(),branch:saved["branch"].as_str().map(str::to_owned),send:saved["send"].as_str().map(str::to_owned),context:serde_json::from_value(saved["context"].clone()).unwrap_or_default()});
         cx.notify();
     }
     pub fn session_queued(&mut self,key:String,cx:&mut Context<Self>){if let Some(pending)=&mut self.session_pending{pending.key=Some(key);}cx.notify();}
     pub fn session_key(&self)->Option<&str>{self.session_pending.as_ref()?.key.as_deref()}
     pub fn session_finished(&mut self,result:Value,window:&mut Window,cx:&mut Context<Self>) {
         let Some(pending)=self.session_pending.take() else{return;};
+        let current_draft=self.input.read(cx).content.to_string();let current_quotes=self.draft_quotes.clone();let unchanged=current_draft==pending.draft;
         if !result["error"].is_null() {
             self.chats=pending.chats;self.history=pending.history;self.selected=pending.selected;
-            self.draft_quotes=pending.quotes;
-            self.input.update(cx,|input,cx|input.set_content(pending.draft,cx));
+            if unchanged{self.draft_quotes=pending.quotes;self.input.update(cx,|input,cx|input.set_content(pending.draft,cx));}
             // Web history hooks roll back/refetch without an error toast on rename/delete failure.
             eprintln!("AI session mutation refused: {}",result["error"]);
         }else{
             match pending.change {
                 AiSessionWrite::Create{..}=>{
                     if let Ok(session)=serde_json::from_value::<Session>(result["session"].clone()) {
+                        if pending.context!=self.request_context(){
+                            self.history.insert(0,Arc::new(session));self.chats=pending.chats;self.selected=pending.selected;cx.notify();return;
+                        }
                         let chat=self.chat_from_session(&session);
                         if self.chats[self.selected].persisted{self.chats.push(chat);self.selected=self.chats.len()-1;}else{self.chats[self.selected]=chat;}
                         self.history.insert(0,Arc::new(session));
-                        self.draft_quotes.clear();self.input.update(cx,|input,cx|input.reset(window,cx));
+                        if unchanged{self.draft_quotes.clear();self.input.update(cx,|input,cx|input.reset(window,cx));}
                         if let Some(quote)=pending.branch{self.insert_comment_quote(quote,window,cx);}
                         if let Some(text)=pending.send {
+                            if unchanged{self.input.update(cx,|input,cx|input.set_content(pending.draft,cx));}
                             self.draft_quotes=pending.quotes;
                             self.send(text,window,cx);
+                            if !unchanged{self.input.update(cx,|input,cx|input.set_content(current_draft,cx));self.draft_quotes=current_quotes;}
                         }
                     }
                 }
                 AiSessionWrite::Delete{id}=>{self.chats.retain(|c|c.id!=id);self.history.retain(|s|s.id!=id);if self.chats.is_empty(){self.chats.push(Chat::new());}self.selected=self.selected.min(self.chats.len()-1);self.load_history(false,cx);},
-                AiSessionWrite::DeleteAll=>{self.chats=vec![Chat::new()];self.selected=0;self.history.clear();self.load_history(false,cx);},
+                AiSessionWrite::DeleteAll=>{self.chats=vec![Chat::new()];self.chats[0].status="All chat sessions deleted successfully".into();self.selected=0;self.history.clear();self.load_history(false,cx);},
                 AiSessionWrite::Rename{id,..}=>{if let Some(title)=result["session"]["title"].as_str(){for chat in &mut self.chats{if chat.id==id{chat.title=title.into();}}for row in &mut self.history{if row.id==id{Arc::make_mut(row).title=Some(title.into());}}}},
             }
         }
@@ -189,6 +195,21 @@ mod recovery_tests {
                 sidebar.session_finished(if status==200{json!({"success":true,"session":{"id":"durable-chat","title":"Branch","messages":[]}})}else{json!({"error":format!("HTTP {status}")})},window,cx);
                 assert_eq!(sidebar.input.read(cx).content.as_ref(),if status==200{"Branch quote"}else{"Original draft"});assert_eq!(sidebar.chats[sidebar.selected].persisted,status==200);
             }
+        }).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod intent_tests {
+    use super::*;
+    #[gpui::test]
+    fn refused_session_write_preserves_newer_typing_and_late_branch_does_not_hijack_navigation(cx:&mut gpui::TestAppContext){
+        let view=cx.add_window(|window,cx|{let focus=cx.focus_handle();AiSidebar::new(crate::theme::THEMES[1],Some("mock-token".into()),focus,window,cx)});
+        view.update(cx,|sidebar,window,cx|{
+            sidebar.input.update(cx,|input,cx|input.set_content("Captured".into(),cx));sidebar.branch_comment("<blockquote>Old quote</blockquote>".into(),window,cx);sidebar.input.update(cx,|input,cx|input.set_content("Newer edits".into(),cx));sidebar.session_finished(json!({"error":"HTTP 403"}),window,cx);assert_eq!(sidebar.input.read(cx).content.as_ref(),"Newer edits");
+            let db=Db::memory().unwrap();sidebar.scope=Some(Scope::load(&db,Screen::Board,15,None));let original=sidebar.chats[sidebar.selected].id.clone();sidebar.branch_comment("<blockquote>Old board quote</blockquote>".into(),window,cx);
+            sidebar.scope=Some(Scope::load(&db,Screen::Board,16,None));sidebar.session_finished(json!({"success":true,"session":{"id":"old-board-chat","title":"Old board","messages":[]}}),window,cx);
+            assert_eq!(sidebar.chats[sidebar.selected].id,original);assert_eq!(sidebar.input.read(cx).content.as_ref(),"Newer edits");assert!(sidebar.draft_quotes.is_empty());assert!(sidebar.history.iter().any(|s|s.id=="old-board-chat"));
         }).unwrap();
     }
 }

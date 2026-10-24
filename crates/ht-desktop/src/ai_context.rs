@@ -87,7 +87,7 @@ impl AiSidebar {
     pub(super) fn poll_context(&mut self,cx:&mut Context<Self>){
         if let Some(result)=self.context_picker.scope_pending.as_ref().and_then(|rx|rx.try_recv().ok()){
             self.context_picker.scope_pending=None;
-            match result {Ok((user,teams,ticket)) if self.context_picker.user.is_none_or(|expected|expected==user)=>{self.context_picker.user=Some(user);self.context_picker.teams=teams;self.context_picker.ticket_enabled=ticket;self.context_picker.scope_error=false;},_=>{self.context_picker.teams.clear();self.context_picker.scope_error=true;}}
+            match result {Ok((user,teams,ticket)) if self.context_picker.user.is_none_or(|expected|expected==user)=>{self.context_picker.user=Some(user);self.context_picker.teams=teams;self.context_picker.ticket_enabled=ticket;self.context_picker.scope_error=false;},_=>{self.context_picker.scope_error=true;}}
             cx.notify();
         }
         if self.context_picker.scope=="ticket" && (!self.context_picker.ticket_enabled || self.scope.as_ref().and_then(|s|s.context.task_id).is_none()){self.context_picker.scope=Value::Null;cx.notify();}
@@ -145,8 +145,6 @@ impl AiSidebar {
                 for project in team["projects"].as_array().into_iter().flatten(){rows.push((project["title"].as_str().or(project["name"].as_str()).unwrap_or("").into(),project["id"].clone()));}
             }
             for(i,(name,value))in rows.into_iter().enumerate(){let heading=value["heading"]==true;menu=menu.child(div().id(("ai-scope-choice",i)).p(px(6.)).child(name).when(!heading,|d|d.cursor_pointer().on_click(cx.listener(move|this,_,_,cx|this.select_scope(value.clone(),cx)))));}
-            if self.context_picker.scope_pending.is_some(){menu=menu.child("Loading…");}
-            if self.context_picker.scope_error{menu=menu.child("Could not load boards");}
         }else if self.context_picker.mention.is_some() && !self.context_picker.dismissed {
             if !self.context_picker.fetched {menu=menu.child("Loading…");}
             for(i,row)in self.context_picker.rows.iter().enumerate(){menu=menu.child(div().id(("ai-context-choice",i)).p(px(6.)).when(i==self.context_picker.choice,|d|d.bg(color(self.colors.active))).child(row["name"].as_str().unwrap_or("").to_owned()).when(ai_context::selectable(row),|d|d.cursor_pointer().on_click(cx.listener(move|this,_,window,cx|this.choose_context(i,window,cx)))));}

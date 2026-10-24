@@ -525,6 +525,10 @@ impl AiSidebar {
         if text.is_empty() || self.active.is_some() || self.session_pending.is_some() {
             return;
         }
+        if self.client.is_some() && self.scope.as_ref().and_then(|s|s.team_id.as_ref()).is_some() && self.models.configuration.is_none(){
+            if let Some(error)=&self.models.error{self.chats[self.selected].error=Some(error.clone());}
+            cx.notify();return;
+        }
         if self.client.is_some() && !self.chats[self.selected].persisted {
             self.request_session(self.create_scope(),None,Some(text),cx);
             return;
