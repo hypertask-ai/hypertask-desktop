@@ -81,7 +81,7 @@ pub struct Block {
     code: Option<Tag>,
 }
 impl Block {
-    fn text(&self) -> String {
+    pub fn text(&self) -> String {
         self.spans.iter().map(|s| s.text.as_str()).collect()
     }
     fn len(&self) -> usize {
@@ -314,8 +314,33 @@ fn html_parts(parts: &[Part], out: &mut String) {
                             .open(),
                     );
                 }
+                let mut active: Vec<Tag> = vec![];
                 for span in &b.spans {
-                    out.push_str(&span.html(b.tag.name == "pre"));
+                    let common = active
+                        .iter()
+                        .zip(&span.marks)
+                        .take_while(|(a, b)| a == b)
+                        .count();
+                    for mark in active[common..].iter().rev() {
+                        out.push_str(&format!("</{}>", mark.name));
+                    }
+                    for mark in &span.marks[common..] {
+                        out.push_str(&mark.open());
+                    }
+                    active = span.marks.clone();
+                    if let Some(atom) = &span.atom {
+                        out.push_str(atom);
+                    } else {
+                        let text = escape(&span.text);
+                        out.push_str(&if b.tag.name == "pre" {
+                            text
+                        } else {
+                            text.replace('\n', "<br>")
+                        });
+                    }
+                }
+                for mark in active.iter().rev() {
+                    out.push_str(&format!("</{}>", mark.name));
                 }
                 if b.tag.name == "pre" {
                     out.push_str("</code>");
@@ -345,6 +370,90 @@ fn html_parts(parts: &[Part], out: &mut String) {
         }
     }
 }
+#[derive(Clone)]
+pub struct DisplayBlock<'a> {
+    pub block: &'a Block,
+    pub prefix: String,
+    pub depth: usize,
+    pub quote: bool,
+    pub task: bool,
+}
+fn display_blocks<'a>(
+    parts: &'a [Part],
+    depth: usize,
+    quote: bool,
+    prefix: &str,
+    task: bool,
+    out: &mut Vec<DisplayBlock<'a>>,
+) {
+    let mut prefix = prefix.to_owned();
+    for part in parts {
+        match part {
+            Part::Block(block) => {
+                out.push(DisplayBlock {
+                    block,
+                    prefix: std::mem::take(&mut prefix),
+                    depth,
+                    quote,
+                    task,
+                });
+            }
+            Part::Container(tag, children) if matches!(tag.name.as_str(), "ul" | "ol") => {
+                let mut number = tag
+                    .attrs
+                    .iter()
+                    .find(|(k, _)| k == "start")
+                    .and_then(|(_, v)| v.parse::<usize>().ok())
+                    .unwrap_or(1);
+                for item in children {
+                    let mut marker = if tag.name == "ol" {
+                        format!("{number}.")
+                    } else {
+                        "•".into()
+                    };
+                    let mut is_task = false;
+                    if let Part::Container(li, _) = item {
+                        is_task = li
+                            .attrs
+                            .iter()
+                            .any(|(k, v)| k == "data-type" && v == "taskItem");
+                        if is_task {
+                            marker = if li
+                                .attrs
+                                .iter()
+                                .any(|(k, v)| k == "data-checked" && v == "true")
+                            {
+                                "☑"
+                            } else {
+                                "☐"
+                            }
+                            .into();
+                        }
+                    }
+                    display_blocks(
+                        std::slice::from_ref(item),
+                        depth + 1,
+                        quote,
+                        &marker,
+                        is_task,
+                        out,
+                    );
+                    number += 1;
+                }
+            }
+            Part::Container(tag, children) => display_blocks(
+                children,
+                depth,
+                quote || tag.name == "blockquote",
+                &prefix,
+                task,
+                out,
+            ),
+            Part::Atom(_) => (),
+        }
+    }
+}
+
 impl Default for Document {
     fn default() -> Self {
         Self::plain("")
@@ -387,6 +496,11 @@ impl Document {
         visit(&self.parts, &mut out);
         out
     }
+    pub fn display(&self) -> Vec<DisplayBlock<'_>> {
+        let mut out = vec![];
+        display_blocks(&self.parts, 0, false, "", false, &mut out);
+        out
+    }
     pub fn text(&self) -> String {
         self.blocks()
             .iter()
@@ -413,7 +527,11 @@ impl Document {
         for span in &blocks[i].spans {
             at += span.text.len();
             if offset <= at {
-                return span.marks.clone();
+                let mut marks = span.marks.clone();
+                if offset == at {
+                    marks.retain(|m| m.name != "a");
+                }
+                return marks;
             }
         }
         vec![]

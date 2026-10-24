@@ -281,9 +281,16 @@ impl Desktop {
                 }
             }
             DiscardDraft => {
-                self.comment_actions.clear_quotes();
-                self.comment_input
-                    .update(cx, |input, cx| input.reset(window, cx));
+                match self.editing {
+                    Editing::Description => self.interaction.description.update(cx, |input, cx| {
+                        input.set_html(self.detail.as_ref().map_or("", |d| d.task.description.as_str()), cx)
+                    }),
+                    Editing::ExistingComment => self.comment_actions.edit_id = None,
+                    _ => {
+                        self.comment_actions.clear_quotes();
+                        self.comment_input.update(cx, |input, cx| input.reset(window, cx));
+                    }
+                }
                 self.editing = Editing::None;
                 window.focus(&self.focus, cx);
             }

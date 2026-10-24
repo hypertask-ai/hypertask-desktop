@@ -247,13 +247,7 @@ impl Desktop {
         if text.trim().is_empty() {
             return false;
         }
-        let Some(comment) = self
-            .detail
-            .as_ref()
-            .and_then(|d| d.comments.iter().find(|c| c.id == id))
-        else {
-            return false;
-        };
+        if !self.detail.as_ref().is_some_and(|d| d.comments.iter().any(|c| c.id == id)) {return false;}
         let html = self.comment_actions.input.read(cx).html();
         if !self.enqueue(
             Write::CommentAction {
@@ -1069,4 +1063,42 @@ mod tests {
             "<p>&lt;script&gt;&amp;<br>next</p>"
         );
     }
+    #[gpui::test]
+    fn rich_html_all_three_editor_surfaces_use_real_keys_and_the_durable_queue(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view,cx)=cx.add_window_view(desktop);
+        for surface in 0..3 {
+            view.update_in(cx,|this,window,cx| {
+                let input=match surface {
+                    0=>{this.edit_comment(window,cx);this.comment_input.clone()},
+                    1=>{this.interaction.task_part=1;this.run_comment_action(Action::EditComment,window,cx);this.comment_actions.input.clone()},
+                    _=>{this.edit_description(window,cx);this.interaction.description.clone()},
+                };
+                input.update(cx,|input,cx|input.set_content("é🙂".into(),cx));
+            });
+            cx.simulate_keystrokes("ctrl-a ctrl-u ctrl-shift-enter");
+            view.read_with(cx,|this,_|{
+                let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),surface+1);
+                let payload=&rows[surface].payload_json;
+                let html=match surface {0=>payload["text"].as_str(),1=>payload["change"]["text"].as_str(),_=>payload["description"].as_str()}.expect("queued rich HTML");
+                assert_eq!(html,"<p><u>é🙂</u></p>");
+            });
+        }
+        cx.simulate_keystrokes("ctrl-b");
+        view.read_with(cx,|this,_|assert!(this.interaction.modal.is_some(),"Ctrl+B switches boards outside editors"));
+    }
+    #[gpui::test]
+    fn discard_is_surface_scoped_and_never_claims_a_cookie_only_server_write(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(desktop);
+        view.update_in(cx,|this,window,cx|{this.comment_input.update(cx,|input,cx|input.set_content("Keep comment".into(),cx));this.edit_description(window,cx);this.interaction.description.update(cx,|input,cx|input.set_content("Unsaved".into(),cx));});
+        cx.simulate_keystrokes("ctrl-shift-,");
+        view.update_in(cx,|this,window,cx|{
+            assert_eq!(this.interaction.description.read(cx).html(),"<p>Description</p>");
+            assert_eq!(this.comment_input.read(cx).content.as_ref(),"Keep comment");
+            assert!(this.db.mutations().unwrap().is_empty());this.edit_comment(window,cx);
+        });
+        cx.simulate_keystrokes("ctrl-shift-,");
+        view.read_with(cx,|this,cx|{assert!(this.comment_input.read(cx).content.is_empty());assert!(this.db.mutations().unwrap().is_empty());});
+    }
+
 }

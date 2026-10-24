@@ -1,6 +1,6 @@
 use super::*;
 use crate::editor_document::{Document, Format, Tag};
-use gpui::{AnyElement, FontStyle, FontWeight, KeyDownEvent, ScrollHandle};
+use gpui::{AnyElement, FontWeight, KeyDownEvent, ScrollHandle};
 
 #[derive(Clone)]
 pub(super) struct EditorState {
@@ -136,7 +136,7 @@ impl TextInput {
         self.move_to(self.content.len(), window, cx);
         window.notify_text_input_changed(&self.focus_handle);
     }
-    fn replace_document(&mut self, range: Range<usize>, text: &str) {
+    pub(super) fn replace_document(&mut self, range: Range<usize>, text: &str) {
         if let Some(e) = &mut self.editor {
             let marks = e
                 .marks
@@ -145,7 +145,7 @@ impl TextInput {
             e.document.replace(range, text, &marks);
         }
     }
-    fn update_slash(&mut self, start: usize, text: &str) {
+    pub(super) fn update_slash(&mut self, start: usize, text: &str) {
         let Some(e) = &mut self.editor else {
             return;
         };
@@ -276,7 +276,7 @@ impl TextInput {
             Command::Emoji => self.open_editor_dialog(DialogKind::Emoji, window, cx),
         }
     }
-    fn editor_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    pub(super) fn editor_enter(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if self.editor.is_none() {
             return false;
         }
@@ -376,7 +376,12 @@ impl TextInput {
         }
         self.close_editor_dialog(window, cx);
     }
-    fn editor_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn editor_key(
+        &mut self,
+        event: &KeyDownEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
         if self.editor.is_none() {
             return;
         }
@@ -467,7 +472,7 @@ impl TextInput {
             cx.stop_propagation();
         }
     }
-    fn editor_menu(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
+    pub(super) fn editor_menu(&self, cx: &mut Context<Self>) -> Vec<AnyElement> {
         let Some(e) = &self.editor else {
             return vec![];
         };
@@ -637,7 +642,7 @@ impl TextInput {
         }
         out
     }
-    fn editor_runs(&self, range: Range<usize>, default: &TextRun) -> Vec<TextRun> {
+    pub(super) fn editor_runs(&self, range: Range<usize>, default: &TextRun) -> Vec<TextRun> {
         let Some(e) = &self.editor else {
             return vec![TextRun {
                 len: range.len(),
@@ -657,30 +662,21 @@ impl TextInput {
                     if b.tag.name.starts_with('h') {
                         run.font.weight = FontWeight::SEMIBOLD;
                     }
-                    for m in &s.marks {
-                        match m.name.as_str() {
-                            "strong" => run.font.weight = FontWeight::BOLD,
-                            "em" => run.font.style = FontStyle::Italic,
-                            "u" | "a" => {
-                                run.underline = Some(UnderlineStyle {
-                                    thickness: px(1.),
-                                    ..Default::default()
-                                });
-                                if m.name == "a" {
-                                    run.color = gpui::rgb(0x5896f1).into();
-                                }
-                            }
-                            "mark" => {
-                                run.background_color = Some(gpui::rgb(0xffe066).into());
-                                run.color = gpui::black();
-                            }
-                            "code" => {
-                                run.font.family = "monospace".into();
-                                run.color = gpui::rgb(0xe8912d).into();
-                                run.background_color = Some(gpui::rgb(0x292c30).into());
-                            }
-                            _ => (),
-                        }
+                    let theme = crate::theme::THEMES[if default.color.l > 0.5 { 1 } else { 0 }];
+                    let style = crate::rich_text::mark_style(&s.marks, theme);
+                    if let Some(weight) = style.font_weight {
+                        run.font.weight = weight;
+                    }
+                    if let Some(style) = style.font_style {
+                        run.font.style = style;
+                    }
+                    if let Some(color) = style.color {
+                        run.color = color;
+                    }
+                    run.background_color = style.background_color;
+                    run.underline = style.underline;
+                    if s.marks.iter().any(|m| m.name == "code") || b.tag.name == "pre" {
+                        run.font.family = "monospace".into();
                     }
                     if let Some(marked) = &self.marked_range {
                         if marked.start < stop && marked.end > start {
