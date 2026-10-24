@@ -294,7 +294,11 @@ impl Desktop {
                 .id(("rail-button", i))
                 .relative()
                 .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                    this.shell.hovered = hovered.then_some(i);
+                    if *hovered {
+                        this.shell.hovered = Some(i);
+                    } else if this.shell.hovered == Some(i) {
+                        this.shell.hovered = None;
+                    }
                     cx.notify();
                 }))
                 .w(px(if wide { 116. } else { 36. }))
@@ -361,7 +365,11 @@ impl Desktop {
                     .id("rail-expand")
                     .relative()
                     .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
-                        this.shell.hovered = hovered.then_some(0);
+                        if *hovered {
+                            this.shell.hovered = Some(0);
+                        } else if this.shell.hovered == Some(0) {
+                            this.shell.hovered = None;
+                        }
                         cx.notify();
                     }))
                     .cursor_pointer()
@@ -1355,6 +1363,19 @@ mod rail_detail_tests {
         assert_eq!(
             measured(view, &mut cx, "rail.tooltip")["text"],
             tooltip["text"]
+        );
+        let chevron = measured(view, &mut cx, "rail.icon.0");
+        cx.simulate_mouse_move(
+            point(
+                px(chevron["x"].as_f64().unwrap() as f32 + 10.),
+                px(chevron["y"].as_f64().unwrap() as f32 + 10.),
+            ),
+            None,
+            Default::default(),
+        );
+        assert_eq!(
+            measured(view, &mut cx, "rail.tooltip")["text"],
+            "Collapse sidebar   ["
         );
     }
 
