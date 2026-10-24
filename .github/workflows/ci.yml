@@ -105,7 +105,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        revision: ['3d00223', '5016a9ebe48b03dbac2f2312c170878166586c59']
+        revision: ['3d002231efdbc5ea4b823e5a1af430e912a168d9', '5016a9ebe48b03dbac2f2312c170878166586c59']
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
