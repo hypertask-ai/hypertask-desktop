@@ -431,3 +431,16 @@ mod tests {
         assert_eq!(matched.iter().filter(|r| r.key == "copyTaskId").count(), 1);
     }
 }
+
+#[cfg(test)]
+mod composer2_contract_tests {
+    use super::*;
+    #[test]
+    fn auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands() {
+        let rows=commands(Screen::Inbox,true);
+        assert!(rows.iter().any(|row|row.key=="swipeThroughUnread"));
+        for blocked in ["clearInboxToZero","archiveAllReadNotifications","archiveReactionNotifications","createTask","starTask","nextAgent","previousAgent","sendAgentMessage"] {
+            assert!(!rows.iter().any(|row|row.key==blocked),"blocked command {blocked} must not pretend to work");
+        }
+    }
+}

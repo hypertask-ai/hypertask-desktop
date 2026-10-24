@@ -626,6 +626,16 @@ mod tests {
         cx.simulate_keystrokes("enter");
         view.read_with(&mut cx,|this,_|{let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0].kind,"inbox_remind");assert_eq!(rows[0].payload_json["notification_ids"],json!([101,102]));assert!(this.interaction.bulk.is_empty());assert!(this.inbox.is_empty());}).unwrap();
     }
+    #[gpui::test]
+    fn inbox_row_archive_targets_clicked_row_and_reply_shortcut_uses_remaining_focused_task(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view:WindowHandle<Desktop>=cx.add_window(|window,cx|{let mut v=desktop(window,cx);seed(&mut v);v.layout=Some(Rc::new(RefCell::new(LayoutDump::default())));v.ready_scheduled=true;v});
+        let mut cx=VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
+        click(view,&mut cx,"inbox.row.1.archive");
+        view.read_with(&mut cx,|this,_|{assert_eq!(this.screen,Screen::Inbox);assert_eq!(this.inbox.len(),1);assert_eq!(this.inbox[0].id,102);let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0].payload_json["notification_ids"],json!([101]));}).unwrap();
+        cx.simulate_keystrokes("ctrl-r");
+        view.read_with(&mut cx,|this,cx|{assert_eq!(this.options.task,2);assert!(this.editing==Editing::Comment);assert_eq!(this.db.mutations().unwrap()[1].kind,"inbox_seen");assert!(!this.comment_input.read(cx).content.contains("101"));}).unwrap();
+    }
     #[test]
     fn reminder_presets_match_web_local_hours_week_boundary_and_two_week_nine_am() {
         for hour in [0,8,9,16,17,20,21,23] {
