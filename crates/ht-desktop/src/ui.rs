@@ -51,6 +51,8 @@ enum Editing {
 #[path = "ai_workspace.rs"]
 mod ai_workspace;
 
+#[path = "task_create.rs"]
+mod task_create;
 #[path = "compose.rs"]
 mod compose;
 #[path = "mentions.rs"]
@@ -93,6 +95,7 @@ pub struct Desktop {
     pub focus: FocusHandle,
     shell: shell::Shell,
     compose: compose::Compose,
+    create_task:task_create::Create,
     mentions: mentions::Mentions,
     db: Db,
     options: Options,
@@ -249,6 +252,7 @@ impl Desktop {
             views: board_views::Views::new(cx),
             board_actions: board::BoardActions::new(cx),
             board_forms: board_mutations::Forms::new(cx),
+            create_task:task_create::Create::new(cx),
             comment_actions: comment_actions::CommentActions::new(cx),
             comment_drafts: comment_drafts::CommentDrafts::default(),
             moving: false,
@@ -619,7 +623,7 @@ impl Desktop {
         if self.mention_key(event, window, cx) { return; }
         if self.unread_review_key(event,window,cx) {return;}
         if self.comment_reader_key(event, window, cx) { return; }
-        if self.view_key(event, window, cx) || self.board_form_key(event, window, cx) || self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
+        if self.create_task_key(event,window,cx) || self.view_key(event, window, cx) || self.board_form_key(event, window, cx) || self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
         if self.inbox_key(event, window, cx) { return; }
         if self.shell_key(event, window, cx) {
             return;
@@ -1851,6 +1855,7 @@ impl Render for Desktop {
             .child(self.due_date_overlay(cx))
             .child(self.board_form_overlay(cx))
             .child(self.view_overlay(cx))
+            .child(self.create_task_overlay(cx))
             .into_any_element()
     }
 }

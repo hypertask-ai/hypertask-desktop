@@ -432,6 +432,7 @@ impl Desktop {
         }
         self.queue_view("unsaved-view", settings, window, cx);
     }
+    pub(super) fn command_sort(&mut self,mode:&str,window:&mut Window,cx:&mut Context<Self>){self.save_sort_levels(vec![json!({"mode":mode,"order":"Descending"})],window,cx);}
     fn sort_levels(&self)->Vec<Value>{let settings=self.view_settings();if settings["board_sorting_mode"]=="Manual"{return vec![];}let mut levels=vec![json!({"mode":settings["board_sorting_mode"],"order":settings["board_sorting_order"]})];levels.extend(settings["board_sorting_stack"].as_array().into_iter().flatten().cloned());levels}
     fn save_sort_levels(&mut self,levels:Vec<Value>,window:&mut Window,cx:&mut Context<Self>){let mut settings=self.view_settings();settings["board_sorting_mode"]=levels.first().map(|level|level["mode"].clone()).unwrap_or(json!("Manual"));if let Some(level)=levels.first(){settings["board_sorting_order"]=level["order"].clone();}settings["board_sorting_stack"]=json!(levels.into_iter().skip(1).collect::<Vec<_>>());self.queue_view("unsaved-view",settings,window,cx);}
     fn toggle_value_match(&mut self,window:&mut Window,cx:&mut Context<Self>){let kind=if self.views.panel==Some(Panel::Labels){"Labels"}else{"Assignees"};let mut settings=self.view_settings();let Some(filter)=settings["board_filters"]["addedFilters"].as_array_mut().and_then(|filters|filters.iter_mut().find(|filter|filter["type"]==kind))else{return;};filter["match"]=json!(if filter["match"]=="ALL"{"ANY"}else{"ALL"});self.queue_view("unsaved-view",settings,window,cx);}

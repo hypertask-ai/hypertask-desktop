@@ -234,6 +234,9 @@ impl Desktop {
         use Action::*;
         match action {
             Compose => self.open_compose(window, cx),
+            CreateTask=>self.open_create_task(window,cx),
+            SortView=>self.open_view_panel(super::board_views::Panel::Sort,window,cx),
+            FilterView=>self.open_view_panel(super::board_views::Panel::Filters,window,cx),
             ExpandSummary => {
                 if !self.summary.is_empty() { self.task_fields.summary_open = !self.task_fields.summary_open; }
             }

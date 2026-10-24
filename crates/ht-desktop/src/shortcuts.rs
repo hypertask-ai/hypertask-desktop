@@ -5,6 +5,9 @@ use gpui::Keystroke;
 pub enum Action {
     Commands,
     Compose,
+    CreateTask,
+    SortView,
+    FilterView,
     StarComment,
     PinComment,
     Back,
@@ -106,6 +109,9 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         };
     }
     match (k, ctrl, shift, m.alt) {
+        ("s", false, true, false) if screen!=Screen::Inbox=>Some(Action::SortView),
+        ("f", false, true, false) if screen!=Screen::Inbox=>Some(Action::FilterView),
+        ("c", false, false, false)=>Some(Action::CreateTask),
         ("s", true, true, false) if screen == Screen::Task => Some(Action::StarComment),
         ("p", true, true, false) if screen == Screen::Task => Some(Action::PinComment),
         ("3", true, true, false) if screen == Screen::Task => Some(Action::DeleteComment),
@@ -336,5 +342,14 @@ mod tests {
         }
         assert_eq!(key("cmd-d", Screen::Task, false), None);
         assert_eq!(key("shift-h", Screen::Inbox, false), Some(Action::BulkRemind));
+    }
+}
+
+#[cfg(test)]
+mod create_view_shortcut_tests{
+    use super::*;
+    #[test]
+    fn create_sort_and_filter_keys_never_capture_editor_typing(){
+        for screen in [Screen::Board,Screen::Task]{for(chord,action)in [("c",Action::CreateTask),("shift-s",Action::SortView),("shift-f",Action::FilterView)]{let key=Keystroke::parse(chord).unwrap();assert_eq!(resolve(&key,screen,false),Some(action));assert_eq!(resolve(&key,screen,true),None);}}
     }
 }

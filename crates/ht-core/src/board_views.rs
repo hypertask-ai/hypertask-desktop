@@ -220,7 +220,7 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value, project:&Val
                             values.iter().any(has)
                         }
                 }
-                "CreatedBy" => values.is_empty() || values.iter().any(|v|v["id"].as_i64()==task["userId"].as_i64()),
+                "CreatedBy" => values.is_empty() || values.iter().any(|v|v["id"].as_i64().is_some_and(|id|Some(id)==task["userId"].as_i64().or_else(||task["userId"].as_str().and_then(|value|value.parse().ok())))),
                 "UpdatedBy" => values.is_empty() || values.iter().any(|v|if v.get("uid").is_some(){task["updatedByUserIds"].as_array().into_iter().flatten().any(|id|*id==v["id"])}else{task["agentId"]==v["id"]}),
                 "BlockedByPerson" => !task["waitingOnUserId"].is_null() && values.iter().any(|v|v["id"]==0 || v["id"]==task["waitingOnUserId"]),
                 "UpdatedRange"|"CreatedAt"|"DueDate" => {

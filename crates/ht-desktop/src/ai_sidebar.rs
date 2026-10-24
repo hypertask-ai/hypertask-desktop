@@ -55,7 +55,7 @@ pub struct Scope {
 
 impl Scope {
     pub fn load(db: &Db, screen: Screen, project: i64, task_id: Option<i64>) -> Self {
-        let task = (screen != Screen::Inbox).then_some(task_id).flatten().and_then(|id| db.task(id).ok().flatten());
+        let task = task_id.and_then(|id| db.task(id).ok().flatten());
         let project = task.as_ref().map_or(project, |t| t.project_id);
         let (board_name, team_id) = ai_chat::project_metadata(db, project);
         let team_id=if screen==Screen::Inbox {None}else{team_id};

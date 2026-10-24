@@ -80,6 +80,20 @@ pub fn view_defaults(project: &Value) -> Value {
     defaults
 }
 impl Db {
+    pub(crate) fn prepare_create_form(&self,project:i64,section:i64,title:&str,fields:&Value)->Result<Value>{
+        let mut payload=self.prepare_create(project,section,title,true)?;
+        let project_row=self.board_project(project)?;let column=self.raw("Section",&json!(section))?.context("column is not cached")?;
+        let body=&mut payload["body"];
+        for (key,value) in fields.as_object().context("Invalid task form")?{
+            ensure!(matches!(key.as_str(),"description"|"assignees"|"priority"|"estimate"|"dueDate"|"startDate"|"tags"),"Unsupported task form field");body[key]=value.clone();
+        }
+        for key in ["assignees","tags"]{ensure!(body[key].is_null() || body[key].is_array(),"Invalid {key}");}
+        for key in ["dueDate","startDate"]{ensure!(body[key].is_null() || body[key].as_str().is_some_and(|date|chrono::DateTime::parse_from_rfc3339(date).is_ok()),"Invalid {key}");}
+        ensure!(body["description"].is_null() || body["description"].is_string(),"Invalid description");
+        body.as_object_mut().unwrap().remove("section");body.as_object_mut().unwrap().remove("index");
+        body["section_title"]=column["section_title"].clone();body["projectIdentifier"]=project_row["uniqueIdentifier"].as_str().map(|id|json!(id)).unwrap_or(json!("TASK"));body["fullScreenTask"]=json!(true);
+        payload["global"]=json!(true);payload["attempted"]=json!(false);Ok(payload)
+    }
     pub(crate) fn prepare_create(
         &self,
         project: i64,

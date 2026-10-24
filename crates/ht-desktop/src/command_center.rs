@@ -32,6 +32,12 @@ pub enum ShellCommand {
     Cli,
     Favorites,
     Views,
+    CreateTask,
+    Sort,
+    Filters,
+    ValueMatch,
+    SortTimeInColumn,
+    SortLastComment,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -134,6 +140,16 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         });
     }
     shell_commands(&mut rows);
+    for(key,name,group,keys,keywords,action)in [
+        ("createTask","Create task","Board","C","create add new task ticket issue todo work item",ShellCommand::CreateTask),
+        ("sortBoard","Sort board","Board","SHIFT S","sort order arrange board kanban tasks priority date size",ShellCommand::Sort),
+        ("ShowFilterHtc","Filters","Navigate","SHIFT F","filter narrow refine search view rules conditions matching tasks",ShellCommand::Filters),
+        ("toggleFilterValueMatch","Filter values: match any or all","Board","","filter values match any all labels tags assignees both either",ShellCommand::ValueMatch),
+        ("sortByTimeInColumn","Sort by time in column","Board","","sort staleness age time status column oldest",ShellCommand::SortTimeInColumn),
+        ("sortByLastComment","Sort by last comment","Board","","sort staleness age comment discussion oldest",ShellCommand::SortLastComment),
+    ]{
+        if screen!=Screen::Inbox || action==ShellCommand::CreateTask{rows.push(Command{key:key.into(),name:name.into(),group,keys:keys.into(),keywords,action:CommandAction::Shell(action)});}
+    }
     rows.sort_by_key(|row| match row.group {
         "Task" if screen == Screen::Task => 0,
         "Board" if screen == Screen::Board => 0,
@@ -447,8 +463,20 @@ mod composer2_contract_tests {
     fn auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands() {
         let rows=commands(Screen::Inbox,true);
         assert!(rows.iter().any(|row|row.key=="swipeThroughUnread"));
-        for blocked in ["clearInboxToZero","archiveAllReadNotifications","archiveReactionNotifications","createTask","starTask","nextAgent","previousAgent","sendAgentMessage"] {
+        for blocked in ["clearInboxToZero","archiveAllReadNotifications","archiveReactionNotifications","starTask","nextAgent","previousAgent","sendAgentMessage"] {
             assert!(!rows.iter().any(|row|row.key==blocked),"blocked command {blocked} must not pretend to work");
+        }
+    }
+}
+
+#[cfg(test)]
+mod advanced_commands_tests{
+    use super::*;
+    #[test]
+    fn advanced_view_and_expanded_create_commands_have_real_native_dispatch(){
+        let rows=commands(Screen::Board,true);
+        for(key,action)in [("createTask",ShellCommand::CreateTask),("sortBoard",ShellCommand::Sort),("ShowFilterHtc",ShellCommand::Filters),("toggleFilterValueMatch",ShellCommand::ValueMatch),("sortByTimeInColumn",ShellCommand::SortTimeInColumn),("sortByLastComment",ShellCommand::SortLastComment)]{
+            assert_eq!(rows.iter().find(|row|row.key==key).unwrap().action,CommandAction::Shell(action));
         }
     }
 }

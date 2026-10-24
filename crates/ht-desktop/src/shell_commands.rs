@@ -9,6 +9,11 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::CreateTask=>self.open_create_task(window,cx),
+            ShellCommand::Sort=>self.open_view_panel(crate::ui::board_views::Panel::Sort,window,cx),
+            ShellCommand::Filters=>self.open_view_panel(crate::ui::board_views::Panel::Filters,window,cx),
+            ShellCommand::ValueMatch=>self.open_view_panel(crate::ui::board_views::Panel::ValueMatch,window,cx),
+            ShellCommand::SortTimeInColumn|ShellCommand::SortLastComment=>self.command_sort(if action==ShellCommand::SortTimeInColumn{"TimeInColumn"}else{"TimeWithoutComment"},window,cx),
             ShellCommand::Views => self.open_view_panel(crate::ui::board_views::Panel::Manage,window,cx),
             ShellCommand::Favorites => self.open_favorites(window, cx),
             ShellCommand::Settings(section) => {

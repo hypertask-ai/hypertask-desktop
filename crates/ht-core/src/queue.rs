@@ -13,6 +13,7 @@ pub enum Write {
     Favorites { project_ids: Vec<i64> },
     FavoriteSlot { index: u8, project_id: Option<i64> },
     CreateTask { project_id: i64, section_id: i64, title: String, top: bool },
+    CreateTaskForm { project_id:i64, section_id:i64, title:String, fields:Value },
     ComposeTask { project_id: i64, text: String, time_zone: String },
     Shell { request: crate::ShellWrite },
     Board { change: crate::BoardWrite },
@@ -119,6 +120,10 @@ impl Db {
                 payload["attempted"]=json!(false);
                 (format!("create:{project_id}"), "web_create", payload)
             },
+            Write::CreateTaskForm {project_id,section_id,title,fields}=>{
+                let payload=db.prepare_create_form(*project_id,*section_id,title,fields)?;
+                (format!("create:{project_id}"),"web_create",payload)
+            }
             Write::ComposeTask { project_id, text, time_zone } => {
                 ensure!(*project_id > 0 && !text.trim().is_empty(), "choose a board and describe the task");
                 let user = db.current_user_id().context("sign in before composing a task")?;
@@ -255,7 +260,7 @@ impl Db {
                 let body = &payload["body"];
                 let labels=body["tags"].as_array().cloned().unwrap_or_default();
                 let assignees:Vec<_>=body["assignees"].as_array().into_iter().flatten().map(|person|if person.get("uid").is_some(){json!({"userId":person["id"],"user":person})}else{json!({"userId":person["userId"],"agentId":person["id"],"agent":person})}).collect();
-                self.upsert_task(&json!({"id":-id,"projectId":body["projectId"],"sectionId":body["sectionId"],"section":body.get("section").or_else(||body.get("section_title")),"title":body["title"],"ranking":body["ranking"],"status":"Normal","pending":true,"createdBy":null,"priority":body["priority"],"estimate":body["estimate"],"labels":labels,"assignees":assignees}))?;
+                self.upsert_task(&json!({"id":-id,"projectId":body["projectId"],"sectionId":body["sectionId"],"section":body.get("section").or_else(||body.get("section_title")),"title":body["title"],"ranking":body["ranking"],"status":"Normal","pending":true,"createdBy":null,"priority":body["priority"],"estimate":body["estimate"],"labels":labels,"assignees":assignees,"description_":{"content":body["description"]},"dueDate":body["dueDate"],"startDate":body["startDate"]}))?;
             }
             "board_write" => {
                 if let crate::BoardWrite::PositionTask { task, section, title, ranking, .. } = serde_json::from_value(payload["change"].clone())? {

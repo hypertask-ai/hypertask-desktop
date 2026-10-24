@@ -48,7 +48,7 @@ fn at_local(date: NaiveDate, hour: u32, minute: u32) -> Option<String> {
         .earliest()
         .map(|date| date.to_rfc3339())
 }
-fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
+pub(super) fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
     if let Ok(date) = chrono::DateTime::parse_from_rfc3339(query) {
         return Some(date.to_rfc3339());
     }
@@ -68,7 +68,7 @@ fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
     };
     at_local(date, 9, 0)
 }
-fn due_presets(now: chrono::DateTime<Local>) -> Vec<(String, Option<String>)> {
+pub(super) fn due_presets(now: chrono::DateTime<Local>) -> Vec<(String, Option<String>)> {
     let today = now.date_naive();
     let (name, date, hour) = match now.hour() {
         0..=8 => ("Today", today, 9),
