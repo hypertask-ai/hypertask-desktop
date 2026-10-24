@@ -3,6 +3,40 @@ use anyhow::{Context, ensure};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
+pub(crate) fn validate_editor_html(html: &str, route: &str) -> Result<()> {
+    // The bearer writers erase these web formats, even when content_type is HTML.
+    // Refuse a lossy save instead of claiming an optimistic echo is persistence parity.
+    let lower = html.to_ascii_lowercase();
+    let highlight = lower.match_indices("<mark").any(|(at, _)| {
+        lower
+            .as_bytes()
+            .get(at + 5)
+            .is_some_and(|b| b.is_ascii_whitespace() || matches!(b, b'>' | b'/'))
+    });
+    ensure!(
+        !highlight,
+        "{route}: the MCP sanitizeRichHtml allowlist strips highlights; remove Highlight or save in the web editor"
+    );
+    let emoji = lower.contains("data-name=")
+        && (lower.contains("data-type=\"emoji\"") || lower.contains("data-type='emoji'"));
+    ensure!(
+        !emoji,
+        "{route}: MCP sanitizeRichHtml strips emoji data-name; named-emoji HTML persistence needs a server allowlist fix"
+    );
+    ensure!(
+        ![
+            "href=\"mailto:",
+            "href='mailto:",
+            "href=\"tel:",
+            "href='tel:"
+        ]
+        .iter()
+        .any(|prefix| lower.contains(prefix)),
+        "{route}: MCP sanitizeRichHtml strips non-HTTP link hrefs; this link cannot be saved losslessly"
+    );
+    Ok(())
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum ImproveCommand {
     #[serde(rename = "FixSpellingAndGrammar")]

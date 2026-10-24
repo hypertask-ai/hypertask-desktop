@@ -1148,4 +1148,16 @@ mod tests {
         cx.simulate_keystrokes("ctrl-shift-,");view.read_with(cx,|this,cx|{assert!(this.comment_input.read(cx).is_empty());assert!(this.db.editor_drafts(1).unwrap().is_empty());assert_eq!(this.db.mutations().unwrap().len(),2);});
     }
 
+    #[gpui::test]
+    fn lossy_mcp_formats_block_save_on_all_three_surfaces_without_discarding_edits(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(desktop);
+        for surface in 0..3 {for html in ["<p><mark>highlight</mark></p>","<p><span data-name=\"rocket\" data-type=\"emoji\">🚀</span></p>","<p><a href=\"mailto:hello@example.com\">email</a></p>"] {
+            view.update_in(cx,|this,window,cx|{
+                let input=match surface {0=>{this.edit_comment(window,cx);this.comment_input.clone()},1=>{this.interaction.task_part=1;this.run_comment_action(Action::EditComment,window,cx);this.comment_actions.input.clone()},_=>{this.edit_description(window,cx);this.interaction.description.clone()}};
+                input.update(cx,|input,cx|input.set_html(html,cx));
+            });cx.simulate_keystrokes("ctrl-shift-enter");
+            view.read_with(cx,|this,cx|{assert!(this.db.mutations().unwrap().is_empty());assert!(this.error.as_ref().unwrap().contains("sanitizeRichHtml"));let input=match surface {0=>&this.comment_input,1=>&this.comment_actions.input,_=>&this.interaction.description};assert_eq!(input.read(cx).html(),html);assert_eq!(this.db.task(1).unwrap().unwrap().description,"<p>Description</p>");});
+        }}
+    }
+
 }

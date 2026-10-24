@@ -95,6 +95,7 @@ impl Db {
                 (format!("task:{task_id}"), "task_section", json!({"task_id":task_id,"sectionId":section_id,"section":section["section_title"]}))
             }
             Write::TaskComment { task_id, text } => {
+                crate::editor_queue::validate_editor_html(text,"POST /api/mcp/comments")?;
                 ensure!(!text.trim().is_empty(), "comment must not be empty");
                 ensure!(text.encode_utf16().count() <= 5000, "comment must be 5000 characters or less");
                 ensure!(db.task(*task_id)?.is_some(), "task is not cached");
@@ -102,6 +103,7 @@ impl Db {
             }
             Write::CommentAction { task_id, comment_id, change } => {
                 change.validate()?;
+                if let crate::CommentWrite::Edit{text}=change {crate::editor_queue::validate_editor_html(text,"PATCH /api/mcp/comments/[comment_id]")?;}
                 ensure!(*comment_id > 0, "pending comments cannot be changed");
                 let before = db.raw("Comment", &json!(comment_id))?.context("comment is not cached")?;
                 ensure!(before["taskId"] == *task_id && before["activity"].is_null(), "not a comment in this task");
@@ -112,6 +114,7 @@ impl Db {
                 (format!("comment:{comment_id}"), "comment_action", json!({"task_id":task_id,"comment_id":comment_id,"change":change,"before":before,"user_id":user_id}))
             }
             Write::TaskPatch { task_id, patch } => {
+                if let crate::TaskPatch::Description(html)=patch {crate::editor_queue::validate_editor_html(html,"POST /api/mcp/tasks/update")?;}
                 ensure!(db.task(*task_id)?.is_some(), "task is not cached");
                 let mut fields = patch.fields()?;
                 fields["task_id"] = json!(task_id);
