@@ -1036,7 +1036,7 @@ impl Desktop {
             .filter(|v| !v.is_empty());
         div()
             .id(("task-card", id as u64))
-            .on_drag(board::CardDrag { task: id, title: title.clone() }, |drag, _, _, cx| cx.new(|_| drag.clone()))
+            .when(id>0, |d|d.on_drag(board::CardDrag { task: id, title: title.clone() }, |drag, _, _, cx| cx.new(|_| drag.clone())))
             .on_drop(cx.listener(move |this, drag: &board::CardDrag, _, cx| {
                 cx.stop_propagation();
                 if drag.task != id { this.drop_card(drag.task, column, Some(id), cx); }
@@ -1116,6 +1116,7 @@ impl Desktop {
                         }))
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        if id<=0 {return;}
                         this.column = column;
                         this.selected = row;
                         this.open_task(id, cx);
@@ -1156,7 +1157,7 @@ impl Desktop {
                                     ),
                             )
                             .child(div().flex_1())
-                            .child(self.card_controls(id, column, row, cx))
+                            .when(id>0,|d|d.child(self.card_controls(id, column, row, cx)))
                             .when(self.inbox.iter().any(|n| n.task_id == Some(id)), |d| {
                                 d.child(
                                     div()

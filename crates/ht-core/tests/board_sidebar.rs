@@ -1,45 +1,148 @@
-use ht_core::{Db,Drain,Transport,Write,board_sidebar, http::{Response,TransportError}};
-use serde_json::{Value,json};
-struct Server{status:u16,calls:Vec<(String,String,Value)>}
-fn teams()->Value{json!([{"id":3,"title":"Team","projects":[{"id":15,"title":"Alpha","status":"Normal"},{"id":16,"title":"Beta","status":"Normal"}]}])}
-fn favorites()->Value{json!([{"projectId":15,"index":1,"project":{"id":15,"title":"Alpha"}}])}
-impl Transport for Server{
-    fn get(&mut self,path:&str)->Result<Response,TransportError>{
-        self.calls.push(("GET".into(),path.into(),Value::Null));
-        Ok(if path=="/user/context"{Response{status:200,body:json!({"success":true,"user":{"id":42}})}}else{assert_eq!(path,"/api/favorites/getFavorites");Response{status:self.status,body:if self.status==200{favorites()}else{json!({"error":"Unauthorized"})}}})
+use ht_core::{
+    Db, Drain, Transport, Write, board_sidebar,
+    http::{Response, TransportError},
+};
+use serde_json::{Value, json};
+struct Server {
+    status: u16,
+    calls: Vec<(String, String, Value)>,
+}
+fn teams() -> Value {
+    json!([{"id":"team-3","title":"Team","projects":[{"id":15,"title":"Alpha","status":"Normal"},{"id":16,"title":"Beta","status":"Normal"}]}])
+}
+fn favorites() -> Value {
+    json!([{"projectId":15,"index":1,"project":{"id":15,"title":"Alpha"}}])
+}
+impl Transport for Server {
+    fn get(&mut self, path: &str) -> Result<Response, TransportError> {
+        self.calls.push(("GET".into(), path.into(), Value::Null));
+        Ok(if path == "/user/context" {
+            Response {
+                status: 200,
+                body: json!({"success":true,"user":{"id":42}}),
+            }
+        } else {
+            assert_eq!(path, "/api/favorites/getFavorites");
+            Response {
+                status: self.status,
+                body: if self.status == 200 {
+                    favorites()
+                } else {
+                    json!({"error":"Unauthorized"})
+                },
+            }
+        })
     }
-    fn post(&mut self,path:&str,body:&Value,key:&str)->Result<Response,TransportError>{self.mutate("POST",path,body,key)}
-    fn mutate(&mut self,method:&str,path:&str,body:&Value,_:&str)->Result<Response,TransportError>{
-        self.calls.push((method.into(),path.into(),body.clone()));
-        let reply=match path{
-            "/api/teams/getAllSidebar"=>{assert_eq!(method,"POST");assert_eq!(body,&json!({"userId":42}));teams()},
-            "/api/favorites/reorderFavorites"=>{assert_eq!(method,"PUT");assert_eq!(body,&json!({"favorites":[{"projectId":16},{"projectId":15}]}));json!({"ok":true})},
-            _=>panic!("unexpected {path}")
+    fn post(&mut self, path: &str, body: &Value, key: &str) -> Result<Response, TransportError> {
+        self.mutate("POST", path, body, key)
+    }
+    fn mutate(
+        &mut self,
+        method: &str,
+        path: &str,
+        body: &Value,
+        _: &str,
+    ) -> Result<Response, TransportError> {
+        self.calls.push((method.into(), path.into(), body.clone()));
+        let reply = match path {
+            "/api/teams/getAllSidebar" => {
+                assert_eq!(method, "POST");
+                assert_eq!(body, &json!({"userId":42}));
+                teams()
+            }
+            "/api/favorites/reorderFavorites" => {
+                assert_eq!(method, "PUT");
+                assert_eq!(
+                    body,
+                    &json!({"favorites":[{"projectId":16},{"projectId":15}]})
+                );
+                json!({"ok":true})
+            }
+            _ => panic!("unexpected {path}"),
         };
-        Ok(Response{status:self.status,body:if self.status==200{reply}else{json!({"message":"Unauthorized"})}})
+        Ok(Response {
+            status: self.status,
+            body: if self.status == 200 {
+                reply
+            } else {
+                json!({"message":"Unauthorized"})
+            },
+        })
     }
 }
 #[test]
-fn switcher_reads_actual_post_teams_and_get_favorites_and_never_guesses_on_denial(){
-    for status in [200,401,403]{
-        let mut server=Server{status,calls:vec![]};let result=board_sidebar::load(&mut server);
-        assert_eq!(result.is_ok(),status==200);
-        assert_eq!(server.calls.iter().map(|c|(c.0.as_str(),c.1.as_str())).collect::<Vec<_>>(),vec![("GET","/user/context"),("POST","/api/teams/getAllSidebar"),("GET","/api/favorites/getFavorites")]);
-        if let Ok((user,t,f))=result{
-            let mut db=Db::memory().unwrap();db.kv_set("current-user-id","42").unwrap();db.cache_sidebar(user,&t,&f).unwrap();
-            assert_eq!(db.projects().unwrap().iter().find(|p|p["id"]==15).unwrap()["teamId"],3);
-            assert_eq!(db.sidebar_data("favorites"),favorites());db.kv_set("current-user-id","43").unwrap();assert_eq!(db.sidebar_data("favorites"),json!([]));
-            assert!(db.cache_sidebar(user,&t,&f).is_err());
+fn switcher_reads_actual_post_teams_and_get_favorites_and_never_guesses_on_denial() {
+    for status in [200, 401, 403] {
+        let mut server = Server {
+            status,
+            calls: vec![],
+        };
+        let result = board_sidebar::load(&mut server);
+        assert_eq!(result.is_ok(), status == 200);
+        assert_eq!(
+            server
+                .calls
+                .iter()
+                .map(|c| (c.0.as_str(), c.1.as_str()))
+                .collect::<Vec<_>>(),
+            vec![
+                ("GET", "/user/context"),
+                ("POST", "/api/teams/getAllSidebar"),
+                ("GET", "/api/favorites/getFavorites")
+            ]
+        );
+        if let Ok((user, t, f)) = result {
+            let mut db = Db::memory().unwrap();
+            db.kv_set("current-user-id", "42").unwrap();
+            db.cache_sidebar(user, &t, &f).unwrap();
+            assert_eq!(
+                db.projects()
+                    .unwrap()
+                    .iter()
+                    .find(|p| p["id"] == 15)
+                    .unwrap()["teamId"],
+                "team-3"
+            );
+            assert_eq!(db.sidebar_data("favorites"), favorites());
+            db.kv_set("current-user-id", "43").unwrap();
+            assert_eq!(db.sidebar_data("favorites"), json!([]));
+            assert!(db.cache_sidebar(user, &t, &f).is_err());
         }
     }
 }
 #[test]
-fn favorite_replacement_is_durable_optimistic_and_rolls_back_401_and_403(){
-    for status in [200,401,403]{
-        let file=tempfile::NamedTempFile::new().unwrap();let mut db=Db::open(file.path()).unwrap();db.kv_set("current-user-id","42").unwrap();db.cache_sidebar(42,&teams(),&favorites()).unwrap();
-        let id=db.enqueue(Write::Favorites{project_ids:vec![16,15]},100).unwrap();assert_eq!(db.sidebar_data("favorites")[0]["projectId"],16);drop(db);
-        let mut db=Db::open(file.path()).unwrap();let mut server=Server{status,calls:vec![]};
-        assert_eq!(db.drain_once(&mut server,100).unwrap(),if status==200{Drain::Applied(id)}else{Drain::Failed(id)});
-        assert_eq!(db.sidebar_data("favorites")[0]["projectId"],if status==200{16}else{15});
+fn favorite_replacement_is_durable_optimistic_and_rolls_back_401_and_403() {
+    for status in [200, 401, 403] {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut db = Db::open(file.path()).unwrap();
+        db.kv_set("current-user-id", "42").unwrap();
+        db.cache_sidebar(42, &teams(), &favorites()).unwrap();
+        let id = db
+            .enqueue(
+                Write::Favorites {
+                    project_ids: vec![16, 15],
+                },
+                100,
+            )
+            .unwrap();
+        assert_eq!(db.sidebar_data("favorites")[0]["projectId"], 16);
+        drop(db);
+        let mut db = Db::open(file.path()).unwrap();
+        let mut server = Server {
+            status,
+            calls: vec![],
+        };
+        assert_eq!(
+            db.drain_once(&mut server, 100).unwrap(),
+            if status == 200 {
+                Drain::Applied(id)
+            } else {
+                Drain::Failed(id)
+            }
+        );
+        assert_eq!(
+            db.sidebar_data("favorites")[0]["projectId"],
+            if status == 200 { 16 } else { 15 }
+        );
     }
 }
