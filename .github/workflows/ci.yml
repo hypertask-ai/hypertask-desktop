@@ -104,7 +104,7 @@ jobs:
           retention-days: 14
   windows-memory-baselines:
     name: memory-${{ matrix.revision }}
-    if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     strategy:
       fail-fast: false
       matrix:
@@ -139,7 +139,7 @@ jobs:
           if-no-files-found: error
   windows-memory-proof:
     name: Windows memory receipt and visual proof
-    if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
+    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
     needs: [build, windows-memory-baselines]
     runs-on: ubuntu-24.04
     steps:
