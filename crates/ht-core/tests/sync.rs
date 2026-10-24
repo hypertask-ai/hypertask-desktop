@@ -662,7 +662,10 @@ fn bounded_sync_cache_evicts_pages_without_losing_persisted_offline_content() {
             "status":"Normal","description":description})).unwrap();
     }
     if cfg!(feature = "bounded-sync-cache") {
-        assert!(db.memory_usage().unwrap()["SqliteCacheBytes"].as_u64().unwrap() < 600_000);
+        let usage = db.memory_usage().unwrap();
+        eprintln!("BOUNDED_SYNC_CACHE {usage}");
+        assert_eq!(usage["SqliteCacheSizeSetting"], -256);
+        assert!(usage["SqliteCacheBytes"].as_u64().unwrap() < 600_000, "{usage}");
     }
     drop(db);
     let db = Db::open(file.path()).unwrap();

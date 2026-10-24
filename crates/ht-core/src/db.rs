@@ -95,8 +95,8 @@ impl Db {
         conn.busy_timeout(Duration::from_secs(5))?;
         conn.execute_batch("PRAGMA journal_mode=WAL; PRAGMA foreign_keys=ON;")?;
         if cfg!(feature = "bounded-sync-cache") {
-            // Bound the connection's page cache, not the durable sync data.
-            conn.execute_batch("PRAGMA cache_size=-512;")?;
+            // SQLite's soft page target excludes pager overhead; leave room for it.
+            conn.execute_batch("PRAGMA cache_size=-256;")?;
         }
         conn.execute_batch(crate::generated::SQLITE_DDL)?;
         conn.execute_batch(

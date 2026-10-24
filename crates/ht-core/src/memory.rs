@@ -5,7 +5,8 @@ use serde_json::{Value, json};
 
 impl Db {
     pub fn memory_usage(&self) -> Result<Value> {
-        let mut usage = json!({});
+        let setting: i64 = self.conn.query_row("PRAGMA cache_size", [], |row| row.get(0))?;
+        let mut usage = json!({"SqliteCacheSizeSetting": setting});
         for (key, operation) in [
             ("SqliteCacheBytes", ffi::SQLITE_DBSTATUS_CACHE_USED),
             ("SqliteSchemaBytes", ffi::SQLITE_DBSTATUS_SCHEMA_USED),

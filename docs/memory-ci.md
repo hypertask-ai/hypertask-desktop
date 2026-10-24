@@ -162,11 +162,17 @@ negative control must fail; the mem2 comparison must also show a real working-se
 reduction on every screen, not merely unchanged pixels under the old target.
 
 The receipt measures SQLite page-cache ownership at 914,616 / 1,093,048 /
-1,358,520 bytes before the final cache bound. The desktop now requests a 512 KiB
-connection page-cache budget (`PRAGMA cache_size=-512`), not deletion or truncation
+1,358,520 bytes before the final cache bound. The desktop now requests a 256 KiB
+connection page-cache budget (`PRAGMA cache_size=-256`), not deletion or truncation
 of durable synced rows. A disk-backed CI regression exceeds that cache with 128
 large tasks, then reopens the database and reads every complete description.
 The same-source A/B build retains the original SQLite cache as well as eager
 fonts/three buffers, so the final receipt measures their combined effect. No
 working-set trimming, forced heap collection or measurement-only runtime tuning
 is used. The final SHA-bound six-job result and raw receipt are linked in PR #19.
+
+The initial 512 KiB request exceeded the regression's actual 600,000-byte cache
+allocation ceiling on all three CI platforms. SQLite's setting is a soft page
+target, not an allocation-byte ceiling. The request was tightened to 256 KiB;
+the original actual-memory assertion remains unchanged, and both the setting
+and actual cache bytes are now recorded rather than assuming they are equal.
