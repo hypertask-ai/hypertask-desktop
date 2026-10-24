@@ -1624,7 +1624,7 @@ mod drag_tests {
     use super::*;
     #[test]
     fn drag_paragraph_after_nested_checklist_preserves_marks_and_item_state() {
-        let mut doc=Document::parse("<p><strong>move é🙂</strong></p><ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked=\"true\"><p>done</p><ul><li><p>nested</p></li></ul></li></ul><p>end</p>");
+        let mut doc=Document::parse("<p><strong>move é🙂</strong></p><ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked=\"true\"><div><p>done</p><ul><li><p>nested</p></li></ul></div></li></ul><p>end</p>");
         let list=doc.parts[1].clone();
         assert!(doc.reorder_block(&[0],&[1],true));
         assert_eq!(doc.parts[0],list);

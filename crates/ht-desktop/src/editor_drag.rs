@@ -52,7 +52,7 @@ mod tests {
             Host(cx.new(|cx|TextInput::new(String::new(),"",gpui::black(),cx).comment_editor()))
         });
         let input=host.read_with(cx,|h,_|h.0.clone());
-        let original="<p><strong>move é🙂</strong></p><ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked=\"true\"><p>done</p></li></ul><p>end</p>";
+        let original="<p><strong>move é🙂</strong></p><ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked=\"true\"><div><p>done</p></div></li></ul><p>end</p>";
         input.update_in(cx,|input,window,cx|{input.set_html(original,cx);window.focus(&input.focus_handle,cx);});
         cx.run_until_parked();
         // The first layout paints text; the following render paints measured grips.

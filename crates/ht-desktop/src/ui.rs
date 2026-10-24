@@ -573,6 +573,8 @@ impl Desktop {
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.unread_review_key(event,window,cx) {return;}
+        if self.comment_reader_key(event, window, cx) { return; }
+        if self.inbox_key(event, window, cx) { return; }
         if self.shell_key(event, window, cx) {
             return;
         }
@@ -589,8 +591,6 @@ impl Desktop {
                 return;
             }
         }
-        if self.comment_reader_key(event, window, cx) { return; }
-        if self.inbox_key(event, window, cx) { return; }
         if !self.comment_key(event, window, cx) { self.interaction_key(event, window, cx); }
     }
 

@@ -593,11 +593,11 @@ mod tests {
         cx.update(crate::input::init);
         let (view,cx)=cx.add_window_view(|window,cx|{let mut v=desktop(window,cx);seed(&mut v);v});
         view.update_in(cx,|this,window,cx|window.focus(&this.focus,cx));
-        cx.simulate_keystrokes("ctrl-f");cx.simulate_input("HT-2");
-        view.read_with(cx,|this,_|{assert_eq!(this.filtered.len(),1);assert_eq!(this.inbox[this.filtered[0]].id,102);assert!(this.interaction.modal.is_none());});
+        cx.simulate_keystrokes("ctrl-f");cx.run_until_parked();cx.simulate_input("HT-2");cx.run_until_parked();
+        view.read_with(cx,|this,cx|{assert_eq!(this.inbox_actions.search.read(cx).content.as_ref(),"HT-2");assert_eq!(this.inbox_actions.search_text,"ht-2");assert_eq!(this.filtered.len(),1);assert_eq!(this.inbox[this.filtered[0]].id,102);assert!(this.interaction.modal.is_none());});
         cx.simulate_keystrokes("escape");
         view.read_with(cx,|this,_|{assert_eq!(this.screen,Screen::Inbox);assert_eq!(this.splits[this.split],"All");assert_eq!(this.filtered.len(),2);assert!(!this.inbox_actions.searching);assert!(this.db.mutations().unwrap().is_empty());});
-        cx.simulate_keystrokes("ctrl-f");cx.simulate_input("nEeDlE");
+        cx.simulate_keystrokes("ctrl-f");cx.run_until_parked();cx.simulate_input("nEeDlE");cx.run_until_parked();
         view.read_with(cx,|this,_|{assert_eq!(this.filtered.len(),1);assert_eq!(this.inbox[this.filtered[0]].id,101);});
     }
     #[gpui::test]

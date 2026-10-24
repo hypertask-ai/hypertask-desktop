@@ -260,7 +260,9 @@ mod tests {
             ] {
                 assert_eq!(
                     key(chord, screen, false),
-                    if screen == Screen::Inbox && matches!(action, MoveLeft | MoveRight) {
+                    if screen == Screen::Inbox && chord == "shift-h" {
+                        Some(BulkRemind)
+                    } else if screen == Screen::Inbox && matches!(action, MoveLeft | MoveRight) {
                         None
                     } else {
                         Some(action)
