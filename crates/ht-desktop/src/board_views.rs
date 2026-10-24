@@ -8,6 +8,11 @@ pub(super) enum Panel {
     Size,
     Labels,
     Assignees,
+    CreatedBy,
+    UpdatedBy,
+    BlockedByPerson,
+    Date(&'static str),
+    ValueMatch,
     Save,
     SavePrivate,
     SaveTeam,
@@ -26,6 +31,8 @@ pub(super) struct Views {
     choice: usize,
     editing: Option<String>,
     pending_route: String,
+    people:Option<Value>,
+    support_pending:bool,
 }
 impl Views {
     pub fn new(cx: &mut Context<Desktop>) -> Self {
@@ -40,12 +47,13 @@ impl Views {
             pending: None,
             choice: 0,
             editing: None,
-            pending_route: String::new(),
+            pending_route: String::new(),people:None,support_pending:false,
         }
     }
 }
 impl Desktop {
     pub(super) fn invalidate_board_views(&mut self, cx: &mut Context<Self>) {
+        self.views.people=None;self.views.support_pending=false;
         self.views.loaded = 0;
         self.views.loading = false;
         self.views.ready = false;
@@ -124,7 +132,7 @@ impl Desktop {
         }
         false
     }
-    fn view_settings(&self) -> Value {
+    pub(super) fn view_settings(&self) -> Value {
         self.db
             .board_project(self.options.board)
             .map(|p| ht_core::board_views::settings(&p))
@@ -136,6 +144,7 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(panel,Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson|Panel::Assignees) && !self.options.offline{self.load_view_support(false,window,cx);}
         self.views.panel = Some(panel);
         self.views.choice = 0;
         if matches!(panel,Panel::SavePrivate|Panel::SaveTeam|Panel::RenameView) {
@@ -229,8 +238,7 @@ impl Desktop {
         self.views.pending = None;
         self.reload();
         if result["error"].is_null() {
-            self.views.panel = None;
-            window.focus(&self.focus, cx);
+            if !matches!(self.views.panel,Some(Panel::Sort|Panel::Priority|Panel::Size|Panel::Labels|Panel::Assignees|Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson|Panel::ValueMatch)) {self.views.panel=None;window.focus(&self.focus,cx);}
         }else{
             self.error=Some(match self.views.pending_route.as_str(){
                 "rename-view"=>"Error renaming view".into(),"delete-view"=>"Error deleting view".into(),"update-order"=>"Unable to save view order".into(),"reset-order"=>"Unable to reset view order".into(),"set-default-order"=>"Unable to set the default view order".into(),_=>result["error"].as_str().unwrap_or("Could not save the view").into()
@@ -252,29 +260,12 @@ impl Desktop {
                 choices.extend(ht_core::board_views::ordered_views(&project).into_iter().map(|view|(view["title"].as_str().unwrap_or("Untitled view").into(),view)));
                 choices
             }
-            Some(Panel::Sort) => [
-                ("Manual", "Manual"),
-                ("Priority", "Priority"),
-                ("Due Date", "DueDate"),
-                ("Size", "Size"),
-                ("Last Updated", "UpdatedAt"),
-                ("Creation Date", "CreatedAt"),
-                ("Last comment", "LastCommentAt"),
-                ("Column changed", "SectionChangedAt"),
-                ("Title", "Title"),
-                ("Ticket number", "TicketNumber"),
-            ]
-            .into_iter()
-            .map(|(name, value)| (name.into(), json!(value)))
-            .chain([
-                ("Ascending".into(), json!({"order":"Ascending"})),
-                ("Descending".into(), json!({"order":"Descending"})),
-            ])
-            .collect(),
-            Some(Panel::Filters) => ["Priority", "Size", "Tags", "Assignees", "Clear filters"]
-                .into_iter()
-                .map(|name| (name.into(), json!(name)))
-                .collect(),
+            Some(Panel::Sort) => ht_core::board_views::SORT_MODES.iter().map(|(name,value)|((*name).into(),json!(value))).collect(),
+            Some(Panel::Filters) => [
+                ("Clear all filters","Clear"),("Toggle Match Criteria","Match"),("Updated by","UpdatedBy"),("Created by","CreatedBy"),("Has unread notifications","Unread"),("Tasks assigned to me","AssignedToMe"),("Due date","DueDate"),("Priority","Priority"),("Assignees","Assignees"),("Blocked by person","BlockedByPerson"),("Tags","Labels"),("Task Size","Size"),("Date updated at","UpdatedRange"),("Date created at","CreatedAt"),("Present in inbox","Inbox"),("Stale without comment","NoRecentComment"),("Stale in column","StuckInColumn"),("Has a running timer","RunningTimer"),("Stale on board","StaleOnBoard"),("Not stale","NotStale")
+            ].into_iter().filter(|(_,kind)|!matches!(*kind,"Clear"|"Match") || self.view_settings()["board_filters"]["addedFilters"].as_array().is_some_and(|filters|!filters.is_empty())).map(|(name,kind)|(name.into(),json!(kind))).collect(),
+            Some(Panel::ValueMatch)=>[("Tags","Labels"),("Assignees","Assignees")].into_iter().filter(|(_,kind)|self.view_settings()["board_filters"]["addedFilters"].as_array().into_iter().flatten().any(|filter|filter["type"]==*kind && filter["searchPayload"].as_array().is_some_and(|values|!values.is_empty()))).map(|(name,kind)|(name.into(),json!(kind))).collect(),
+            Some(Panel::Date(kind))=>[("Reset","RESET"),("Any","ANY"),("Today","TODAY"),("Yesterday","YESTERDAY"),("Last 7 days","LAST_7_DAYS"),("Last 30 days","LAST_30_DAYS"),("This week","THIS_WEEK"),("This month","THIS_MONTH")].into_iter().filter(|(_,value)|*value!="ANY" || kind=="DueDate").map(|(name,value)|(name.into(),json!(value))).collect(),
             Some(Panel::Priority) => (0..5)
                 .filter_map(ht_core::task_create::priority)
                 .map(|v| (v["Priority_Value"].as_str().unwrap().into(), v))
@@ -300,13 +291,17 @@ impl Desktop {
                     )
                 })
                 .collect(),
-            Some(Panel::Assignees) => self
-                .db
-                .project_members(self.options.board)
-                .unwrap_or_default()
-                .into_iter()
-                .map(|v| (v["displayName"].as_str().unwrap_or("").into(), v))
-                .collect(),
+            Some(panel @ (Panel::Assignees|Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson)) => {
+                let mut people=vec![];
+                if let Some(data)=&self.views.people{
+                    for person in std::iter::once(&data["owner"]).chain(data["members"].as_array().into_iter().flatten().map(|member|&member["user"])){
+                        if !person.is_null() && !people.iter().any(|old:&Value|old["id"]==person["id"]){people.push(person.clone());}
+                    }
+                    if matches!(panel,Panel::Assignees|Panel::UpdatedBy){people.extend(data["boardAgents"].as_array().into_iter().flatten().cloned());}
+                }else if self.options.offline {people=self.db.project_members(self.options.board).unwrap_or_default();}
+                if panel==Panel::BlockedByPerson{people.insert(0,json!({"id":0,"displayName":"Anyone"}));}
+                people.into_iter().map(|person|(person["displayName"].as_str().unwrap_or("").into(),person)).collect()
+            }
             _ => vec![],
         }
     }
@@ -365,35 +360,42 @@ impl Desktop {
                 self.queue_view("delete-view",json!({"viewId":self.views.editing}),window,cx);return;
             }
             Some(Panel::Sort) => {
-                if value.is_string() {
-                    settings["board_sorting_mode"] = value;
-                    settings["board_sorting_stack"] = json!([]);
-                } else {
-                    settings["board_sorting_order"] = value["order"].clone();
+                let mode=value.as_str().unwrap();
+                let mut levels=self.sort_levels();
+                if mode=="Manual"{levels.clear();}else{
+                    if levels.len()>=3 || levels.iter().any(|level|level["mode"]==mode){return;}
+                    levels.push(json!({"mode":mode,"order":if matches!(mode,"DueDate"|"CreatedAt"|"Assignee"|"Title"|"TicketNumber"){"Ascending"}else{"Descending"}}));
                 }
+                self.save_sort_levels(levels,window,cx);return;
             }
             Some(Panel::Filters) => {
-                match value.as_str().unwrap_or("") {
-                    "Priority" => self.views.panel = Some(Panel::Priority),
-                    "Size" => self.views.panel = Some(Panel::Size),
-                    "Tags" => self.views.panel = Some(Panel::Labels),
-                    "Assignees" => self.views.panel = Some(Panel::Assignees),
-                    _ => {
-                        settings["board_filters"] = json!({"addedFilters":[],"matchFilters":"ANY"});
-                        self.queue_view("unsaved-view", settings, window, cx);
-                        return;
-                    }
+                let kind=value.as_str().unwrap_or("");
+                let panel=match kind{"Priority"=>Some(Panel::Priority),"Size"=>Some(Panel::Size),"Labels"=>Some(Panel::Labels),"Assignees"=>Some(Panel::Assignees),"CreatedBy"=>Some(Panel::CreatedBy),"UpdatedBy"=>Some(Panel::UpdatedBy),"BlockedByPerson"=>Some(Panel::BlockedByPerson),"DueDate"=>Some(Panel::Date("DueDate")),"UpdatedRange"=>Some(Panel::Date("UpdatedRange")),"CreatedAt"=>Some(Panel::Date("CreatedAt")),_=>None};
+                if let Some(panel)=panel{self.open_view_panel(panel,window,cx);return;}
+                if kind=="Clear"{settings["board_filters"]=json!({"addedFilters":[],"matchFilters":"ANY"});}
+                else if kind=="Match"{settings["board_filters"]["matchFilters"]=json!(if settings["board_filters"]["matchFilters"]=="ALL"{"ANY"}else{"ALL"});}
+                else{
+                    if kind=="RunningTimer" && !self.options.offline{self.load_view_support(true,window,cx);return;}
+                    let mut filters=settings["board_filters"]["addedFilters"].as_array().cloned().unwrap_or_default();
+                    if filters.iter().any(|filter|filter["type"]==kind){filters.retain(|filter|filter["type"]!=kind);}else if kind=="AssignedToMe"{
+                        let Some(user)=self.db.current_user_id()else{return;};filters.retain(|filter|filter["type"]!="Assignees");filters.push(json!({"type":"Assignees","searchPayload":[{"id":user,"uid":"current-user"}],"match":"ANY"}));
+                    }else{filters.push(json!({"type":kind,"searchPayload":[]}));}
+                    settings["board_filters"]["addedFilters"]=json!(filters);
                 }
-                self.views.choice = 0;
-                cx.notify();
-                return;
             }
-            Some(panel @ (Panel::Priority | Panel::Size | Panel::Labels | Panel::Assignees)) => {
+            Some(Panel::ValueMatch)=>{
+                for filter in settings["board_filters"]["addedFilters"].as_array_mut().into_iter().flatten(){if filter["type"]==value{filter["match"]=json!(if filter["match"]=="ALL"{"ANY"}else{"ALL"});}}
+            }
+            Some(Panel::Date(kind))=>{
+                let mut filters=settings["board_filters"]["addedFilters"].as_array().cloned().unwrap_or_default();filters.retain(|filter|filter["type"]!=kind);
+                if value!="RESET"{filters.push(json!({"type":kind,"searchPayload":[{"selectedDate":null,"fromDate":null,"toDate":null,"condition":null,"dynamicRange":value}]}));}settings["board_filters"]["addedFilters"]=json!(filters);
+            }
+            Some(panel @ (Panel::Priority | Panel::Size | Panel::Labels | Panel::Assignees|Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson)) => {
                 let kind = match panel {
                     Panel::Priority => "Priority",
                     Panel::Size => "Size",
                     Panel::Labels => "Labels",
-                    _ => "Assignees",
+                    Panel::CreatedBy=>"CreatedBy",Panel::UpdatedBy=>"UpdatedBy",Panel::BlockedByPerson=>"BlockedByPerson",_ => "Assignees",
                 };
                 let mut filters = settings["board_filters"]["addedFilters"]
                     .as_array()
@@ -415,11 +417,12 @@ impl Desktop {
                 } else {
                     selected.push(value);
                 }
+                let previous_match=filters.iter().find(|filter|filter["type"]==kind).and_then(|filter|filter["match"].as_str()).unwrap_or("ANY").to_owned();
                 filters.retain(|f| f["type"] != kind);
                 if !selected.is_empty() {
                     let mut filter = json!({"type":kind,"searchPayload":selected});
                     if matches!(panel, Panel::Labels | Panel::Assignees) {
-                        filter["match"] = json!("ANY");
+                        filter["match"] = json!(previous_match);
                     }
                     filters.push(filter);
                 }
@@ -428,6 +431,17 @@ impl Desktop {
             _ => return,
         }
         self.queue_view("unsaved-view", settings, window, cx);
+    }
+    fn sort_levels(&self)->Vec<Value>{let settings=self.view_settings();if settings["board_sorting_mode"]=="Manual"{return vec![];}let mut levels=vec![json!({"mode":settings["board_sorting_mode"],"order":settings["board_sorting_order"]})];levels.extend(settings["board_sorting_stack"].as_array().into_iter().flatten().cloned());levels}
+    fn save_sort_levels(&mut self,levels:Vec<Value>,window:&mut Window,cx:&mut Context<Self>){let mut settings=self.view_settings();settings["board_sorting_mode"]=levels.first().map(|level|level["mode"].clone()).unwrap_or(json!("Manual"));if let Some(level)=levels.first(){settings["board_sorting_order"]=level["order"].clone();}settings["board_sorting_stack"]=json!(levels.into_iter().skip(1).collect::<Vec<_>>());self.queue_view("unsaved-view",settings,window,cx);}
+    fn toggle_value_match(&mut self,window:&mut Window,cx:&mut Context<Self>){let kind=if self.views.panel==Some(Panel::Labels){"Labels"}else{"Assignees"};let mut settings=self.view_settings();let Some(filter)=settings["board_filters"]["addedFilters"].as_array_mut().and_then(|filters|filters.iter_mut().find(|filter|filter["type"]==kind))else{return;};filter["match"]=json!(if filter["match"]=="ALL"{"ANY"}else{"ALL"});self.queue_view("unsaved-view",settings,window,cx);}
+    fn load_view_support(&mut self,timers:bool,window:&mut Window,cx:&mut Context<Self>){
+        if self.views.support_pending{return;}let Some(token)=self.cli_token()else{return;};let board=self.options.board;let generation=self.views.generation;self.views.support_pending=true;if !timers{self.views.people=None;}
+        let(send,receive)=std::sync::mpsc::channel();let expected_token=token.clone();
+        std::thread::spawn(move||{let result=ht_core::Http::new(token).and_then(|mut http|if timers{ht_core::board_views::running_timers(&mut http)}else{ht_core::board_views::filter_people(&mut http,board)}).map_err(|error|error.to_string());let _=send.send(result);});
+        cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(50)).await;match receive.try_recv(){Ok(result)=>{let _=view.update_in(cx,|this,window,cx|{
+            if this.views.generation!=generation{return;}this.views.support_pending=false;if this.options.board!=board || this.cli_token().as_deref()!=Some(expected_token.as_str()){return;}
+            match result{Ok(data)=>{if timers{let _=this.db.kv_set("web-running-timers",&data.to_string());let mut settings=this.view_settings();let mut filters=settings["board_filters"]["addedFilters"].as_array().cloned().unwrap_or_default();if filters.iter().any(|filter|filter["type"]=="RunningTimer"){filters.retain(|filter|filter["type"]!="RunningTimer");}else{filters.push(json!({"type":"RunningTimer","searchPayload":[]}));}settings["board_filters"]["addedFilters"]=json!(filters);this.queue_view("unsaved-view",settings,window,cx);}else{this.views.people=Some(data);}},Err(error)=>{this.error=Some(error);this.views.people=None;}}cx.notify();});break;},Err(std::sync::mpsc::TryRecvError::Empty)=>(),_=>break}}}).detach();
     }
     pub(super) fn view_key(
         &mut self,
@@ -443,6 +457,8 @@ impl Desktop {
                 self.views.panel = None;
                 window.focus(&self.focus, cx);
             }
+            "left"|"right" if matches!(self.views.panel,Some(Panel::Labels|Panel::Assignees))=>self.toggle_value_match(window,cx),
+            "tab"|"left"|"right" if self.views.panel==Some(Panel::Sort)=>{let mut levels=self.sort_levels();if let Some(level)=levels.last_mut(){level["order"]=json!(if level["order"]=="Ascending"{"Descending"}else{"Ascending"});self.save_sort_levels(levels,window,cx);}},
             "enter" => self.choose_view_option(self.views.choice, window, cx),
             "down" => {
                 self.views.choice =
@@ -524,6 +540,8 @@ impl Desktop {
                     .rounded(px(6.))
                     .child(title)
                     .when(matches!(panel,Panel::SavePrivate|Panel::SaveTeam|Panel::RenameView),|d|d.child(self.views.input.clone()))
+                    .when(panel==Panel::Sort,|d|d.children(self.sort_levels().into_iter().enumerate().map(|(i,level)|div().flex().child(format!("{} · {}",level["mode"].as_str().unwrap_or(""),level["order"].as_str().unwrap_or(""))).child(div().id(("sort-level-order",i)).p(px(8.)).cursor_pointer().child("↕").on_click(cx.listener(move|this,_,window,cx|{let mut levels=this.sort_levels();if let Some(level)=levels.get_mut(i){level["order"]=json!(if level["order"]=="Ascending"{"Descending"}else{"Ascending"});this.save_sort_levels(levels,window,cx);}}))).child(div().id(("sort-level-remove",i)).p(px(8.)).cursor_pointer().child("×").on_click(cx.listener(move|this,_,window,cx|{let mut levels=this.sort_levels();if i<levels.len(){levels.remove(i);this.save_sort_levels(levels,window,cx);}}))))))
+                    .when(matches!(panel,Panel::Labels|Panel::Assignees),|d|d.child(div().id("filter-value-match").p(px(8.)).cursor_pointer().child("Match any / all").on_click(cx.listener(|this,_,window,cx|this.toggle_value_match(window,cx)))))
                     .children(
                         self.view_choices()
                             .into_iter()
@@ -614,7 +632,7 @@ mod tests {
                     )
                     .unwrap();
                 assert!(!this.poll_view(window, cx));
-                assert_eq!(this.views.panel.is_none(), status == 200);
+                assert_eq!(this.views.panel,Some(Panel::Sort));
                 assert_eq!(
                     this.view_settings()["board_sorting_mode"],
                     if status == 200 { "Priority" } else { "Manual" }
@@ -649,5 +667,42 @@ mod management_tests {
             this.db.drain_once(&mut Web{status,expected:change,reply},chrono::Utc::now().timestamp()+1).unwrap();assert!(!this.poll_view(window,cx));assert_eq!(this.views.panel.is_none(),status==200);
             if status!=200{assert_eq!(this.error.as_deref(),Some("Board access denied"));if option==2||option==3{assert_eq!(this.views.input.read(cx).content.as_ref(),"Named view");}}
         });}}
+    }
+}
+
+#[cfg(test)]
+mod advanced_control_tests {
+    use super::*;
+    use crate::ui::task_fields::tests::desktop;
+    struct Server{status:u16,body:Value,reply:Value}
+    impl ht_core::Transport for Server{
+        fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{assert_eq!(path,"/user/context");Ok(ht_core::http::Response{status:200,body:json!({"success":true,"user":{"id":42}})})}
+        fn post(&mut self,path:&str,body:&Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{assert_eq!(path,"/api/projects/views/unsaved-view");assert_eq!(body,&self.body);Ok(ht_core::http::Response{status:self.status,body:if self.status==200{self.reply.clone()}else{json!({"message":"Board access denied"})}})}
+    }
+    fn settle(this:&mut Desktop,status:u16,window:&mut Window,cx:&mut Context<Desktop>){
+        let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();let body=row.payload_json["change"]["body"].clone();let mut reply=this.db.board_project(15).unwrap()["project_view"].clone();reply["user_project_views"][0]["unsavedView"]=body.clone();
+        this.db.drain_once(&mut Server{status,body,reply},chrono::Utc::now().timestamp()+1).unwrap();assert!(!this.poll_view(window,cx));
+        if status!=200{assert_eq!(this.error.as_deref(),Some("Board access denied"));}
+    }
+    #[gpui::test]
+    fn actor_date_match_and_sort_stack_controls_queue_web_settings_and_rollback_both_refusals(cx:&mut gpui::TestAppContext){
+        cx.update(crate::input::init);
+        let(view,cx)=cx.add_window_view(|window,cx|desktop(window,cx));
+        for status in [401,403,200]{for panel in [Panel::CreatedBy,Panel::UpdatedBy,Panel::BlockedByPerson,Panel::Date("DueDate"),Panel::Date("CreatedAt"),Panel::Date("UpdatedRange"),Panel::ValueMatch,Panel::Sort]{view.update_in(cx,|this,window,cx|{
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}}]})).unwrap();this.reload();
+            this.views.people=Some(json!({"owner":{"id":42,"uid":"u42","displayName":"Owner"},"members":[],"boardAgents":[{"id":"agent","displayName":"Helper"}]}));
+            this.open_view_panel(panel,window,cx);
+            if panel==Panel::ValueMatch{this.views.panel=Some(Panel::Assignees);this.choose_view_option(0,window,cx);settle(this,200,window,cx);this.views.panel=Some(Panel::ValueMatch);}
+            let before=this.view_settings();this.choose_view_option(if matches!(panel,Panel::Date(_)){2}else{0},window,cx);
+            assert_ne!(this.view_settings(),before,"{panel:?}");settle(this,status,window,cx);
+            if status!=200{assert_eq!(this.view_settings(),before);}
+        });}}
+        view.update_in(cx,|this,window,cx|{
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}}]})).unwrap();this.open_view_panel(Panel::Sort,window,cx);
+            for index in [1,5,2]{this.choose_view_option(index,window,cx);settle(this,200,window,cx);assert_eq!(this.views.panel,Some(Panel::Sort));}
+            assert_eq!(this.sort_levels().len(),3);assert_eq!(this.sort_levels()[1]["mode"],"Title");assert_eq!(this.sort_levels()[1]["order"],"Ascending");
+            this.choose_view_option(4,window,cx);assert!(this.views.pending.is_none());assert_eq!(this.sort_levels().len(),3);
+            let mut levels=this.sort_levels();levels.remove(0);this.save_sort_levels(levels,window,cx);settle(this,200,window,cx);assert_eq!(this.view_settings()["board_sorting_mode"],"Title");
+        });
     }
 }

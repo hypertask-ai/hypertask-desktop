@@ -168,7 +168,8 @@ impl Db {
     }
 }
 
-pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value) {
+pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value, project:&Value, running:&[Value]) {
+    let now=chrono::Local::now();
     let filters = settings["board_filters"]["addedFilters"]
         .as_array()
         .cloned()
@@ -219,6 +220,19 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value) {
                             values.iter().any(has)
                         }
                 }
+                "CreatedBy" => values.is_empty() || values.iter().any(|v|v["id"].as_i64()==task["userId"].as_i64()),
+                "UpdatedBy" => values.is_empty() || values.iter().any(|v|if v.get("uid").is_some(){task["updatedByUserIds"].as_array().into_iter().flatten().any(|id|*id==v["id"])}else{task["agentId"]==v["id"]}),
+                "BlockedByPerson" => !task["waitingOnUserId"].is_null() && values.iter().any(|v|v["id"]==0 || v["id"]==task["waitingOnUserId"]),
+                "UpdatedRange"|"CreatedAt"|"DueDate" => {
+                    let field=match filter["type"].as_str().unwrap(){"UpdatedRange"=>"updatedAt","CreatedAt"=>"createdAt",_=>"dueDate"};
+                    let date=task.get(field).filter(|v|!v.is_null()).unwrap_or(if field=="updatedAt"{&task["createdAt"]}else{&Value::Null});
+                    date_filter(date,&values.first().cloned().unwrap_or(Value::Null),field=="dueDate",now)
+                }
+                "NoRecentComment" => stale(task.get("lastCommentAt").filter(|v|!v.is_null()).unwrap_or(&task["createdAt"]),project,now.timestamp()),
+                "StuckInColumn" => stale(task.get("sectionChangedAt").filter(|v|!v.is_null()).unwrap_or(&task["createdAt"]),project,now.timestamp()),
+                "StaleOnBoard" => stale(&task["createdAt"],project,now.timestamp()),
+                "NotStale" => !stale(task.get("lastCommentAt").filter(|v|!v.is_null()).unwrap_or(&task["createdAt"]),project,now.timestamp()) && !stale(task.get("sectionChangedAt").filter(|v|!v.is_null()).unwrap_or(&task["createdAt"]),project,now.timestamp()),
+                "RunningTimer" => project["timeTrackingEnabled"]==true && running.iter().any(|entry|entry["taskId"]==task["id"]),
                 "Status" => {
                     values.is_empty() || values.iter().any(|v| v["value"] == task["status"])
                 }
@@ -232,7 +246,7 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value) {
                     .as_array()
                     .is_some_and(|a| !a.is_empty()),
                 "Unread" => task["notifications"][0]["seen"] == false,
-                _ => true,
+                _ => false,
             }
         };
         filters.is_empty()
@@ -248,13 +262,12 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value) {
             .as_str()
             .unwrap_or("Descending"),
     )];
-    if let Some(stack) = settings["board_sorting_stack"].as_array() {
-        levels.extend(
-            stack
-                .iter()
-                .filter_map(|s| Some((s["mode"].as_str()?, s["order"].as_str()?))),
-        );
-    }
+    if levels[0].0!="Manual" {if let Some(stack)=settings["board_sorting_stack"].as_array(){for level in stack{
+        if levels.len()==3{break;}
+        if let(Some(mode),Some(order))=(level["mode"].as_str(),level["order"].as_str()){
+            if SORT_MODES.iter().any(|(_,value)|*value==mode) && mode!="Manual" && matches!(order,"Ascending"|"Descending") && !levels.iter().any(|(current,_)|*current==mode){levels.push((mode,order));}
+        }
+    }}}
     tasks.sort_by(|a, b| {
         use std::cmp::Ordering;
         for (mode, order) in &levels {
@@ -305,22 +318,28 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value) {
                         compare(&a["dueDate"], &b["dueDate"])
                     }
                 }
+                "Assignee" => {
+                    let name=|task:&Value|task["assignees"][0]["agent"]["displayName"].as_str().filter(|name|!name.is_empty()).or_else(||task["assignees"][0]["user"]["displayName"].as_str()).map(|name|json!(name)).unwrap_or(Value::Null);
+                    compare(&name(a),&name(b))
+                }
+                "TimeOnBoard" => compare(&a["createdAt"],&b["createdAt"]).reverse(),
                 "CreatedAt" => compare(&a["createdAt"], &b["createdAt"]),
                 "UpdatedAt" => compare(&a["updatedAt"], &b["updatedAt"]),
-                "SectionChangedAt" | "LastCommentAt" => {
-                    let field = if *mode == "SectionChangedAt" {
+                "SectionChangedAt" | "LastCommentAt" | "TimeInColumn" | "TimeWithoutComment" => {
+                    let field = if matches!(*mode,"SectionChangedAt"|"TimeInColumn") {
                         "sectionChangedAt"
                     } else {
                         "lastCommentAt"
                     };
-                    compare(
+                    let result=compare(
                         a.get(field)
                             .filter(|v| !v.is_null())
                             .unwrap_or(&a["createdAt"]),
                         b.get(field)
                             .filter(|v| !v.is_null())
                             .unwrap_or(&b["createdAt"]),
-                    )
+                    );
+                    if matches!(*mode,"TimeInColumn"|"TimeWithoutComment"){result.reverse()}else{result}
                 }
                 _ => Ordering::Equal,
             };
@@ -332,10 +351,82 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value) {
     });
 }
 
+pub fn filter_people(transport:&mut impl Transport,project:i64)->Result<Value>{
+    let response=transport.get(&format!("/api/members/getAllForAssignees?projectId={project}"))?;
+    ensure!(response.status==200,"{}",response.body["message"].as_str().unwrap_or("Error getting Assignees and Members"));
+    ensure!(response.body["id"]==project,"Wrong board members");
+    Ok(response.body)
+}
+pub fn running_timers(transport:&mut impl Transport)->Result<Value>{
+    let response=transport.get("/api/time/running")?;
+    ensure!(response.status==200 && response.body["success"]==true,"{}",response.body["error"].as_str().unwrap_or("Could not load running timers"));
+    ensure!(response.body["entries"].is_array(),"Could not load running timers");Ok(response.body["entries"].clone())
+}
+
 pub fn ordered_views(project:&Value)->Vec<Value>{
     let pv=&project["project_view"];let unsaved=&pv["user_project_views"][0]["unsavedView"]["id"];
     let mut rows:Vec<Value>=pv["allViews"].as_array().into_iter().flatten().filter(|view|view["id"]!=*unsaved).cloned().collect();
     let order=pv["user_project_views"][0]["view_order"].as_array().or_else(||pv["default_view_order"].as_array());
     rows.sort_by_key(|view|if view["id"]==pv["default_view_id"]{0}else{1+order.and_then(|order|order.iter().position(|id|*id==view["id"])).unwrap_or(usize::MAX-1)});
     rows
+}
+
+
+pub const SORT_MODES:&[(&str,&str)]=&[("Last Updated","UpdatedAt"),("Priority","Priority"),("Due Date","DueDate"),("Size","Size"),("Assignee","Assignee"),("Title","Title"),("Ticket number","TicketNumber"),("Time in column","TimeInColumn"),("Time on board","TimeOnBoard"),("Time without comment","TimeWithoutComment"),("Creation Date","CreatedAt"),("Column changed","SectionChangedAt"),("Last comment","LastCommentAt"),("Manual","Manual")];
+fn timestamp(value:&Value)->Option<i64>{
+    let value=value.as_str()?;
+    chrono::DateTime::parse_from_rfc3339(value).ok().map(|date|date.timestamp()).or_else(||chrono::NaiveDate::parse_from_str(value,"%Y-%m-%d").ok().map(|date|date.and_hms_opt(0,0,0).unwrap().and_utc().timestamp()))
+}
+fn stale(value:&Value,project:&Value,now:i64)->bool{
+    timestamp(value).is_some_and(|date|(now-date).max(0)/86400>=project["staleWarnDays"].as_i64().unwrap_or(7))
+}
+fn date_filter(value:&Value,payload:&Value,due:bool,now:chrono::DateTime<chrono::Local>)->bool {
+    use chrono::{Datelike,Duration,TimeZone};
+    let range=payload["dynamicRange"].as_str();
+    if due && range==Some("NO_DUE_DATE"){return value.is_null();}
+    if due && payload["condition"]=="ANY"{return !value.is_null();}
+    if due && value.is_null(){return false;}
+    let Some(date)=timestamp(value)else{return false;};
+    if let Some(range)=range{
+        let today=now.date_naive();let date=chrono::Local.timestamp_opt(date,0).single().unwrap().date_naive();
+        return match range{
+            "TODAY"=>date==today,"YESTERDAY"=>date==today-Duration::days(1),
+            "LAST_7_DAYS"=>date>=today-Duration::days(6) && date<=today,
+            "LAST_30_DAYS"=>date>=today-Duration::days(29) && date<=today,
+            "OVERDUE"=>date<today,"NEXT_7_DAYS"=>date>=today && date<=today+Duration::days(6),
+            "THIS_WEEK"=>{let monday=today-Duration::days(today.weekday().num_days_from_monday() as i64);date>=monday && date<=monday+Duration::days(6)},
+            "THIS_MONTH"=>date.year()==today.year() && date.month()==today.month(),"ANY"=>true,_=>false,
+        };
+    }
+    if let(Some(from),Some(to))=(timestamp(&payload["fromDate"]),timestamp(&payload["toDate"])){return date>=from && date<=to;}
+    if let Some(selected)=timestamp(&payload["selectedDate"]){return if payload["condition"]=="BEFORE" || (payload["condition"].is_null() && selected>now.timestamp()){date<selected}else if payload["condition"]=="AFTER" || (payload["condition"].is_null() && selected<=now.timestamp()){date>selected}else{true};}
+    true
+}
+
+#[cfg(test)]
+mod advanced_tests {
+    use super::*;
+    #[test]
+    fn dynamic_dates_custom_dates_and_staleness_follow_web_boundaries(){
+        let now=chrono::DateTime::parse_from_rfc3339("2026-10-21T12:00:00Z").unwrap().with_timezone(&chrono::Local);
+        let today=now.to_rfc3339();
+        for range in ["TODAY","LAST_7_DAYS","LAST_30_DAYS","THIS_WEEK","THIS_MONTH","NEXT_7_DAYS","ANY"]{assert!(date_filter(&json!(today),&json!({"dynamicRange":range}),true,now),"{range}");}
+        assert!(!date_filter(&json!(today),&json!({"dynamicRange":"OVERDUE"}),true,now));
+        assert!(date_filter(&Value::Null,&json!({"dynamicRange":"NO_DUE_DATE"}),true,now));
+        assert!(!date_filter(&Value::Null,&json!({"condition":"ANY"}),true,now));
+        assert!(date_filter(&json!(today),&json!({"fromDate":"2026-10-01","toDate":"2026-10-31"}),false,now));
+        assert!(!date_filter(&json!(today),&json!({"selectedDate":"2026-10-01","condition":"BEFORE"}),false,now));
+        assert!(date_filter(&json!(today),&json!({"selectedDate":"2026-10-01","condition":"AFTER"}),false,now));
+        assert!(stale(&json!("2026-10-14T12:00:00Z"),&json!({}),now.timestamp()));assert!(!stale(&json!("2026-10-14T12:00:00Z"),&json!({"staleWarnDays":8}),now.timestamp()));
+        assert!(!stale(&Value::Null,&json!({}),now.timestamp()));
+    }
+    #[test]
+    fn advanced_sort_comparators_stack_cap_and_unknown_filters_never_silently_match(){
+        let source=vec![json!({"id":1,"title":"Same","createdAt":"2000-01-01","sectionChangedAt":"2000-01-01","lastCommentAt":"2000-01-01","assignees":[{"user":{"displayName":"Zed"}}]}),json!({"id":2,"title":"Same","createdAt":"2026-01-01","sectionChangedAt":"2026-01-01","lastCommentAt":"2026-01-01","assignees":[{"agent":{"displayName":"Amy"}}]})];
+        for mode in ["TimeInColumn","TimeOnBoard","TimeWithoutComment","Assignee"]{
+            let mut tasks=source.clone();filter_sort(&mut tasks,&json!({"board_sorting_mode":mode,"board_sorting_order":"Descending"}),&json!({}),&[]);assert_eq!(tasks[0]["id"],1,"{mode}");
+        }
+        let mut tasks=source.clone();filter_sort(&mut tasks,&json!({"board_sorting_mode":"Title","board_sorting_order":"Ascending","board_sorting_stack":[{"mode":"Title","order":"Descending"},{"mode":"Assignee","order":"Ascending"},{"mode":"CreatedAt","order":"Descending"}]}),&json!({}),&[]);assert_eq!(tasks[0]["id"],2);
+        filter_sort(&mut tasks,&json!({"board_filters":{"addedFilters":[{"type":"not-a-web-filter"}],"matchFilters":"ALL"}}),&json!({}),&[]);assert!(tasks.is_empty());
+    }
 }

@@ -13,7 +13,7 @@ pub(super) struct Models {
     failed:bool,
     pub(super) error:Option<String>,
     pending_team:Option<String>,
-    requested:Option<(Option<String>,Option<String>)>,
+    requested:Option<(Option<String>,Option<String>,Option<String>)>,
     pub(super) submenu:Option<bool>,
 }
 impl Models {
@@ -27,11 +27,11 @@ impl AiSidebar {
     pub(super) fn load_models(&mut self,cx:&mut Context<Self>){
         let team=self.scope.as_ref().and_then(|s|s.team_id.clone());
         let last=self.scope.as_ref().and_then(|s|s.last_team.clone());
-        let requested=(team.clone(),last.clone());
+        let board_default=self.scope.as_ref().and_then(|s|s.model_default.clone());
+        let requested=(team.clone(),last.clone(),board_default.clone());
         if self.models.requested.as_ref()==Some(&requested) && (self.models.pending.is_some() || self.models.configuration.is_some() || self.models.failed){return;}
         self.models.requested=Some(requested);self.models.team=team.clone();self.models.configuration=None;self.models.selected=None;self.models.pending=None;self.models.failed=false;self.models.error=None;
         if let Some(token)=self.models.token.clone(){
-            let board_default=self.scope.as_ref().and_then(|s|s.model_default.clone());
             let(send,receive)=mpsc::channel();self.models.pending=Some(receive);
             thread::spawn(move||{let result=Http::new(token).and_then(|mut http|ht_core::ai_models::load_for_scope(&mut http,team.as_deref(),last.as_deref(),board_default.as_deref())).map_err(|e|e.to_string());let _=send.send(result);});
         }

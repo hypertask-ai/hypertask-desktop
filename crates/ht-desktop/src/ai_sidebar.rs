@@ -529,7 +529,7 @@ impl AiSidebar {
         if text.is_empty() || self.active.is_some() || self.session_pending.is_some() {
             return;
         }
-        if self.client.is_some() && self.models.configuration.is_none(){
+        if self.client.is_some() && self.scope.is_some() && self.models.configuration.is_none(){
             if let Some(error)=&self.models.error{self.chats[self.selected].error=Some(error.clone());}
             cx.notify();return;
         }

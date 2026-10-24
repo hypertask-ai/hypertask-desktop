@@ -196,3 +196,40 @@ fn rename_delete_and_view_order_are_optimistic_and_authoritative_after_refusal_o
         if status!=200{assert_eq!(db.board_project(15).unwrap()["project_view"],before["project_view"]);}else{match route{"rename-view"=>assert_eq!(db.board_project(15).unwrap()["project_view"]["allViews"][0]["title"],"Renamed"),"delete-view"=>assert!(board_views::ordered_views(&db.board_project(15).unwrap()).is_empty()),"set-default-order"=>assert_eq!(db.board_project(15).unwrap()["project_view"]["default_view_order"],json!(["v1"])),"reset-order"=>assert!(db.board_project(15).unwrap()["project_view"]["user_project_views"][0]["view_order"].is_null()),_=>()}}
     }}
 }
+
+#[test]
+fn advanced_filter_types_are_optimistic_and_restore_the_board_after_both_refusals(){
+    let today=chrono::Utc::now().to_rfc3339();
+    for(kind,values)in [
+        ("CreatedBy",json!([{"id":9,"uid":"u9"}])),("UpdatedBy",json!([{"id":9,"uid":"u9"}])),
+        ("UpdatedBy",json!([{"id":"agent"}])),("BlockedByPerson",json!([{"id":0}])),
+        ("DueDate",json!([{"dynamicRange":"TODAY"}])),("DueDate",json!([{"dynamicRange":"NO_DUE_DATE"}])),
+        ("CreatedAt",json!([{"dynamicRange":"TODAY"}])),("UpdatedRange",json!([{"dynamicRange":"TODAY"}])),
+        ("NoRecentComment",json!([])),("StuckInColumn",json!([])),("StaleOnBoard",json!([])),("NotStale",json!([])),
+        ("RunningTimer",json!([])),("Inbox",json!([])),("Unread",json!([])),
+        ("Labels",json!([{"id":"a"},{"id":"b"}])),("Assignees",json!([{"id":9,"uid":"u9"},{"id":"agent"}])),
+    ]{for status in [200,401,403]{
+        let mut db=Db::memory().unwrap();seed(&mut db);let mut project=project();project["timeTrackingEnabled"]=json!(true);
+        db.apply_response(&json!({"success":true,"projects":[project],"tasks":[
+            {"id":1,"projectId":15,"sectionId":10,"title":"Old","status":"Normal","ranking":"A0100","createdAt":"2000-01-01T00:00:00Z","lastCommentAt":"2000-01-01T00:00:00Z","sectionChangedAt":"2000-01-01T00:00:00Z"},
+            {"id":2,"projectId":15,"sectionId":10,"title":"New","status":"Normal","ranking":"A0190","createdAt":today,"updatedAt":today,"dueDate":today,"sectionChangedAt":today,"lastCommentAt":today,"userId":9,"updatedByUserIds":[9],"agentId":"agent","waitingOnUserId":9,"notifications":[{"seen":false}],"taskLabels":[{"label":{"id":"a"}},{"label":{"id":"b"}}],"assignees":[{"userId":9,"agentId":null},{"agentId":"agent"}]}
+        ]})).unwrap();db.kv_set("web-running-timers","[{\"taskId\":2}]").unwrap();
+        let before=db.board_project(15).unwrap();let mut body=board_views::settings(&before);body["projectId"]=json!(15);body["baseViewId"]=Value::Null;body["board_filters"]=json!({"addedFilters":[{"type":kind,"searchPayload":values,"match":"ALL"}],"matchFilters":"ALL"});
+        let expected=if matches!(kind,"NoRecentComment"|"StuckInColumn"|"StaleOnBoard") || (kind=="DueDate" && values[0]["dynamicRange"]=="NO_DUE_DATE"){1}else{2};
+        db.enqueue(Write::View{change:ViewWrite{project:15,route:"unsaved-view".into(),body:body.clone()}},100).unwrap();
+        assert_eq!(db.board(15).unwrap()[0].cards.iter().map(|task|task.id).collect::<Vec<_>>(),vec![expected],"{kind} optimistic");
+        let mut reply=before["project_view"].clone();reply["user_project_views"][0]["unsavedView"]=body.clone();
+        db.drain_once(&mut Server{status,path:"/api/projects/views/unsaved-view".into(),body,reply},101).unwrap();
+        if status==200{assert_eq!(db.board(15).unwrap()[0].cards.len(),1);}else{assert_eq!(db.board_project(15).unwrap(),before);assert_eq!(db.board(15).unwrap()[0].cards.len(),2);}
+    }}
+}
+
+#[test]
+fn filter_people_and_timer_reads_reject_both_refusals_without_cached_success(){
+    struct Reads(u16);
+    impl Transport for Reads{
+        fn get(&mut self,path:&str)->Result<Response,TransportError>{Ok(Response{status:self.0,body:if self.0!=200{json!({"message":"Unauthorized","error":"Unauthorized"})}else if path=="/api/members/getAllForAssignees?projectId=15"{json!({"id":15,"owner":{"id":42,"uid":"u42"},"members":[],"boardAgents":[]})}else{assert_eq!(path,"/api/time/running");json!({"success":true,"entries":[{"taskId":2}]})}})}
+        fn post(&mut self,_:&str,_:&Value,_:&str)->Result<Response,TransportError>{panic!("read-only")}
+    }
+    for status in [200,401,403]{let mut server=Reads(status);assert_eq!(board_views::filter_people(&mut server,15).is_ok(),status==200);assert_eq!(board_views::running_timers(&mut server).is_ok(),status==200);}
+}

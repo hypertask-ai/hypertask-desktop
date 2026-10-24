@@ -289,7 +289,7 @@ impl Db {
     pub fn board(&self, project_id: i64) -> Result<Vec<BoardColumn>> {
         let sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
         let mut tasks = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Normal' ORDER BY ranking ASC,updatedAt DESC,id ASC", [project_id])?;
-        if let Some(project)=self.raw("Project",&json!(project_id))? {crate::board_views::filter_sort(&mut tasks,&crate::board_views::settings(&project));}
+        if let Some(project)=self.raw("Project",&json!(project_id))? {let running=self.kv_get("web-running-timers")?.and_then(|value|serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();crate::board_views::filter_sort(&mut tasks,&crate::board_views::settings(&project),&project,&running);}
         let cards = tasks
             .into_iter()
             .map(task_view)
