@@ -5,6 +5,7 @@ use serde_json::Value;
 
 pub(super) struct Shell {
     metadata_loading: bool,
+    metadata_generation:u64,
     expanded: bool,
     hovered: Option<usize>,
     pub ai_open: bool,
@@ -63,6 +64,7 @@ impl Shell {
         cx.observe(&feedback_input, |_, _, cx| cx.notify()).detach();
         Self {
             metadata_loading: false,
+            metadata_generation:0,
             agents: false,
             destination: Destination::Workspace,
             search_input,
@@ -1273,6 +1275,8 @@ impl Desktop {
         self.mentions.invalidate();
         self.invalidate_compose_identity();
         self.shell.set_token(token);
+        self.shell.metadata_generation+=1;self.shell.metadata_loading=false;
+        self.invalidate_board_views(cx);self.invalidate_board_create(cx);
         self.shell.settings = false;
         self.shell.boards = false;
         self.shell.invite = false;

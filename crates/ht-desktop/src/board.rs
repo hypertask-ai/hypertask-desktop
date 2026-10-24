@@ -62,6 +62,10 @@ pub(super) fn search_matches(task: &TaskView, query: &str) -> bool {
             .contains(query)
 }
 impl Desktop {
+    pub(super) fn invalidate_board_create(&mut self,cx:&mut Context<Self>){
+        self.board_actions.create_section=None;self.board_actions.create_pending=None;
+        self.board_actions.create_input.update(cx,|input,cx|input.set_content(String::new(),cx));
+    }
     pub(super) fn start_board_create(&mut self, section: i64, window: &mut Window, cx: &mut Context<Self>) {
         if self.board_actions.create_pending.is_some() { return; }
         self.board_actions.create_section = Some(section);

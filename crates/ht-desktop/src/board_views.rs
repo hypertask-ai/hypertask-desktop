@@ -30,6 +30,14 @@ impl Views {
     }
 }
 impl Desktop {
+    pub(super) fn invalidate_board_views(&mut self, cx: &mut Context<Self>) {
+        self.views.loaded = 0;
+        self.views.panel = None;
+        self.views.pending = None;
+        self.views
+            .input
+            .update(cx, |input, cx| input.set_content(String::new(), cx));
+    }
     pub(super) fn load_board_views(&mut self, cx: &mut Context<Self>) {
         let board = self.options.board;
         if self.options.offline || self.views.loaded == board {

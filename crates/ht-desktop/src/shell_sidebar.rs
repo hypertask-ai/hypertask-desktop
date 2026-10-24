@@ -27,6 +27,8 @@ impl Desktop {
             return;
         };
         self.shell.metadata_loading = true;
+        self.shell.metadata_generation += 1;
+        let generation = self.shell.metadata_generation;
         let user = self.db.current_user_id();
         let expected_token = token.clone();
         let (send, receive) = std::sync::mpsc::channel();
@@ -43,6 +45,9 @@ impl Desktop {
                 match receive.try_recv() {
                     Ok(result) => {
                         let _ = view.update(cx, |this, cx| {
+                            if this.shell.metadata_generation != generation {
+                                return;
+                            }
                             this.shell.metadata_loading = false;
                             if this.db.current_user_id() != user
                                 || this.cli_token().as_deref() != Some(expected_token.as_str())

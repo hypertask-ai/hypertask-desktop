@@ -94,18 +94,18 @@ impl Db {
         let project_row = self
             .raw("Project", &json!(project))?
             .context("board is not cached")?;
-        let columns = self.board(project)?;
-        let column = columns
-            .iter()
-            .find(|c| c.id == section)
-            .context("column is not visible in this board")?;
-        let edge = if top {
-            column.cards.first()
-        } else {
-            column.cards.last()
-        }
-        .and_then(|t| t.extra.get("ranking"))
-        .and_then(Value::as_str);
+        let column = self
+            .raw("Section", &json!(section))?
+            .context("column is not cached")?;
+        ensure!(
+            column["projectId"] == project
+                && column["visibility"] == true
+                && column["deleted"] == false,
+            "column is not visible in this board"
+        );
+        let tasks=self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND sectionId=? AND status='Normal' ORDER BY ranking,id",[project,section])?;
+        let edge = if top { tasks.first() } else { tasks.last() }
+            .and_then(|task| task["ranking"].as_str());
         let ranking =
             crate::task_rank(if top { None } else { edge }, if top { edge } else { None })?;
         let defaults = view_defaults(&project_row);
@@ -121,7 +121,7 @@ impl Db {
                 .unwrap()
                 .extend(defaults.as_object().unwrap().clone());
             body["fullScreenTask"] = json!(true);
-            body["section_title"] = json!(column.title);
+            body["section_title"] = column["section_title"].clone();
             body["projectIdentifier"] = project_row
                 .get("uniqueIdentifier")
                 .filter(|v| !v.is_null())
@@ -130,16 +130,16 @@ impl Db {
             if body["priority"].is_null()
                 && project_row["sorting_mode"] == "Priority"
                 && top
-                && !column.cards.is_empty()
+                && !tasks.is_empty()
             {
                 body["priority"] = priority(1).unwrap();
             }
         } else {
-            body["section"] = json!(column.title);
+            body["section"] = column["section_title"].clone();
             body["index"] = json!(if project_row["sorting_mode"] == "Priority" && top {
                 0
             } else {
-                column.cards.len()
+                tasks.len()
             });
         }
         Ok(json!({"user_id":user,"body":body,"global":global}))
