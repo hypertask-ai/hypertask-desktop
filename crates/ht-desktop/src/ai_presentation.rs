@@ -14,6 +14,7 @@ pub struct Presentation {
     pub suppressed: bool,
     pub open: bool,
     pub width: f32,
+    return_mode: DisplayMode,
     drag: Option<(f32, f32)>,
 }
 
@@ -25,6 +26,7 @@ impl Default for Presentation {
             suppressed: false,
             open: true,
             width: 420.,
+            return_mode: DisplayMode::Sidebar,
             drag: None,
         }
     }
@@ -51,6 +53,7 @@ impl Presentation {
                 .and_then(|s| s.parse::<f32>().ok())
                 .filter(|w| w.is_finite())
                 .unwrap_or(420.),
+            return_mode: DisplayMode::Sidebar,
             drag: None,
         }
     }
@@ -119,9 +122,16 @@ impl AiSidebar {
     }
 
     pub fn set_mode(&mut self, mode: DisplayMode, cx: &mut Context<Self>) {
+        if mode == DisplayMode::Fullscreen && self.mode() != DisplayMode::Fullscreen {
+            self.presentation.return_mode = self.mode();
+        }
         self.presentation.mode = mode;
         self.set_open(true, cx);
         self.more_menu = false;
+    }
+
+    pub fn exit_fullscreen(&mut self, cx: &mut Context<Self>) {
+        self.set_mode(self.presentation.return_mode, cx);
     }
 
     pub fn fit_viewport(&mut self, viewport: f32, cx: &mut Context<Self>) {

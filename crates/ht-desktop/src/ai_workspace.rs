@@ -126,6 +126,8 @@ mod tests {
         click(view, &mut cx, "ai.fullscreen");
         assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 1440.);
         assert_eq!(measured(view, &mut cx, "rightpanel")["h"], 900.);
+        click(view, &mut cx, "ai.fullscreen.exit");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 432.);
         click(view, &mut cx, "ai.more");
         click(view, &mut cx, "ai.mode");
         assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);

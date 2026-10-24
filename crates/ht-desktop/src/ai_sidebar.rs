@@ -796,7 +796,10 @@ impl Render for AiSidebar {
             .track_scroll(&self.scroll)
             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
             .px(px(24.))
-            .py(px(16.));
+            .py(px(16.))
+            .when(self.mode() == DisplayMode::Fullscreen, |d| {
+                d.w_full().max_w(px(800.)).mx_auto()
+            });
         if empty {
             let mut welcome = div()
                 .size_full()
@@ -951,6 +954,32 @@ impl Render for AiSidebar {
                     .child(icon("chevron-right", t.muted))
                     .layout_key(&self.capture, "ai.close", None),
             );
+        if self.mode() == DisplayMode::Fullscreen {
+            header = div()
+                .h(px(48.))
+                .w_full()
+                .flex_shrink_0()
+                .px(px(16.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(icon("sparkles", t.accent))
+                .child(
+                    div()
+                        .flex_1()
+                        .truncate()
+                        .child(self.chats[self.selected].title.clone()),
+                )
+                .child(
+                    div()
+                        .id("ai-exit-fullscreen")
+                        .cursor_pointer()
+                        .p(px(4.))
+                        .on_click(cx.listener(|this, _, _, cx| this.exit_fullscreen(cx)))
+                        .child(icon("minimize-2", t.muted))
+                        .layout_key(&self.capture, "ai.fullscreen.exit", None),
+                );
+        }
         if self.history_menu {
             header = header.bg(color(t.container));
         }
@@ -1276,6 +1305,9 @@ impl Render for AiSidebar {
                     }),
             );
         composer = composer.child(controls);
+        if self.mode() == DisplayMode::Fullscreen {
+            composer = composer.w_full().max_w(px(800.)).mx_auto();
+        }
         panel = panel.child(composer);
         if self.mode() == DisplayMode::Sidebar {
             panel = panel.child(self.resize_edge(cx));
