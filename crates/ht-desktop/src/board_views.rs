@@ -2610,6 +2610,17 @@ mod column_manager_tests {
         for status in [401,403,200] {view.update_in(cx,|this,window,cx|{seed(this);this.open_view_panel(Panel::Columns,window,cx);this.reorder_column(10,11,window,cx);assert_eq!(this.columns[0].id,11);settle(this,status,window,cx);if status>=300{assert_eq!(this.columns[0].id,10);assert_eq!(this.error.as_deref(),Some("Column order could not be saved"));}else{let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();assert_eq!(row.payload_json["change"]["route"],"unsaved-view");assert_eq!(row.payload_json["change"]["body"]["board_columns_view"][0]["id"],11);settle(this,200,window,cx);assert_eq!(this.columns[0].id,11);}});}
     }
     #[gpui::test]
+    fn column_order_view_followup_refusal_keeps_acknowledged_rank_but_restores_saved_view(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let (view,cx)=cx.add_window_view(|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});
+        for status in [401,403] {view.update_in(cx,|this,window,cx|{
+            seed(this);this.open_view_panel(Panel::Columns,window,cx);this.reorder_column(10,11,window,cx);settle(this,200,window,cx);
+            let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();assert_eq!(row.payload_json["change"]["route"],"unsaved-view");
+            settle(this,status,window,cx);
+            assert!(this.views.pending.is_none());assert!(this.error.is_some());assert_eq!(this.views.panel,Some(Panel::Columns));assert_eq!(this.columns[0].id,11);
+            assert!(this.db.board_project(15).unwrap()["project_view"]["user_project_views"][0]["unsavedView"].is_null());
+        });}
+    }
+    #[gpui::test]
     fn autoassign_palette_command_is_board_only_and_opens_column_then_person_picker(cx:&mut gpui::TestAppContext) {
         assert!(!crate::command_center::commands(Screen::Task,true).iter().any(|row|row.key=="autoAssignColumn"));
         cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
