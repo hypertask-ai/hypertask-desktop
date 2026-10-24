@@ -45,6 +45,23 @@ jobs:
         with:
           name: layout-dumps
           path: evidence/layout/*.json
+      - name: Windows memory (three runs per screen)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          ./gates/windows-memory.ps1
+          -Exe target/release/ht-desktop.exe
+          -CoreExe target/release/ht-core-cli.exe
+          -Fixtures fixtures/demo
+          -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
+          -Out evidence/windows-memory
+      - name: Upload Windows memory
+        if: runner.os == 'Windows' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-memory
+          path: evidence/windows-memory/
+          if-no-files-found: error
       - name: Upload Windows app
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4
@@ -82,3 +99,38 @@ jobs:
           name: hypertask-desktop-windows-arm64
           path: target/aarch64-pc-windows-msvc/release/ht-desktop.exe
           retention-days: 14
+  windows-memory-baselines:
+    name: memory-${{ matrix.revision }}
+    if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
+    strategy:
+      fail-fast: false
+      matrix:
+        revision: ['3d00223', '5016a9ebe48b03dbac2f2312c170878166586c59']
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - name: Preserve current measurement script
+        shell: pwsh
+        run: Copy-Item gates/windows-memory.ps1 "$env:RUNNER_TEMP/windows-memory.ps1"
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ matrix.revision }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p ht-desktop -p ht-core
+      - name: Measure historical release
+        shell: pwsh
+        run: >-
+          & "$env:RUNNER_TEMP/windows-memory.ps1"
+          -Exe target/release/ht-desktop.exe
+          -CoreExe target/release/ht-core-cli.exe
+          -Fixtures fixtures/demo
+          -Revision '${{ matrix.revision }}'
+          -Out evidence/windows-memory
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: windows-memory-${{ matrix.revision }}
+          path: evidence/windows-memory/
+          if-no-files-found: error
