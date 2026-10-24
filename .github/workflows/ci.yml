@@ -106,6 +106,28 @@ jobs:
           name: windows-memory
           path: evidence/windows-memory/
           if-no-files-found: error
+      - name: Generate heavy account
+        if: runner.os == 'Windows'
+        run: python gates/heavy-fixture.py evidence/heavy-fixtures
+      - name: Heavy account Windows memory (three runs per screen)
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: >-
+          ./gates/windows-memory.ps1
+          -Exe target/release/ht-desktop.exe
+          -CoreExe target/release/ht-core-cli.exe
+          -Fixtures evidence/heavy-fixtures
+          -HeavyManifest evidence/heavy-manifest.json
+          -AiHistory evidence/heavy-ai-history.json
+          -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
+          -Out evidence/windows-memory-heavy
+      - name: Upload heavy Windows memory
+        if: runner.os == 'Windows' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-memory-heavy
+          path: evidence/windows-memory-heavy/
+          if-no-files-found: error
       - name: Upload Windows app
         if: runner.os == 'Windows'
         uses: actions/upload-artifact@v4

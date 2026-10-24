@@ -48,6 +48,9 @@ enum Editing {
     ExistingComment,
 }
 
+#[path = "memory_owners.rs"]
+mod memory_owners;
+
 #[path = "ai_workspace.rs"]
 mod ai_workspace;
 
@@ -1704,6 +1707,7 @@ impl Render for Desktop {
                 }),
             );
         }
+        self.write_memory_owners(cx);
         if !self.ready_scheduled {
             crate::memory::write_store_receipt(&self.db);
             self.ready_scheduled = true;

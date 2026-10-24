@@ -22,6 +22,9 @@ use std::{
     time::Duration,
 };
 
+#[path = "ai_memory.rs"]
+mod memory;
+
 #[path = "ai_skills.rs"]
 mod skills;
 
@@ -220,7 +223,7 @@ impl AiSidebar {
             }
         })
         .detach();
-        Self {
+        let mut sidebar = Self {
             colors,
             presentation: Presentation::default(),
             capture: None,
@@ -248,7 +251,9 @@ impl AiSidebar {
             collapsed: false,
             scroll: ScrollHandle::new(),
             active: None,
-        }
+        };
+        sidebar.load_memory_history(cx);
+        sidebar
     }
 
     pub fn set_token(&mut self, token: Option<String>, cx: &mut Context<Self>) {

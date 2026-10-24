@@ -3,7 +3,9 @@ param(
     [Parameter(Mandatory)][string]$CoreExe,
     [Parameter(Mandatory)][string]$Fixtures,
     [Parameter(Mandatory)][string]$Revision,
-    [Parameter(Mandatory)][string]$Out
+    [Parameter(Mandatory)][string]$Out,
+    [string]$HeavyManifest,
+    [string]$AiHistory
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -111,6 +113,10 @@ Write-Host "Requested 1920x1080: result=$displayResult; actual=$($display.Width)
 $seed = Join-Path $Out 'fixtures.db'
 & $CoreExe --db $seed import-fixtures $Fixtures
 if ($LASTEXITCODE -ne 0) { throw 'Fixture import failed' }
+if ($HeavyManifest) {
+    Copy-Item $HeavyManifest (Join-Path $Out 'heavy-manifest.json')
+    $env:HT_MEMORY_AI_HISTORY = (Resolve-Path $AiHistory).Path
+}
 $rows = @()
 foreach ($round in 1..3) {
     foreach ($screen in 'inbox', 'board', 'task') {
@@ -186,3 +192,5 @@ $table | Write-Host
 if ($env:GITHUB_STEP_SUMMARY) {
     @("## Memory: $Revision", "Display $($display.Width)x$($display.Height), maximized, 8 s, median of three. MB = 1,000,000 bytes.") + $table | Add-Content $env:GITHUB_STEP_SUMMARY
 }
+
+Remove-Item Env:HT_MEMORY_AI_HISTORY -ErrorAction SilentlyContinue
