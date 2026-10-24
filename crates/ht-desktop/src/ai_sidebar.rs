@@ -951,7 +951,14 @@ impl Render for AiSidebar {
                         }
                         cx.notify();
                     }))
-                    .child(icon("chevron-right", t.muted))
+                    .child(icon(
+                        if self.mode() == DisplayMode::Sidebar {
+                            "chevron-right"
+                        } else {
+                            "minus"
+                        },
+                        t.muted,
+                    ))
                     .layout_key(&self.capture, "ai.close", None),
             );
         if self.mode() == DisplayMode::Fullscreen {

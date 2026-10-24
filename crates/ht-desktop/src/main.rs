@@ -163,7 +163,8 @@ impl AssetSource for Assets {
             "ai-sparkles",
             "send-archive",
             "square-pen",
-            "minimize-2"
+            "minimize-2",
+            "minus"
         ))
     }
     fn list(&self, _: &str) -> Result<Vec<SharedString>> {

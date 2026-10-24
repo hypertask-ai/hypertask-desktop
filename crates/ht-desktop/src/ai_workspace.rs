@@ -130,6 +130,21 @@ mod tests {
         assert_eq!(floating["w"], 432.);
         assert_eq!(floating["h"], 630.);
         assert_eq!(measured(view, &mut cx, "main")["w"], 1440.);
+        click(view, &mut cx, "ai.close");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["h"], 40.);
+        view.read_with(&mut cx, |this, _| {
+            assert!(this.shell.ai_open);
+            assert_ne!(
+                this.db
+                    .kv_get("aiChatAutoOpenSuppressed")
+                    .unwrap()
+                    .as_deref(),
+                Some("true")
+            );
+        })
+        .unwrap();
+        click(view, &mut cx, "rightpanel");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["h"], 630.);
         click(view, &mut cx, "ai.more");
         click(view, &mut cx, "ai.fullscreen");
         assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 1440.);
