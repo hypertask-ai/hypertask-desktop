@@ -16,6 +16,7 @@ fn seed(db: &mut Db) {
 }
 fn ack(change: &TaskAction) -> Value {
     match change {
+        TaskAction::Recurrence(rule) => json!({"id":1,"recurrence":rule}),
         TaskAction::StartDate(date) => json!({"id":1,"startDate":date}),
         TaskAction::WaitingOn(user) => {
             json!({"id":1,"waitingOnUserId":user,"waitingOnSetById":user.map(|_|42),"waitingOnSetAt":user.map(|_|"2026-10-01T09:00:00Z")})
@@ -59,6 +60,12 @@ fn changes() -> Vec<TaskAction> {
         TaskAction::WaitingOn(Some(7)),
         TaskAction::WaitingOn(None),
         TaskAction::AssignMe,
+        TaskAction::Recurrence(None),
+        TaskAction::Recurrence(Some("Daily".into())),
+        TaskAction::Recurrence(Some("Weekdays".into())),
+        TaskAction::Recurrence(Some("Weekly".into())),
+        TaskAction::Recurrence(Some("Biweekly".into())),
+        TaskAction::Recurrence(Some("Monthly".into())),
     ]
 }
 #[test]
@@ -87,6 +94,7 @@ fn task_daily_commands_persist_optimistically_and_accept_or_rollback_exact_web_w
             let row = db.mutations().unwrap()[0].clone();
             let optimistic = serde_json::to_value(db.task(1).unwrap().unwrap()).unwrap();
             match &change {
+                TaskAction::Recurrence(rule) => assert_eq!(optimistic["recurrence"], json!(rule)),
                 TaskAction::StartDate(date) => assert_eq!(optimistic["startDate"], json!(date)),
                 TaskAction::WaitingOn(user) => {
                     assert_eq!(optimistic["waitingOnUserId"], json!(user))
@@ -139,6 +147,7 @@ fn task_daily_commands_persist_optimistically_and_accept_or_rollback_exact_web_w
                 let after = serde_json::to_value(db.task(1).unwrap().unwrap()).unwrap();
                 for field in [
                     "startDate",
+                    "recurrence",
                     "waitingOnUserId",
                     "waitingOnSetById",
                     "waitingOnSetAt",
@@ -190,6 +199,7 @@ fn task_commands_reject_bad_dates_nonmembers_and_cross_account_replays_without_s
     let mut db = Db::memory().unwrap();
     seed(&mut db);
     for change in [
+        TaskAction::Recurrence(Some("Yearly".into())),
         TaskAction::StartDate(Some("invalid".into())),
         TaskAction::WaitingOn(Some(-1)),
         TaskAction::WaitingOn(Some(999)),

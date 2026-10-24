@@ -128,6 +128,7 @@ mod tests {
             assert_eq!(*body, request);
             assert!(!key.is_empty());
             let reply = match &self.1 {
+                TaskAction::Recurrence(rule) => json!({"id":1,"recurrence":rule}),
                 TaskAction::StartDate(date) => json!({"id":1,"startDate":date}),
                 TaskAction::WaitingOn(user) => {
                     json!({"id":1,"waitingOnUserId":user,"waitingOnSetById":user.map(|_|42),"waitingOnSetAt":user.map(|_|"2026-10-01T09:00:00Z")})
@@ -308,6 +309,59 @@ mod tests {
                 }
             })
             .unwrap();
+        }
+    }
+    #[gpui::test]
+    fn repeat_task_palette_matches_all_web_rules_and_clear_with_accept_and_refusal(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx,|this,_,_|{this.db.apply_task(&json!({"id":1,"title":"Needle","projectId":15,"status":"Normal","recurrence":"Monthly"})).unwrap();}).unwrap();
+        for (rule, label) in [
+            (Some("Daily"), "Every day"),
+            (Some("Weekdays"), "Every weekday"),
+            (Some("Weekly"), "Every week"),
+            (Some("Biweekly"), "Every 2 weeks"),
+            (Some("Monthly"), "Every month"),
+            (None, "Don't repeat"),
+        ] {
+            for status in [401, 403, 200] {
+                let before = view
+                    .read_with(&cx, |this, _| {
+                        this.db.task(1).unwrap().unwrap().extra["recurrence"].clone()
+                    })
+                    .unwrap();
+                palette(&mut cx, "Repeat task");
+                cx.simulate_input(label);
+                cx.simulate_keystrokes("enter");
+                view.update(&mut cx, |this, window, cx| {
+                    let change = TaskAction::Recurrence(rule.map(str::to_owned));
+                    assert_eq!(
+                        this.db.task(1).unwrap().unwrap().extra["recurrence"],
+                        json!(rule)
+                    );
+                    assert!(this.interaction.modal.is_none());
+                    this.db
+                        .drain_once(
+                            &mut Server(status, change.clone()),
+                            chrono::Utc::now().timestamp() + 1,
+                        )
+                        .unwrap();
+                    this.poll_task_action(window, cx);
+                    assert_eq!(
+                        this.db.task(1).unwrap().unwrap().extra["recurrence"],
+                        if status == 200 {
+                            json!(rule)
+                        } else {
+                            before.clone()
+                        }
+                    );
+                    if status != 200 {
+                        assert_eq!(this.error.as_deref(), Some(change.failure()));
+                    }
+                })
+                .unwrap();
+            }
         }
     }
 }

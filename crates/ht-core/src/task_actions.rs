@@ -12,6 +12,7 @@ pub enum TaskAction {
     StartDate(Option<String>),
     WaitingOn(Option<i64>),
     AssignMe,
+    Recurrence(Option<String>),
 }
 impl TaskAction {
     pub fn request(&self, task: i64, user: i64) -> Result<(&'static str, Value)> {
@@ -33,6 +34,19 @@ impl TaskAction {
                     json!({"taskId":task,"userId":user_id}),
                 )
             }
+            Self::Recurrence(rule) => {
+                ensure!(
+                    rule.as_deref().is_none_or(|rule| [
+                        "Daily", "Weekdays", "Weekly", "Biweekly", "Monthly"
+                    ]
+                    .contains(&rule)),
+                    "Invalid recurrence rule"
+                );
+                (
+                    "/api/tasks/setRecurrence",
+                    json!({"taskId":task,"recurrence":rule}),
+                )
+            }
             Self::AssignMe => (
                 "/api/assignees/assign",
                 json!({"taskId":task,"userId":user,"intent":"assign"}),
@@ -42,6 +56,7 @@ impl TaskAction {
     fn fields(&self) -> &'static [&'static str] {
         match self {
             Self::StartDate(_) => &["startDate"],
+            Self::Recurrence(_) => &["recurrence"],
             Self::WaitingOn(_) => &["waitingOnUserId", "waitingOnSetById", "waitingOnSetAt"],
             Self::AssignMe => &["assignees", "assigneeCount"],
         }
@@ -51,6 +66,7 @@ impl TaskAction {
             Self::StartDate(_) => "Could not update the start date. Try again.",
             Self::WaitingOn(_) => "Unable to update blocked by person",
             Self::AssignMe => "Unable to assign this task",
+            Self::Recurrence(_) => "Could not update the repeat rule",
         }
     }
 }
@@ -100,6 +116,7 @@ impl Db {
             .context("Task is unavailable")?;
         match serde_json::from_value::<TaskAction>(payload["change"].clone())? {
             TaskAction::StartDate(date) => task["startDate"] = json!(date),
+            TaskAction::Recurrence(rule) => task["recurrence"] = json!(rule),
             TaskAction::WaitingOn(user) => {
                 task["waitingOnUserId"] = json!(user);
                 task["waitingOnSetById"] = if user.is_some() {
@@ -257,6 +274,9 @@ impl TaskAction {
             return false;
         }
         match self {
+            Self::Recurrence(rule) => {
+                value["id"] == payload["task_id"] && value.get("recurrence") == Some(&json!(rule))
+            }
             Self::StartDate(date) => {
                 value["id"] == payload["task_id"]
                     && if let Some(date) = date {

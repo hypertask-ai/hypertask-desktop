@@ -49,6 +49,7 @@ pub enum ShellCommand {
     StartDate,
     WaitingOn,
     AssignMe,
+    Recurrence,
     BoardTime,
     DuplicateTask(bool),
 }
@@ -119,6 +120,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     }
     if task {
         for (key, name, keys, keywords, action) in [
+            ("setRecurrence", "Repeat task", "", "repeat recurring recurrence every daily weekly monthly weekdays cadence schedule routine", ShellCommand::Recurrence),
             ("setStartDate", "Set start date", "", "start begin kickoff scheduled from date when planned", ShellCommand::StartDate),
             ("blockedByPerson", "Blocked by person…", "SHIFT B", "blocked waiting blocker block person stuck", ShellCommand::WaitingOn),
             ("assignToMe", "Assign to me", "", "assign me self take claim mine my task i'll do it", ShellCommand::AssignMe),

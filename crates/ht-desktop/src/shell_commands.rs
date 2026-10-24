@@ -9,6 +9,7 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::Recurrence => self.show_modal(crate::ui::interactions::Modal::Recurrence, window, cx),
             ShellCommand::StartDate => self.show_start_date(window, cx),
             ShellCommand::WaitingOn => self.show_modal(crate::ui::interactions::Modal::WaitingOn, window, cx),
             ShellCommand::AssignMe => {

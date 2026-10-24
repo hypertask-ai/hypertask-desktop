@@ -20,6 +20,7 @@ pub(super) enum Modal {
     Size,
     DueDate,
     WaitingOn,
+    Recurrence,
     Delete,
 }
 #[derive(Clone)]
@@ -38,6 +39,7 @@ enum ChoiceAction {
     Size(u8),
     DueDate(i64),
     WaitingOn(Option<i64>),
+    Recurrence(Option<&'static str>),
     Task(i64),
     Board(i64),
     Delete,
@@ -892,6 +894,13 @@ impl Desktop {
                     action: ChoiceAction::Column(c.id),
                 })
                 .collect(),
+            Some(Modal::Recurrence) => {
+                let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return vec![]; };
+                let mut rows = vec![];
+                if task.extra["recurrence"].is_string() { rows.push(Choice { name:"Don't repeat".into(), action:ChoiceAction::Recurrence(None) }); }
+                rows.extend([("Daily","Every day"),("Weekdays","Every weekday (Mon–Fri)"),("Weekly","Every week"),("Biweekly","Every 2 weeks"),("Monthly","Every month")].into_iter().map(|(id,name)|Choice {name:name.into(),action:ChoiceAction::Recurrence(Some(id))}));
+                rows
+            }
             Some(Modal::WaitingOn) => {
                 let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return vec![]; };
                 let mut rows = vec![Choice { name:"Nobody (clear)".into(), action:ChoiceAction::WaitingOn(None) }];
@@ -1015,6 +1024,9 @@ impl Desktop {
             && !(self.screen == Screen::Board && !self.interaction.bulk.is_empty());
         if !keep_open { self.close_modal(window, cx); }
         match choice.action {
+            ChoiceAction::Recurrence(rule) => {
+                if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::Recurrence(rule.map(str::to_owned)), window, cx); }
+            }
             ChoiceAction::WaitingOn(user) => {
                 if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::WaitingOn(user), window, cx); }
             }
@@ -1154,7 +1166,7 @@ impl Desktop {
                             task_id,
                             patch: TaskPatch::Status(Status::Deleted),
                         },
-                        ChoiceAction::WaitingOn(_) | ChoiceAction::Command(_) | ChoiceAction::CreateLabel
+                        ChoiceAction::Recurrence(_) | ChoiceAction::WaitingOn(_) | ChoiceAction::Command(_) | ChoiceAction::CreateLabel
                         | ChoiceAction::Task(_)
                         | ChoiceAction::Board(_) => {
                             unreachable!()
@@ -1241,6 +1253,7 @@ impl Desktop {
                     Modal::Size => "Set task size",
                     Modal::DueDate => "Set due date",
                     Modal::WaitingOn => "Blocked by person",
+                    Modal::Recurrence => "Repeat task",
                     Modal::Delete => "Delete task?",
                     Modal::Commands => unreachable!(),
                 }

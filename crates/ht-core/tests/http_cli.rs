@@ -415,6 +415,8 @@ fn daily_task_action_routes_send_desktop_bearer_without_cookies_and_preserve_ref
         (ht_core::TaskAction::StartDate(None),"/api/tasks/setStartDate",json!({"taskId":1,"startDate":null})),
         (ht_core::TaskAction::WaitingOn(Some(7)),"/api/tasks/waiting-on",json!({"taskId":1,"userId":7})),
         (ht_core::TaskAction::WaitingOn(None),"/api/tasks/waiting-on",json!({"taskId":1,"userId":null})),
+        (ht_core::TaskAction::Recurrence(Some("Biweekly".into())),"/api/tasks/setRecurrence",json!({"taskId":1,"recurrence":"Biweekly"})),
+        (ht_core::TaskAction::Recurrence(None),"/api/tasks/setRecurrence",json!({"taskId":1,"recurrence":null})),
         (ht_core::TaskAction::AssignMe,"/api/assignees/assign",json!({"taskId":1,"userId":42,"intent":"assign"})),
     ] { for status in [200,401,403] {
         let (actual_path,actual_body)=change.request(1,42).unwrap();assert_eq!(actual_path,path);assert_eq!(actual_body,body);
