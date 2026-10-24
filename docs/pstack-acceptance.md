@@ -28,3 +28,18 @@ only after observing the exact head's GitHub run.
 ## Evidence
 
 Pending. No gate is complete on documentation or a local test run alone.
+
+## Resumed execution plan (before new implementation)
+
+Preserve the completed vendor/model commit 2f4847f and inherited uncommitted
+CI/gate drafts. Finish in three bounded units: skill plus real CI drive,
+repo/orchestration review, then exact-head GitHub evidence. No delegated agents.
+All six original outcomes remain required; no gate is weakened. CHECK labels
+above mean remote GitHub commands only, not permission to run local test copies.
+
+Observable acceptance for the new smoke: presented READY before E, exactly one
+Archive row with archivedAt, one pending inbox_archive mutation bound to that
+row, nonblank changed before/after images, independent post-exit persistence,
+owned PID stopped and temporary DB removed while proof files remain. The
+Pstack contract job must accept the real checkout and reject the historical
+stale-head/incomplete-jobs patterns plus broken discovery and Claude fallback.
