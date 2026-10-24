@@ -314,3 +314,106 @@ fn refused_assignment_restores_people_but_preserves_later_title() {
     assert_eq!(db.task(1).unwrap().unwrap().title, "Later title");
     assert_eq!(db.task(1).unwrap().unwrap().assignee_count, 0);
 }
+
+#[test]
+fn assign_to_me_preserves_people_and_owned_agents_as_distinct_assignees_on_accept_and_refusal() {
+    for status in [200, 401, 403] {
+        let mut db = Db::memory().unwrap();
+        seed(&mut db);
+        let agent = json!({"id":99,"userId":42,"agentId":"agent","user":{"id":42,"displayName":"Me"},"agent":{"id":"agent","displayName":"Bot"},"taskId":1});
+        db.apply_task(&json!({"id":1,"title":"Task","projectId":15,"status":"Normal","assignees":[{"id":7,"displayName":"Alex"},agent],"assigneeCount":2})).unwrap();
+        let change = TaskAction::AssignMe;
+        let id = db
+            .enqueue(
+                Write::TaskAction {
+                    task_id: 1,
+                    change: change.clone(),
+                },
+                100,
+            )
+            .unwrap();
+        assert_eq!(
+            db.task(1).unwrap().unwrap().assignee_count,
+            3,
+            "owning an agent is not being assigned as a human"
+        );
+        let reply = json!({"body":[{"id":90,"taskId":1,"userId":7,"agentId":null,"user":{"id":7,"displayName":"Alex"}},agent,{"id":91,"taskId":1,"userId":42,"agentId":null,"user":{"id":42,"displayName":"Me"}}]});
+        let mut server = Server {
+            status,
+            change,
+            reply,
+            user: 42,
+            calls: 0,
+        };
+        assert_eq!(
+            db.drain_once(&mut server, 101).unwrap(),
+            if status == 200 {
+                Drain::Applied(id)
+            } else {
+                Drain::Failed(id)
+            }
+        );
+        let task = db.task(1).unwrap().unwrap();
+        assert_eq!(task.assignee_count, if status == 200 { 3 } else { 2 });
+        let rows = task.extra["assignees"].as_array().unwrap();
+        assert!(rows.iter().any(|row| row["agent"]["id"] == "agent"));
+        assert!(rows.iter().any(|row| row["id"] == 7));
+    }
+}
+
+#[test]
+fn empty_relation_acknowledgement_and_wrong_deleted_endpoints_are_refusals_not_success() {
+    for (change, reply, message) in [
+        (
+            TaskAction::Relation {
+                target: target(),
+                relation: ht_core::RelationKind::RelatedTo,
+            },
+            json!([]),
+            "Task relation already exists or cannot be added",
+        ),
+        (
+            TaskAction::RemoveRelation(77),
+            json!({"status":200,"json":{"id":77,"sourceTaskId":1,"targetTaskId":999}}),
+            "Unable to remove task relation",
+        ),
+    ] {
+        let mut db = Db::memory().unwrap();
+        seed(&mut db);
+        let id = db
+            .enqueue(
+                Write::TaskAction {
+                    task_id: 1,
+                    change: change.clone(),
+                },
+                100,
+            )
+            .unwrap();
+        let row = db.mutations().unwrap()[0].clone();
+        assert_eq!(
+            db.drain_once(
+                &mut Server {
+                    status: 200,
+                    change,
+                    reply,
+                    user: 42,
+                    calls: 0
+                },
+                101
+            )
+            .unwrap(),
+            Drain::Failed(id)
+        );
+        let result: Value = serde_json::from_str(
+            &db.kv_get(&format!("task-action-result:{}", row.client_id))
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        assert_eq!(result["error"], message);
+        assert_eq!(
+            db.task(1).unwrap().unwrap().extra["relatedFromTasks"][0]["id"],
+            77
+        );
+    }
+}

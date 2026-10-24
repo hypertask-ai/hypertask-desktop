@@ -192,8 +192,9 @@ impl Db {
             TaskAction::AssignMe => {
                 let mut rows = task["assignees"].as_array().cloned().unwrap_or_default();
                 if !rows.iter().any(|row| {
-                    row["userId"] == payload["user_id"]
-                        || (row["agent"].is_null() && row["id"] == payload["user_id"])
+                    row["agentId"].is_null()
+                        && row["agent"].is_null()
+                        && (row["userId"] == payload["user_id"] || row["id"] == payload["user_id"])
                 }) {
                     let mut member = self
                         .project_members(
@@ -307,7 +308,7 @@ impl Db {
                 .iter()
                 .map(|row| {
                     let mut member = row["user"].clone();
-                    if member.is_object() {
+                    if row["agentId"].is_null() && row["agent"].is_null() && member.is_object() {
                         member["userId"] = row["userId"].clone();
                         member
                     } else {
@@ -351,8 +352,17 @@ impl TaskAction {
             Self::RemoveRelation(id) => {
                 value["status"] == 200
                     && value["json"]["id"] == *id
-                    && (value["json"]["sourceTaskId"] == payload["task_id"]
-                        || value["json"]["targetTaskId"] == payload["task_id"])
+                    && ["relatedFromTasks", "relatedToTasks"].iter().any(|field| {
+                        payload["before"][*field]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .any(|row| {
+                                row["id"] == *id
+                                    && row["sourceTaskId"] == value["json"]["sourceTaskId"]
+                                    && row["targetTaskId"] == value["json"]["targetTaskId"]
+                            })
+                    })
             }
             Self::Relation { target, relation } => value.as_array().is_some_and(|rows| {
                 rows.len() == 1
