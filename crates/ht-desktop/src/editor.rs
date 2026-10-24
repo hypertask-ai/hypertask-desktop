@@ -93,6 +93,14 @@ const COMMANDS: &[(&str, &str, Command)] = &[
     ),
 ];
 impl EditorState {
+    pub fn history_state(&self) -> Self {
+        let mut e = self.clone();
+        e.dialog = None;
+        e.slash = None;
+        e.choice = 0;
+        e.palette = false;
+        e
+    }
     pub fn clear_marks(&mut self) {
         self.marks = None;
     }
@@ -114,6 +122,11 @@ impl TextInput {
         self = self.multiline_editor();
         self.editor.as_mut().unwrap().comment = true;
         self
+    }
+    pub fn is_empty(&self) -> bool {
+        self.editor
+            .as_ref()
+            .map_or_else(|| self.content.trim().is_empty(), |e| e.document.is_empty())
     }
     pub fn html(&self) -> String {
         self.editor.as_ref().map_or_else(
@@ -204,11 +217,13 @@ impl TextInput {
         if self.editor.is_none() {
             return;
         }
-        self.remember_edit();
         let mut range = self.selected_range.clone();
         if all_if_empty && range.is_empty() {
             range = 0..self.content.len();
             self.selected_range = range.clone();
+        }
+        if !range.is_empty() || format.mark().is_none() {
+            self.remember_edit();
         }
         let e = self.editor.as_mut().unwrap();
         if let Some(name) = format.mark() {
@@ -258,6 +273,8 @@ impl TextInput {
         cx.notify();
     }
     fn select_slash(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let before = self.snapshot();
+        let history_len = self.undo.len();
         let Some(start) = self.editor.as_mut().and_then(|e| e.slash.take()) else {
             return;
         };
@@ -270,9 +287,12 @@ impl TextInput {
                 self.replace_text_in_range(None, " ", window, cx);
             }
             Command::Format(Format::CodeBlock) => {
-                self.move_to(self.content.len(), window, cx);
-                self.editor_enter(window, cx);
-                self.apply_format(Format::CodeBlock, false, false, window, cx);
+                let e = self.editor.as_mut().unwrap();
+                e.document.append_code_block();
+                e.marks = None;
+                self.content = e.document.text().into();
+                self.selected_range = self.content.len()..self.content.len();
+                cx.notify();
             }
             Command::Format(format) => self.apply_format(
                 format,
@@ -284,6 +304,9 @@ impl TextInput {
             Command::Video => self.open_editor_dialog(DialogKind::Video, window, cx),
             Command::Emoji => self.open_editor_dialog(DialogKind::Emoji, window, cx),
         }
+        self.undo.truncate(history_len);
+        self.undo.push(before);
+        self.redo.clear();
     }
     pub(super) fn editor_navigate(&mut self, direction: isize, cx: &mut Context<Self>) -> bool {
         let count = self.slash_items().len();
@@ -321,9 +344,9 @@ impl TextInput {
         }
         self.remember_edit();
         let e = self.editor.as_mut().unwrap();
-        e.document.split(self.selected_range.clone());
+        let at = e.document.split(self.selected_range.clone());
         self.content = e.document.text().into();
-        let at = (self.selected_range.start + 1).min(self.content.len());
+        let at = at.min(self.content.len());
         self.selected_range = at..at;
         e.marks = None;
         e.slash = None;
@@ -447,11 +470,12 @@ impl TextInput {
                 };
                 self.remember_edit();
                 let e = self.editor.as_mut().unwrap();
-                if !e.document.link(dialog.selection.clone(), &href) {
+                let range = e.document.link_range(dialog.selection.clone());
+                if !e.document.link(range.clone(), &href) {
                     return;
                 }
                 e.document.set_mark(
-                    dialog.selection,
+                    range,
                     Tag {
                         name: "mark".into(),
                         attrs: vec![],
@@ -463,7 +487,12 @@ impl TextInput {
                 let Some(html) = youtube_html(&value) else {
                     return;
                 };
-                self.append_html(&html, window, cx);
+                self.remember_edit();
+                let e = self.editor.as_mut().unwrap();
+                let at = e.document.insert_html(self.selected_range.clone(), &html);
+                self.content = e.document.text().into();
+                self.selected_range = at..at;
+                window.notify_text_input_changed(&self.focus_handle);
             }
             DialogKind::Emoji => {
                 let Some(emoji) = emoji else {
@@ -491,6 +520,31 @@ impl TextInput {
             }
         }
         self.close_editor_dialog(window, cx);
+    }
+    pub(super) fn editor_click(
+        &mut self,
+        event: &gpui::ClickEvent,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        if !self.selected_range.is_empty() {
+            return;
+        }
+        let offset = self.index_for_mouse_position(event.position());
+        if let Some(url) = self
+            .editor
+            .as_ref()
+            .and_then(|e| e.document.link_at(offset))
+        {
+            let url = if url.starts_with('/') {
+                format!("{}{url}", ht_core::auth::SITE_URL)
+            } else {
+                url
+            };
+            cx.open_url(&url);
+            cx.stop_propagation();
+        }
+        let _ = window;
     }
     pub(super) fn editor_key(
         &mut self,
@@ -626,6 +680,13 @@ impl TextInput {
             };
             let mut body = div()
                 .id("editor-dialog")
+                .on_mouse_down_out(
+                    MouseButton::Left,
+                    cx.listener(|this, _, _, cx| {
+                        this.editor.as_mut().unwrap().dialog = None;
+                        cx.notify();
+                    }),
+                )
                 .p(px(12.))
                 .bg(crate::theme::color(theme.comment))
                 .text_color(crate::theme::color(theme.text))
@@ -679,6 +740,21 @@ impl TextInput {
                         ),
                 );
             }
+            if dialog.kind == DialogKind::Video {
+                body = body.child(
+                    div()
+                        .id("cancel-video")
+                        .cursor_pointer()
+                        .child("Cancel")
+                        .on_mouse_down(
+                            MouseButton::Left,
+                            cx.listener(|this, _, window, cx| {
+                                cx.stop_propagation();
+                                this.close_editor_dialog(window, cx);
+                            }),
+                        ),
+                );
+            }
             return vec![
                 body.absolute()
                     .left_0()
@@ -704,6 +780,7 @@ impl TextInput {
                     let (title, description, _) = COMMANDS[index];
                     div()
                         .id(("slash-choice", index))
+                        .debug_selector(|| format!("slash-{index}"))
                         .p(px(6.))
                         .cursor_pointer()
                         .when(choice == e.choice, |d| {
@@ -802,6 +879,7 @@ impl TextInput {
                 .children(buttons.into_iter().enumerate().map(|(i, (label, format))| {
                     div()
                         .id(("format", i))
+                        .debug_selector(|| format!("format-{i}"))
                         .cursor_pointer()
                         .child(label)
                         .on_mouse_down(
@@ -826,6 +904,7 @@ impl TextInput {
                 .child(
                     div()
                         .id("editor-link")
+                        .debug_selector(|| "editor-link".into())
                         .cursor_pointer()
                         .child("Link")
                         .on_mouse_down(
@@ -905,6 +984,13 @@ impl TextInput {
                     run.underline = style.underline;
                     if s.marks.iter().any(|m| m.name == "code") || b.tag.name == "pre" {
                         run.font.family = "monospace".into();
+                        if b.tag.name == "pre" {
+                            run.color = crate::theme::color(if theme.page == 0xffffff {
+                                0xd63384
+                            } else {
+                                0xe8912d
+                            });
+                        }
                     }
                     if let Some(marked) = &self.marked_range {
                         if marked.start < stop && marked.end > start {
@@ -989,7 +1075,7 @@ fn youtube_html(url: &str) -> Option<String> {
         format!("https://www.youtube.com/embed/{id}?controls=0")
     };
     Some(format!(
-        "<div class=\"video-wrapper\"><iframe width=\"640\" height=\"480\" allowfullscreen=\"true\" src=\"{}\" start=\"0\"></iframe></div>",
+        "<div class=\"video-wrapper\"><iframe allowfullscreen=\"true\" src=\"{}\" start=\"0\"></iframe></div>",
         crate::editor_document::escape(&embed)
     ))
 }
@@ -1209,5 +1295,126 @@ mod tests {
             assert!(rect.left() > bounds.left());
             assert!(rect.top() > bounds.top());
         });
+    }
+    #[gpui::test]
+    fn slash_and_bubble_formatting_work_with_real_pointer_events(cx: &mut gpui::TestAppContext) {
+        cx.update(init);
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).comment_editor()
+        });
+        view.update_in(cx, |input, window, cx| {
+            window.focus(&input.focus_handle, cx)
+        });
+        cx.simulate_input("/Bold");
+        cx.run_until_parked();
+        let bounds = cx
+            .debug_bounds("slash-9")
+            .expect("real slash choice was painted");
+        cx.simulate_click(bounds.center(), gpui::Modifiers::default());
+        cx.simulate_input("bold");
+        view.read_with(cx, |input, _| {
+            assert_eq!(input.html(), "<p><strong>bold</strong></p>")
+        });
+        cx.simulate_keystrokes("ctrl-a");
+        cx.run_until_parked();
+        let bounds = cx
+            .debug_bounds("format-1")
+            .expect("selection bubble painted");
+        cx.simulate_click(bounds.center(), gpui::Modifiers::default());
+        view.read_with(cx, |input, _| {
+            assert_eq!(input.html(), "<p><strong><em>bold</em></strong></p>")
+        });
+    }
+    #[gpui::test]
+    fn unsupported_web_services_are_not_inert_slash_commands_and_video_html_is_real(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for title in [
+            "Fix Spelling & Grammer",
+            "Improve Readability",
+            "Summarize",
+            "Make Shorter",
+            "Translate to English",
+            "Translate to German",
+            "File Attachments",
+            "GIFs",
+            "Add Image",
+        ] {
+            assert!(!COMMANDS.iter().any(|(t, _, _)| *t == title));
+        }
+        cx.update(init);
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).multiline_editor()
+        });
+        view.update_in(cx, |input, window, cx| {
+            window.focus(&input.focus_handle, cx);
+            input.replace_text_in_range(None, "/emoji", window, cx);
+            assert!(
+                input.slash_items().is_empty(),
+                "emoji is create-comment only, not description/comment-edit"
+            );
+            input.reset(window, cx);
+        });
+        cx.simulate_keystrokes("ctrl-y");
+        cx.simulate_input("https://youtu.be/abcd");
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |input, _| {
+            assert!(
+                input
+                    .html()
+                    .contains("<div class=\"video-wrapper\"><iframe")
+            );
+            assert!(!input.is_empty(), "an atom-only document can be saved");
+            assert_eq!(Document::parse(&input.html()).html(), input.html());
+        });
+    }
+    #[gpui::test]
+    fn slash_format_is_one_undo_transaction_and_history_never_reopens_a_dialog(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(init);
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).comment_editor()
+        });
+        view.update_in(cx, |input, window, cx| {
+            window.focus(&input.focus_handle, cx)
+        });
+        cx.simulate_input("/Italic");
+        cx.simulate_keystrokes("enter ctrl-z");
+        view.read_with(cx, |input, _| assert_eq!(input.content.as_ref(), "/Italic"));
+        cx.simulate_keystrokes("ctrl-shift-z");
+        cx.simulate_input("text");
+        view.read_with(cx, |input, _| {
+            assert_eq!(input.html(), "<p><em>text</em></p>")
+        });
+        view.update_in(cx, |input, window, cx| {
+            input.selected_range = 0..input.content.len();
+            input.open_editor_dialog(DialogKind::Link, window, cx);
+        });
+        cx.simulate_input("example.com");
+        cx.simulate_keystrokes("enter ctrl-z");
+        view.read_with(cx, |input, _| {
+            assert!(input.editor.as_ref().unwrap().dialog.is_none());
+            assert!(!input.html().contains("<a "));
+        });
+    }
+    #[gpui::test]
+    fn clicking_a_link_uses_web_open_on_click_without_shell_shortcuts(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).comment_editor()
+        });
+        view.update_in(cx, |input, window, cx| {
+            input.set_html("<p><a href=\"https://example.com\">link</a></p>", cx);
+            input.move_to(0, window, cx);
+        });
+        cx.run_until_parked();
+        let point = view.read_with(cx, |input, _| {
+            let bounds = input.last_bounds.unwrap();
+            point(bounds.left() + px(3.), bounds.top() + px(8.))
+        });
+        cx.simulate_click(point, gpui::Modifiers::default());
+        assert_eq!(cx.opened_url().as_deref(), Some("https://example.com"));
     }
 }

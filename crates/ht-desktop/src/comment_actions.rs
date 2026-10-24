@@ -17,15 +17,10 @@ pub(super) struct CommentActions {
     pub choice: usize,
     pub collapsed: BTreeSet<i64>,
     all_open: bool,
-    quotes: Vec<(String, String)>,
     picker_scroll: ScrollHandle,
 }
 
 impl CommentActions {
-    pub fn clear_quotes(&mut self) {
-        self.quotes.clear();
-    }
-
     pub fn new(cx: &mut Context<Desktop>) -> Self {
         let input = cx.new(|cx| {
             TextInput::new(String::new(), "Comment", color(0x8e9093), cx).multiline_editor()
@@ -46,7 +41,6 @@ impl CommentActions {
             choice: 0,
             collapsed: BTreeSet::new(),
             all_open: false,
-            quotes: vec![],
             picker_scroll: ScrollHandle::new(),
         }
     }
@@ -94,7 +88,6 @@ impl Desktop {
         self.comment_actions.edit_id = None;
         self.comment_actions.delete_id = None;
         self.comment_actions.reaction_id = None;
-        self.comment_actions.quotes.clear();
         self.comment_actions.collapsed.clear();
         self.comment_actions.all_open = false;
     }
@@ -243,8 +236,7 @@ impl Desktop {
         let Some(id) = self.comment_actions.edit_id else {
             return false;
         };
-        let text = self.comment_actions.input.read(cx).content.to_string();
-        if text.trim().is_empty() {
+        if self.comment_actions.input.read(cx).is_empty() {
             return false;
         }
         if !self.detail.as_ref().is_some_and(|d| d.comments.iter().any(|c| c.id == id)) {return false;}

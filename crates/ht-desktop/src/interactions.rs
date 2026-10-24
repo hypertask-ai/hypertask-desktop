@@ -287,7 +287,6 @@ impl Desktop {
                     }),
                     Editing::ExistingComment => self.comment_actions.edit_id = None,
                     _ => {
-                        self.comment_actions.clear_quotes();
                         self.comment_input.update(cx, |input, cx| input.reset(window, cx));
                     }
                 }

@@ -517,7 +517,7 @@ impl Desktop {
             return false;
         };
         let comment = self.editing == Editing::Comment;
-        if comment && self.comment_input.read(cx).content.trim().is_empty() {
+        if comment && self.comment_input.read(cx).is_empty() {
             return false;
         }
         let write = match self.editing {
@@ -538,7 +538,6 @@ impl Desktop {
         if self.enqueue(write, cx) {
             self.editing = Editing::None;
             if comment {
-                self.comment_actions.clear_quotes();
                 self.comment_input
                     .update(cx, |input, cx| input.reset(window, cx));
             }

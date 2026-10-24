@@ -545,8 +545,14 @@ impl Document {
             at += span.text.len();
             if offset <= at {
                 let mut marks = span.marks.clone();
-                if offset == at {
-                    marks.retain(|m| m.name != "a");
+                if offset == at || offset == 0 {
+                    marks.retain(|m| {
+                        m.name != "a"
+                            && !(m.name == "span"
+                                && m.attrs
+                                    .iter()
+                                    .any(|(k, v)| k == "data-type" && v == "emoji"))
+                    });
                 }
                 return marks;
             }
@@ -690,6 +696,18 @@ impl Document {
             }
         }
     }
+    pub fn append_code_block(&mut self) {
+        let block = Block {
+            tag: Tag::new("pre"),
+            code: Some(Tag::new("code").attr("class", "language-javascript")),
+            spans: vec![],
+        };
+        if matches!(self.parts.last(),Some(Part::Block(b)) if b.tag.name=="p"&&b.len()==0) {
+            *self.parts.last_mut().unwrap() = Part::Block(block);
+        } else {
+            self.parts.push(Part::Block(block));
+        }
+    }
     pub fn code_block(&mut self, range: Range<usize>) -> Range<usize> {
         let text = self.text()[range.clone()].to_owned();
         let (last, end) = self.location(range.end);
@@ -720,7 +738,31 @@ impl Document {
         self.parts = before;
         caret..caret + text.len()
     }
-    pub fn split(&mut self, range: Range<usize>) {
+    pub fn split(&mut self, range: Range<usize>) -> usize {
+        let (index, local) = self.location(range.start);
+        if let Some(after) = exit_reply_quote(&mut self.parts, &mut 0, index) {
+            return self.blocks().iter().take(after).map(|b| b.len() + 1).sum();
+        }
+        let b = self.blocks()[index];
+        if b.tag.name == "pre" {
+            if range.is_empty() && local == b.len() && b.text().ends_with("\n\n") {
+                self.replace(range.start - 2..range.start, "", &[]);
+                let b = self.blocks()[index];
+                let left = b.clone();
+                let right = Block {
+                    tag: Tag::new("p"),
+                    code: None,
+                    spans: vec![],
+                };
+                split_block(&mut self.parts, &mut 0, index, &left, &right);
+                return range.start - 1;
+            }
+            self.replace(range.clone(), "\n", &[]);
+            return range.start + 1;
+        }
+        if range.is_empty() && b.len() == 0 && lift_empty(&mut self.parts, &mut 0, index) {
+            return range.start;
+        }
         self.replace(range.clone(), "", &[]);
         let (index, offset) = self.location(range.start);
         let b = self.blocks()[index];
@@ -732,6 +774,57 @@ impl Document {
             right.tag = Tag::new("p");
         }
         split_block(&mut self.parts, &mut 0, index, &left, &right);
+        range.start + 1
+    }
+    pub fn link_at(&self, offset: usize) -> Option<String> {
+        let mut at = 0;
+        for b in self.blocks() {
+            for s in &b.spans {
+                let end = at + s.text.len();
+                if offset >= at && offset < end {
+                    return s
+                        .marks
+                        .iter()
+                        .find(|m| m.name == "a")
+                        .and_then(|m| {
+                            m.attrs
+                                .iter()
+                                .find(|(k, _)| k == "href")
+                                .map(|(_, v)| v.clone())
+                        })
+                        .filter(|v| safe_link(v));
+                }
+                at = end;
+            }
+            at += 1;
+        }
+        None
+    }
+    pub fn link_range(&self, range: Range<usize>) -> Range<usize> {
+        let Some(url) = self.link_at(range.start) else {
+            return range;
+        };
+        if !range.is_empty() && self.link_at(range.end - 1).as_ref() != Some(&url) {
+            return range;
+        }
+        let mut at = range.start;
+        while at > 0 {
+            let previous = self.text()[..at]
+                .char_indices()
+                .last()
+                .map(|(i, _)| i)
+                .unwrap_or(0);
+            if self.link_at(previous).as_ref() != Some(&url) {
+                break;
+            }
+            at = previous;
+        }
+        let mut end = range.end;
+        let text = self.text();
+        while end < text.len() && self.link_at(end).as_ref() == Some(&url) {
+            end += text[end..].chars().next().unwrap().len_utf8();
+        }
+        at..end
     }
     pub fn link(&mut self, range: Range<usize>, href: &str) -> bool {
         if !safe_link(href) {
@@ -746,6 +839,40 @@ impl Document {
     }
     pub fn unlink(&mut self, range: Range<usize>) {
         self.set_mark(range, Tag::new("a"), false);
+    }
+    pub fn is_empty(&self) -> bool {
+        fn empty(parts: &[Part]) -> bool {
+            parts.iter().all(|p| match p {
+                Part::Block(b) => b.text().trim().is_empty(),
+                Part::Container(_, p) => empty(p),
+                Part::Atom(_) => false,
+            })
+        }
+        empty(&self.parts)
+    }
+    pub fn insert_html(&mut self, range: Range<usize>, html: &str) -> usize {
+        self.replace(range.clone(), "", &[]);
+        let (index, local) = self.location(range.start);
+        let (mut before, after) = split_parts(&self.parts, &mut 0, index, local);
+        before.extend(
+            Self::parse(html)
+                .parts
+                .into_iter()
+                .filter(|p| !matches!(p,Part::Block(b) if b.len()==0)),
+        );
+        let end = Document {
+            parts: before.clone(),
+        }
+        .text()
+        .len();
+        before.push(Part::Block(Block {
+            tag: Tag::new("p"),
+            code: None,
+            spans: vec![],
+        }));
+        before.extend(after);
+        self.parts = before;
+        if count(&self.parts) > 1 { end + 1 } else { 0 }
     }
     pub fn append_html(&mut self, html: &str) {
         if self.text().is_empty() && self.parts.len() == 1 {
@@ -785,6 +912,105 @@ impl Document {
         }
         toggle(&mut self.parts, &mut 0, block);
     }
+}
+fn exit_reply_quote(parts: &mut Vec<Part>, index: &mut usize, target: usize) -> Option<usize> {
+    let mut found = None;
+    let mut out = vec![];
+    for mut p in parts.drain(..) {
+        if found == Some(*index)
+            && matches!(&p,Part::Block(b) if b.len()==0)
+            && matches!(out.last(),Some(Part::Block(b)) if b.len()==0)
+        {
+            *index += 1;
+            continue;
+        }
+        match &mut p {
+            Part::Block(_) => *index += 1,
+            Part::Container(tag, children) => {
+                let end = *index + count(children);
+                if tag.name == "blockquote"
+                    && tag
+                        .attrs
+                        .iter()
+                        .any(|(k, v)| k == "data-quote-reply" && v == "true")
+                    && target >= *index
+                    && target < end
+                {
+                    *index = end;
+                    found = Some(end);
+                    out.push(p);
+                    out.push(Part::Block(Block {
+                        tag: Tag::new("p"),
+                        code: None,
+                        spans: vec![],
+                    }));
+                    continue;
+                }
+                found = exit_reply_quote(children, index, target).or(found);
+            }
+            _ => (),
+        }
+        out.push(p);
+    }
+    *parts = out;
+    found
+}
+fn lift_empty(parts: &mut Vec<Part>, index: &mut usize, target: usize) -> bool {
+    let mut out = vec![];
+    let mut changed = false;
+    for mut p in parts.drain(..) {
+        match &mut p {
+            Part::Block(_) => *index += 1,
+            Part::Container(tag, children) => {
+                let start = *index;
+                let end = start + count(children);
+                let wrapper = matches!(tag.name.as_str(), "ul" | "ol" | "blockquote");
+                let mut at = start;
+                let child = if wrapper {
+                    children.iter().position(|p| {
+                        let n = count(std::slice::from_ref(p));
+                        let here = at;
+                        at += n;
+                        here == target
+                            && n == 1
+                            && match p {
+                                Part::Block(b) => b.len() == 0,
+                                Part::Container(li, p) => {
+                                    li.name == "li"
+                                        && matches!(p.as_slice(),[Part::Block(b)] if b.len()==0)
+                                }
+                                _ => false,
+                            }
+                    })
+                } else {
+                    None
+                };
+                if let Some(child) = child {
+                    let after = children.split_off(child + 1);
+                    children.pop();
+                    if !children.is_empty() {
+                        out.push(Part::Container(tag.clone(), std::mem::take(children)));
+                    }
+                    out.push(Part::Block(Block {
+                        tag: Tag::new("p"),
+                        code: None,
+                        spans: vec![],
+                    }));
+                    if !after.is_empty() {
+                        out.push(Part::Container(tag.clone(), after));
+                    }
+                    *index = end;
+                    changed = true;
+                    continue;
+                }
+                changed = lift_empty(children, index, target) || changed;
+            }
+            _ => (),
+        }
+        out.push(p);
+    }
+    *parts = out;
+    changed
 }
 fn split_parts(
     parts: &[Part],
@@ -1070,14 +1296,25 @@ fn split_block(parts: &mut Vec<Part>, at: &mut usize, target: usize, left: &Bloc
                 split_block(p, at, target, left, right);
                 if tag.name == "li" && target >= start && target < *at {
                     // Enter in a list creates a sibling item, not a second paragraph in the item.
+                    let mut seen = 0;
                     let split = p
                         .iter()
-                        .position(|p| matches!(p,Part::Block(b) if b==right))
+                        .position(|p| {
+                            let hit = seen == target - start + 1;
+                            seen += count(std::slice::from_ref(p));
+                            hit
+                        })
                         .unwrap_or(p.len());
                     if split < p.len() {
                         let next = p.split_off(split);
                         out.push(Part::Container(tag.clone(), std::mem::take(p)));
-                        out.push(Part::Container(tag.clone(), next));
+                        let mut next_tag = tag.clone();
+                        if let Some((_, v)) =
+                            next_tag.attrs.iter_mut().find(|(k, _)| k == "data-checked")
+                        {
+                            *v = "false".into();
+                        }
+                        out.push(Part::Container(next_tag, next));
                         continue;
                     }
                 }
@@ -1255,5 +1492,56 @@ mod tests {
             d.html(),
             "<pre><code class=\"language-javascript\">one\ntwo</code></pre>"
         );
+    }
+    #[test]
+    fn enter_exits_empty_lists_and_quotes_and_preserves_code_newlines() {
+        let mut d = Document::parse("<ul><li><p>aa</p></li></ul>");
+        d.split(1..1);
+        assert_eq!(d.html(), "<ul><li><p>a</p></li><li><p>a</p></li></ul>");
+        let mut d = Document::parse("<ul><li><p>one</p></li><li><p></p></li></ul>");
+        assert_eq!(d.split(4..4), 4);
+        assert_eq!(d.html(), "<ul><li><p>one</p></li></ul><p></p>");
+        let mut d = Document::parse("<blockquote><p>quote</p><p></p></blockquote>");
+        d.split(6..6);
+        assert_eq!(d.html(), "<blockquote><p>quote</p></blockquote><p></p>");
+        let mut d = Document::parse("<pre><code>one</code></pre>");
+        assert_eq!(d.split(3..3), 4);
+        assert_eq!(d.text(), "one\n");
+        d.split(4..4);
+        assert_eq!(d.text(), "one\n\n");
+        assert_eq!(d.split(5..5), 4);
+        assert_eq!(d.html(), "<pre><code>one</code></pre><p></p>");
+        let mut d =
+            Document::parse("<blockquote data-quote-reply=\"true\"><p>quote</p></blockquote>");
+        assert_eq!(d.split(2..2), 6);
+        assert_eq!(
+            d.html(),
+            "<blockquote data-quote-reply=\"true\"><p>quote</p></blockquote><p></p>"
+        );
+    }
+    #[test]
+    fn unicode_edit_ranges_keep_the_document_text_invariant_and_html_round_trip() {
+        for html in [
+            "<p>é🙂 alpha</p><p>漢字 beta</p>",
+            "<ul><li><p><strong>one</strong></p></li><li><p>two</p></li></ul>",
+            "<blockquote><p>quote<br>line</p></blockquote>",
+        ] {
+            let original = Document::parse(html);
+            let text = original.text();
+            let bounds = text
+                .char_indices()
+                .map(|(i, _)| i)
+                .chain(std::iter::once(text.len()))
+                .collect::<Vec<_>>();
+            for &start in &bounds {
+                for &end in bounds.iter().filter(|&&end| end >= start) {
+                    let mut d = original.clone();
+                    d.replace(start..end, "Ω🙂", &[]);
+                    let expected = format!("{}Ω🙂{}", &text[..start], &text[end..]);
+                    assert_eq!(d.text(), expected, "{html}: {start}..{end}");
+                    assert_eq!(Document::parse(&d.html()).text(), expected);
+                }
+            }
+        }
     }
 }

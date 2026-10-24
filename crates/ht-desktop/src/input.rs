@@ -75,7 +75,7 @@ impl TextInput {
             content: self.content.clone(),
             selection: self.selected_range.clone(),
             reversed: self.selection_reversed,
-            editor: self.editor.clone(),
+            editor: self.editor.as_ref().map(EditorState::history_state),
         }
     }
 
@@ -989,6 +989,7 @@ impl Render for TextInput {
             .track_focus(&self.focus_handle(cx))
             .cursor(CursorStyle::IBeam)
             .on_key_down(cx.listener(Self::editor_key))
+            .on_click(cx.listener(Self::editor_click))
             .on_action(cx.listener(Self::backspace))
             .on_action(cx.listener(Self::delete))
             .on_action(cx.listener(Self::left))

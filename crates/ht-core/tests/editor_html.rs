@@ -56,7 +56,7 @@ fn every_web_format_round_trips_queue_restart_and_existing_bearer_wire_contracts
             let mut db = Db::open(file.path()).unwrap();
             db.apply_task(&json!({"id":1,"title":"Task","projectId":15,"status":"Normal"}))
                 .unwrap();
-            db.apply_comments(1,&json!({"success":true,"comments":[{"id":7,"text":"<p>Original</p>","creatorId":42}]})).unwrap();
+            db.apply_comments(1,&json!({"success":true,"comments":[{"id":7,"text":"<p>Original</p>","creatorId":42,"createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
             db.kv_set("current-user-id", "42").unwrap();
             let (write, method, path, body, response) = match surface {
                 0 => (
@@ -67,7 +67,7 @@ fn every_web_format_round_trips_queue_restart_and_existing_bearer_wire_contracts
                     "POST",
                     "/comments",
                     json!({"task_id":1,"text":html,"kind":"qa","content_type":"html"}),
-                    json!({"success":true,"comment":{"id":8,"text":html,"taskId":1,"creatorId":42}}),
+                    json!({"success":true,"comment":{"id":8,"text":html,"taskId":1,"creatorId":42,"createdAt":"2026-01-01T00:00:00Z"}}),
                 ),
                 1 => (
                     Write::CommentAction {
