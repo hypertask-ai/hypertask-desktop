@@ -288,12 +288,6 @@ impl Desktop {
                             this.reload();
                             this.poll_editor_results(cx);
                             this.poll_saved_comments(cx);
-                            if let Some(worker) = &this.worker {
-                                if worker.errors().try_iter().next().is_some() {
-                                    this.error =
-                                        Some("Sync unavailable — edits are saved locally".into());
-                                }
-                            }
                             cx.notify();
                         })
                         .is_err()
@@ -1803,9 +1797,14 @@ impl Render for Desktop {
                             .flex()
                             .flex_col()
                             .relative()
-                            .when_some(self.error.clone(), |d, error| {
-                                d.child(div().p(px(8.)).text_color(color(0xcf222e)).child(error))
-                            })
+                            .when_some(
+                                self.error.clone().or_else(|| {
+                                    self.worker.as_ref()?.status().message().map(str::to_owned)
+                                }),
+                                |d, error| {
+                                    d.child(div().p(px(8.)).text_color(color(0xcf222e)).child(error))
+                                },
+                            )
                             .child(body)
                             .when(self.footer, |d| d.child(self.footer(cx))),
                     )
