@@ -8,7 +8,7 @@ pub struct SessionRequest {
     pub sessions: Vec<Value>,
 }
 impl gpui::EventEmitter<SessionRequest> for AiSidebar {}
-struct SessionPending {
+pub(super) struct SessionPending {
     key: Option<String>,
     change: AiSessionWrite,
     chats: Vec<Chat>,
@@ -34,7 +34,7 @@ impl AiSidebar {
         }
         cx.notify();
     }
-    fn request_session(&mut self,change:AiSessionWrite,branch:Option<String>,send:Option<String>,cx:&mut Context<Self>) {
+    pub(super) fn request_session(&mut self,change:AiSessionWrite,branch:Option<String>,send:Option<String>,cx:&mut Context<Self>) {
         if self.session_pending.is_some() || self.active.is_some(){return;}
         if self.client.is_none(){return;}
         if change.request().is_err(){return;}
@@ -87,7 +87,7 @@ impl AiSidebar {
     fn chat_from_session(&self,session:&Session)->Chat {
         Chat{id:session.id.clone(),title:session.title.clone().unwrap_or_else(||"AI Chat".into()),messages:session.messages.iter().map(|message|ChatMessage{message:message.clone(),rich:if message.role=="human"{RichText::default()}else{markdown(&message.content,self.colors)}}).collect(),status:String::new(),error:None,persisted:true}
     }
-    fn create_scope(&self)->AiSessionWrite {
+    pub(super) fn create_scope(&self)->AiSessionWrite {
         AiSessionWrite::Create{task:self.scope.as_ref().and_then(|s|s.context.task_id),project:self.scope.as_ref().and_then(|s|s.context.project_id)}
     }
     pub fn branch_comment(&mut self,quote:String,window:&mut Window,cx:&mut Context<Self>){
@@ -96,14 +96,14 @@ impl AiSidebar {
         window.focus(&self.input.focus_handle(cx),cx);
     }
     pub fn delete_all_sessions(&mut self,cx:&mut Context<Self>){self.request_session(AiSessionWrite::DeleteAll,None,None,cx);}
-    fn rename_session(&mut self,cx:&mut Context<Self>){
+    pub(super) fn rename_session(&mut self,cx:&mut Context<Self>){
         let chat=&self.chats[self.selected];
         if !chat.persisted{return;}
         let title=self.rename_input.read(cx).content.trim().to_owned();
         if title.is_empty(){return;}
         self.request_session(AiSessionWrite::Rename{id:chat.id.clone(),title},None,None,cx);
     }
-    fn session_controls(&self,cx:&mut Context<Self>)->gpui::AnyElement {
+    pub(super) fn session_controls(&self,cx:&mut Context<Self>)->gpui::AnyElement {
         if !self.rename_open{return div().into_any_element();}
         div().id("ai-rename-dialog").p(px(16.)).bg(color(self.colors.card)).child("Rename chat").child(self.rename_input.clone())
             .child(div().id("ai-rename-save").p(px(6.)).cursor_pointer().child("Save").on_click(cx.listener(|this,_,_,cx|this.rename_session(cx))))
