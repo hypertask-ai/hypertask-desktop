@@ -8,12 +8,11 @@ impl Desktop {
         cx.subscribe_in(&sidebar,window,|this,sidebar,event:&crate::ai_sidebar::PreferenceRequest,window,cx|{
             use crate::ai_sidebar::PreferenceRequest;
             match event {
-                PreferenceRequest::Cache{user,settings}=>{let _=this.db.cache_web_preferences(*user,settings);}
+                PreferenceRequest::Cache{user,settings}=>{if !this.db.mutations().unwrap_or_default().iter().any(|row|row.kind=="web_preferences" && row.status!="failed"){let _=this.db.cache_web_preferences(*user,settings);}}
                 PreferenceRequest::Save{user,settings,updates}=>{
-                    let result=this.db.cache_web_preferences(*user,settings).and_then(|()|this.db.enqueue(Write::Preferences{updates:updates.clone()},chrono::Utc::now().timestamp()));
+                    let result=this.db.enqueue_web_preferences(*user,settings,updates.clone(),chrono::Utc::now().timestamp());
                     match result{
-                        Ok(id)=>{
-                            let key=this.db.mutations().unwrap().into_iter().find(|row|row.id==id).unwrap().client_id;
+                        Ok(key)=>{
                             sidebar.update(cx,|sidebar,cx|sidebar.preference_queued(key,cx));this.request_sync();
                             cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(100)).await;if !view.update(cx,|this,cx|this.poll_ai_preferences(cx)).unwrap_or(false){break;}}}).detach();
                         }

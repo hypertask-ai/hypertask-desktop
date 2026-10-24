@@ -103,7 +103,6 @@ fn incoming_stream_keeps_user_scroll_position_until_latest_is_clicked(
         let (send, updates) = mpsc::sync_channel(64);
         this.active = Some(ActiveTurn {
             ids: TurnIds::new(this.chats[0].id.clone()),
-            chat: 0,
             assistant: 0,
             updates,
             cancel_reply: None,

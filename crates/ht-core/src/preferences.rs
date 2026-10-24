@@ -36,6 +36,13 @@ pub fn merge(before:&Value,updates:&Value)->Value {
     settings
 }
 impl Db {
+    pub fn enqueue_web_preferences(&mut self,user:i64,settings:&Value,updates:Value,now:i64)->Result<String>{
+        self.transaction(|db|{
+            db.cache_web_preferences(user,settings)?;
+            let id=db.enqueue_in_transaction(crate::Write::Preferences{updates},now)?;
+            Ok(db.mutations()?.into_iter().find(|row|row.id==id).context("Missing preference mutation")?.client_id)
+        })
+    }
     pub fn web_preferences(&self)->Result<Value>{let user=self.current_user_id().context("Unauthorized")?;self.kv_get(&key(user))?.map(|s|serde_json::from_str::<Value>(&s)).transpose()?.context("Load preferences before changing them")}
     pub fn cache_web_preferences(&self,user:i64,settings:&Value)->Result<()> {ensure!(self.current_user_id()==Some(user) && settings.is_object(),"Wrong preference account");self.kv_set(&key(user),&settings.to_string())}
     pub(crate) fn optimistic_preferences(&self,payload:&Value)->Result<()> {if self.current_user_id()==payload["user_id"].as_i64(){let settings=merge(&self.web_preferences()?,&payload["updates"]);self.cache_web_preferences(payload["user_id"].as_i64().unwrap(),&settings)?;}Ok(())}

@@ -27,9 +27,9 @@ impl AiSessionWrite {
             }
             Self::Delete { id } => {
                 ensure!(valid_id(id), "Select a saved chat");
-                ("DELETE", format!("/api/ai-chat/delete-session?{}",url::form_urlencoded::Serializer::new(String::new()).append_pair("delete",id).finish()), json!({}))
+                ("DELETE", format!("/api/ai-chat/delete-session?{}",url::form_urlencoded::Serializer::new(String::new()).append_pair("delete",id).finish()), Value::Null)
             }
-            Self::DeleteAll => ("DELETE", "/api/ai-chat/delete-session?delete=ALL".into(), json!({})),
+            Self::DeleteAll => ("DELETE", "/api/ai-chat/delete-session?delete=ALL".into(), Value::Null),
         })
     }
     pub(crate) fn optimistic(&self, rows: &mut Vec<Value>) {
@@ -74,7 +74,7 @@ impl Db {
             AiSessionWrite::Create { .. } | AiSessionWrite::Rename { .. } => {
                 let session=&body["session"];
                 let id=session["id"].as_str().filter(|s|!s.is_empty()).context("Missing chat acknowledgement")?;
-                if let AiSessionWrite::Rename { id:expected, .. }=&change {ensure!(id==expected,"Wrong chat acknowledgement");}
+                if let AiSessionWrite::Rename { id:expected, title }=&change {ensure!(id==expected && session["title"].as_str()==Some(title.trim()),"Wrong chat acknowledgement");}
                 if let Some(user)=session["userId"].as_i64(){ensure!(Some(user)==self.current_user_id(),"Wrong chat owner");}
                 if matches!(change,AiSessionWrite::Create { .. }) {ensure!(session["messages"].is_array(),"Missing chat messages");}
                 if let Some(row)=rows.iter_mut().find(|row|row["id"]==id) {

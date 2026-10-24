@@ -148,7 +148,6 @@ enum Update {
 }
 struct ActiveTurn {
     ids: TurnIds,
-    chat: usize,
     assistant: usize,
     updates: Receiver<Update>,
     cancel_reply: Option<Receiver<Result<(), String>>>,
@@ -594,7 +593,6 @@ impl AiSidebar {
         self.scroll.scroll_to_bottom();
         self.active = Some(ActiveTurn {
             ids,
-            chat: self.selected,
             assistant,
             updates,
             cancel_reply: None,
@@ -624,9 +622,9 @@ impl AiSidebar {
             Ok(_) => {
                 active.stopping = true;
                 active.cancel_reply = Some(receive);
-                self.chats[active.chat].status = "Stopping…".into();
+                if let Some(chat)=self.chats.iter_mut().find(|chat|chat.id==active.ids.session_id).or_else(||self.session_pending.as_mut().and_then(|pending|pending.chats.iter_mut().find(|chat|chat.id==active.ids.session_id))){chat.status="Stopping…".into();}
             }
-            Err(error) => self.chats[active.chat].error = Some(error.to_string()),
+            Err(error) => {if let Some(chat)=self.chats.iter_mut().find(|chat|chat.id==active.ids.session_id){chat.error=Some(error.to_string());}},
         }
         cx.notify();
     }
@@ -644,7 +642,8 @@ impl AiSidebar {
         let Some(active) = &mut self.active else {
             return;
         };
-        let chat = &mut self.chats[active.chat];
+        let selected_id=self.chats[self.selected].id.clone();
+        let Some(chat)=self.chats.iter_mut().find(|chat|chat.id==active.ids.session_id).or_else(||self.session_pending.as_mut().and_then(|pending|pending.chats.iter_mut().find(|chat|chat.id==active.ids.session_id))) else{self.active=None;return;};
         let mut changed = false;
         let mut terminal = false;
         let mut content_changed = false;
@@ -712,7 +711,7 @@ impl AiSidebar {
                 &chat.messages[active.assistant].message.content,
                 self.colors,
             );
-            if active.chat == self.selected && follow_latest {
+            if active.ids.session_id == selected_id && follow_latest {
                 self.scroll.scroll_to_bottom();
             }
         }
@@ -739,7 +738,8 @@ impl AiSidebar {
         } else if modifiers.control && modifiers.shift && matches!(key, "o" | "j") {
             self.new_chat(window, cx);
         } else if key == "escape" {
-            if self.model_menu || self.history_menu || self.more_menu {
+            if self.model_menu || self.history_menu || self.more_menu || self.context_picker.scope_open {
+                self.context_picker.scope_open=false;
                 self.model_menu = false;
                 self.history_menu = false;
                 self.more_menu = false;
@@ -959,7 +959,7 @@ impl Render for AiSidebar {
         let status = if self
             .active
             .as_ref()
-            .is_some_and(|a| a.chat != self.selected)
+            .is_some_and(|a| a.ids.session_id != self.chats[self.selected].id)
         {
             "Replying in another chat…".into()
         } else {
@@ -1272,7 +1272,8 @@ impl Render for AiSidebar {
         let mut composer = div()
             .id("ai-composer")
             .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                if this.model_menu {
+                if this.model_menu || this.context_picker.scope_open {
+                    this.context_picker.scope_open=false;
                     this.model_menu = false;
                     cx.notify();
                 }
@@ -1313,6 +1314,7 @@ impl Render for AiSidebar {
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.model_menu = !this.model_menu;
+                        this.context_picker.scope_open=false;
                         if this.model_menu {this.retry_models(cx);}
                         cx.notify();
                     }))
@@ -1565,7 +1567,6 @@ mod tests {
             });
             sidebar.active = Some(ActiveTurn {
                 ids: TurnIds::new(sidebar.chats[0].id.clone()),
-                chat: 0,
                 assistant: 0,
                 updates,
                 cancel_reply: None,

@@ -10,7 +10,7 @@ pub(super) struct ContextPicker {
     teams: Vec<Value>,
     recent: Vec<i64>,
     ticket_enabled: bool,
-    scope_open: bool,
+    pub(super) scope_open: bool,
     scope_pending: Option<Receiver<Result<(i64,Vec<Value>,bool),String>>>,
     scope_error: bool,
     user: Option<i64>,

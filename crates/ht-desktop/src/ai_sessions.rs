@@ -12,7 +12,7 @@ impl gpui::EventEmitter<SessionRequest> for AiSidebar {}
 pub(super) struct SessionPending {
     key: Option<String>,
     change: AiSessionWrite,
-    chats: Vec<Chat>,
+    pub(super) chats: Vec<Chat>,
     history: Vec<Arc<Session>>,
     selected: usize,
     draft: String,
@@ -37,7 +37,7 @@ impl AiSidebar {
         cx.notify();
     }
     pub(super) fn request_session(&mut self,change:AiSessionWrite,branch:Option<String>,send:Option<String>,cx:&mut Context<Self>) {
-        if self.session_pending.is_some() || self.active.is_some(){return;}
+        if self.session_pending.is_some(){return;}
         if self.client.is_none(){return;}
         if change.request().is_err(){return;}
         let sessions=self.session_snapshots();
@@ -78,7 +78,13 @@ impl AiSidebar {
     pub fn session_queued(&mut self,key:String,cx:&mut Context<Self>){if let Some(pending)=&mut self.session_pending{pending.key=Some(key);}cx.notify();}
     pub fn session_key(&self)->Option<&str>{self.session_pending.as_ref()?.key.as_deref()}
     pub fn session_finished(&mut self,result:Value,window:&mut Window,cx:&mut Context<Self>) {
-        let Some(pending)=self.session_pending.take() else{return;};
+        let Some(mut pending)=self.session_pending.take() else{return;};
+        for before in &mut pending.chats{
+            if let Some(current)=self.chats.iter().find(|chat|chat.id==before.id){
+                let title=before.title.clone();*before=current.clone();
+                if let AiSessionWrite::Rename{id,title:requested}=&pending.change{if before.id==*id && before.title==requested.trim(){before.title=title;}}
+            }
+        }
         let current_draft=self.input.read(cx).content.to_string();let current_quotes=self.draft_quotes.clone();let unchanged=current_draft==pending.draft;
         if !result["error"].is_null() {
             self.chats=pending.chats;self.history=pending.history;self.selected=pending.selected;
@@ -92,6 +98,7 @@ impl AiSidebar {
                         if pending.context!=self.request_context(){
                             self.history.insert(0,Arc::new(session));self.chats=pending.chats;self.selected=pending.selected;cx.notify();return;
                         }
+                        if self.mode()!=DisplayMode::Fullscreen{self.context_picker.scope=Value::Null;self.include_context=true;}
                         let chat=self.chat_from_session(&session);
                         if self.chats[self.selected].persisted{self.chats.push(chat);self.selected=self.chats.len()-1;}else{self.chats[self.selected]=chat;}
                         self.history.insert(0,Arc::new(session));
@@ -155,7 +162,7 @@ mod tests {
             assert_eq!(sidebar.chats[sidebar.selected].id,original);assert_eq!(sidebar.input.read(cx).content.as_ref(),"Keep draft");assert!(sidebar.draft_quotes.is_empty());
             sidebar.branch_comment("<blockquote>Branch quote</blockquote>".into(),window,cx);
             sidebar.session_finished(json!({"success":true,"session":{"id":"server-chat","title":"Branch","messages":[]}}),window,cx);
-            assert_eq!(sidebar.chats[sidebar.selected].id,"server-chat");assert!(sidebar.chats[sidebar.selected].persisted);assert_eq!(sidebar.input.read(cx).content.as_ref(),"Branch quote");assert!(sidebar.prompt_body("Branch quote").contains("<blockquote>Branch quote</blockquote>"));
+            assert_eq!(sidebar.chats[sidebar.selected].id,"server-chat");assert!(sidebar.chats[sidebar.selected].persisted);assert_eq!(sidebar.input.read(cx).content.as_ref(),"│ Branch quote\n");assert!(sidebar.prompt_body(sidebar.input.read(cx).content.as_ref()).contains("<blockquote>Branch quote</blockquote>"));
         }).unwrap();
     }
     #[gpui::test]
@@ -193,7 +200,7 @@ mod recovery_tests {
                 sidebar.set_token(Some("mock-token".into()),cx);sidebar.restore_sessions(&db,cx);sidebar.restore_session_work(&db,cx);
                 assert_eq!(sidebar.session_key(),Some(key.as_str()));assert_eq!(sidebar.input.read(cx).content.as_ref(),"Original draft");
                 sidebar.session_finished(if status==200{json!({"success":true,"session":{"id":"durable-chat","title":"Branch","messages":[]}})}else{json!({"error":format!("HTTP {status}")})},window,cx);
-                assert_eq!(sidebar.input.read(cx).content.as_ref(),if status==200{"Branch quote"}else{"Original draft"});assert_eq!(sidebar.chats[sidebar.selected].persisted,status==200);
+                assert_eq!(sidebar.input.read(cx).content.as_ref(),if status==200{"│ Branch quote\n"}else{"Original draft"});assert_eq!(sidebar.chats[sidebar.selected].persisted,status==200);
             }
         }).unwrap();
     }
@@ -210,6 +217,29 @@ mod intent_tests {
             let db=Db::memory().unwrap();sidebar.scope=Some(Scope::load(&db,Screen::Board,15,None));let original=sidebar.chats[sidebar.selected].id.clone();sidebar.branch_comment("<blockquote>Old board quote</blockquote>".into(),window,cx);
             sidebar.scope=Some(Scope::load(&db,Screen::Board,16,None));sidebar.session_finished(json!({"success":true,"session":{"id":"old-board-chat","title":"Old board","messages":[]}}),window,cx);
             assert_eq!(sidebar.chats[sidebar.selected].id,original);assert_eq!(sidebar.input.read(cx).content.as_ref(),"Newer edits");assert!(sidebar.draft_quotes.is_empty());assert!(sidebar.history.iter().any(|s|s.id=="old-board-chat"));
+        }).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod streaming_tests {
+    use super::*;
+    #[gpui::test]
+    fn lifecycle_rollback_preserves_live_tokens_by_session_id_including_deleted_chat(cx:&mut gpui::TestAppContext){
+        let view=cx.add_window(|window,cx|{let focus=cx.focus_handle();AiSidebar::new(crate::theme::THEMES[1],Some("mock-token".into()),focus,window,cx)});
+        view.update(cx,|sidebar,window,cx|{
+            for change in [AiSessionWrite::Create{task:None,project:None},AiSessionWrite::Rename{id:"streaming".into(),title:"Renamed".into()},AiSessionWrite::Delete{id:"streaming".into()},AiSessionWrite::DeleteAll]{for status in [401,403,200]{
+                sidebar.set_token(Some("mock-token".into()),cx);sidebar.chats[0].id="streaming".into();sidebar.chats[0].persisted=true;sidebar.chats[0].title="Original".into();
+                sidebar.chats[0].messages.push(ChatMessage{message:Message{role:"assistant".into(),content:"Before".into()},rich:RichText::default()});
+                let(send,updates)=mpsc::sync_channel(64);sidebar.active=Some(ActiveTurn{ids:TurnIds::new("streaming".into()),assistant:0,updates,cancel_reply:None,stopping:false,client:Client::new("mock-token".into()).unwrap()});
+                sidebar.request_session(change.clone(),None,None,cx);assert!(sidebar.session_pending.is_some());send.send(Update::Event(Event::Content(" + newer tokens".into()))).unwrap();sidebar.poll(cx);
+                let result=if status!=200{json!({"error":format!("HTTP {status}")})}else{match change{AiSessionWrite::Create{..}=>json!({"success":true,"session":{"id":"new-chat","title":"New","messages":[]}}),AiSessionWrite::Rename{..}=>json!({"success":true,"session":{"id":"streaming","title":"Renamed"}}),_=>json!({"message":"Deleted"})}};
+                // Avoid a live history read in this mocked interaction.
+                if status==200 && matches!(change,AiSessionWrite::Delete{..}|AiSessionWrite::DeleteAll){sidebar.client=None;}
+                sidebar.session_finished(result,window,cx);sidebar.poll(cx);
+                if status!=200 || matches!(change,AiSessionWrite::Create{..}|AiSessionWrite::Rename{..}){assert_eq!(sidebar.chats.iter().find(|c|c.id=="streaming").unwrap().messages[0].message.content,"Before + newer tokens");}
+                else{assert!(!sidebar.chats.iter().any(|c|c.id=="streaming"));assert!(sidebar.active.is_none());}
+            }}
         }).unwrap();
     }
 }

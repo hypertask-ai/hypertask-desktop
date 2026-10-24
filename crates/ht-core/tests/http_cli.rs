@@ -292,7 +292,7 @@ fn ai_lifecycle_web_requests_send_bearer_and_exact_body_for_accept_and_refusal()
         for status in [200,401,403]{
             let(url,thread,receive)=server(status,"{}");let mut http=Http::with_base(&url,"desktop-ai-token".into()).unwrap();
             assert_eq!(http.mutate(method,&path,&body,"session-key").unwrap().status,status);
-            let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("{method} {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-ai-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
+            let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("{method} {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-ai-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));if method=="DELETE"{assert_eq!(wire.split_once("\r\n\r\n").unwrap().1,"");}else{assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);}thread.join().unwrap();
         }
     }
 }

@@ -32,3 +32,12 @@ fn model_preference_is_queued_team_scoped_and_rolls_back_refusals_after_restart(
         if status!=200{assert_eq!(db.web_preferences().unwrap(),before);}else{assert_eq!(db.web_preferences().unwrap()["aiModelPreferences"]["teams"]["team"]["aiChat"],"gemini-3.5-flash-lite");}
     }
 }
+
+#[test]
+fn duplicate_or_wrong_account_preference_request_cannot_replace_an_optimistic_pick(){
+    let mut db=Db::memory().unwrap();db.kv_set("current-user-id","42").unwrap();let before=json!({"playGifs":false,"aiModelPreferences":{"teams":{"team":{"aiChat":"gpt-6-luna"}}}});
+    let update=json!({"aiModelPreferences":{"aiChat":"gemini-3.5-flash-lite"},"aiModelPreferencesTeamId":"team"});
+    db.enqueue_web_preferences(42,&before,update.clone(),1).unwrap();let optimistic=db.web_preferences().unwrap();
+    assert!(db.enqueue_web_preferences(42,&before,update.clone(),2).is_err());assert_eq!(db.web_preferences().unwrap(),optimistic);
+    assert!(db.enqueue_web_preferences(99,&before,update,2).is_err());assert_eq!(db.web_preferences().unwrap(),optimistic);
+}
