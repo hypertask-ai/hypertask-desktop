@@ -164,3 +164,16 @@ fn active_board_read_uses_same_post_and_body_as_web_and_rejects_denial() {
         assert_eq!(board_views::load(&mut server, 15).is_ok(), status == 200);
     }
 }
+
+#[test]
+fn null_unsaved_fields_inherit_applied_settings_without_resetting_other_view_fields() {
+    let project = json!({"project_view":{"user_project_views":[{
+        "unsavedView":{"board_sorting_mode":null,"board_filters":{"addedFilters":[],"matchFilters":"ALL"}},
+        "appliedView":{"board_sorting_mode":"Title","board_empty_sections":"Hidden"}
+    }],"default_view":{"board_sorting_order":"Ascending"}}});
+    let settings = board_views::settings(&project);
+    assert_eq!(settings["board_sorting_mode"], "Title");
+    assert_eq!(settings["board_sorting_order"], "Ascending");
+    assert_eq!(settings["board_empty_sections"], "Hidden");
+    assert_eq!(settings["board_filters"]["matchFilters"], "ALL");
+}

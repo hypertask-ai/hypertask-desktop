@@ -1578,3 +1578,19 @@ mod tests {
 #[cfg(test)]
 #[path = "ai_message_tests.rs"]
 mod message_tests;
+
+#[cfg(test)]
+mod paged_history_tests {
+    use super::*;
+    #[gpui::test]
+    fn history_pages_append_without_duplicates_and_denied_transcripts_do_not_open_empty_chats(cx:&mut gpui::TestAppContext){
+        let view=cx.add_window(|window,cx|AiSidebar::new(crate::theme::THEMES[1],None,cx.focus_handle(),window,cx));
+        view.update(cx,|sidebar,_,cx|{
+            let summary=||Arc::new(Session{id:"saved".into(),title:Some("Saved".into()),messages:vec![],has_messages:Some(true)});
+            let(send,receive)=mpsc::channel();sidebar.history_pending=Some(receive);send.send(Ok((vec![summary()],Some("cursor".into())))).unwrap();sidebar.poll_history(cx);
+            assert_eq!(sidebar.history_next.as_deref(),Some("cursor"));
+            let(send,receive)=mpsc::channel();sidebar.history_append=true;sidebar.history_pending=Some(receive);send.send(Ok((vec![summary()],None))).unwrap();sidebar.poll_history(cx);assert_eq!(sidebar.history.len(),1);assert!(sidebar.history_next.is_none());
+            let before=sidebar.chats.len();let(send,receive)=mpsc::channel();sidebar.chat_pending=Some(receive);send.send(Err("HTTP 403: History denied".into())).unwrap();sidebar.poll_history(cx);assert_eq!(sidebar.chats.len(),before);assert_eq!(sidebar.history_error.as_deref(),Some("HTTP 403: History denied"));
+        });
+    }
+}

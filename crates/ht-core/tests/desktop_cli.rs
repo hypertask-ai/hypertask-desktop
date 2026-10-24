@@ -25,6 +25,7 @@ struct Server {
     create_failure: bool,
     writer_failure: bool,
     saved_status: u16,
+    create_status: u16,
     split: bool,
     refuse_second: bool,
     other_user: bool,
@@ -36,6 +37,7 @@ impl Default for Server {
             create_failure: false,
             writer_failure: false,
             saved_status: 200,
+            create_status: 200,
             split: false,
             refuse_second: false,
             other_user: false,
@@ -78,6 +80,7 @@ impl Transport for Server {
                 },
             }),
             "/api/tasks/createGlobally" => {
+                if self.create_status!=200{return Ok(Response{status:self.create_status,body:json!({"message":"Unauthorized"})});}
                 assert_eq!(body["projectId"], 7283);
                 assert_eq!(body["sectionId"], 11);
                 if self.create_failure {
@@ -431,4 +434,15 @@ fn writer_custom_fields_survive_json_and_html_without_leaking_markers_into_descr
     assert_eq!(drafts[0].custom_fields,fields.as_array().unwrap().clone());
     let html=format!("<h1 id='ai-generated-task-title'>Task</h1><span id='ai-generated-task-custom-fields'>{fields}</span><p>Body</p>");
     let drafts=writer_drafts(&json!(html)).unwrap();assert_eq!(drafts[0].custom_fields,fields.as_array().unwrap().clone());assert_eq!(drafts[0].description,"<p>Body</p>");
+}
+
+#[test]
+fn compose_web_create_refusal_never_reports_success_or_creates_a_task(){
+    for status in [401,403]{
+        let mut db=db();let id=db.enqueue(Write::ComposeTask{project_id:7283,text:"Keep my note".into(),time_zone:"UTC".into()},100).unwrap();
+        let key=db.mutations().unwrap()[0].client_id.clone();let mut server=Server{create_status:status,..Default::default()};
+        assert_eq!(db.drain_once(&mut server,100).unwrap(),Drain::Failed(id));assert!(db.task(9).unwrap().is_none());
+        let result:Value=serde_json::from_str(&db.kv_get(&format!("compose-result:{key}")).unwrap().unwrap()).unwrap();assert!(result["tasks"].is_null());assert!(result["error"].is_string());
+        assert_eq!(db.drain_once(&mut server,1000).unwrap(),Drain::Empty);assert_eq!(server.calls.iter().filter(|c|c.0=="/api/tasks/createGlobally").count(),1);
+    }
 }
