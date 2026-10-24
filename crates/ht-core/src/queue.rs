@@ -598,7 +598,8 @@ impl Db {
                     if !row.payload_json["before"].is_null() {
                         if let Some(task)=row.payload_json["change"]["PositionTask"]["task"].as_i64(){
                             let mut current=db.raw("Task",&json!(task))?.context("task is not cached")?;
-                            for field in ["sectionId","section","ranking"]{current[field]=row.payload_json["before"][field].clone();}
+                            for field in ["sectionId","ranking"]{current[field]=row.payload_json["before"][field].clone();}
+                            current["section"]=json!(row.payload_json["before"]["section"].as_str().unwrap_or(""));
                             db.upsert_task(&current)?;
                         }else{db.upsert_task(&row.payload_json["before"])?;}
                         db.reapply_pending()?;
