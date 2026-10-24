@@ -31,6 +31,9 @@ mod sessions;
 pub use sessions::SessionRequest;
 use sessions::SessionPending;
 
+#[path = "ai_context.rs"]
+mod context_picker;
+
 #[path = "ai_presentation.rs"]
 mod presentation;
 pub use presentation::DisplayMode;
@@ -161,6 +164,7 @@ pub struct AiSidebar {
     client: Option<Client>,
     scope: Option<Scope>,
     include_context: bool,
+    context_picker: context_picker::ContextPicker,
     chats: Vec<Chat>,
     selected: usize,
     model: usize,
@@ -248,6 +252,7 @@ impl AiSidebar {
             focus: cx.focus_handle(),
             previous_focus: Some(workspace_focus),
             skills: skills::Skills::new(token.clone()),
+            context_picker: context_picker::ContextPicker::new(token.clone()),
             client: token.and_then(|t| Client::new(t).ok()),
             scope: None,
             include_context: true,
@@ -290,6 +295,7 @@ impl AiSidebar {
         self.input
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.skills = skills::Skills::new(token.clone());
+        self.context_picker=context_picker::ContextPicker::new(token.clone());
         self.client = token.and_then(|t| Client::new(t).ok());
         cx.notify();
     }
@@ -513,6 +519,7 @@ impl AiSidebar {
             self.request_session(self.create_scope(),None,Some(text),cx);
             return;
         }
+        let context=self.request_context();
         let chat = &mut self.chats[self.selected];
         chat.error = None;
         let Some(client) = self.client.clone() else {
@@ -522,18 +529,8 @@ impl AiSidebar {
             return;
         };
         let ids = TurnIds::new(chat.id.clone());
-        let mut context = self
-            .scope
-            .as_ref()
-            .map(|s| s.context.clone())
-            .unwrap_or_default();
-        if !self.include_context {
-            context.project_id = None;
-            context.task_id = None;
-            context.view_name = None;
-        }
         let history: Vec<Message> = chat.messages.iter().map(|m| m.message.clone()).collect();
-        let body = ai_chat::request(
+        let mut body = ai_chat::request(
             &message,
             &ids,
             &ai_chat::session_id(),
@@ -542,6 +539,8 @@ impl AiSidebar {
             self.scope.as_ref().and_then(|s| s.team_id.as_deref()),
             &history,
         );
+        body["context_list"]=serde_json::json!(self.context_picker.selected);
+        if self.context_picker.scope=="ticket" && context.task_id.is_some(){body["default_context"]["scope"]=serde_json::json!("ticket");}
         let (send, updates) = mpsc::sync_channel(64);
         let worker_client = client.clone();
         if let Err(error) = thread::Builder::new()
@@ -620,6 +619,7 @@ impl AiSidebar {
 
     fn poll(&mut self, cx: &mut Context<Self>) {
         self.poll_skills(cx);
+        self.poll_context(cx);
         self.poll_history(cx);
         let follow_latest = !self.away_from_latest();
         let Some(active) = &mut self.active else {
@@ -1067,6 +1067,7 @@ impl Render for AiSidebar {
             .flex()
             .flex_col()
             .track_focus(&self.focus)
+            .capture_key_down(cx.listener(Self::context_key))
             .capture_key_down(cx.listener(Self::skill_key))
             .on_key_down(cx.listener(Self::key_down))
             .relative();
@@ -1309,14 +1310,8 @@ impl Render for AiSidebar {
                 ),
             );
         }
-        let label = if self.include_context {
-            self.scope
-                .as_ref()
-                .map(|s| s.label.clone())
-                .unwrap_or_else(|| "Current board".into())
-        } else {
-            "All boards".into()
-        };
+        composer=composer.child(self.context_menu(cx));
+        let label=self.context_label();
         let controls = div()
             .flex()
             .items_center()
@@ -1346,19 +1341,11 @@ impl Render for AiSidebar {
                     .gap(px(5.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.include_context = !this.include_context;
-                        cx.notify();
+                        this.open_scopes(cx);
                     }))
                     .child(icon("columns-2", t.muted))
                     .child(div().truncate().child(label))
-                    .child(icon(
-                        if self.include_context {
-                            "x"
-                        } else {
-                            "chevron-down"
-                        },
-                        t.muted,
-                    )),
+                    .child(icon("chevron-down",t.muted)),
             )
             .child(
                 div()
@@ -1377,7 +1364,14 @@ impl Render for AiSidebar {
                         div().child(icon("send", t.muted))
                     }),
             );
-        composer = composer.child(controls);
+        composer = composer.child(controls).child(div().id("ai-add-context").cursor_pointer().text_size(px(12.)).child("Add context").on_click(cx.listener(|this,_,window,cx|{
+            use gpui::EntityInputHandler;
+            this.input.update(cx,|input,cx|{let prefix=if input.content.is_empty(){"@"}else{" @"};input.replace_text_in_range(None,prefix,window,cx);});
+            window.focus(&this.input.focus_handle(cx),cx);cx.notify();
+        })));
+        for(index,context)in self.context_picker.selected.iter().enumerate(){
+            composer=composer.child(div().id(("ai-attached-context",index)).text_size(px(12.)).child(context["name"].as_str().unwrap_or("").to_owned()).child(div().id(("ai-remove-context",index)).cursor_pointer().child("×").on_click(cx.listener(move|this,_,_,cx|{this.context_picker.selected.remove(index);cx.notify();}))));
+        }
         if self.mode() == DisplayMode::Fullscreen {
             composer = composer.w_full().max_w(px(800.)).mx_auto();
         }

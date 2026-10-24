@@ -183,6 +183,7 @@ impl Desktop {
             cx.new(|cx| {
                 let mut sidebar = AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx);
                 sidebar.restore_presentation(&db);
+                sidebar.restore_context(&db);
                 sidebar
             })
         });
@@ -191,6 +192,7 @@ impl Desktop {
             .map(|sidebar| cx.observe(sidebar, |this, sidebar, cx| {
                 let sidebar = sidebar.read(cx);
                 this.shell.ai_open = sidebar.is_open();
+                if let Err(error)=sidebar.persist_context(&this.db){this.error=Some(error.to_string());}
                 if let Err(error) = sidebar.persist_presentation(&this.db) { this.error = Some(error.to_string()); }
                 cx.notify();
             }));

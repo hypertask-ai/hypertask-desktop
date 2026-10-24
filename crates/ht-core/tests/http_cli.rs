@@ -296,3 +296,10 @@ fn ai_lifecycle_web_requests_send_bearer_and_exact_body_for_accept_and_refusal()
         }
     }
 }
+
+#[test]
+fn ai_context_web_search_and_flags_send_bearer_and_no_cookie_on_accept_and_refusal(){
+    for path in [ht_core::ai_context::mention_path("é & team",Some(15)),ht_core::ai_context::mention_path("",None),"/api/flags".into()] {
+        for status in [200,401,403]{let(url,thread,receive)=server(status,"[]");let mut http=Http::with_base(&url,"desktop-context-token".into()).unwrap();assert_eq!(http.get(&path).unwrap().status,status);let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("GET {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-context-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));thread.join().unwrap();}
+    }
+}
