@@ -12,6 +12,7 @@ pub mod queue;
 pub mod realtime;
 pub mod sync;
 mod task_patch;
+mod shell_write;
 pub mod worker;
 
 pub use comment_write::CommentWrite;
@@ -20,6 +21,7 @@ pub use http::{Http, Transport};
 pub use queue::{Drain, Write};
 pub use sync::Sync;
 pub use task_patch::TaskPatch;
+pub use shell_write::ShellWrite;
 pub use worker::Worker;
 
 pub type Result<T> = anyhow::Result<T>;

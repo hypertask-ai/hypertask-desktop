@@ -7,6 +7,7 @@ use std::sync::mpsc;
 #[derive(Clone, Debug)]
 struct Request {
     serial: u64,
+    client_id: Option<String>,
     invite: bool,
     method: &'static str,
     path: String,
@@ -719,7 +720,8 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         self.shell.settings_state.serial += 1;
-        let request = Request {
+        let mut request = Request {
+            client_id: None,
             invite: (self.shell.invite || !self.shell.invite_emails.is_empty())
                 && method == "POST"
                 && path.ends_with("/members"),
@@ -740,6 +742,16 @@ impl Desktop {
         {
             return;
         }
+        if method != "GET" {
+            let queued = ht_core::ShellWrite::new(self.db.current_user_id().unwrap_or(0), method, &request.path, request.body.clone())
+                .and_then(|write| self.db.enqueue(Write::Shell { request: write }, chrono::Utc::now().timestamp()))
+                .and_then(|id| self.db.mutations()?.into_iter().find(|row| row.id == id).ok_or_else(|| anyhow::anyhow!("queued shell write missing")));
+            match queued {
+                Ok(row) => request.client_id = Some(row.client_id),
+                Err(error) => { self.shell.settings_state.error = Some(error.to_string()); cx.notify(); return; }
+            }
+            if let Some(worker) = &self.worker { let _ = worker.handle().wake(); }
+        }
         self.shell.settings_state.pending = Some(request.clone());
         self.shell.settings_state.error = None;
         self.shell.settings_state.message = None;
@@ -747,6 +759,20 @@ impl Desktop {
         {
             let _ = window;
             self.shell.settings_state.requests.push(request);
+            cx.notify();
+            return;
+        }
+        #[cfg(not(test))]
+        if method != "GET" {
+            cx.spawn_in(window, async move |view, cx| {
+                loop {
+                    cx.background_executor().timer(Duration::from_millis(100)).await;
+                    match view.update_in(cx, |this, window, cx| this.poll_settings_write(window, cx)) {
+                        Ok(true) => (),
+                        _ => break,
+                    }
+                }
+            }).detach();
             cx.notify();
             return;
         }
@@ -785,6 +811,19 @@ impl Desktop {
         }
     }
 
+    fn poll_settings_write(&mut self, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(request) = self.shell.settings_state.pending.clone().filter(|request| request.client_id.is_some()) else { return false; };
+        match self.db.take_shell_result(request.client_id.as_deref().unwrap()) {
+            Ok(Some(result)) => {
+                let result = if let Some(error) = result["error"].as_str() { Err(error.to_owned()) } else { Ok(result["value"].clone()) };
+                self.settings_result(request, result, window, cx);
+                false
+            }
+            Ok(None) => true,
+            Err(error) => { self.settings_result(request, Err(error.to_string()), window, cx); false }
+        }
+    }
+
     fn settings_result(
         &mut self,
         request: Request,
@@ -810,6 +849,9 @@ impl Desktop {
                 s.error = Some(error);
             }
             Ok(value) if request.method == "GET" => {
+                if request.path == "/user/context" && let Some(id) = value["user"]["id"].as_i64().filter(|id| *id > 0) {
+                    let _ = self.db.kv_set("current-user-id", &id.to_string());
+                }
                 if request.section == "general" && !s.draft.focus_handle(cx).is_focused(window) {
                     s.draft.update(cx, |input, cx| {
                         input.set_content(
@@ -1575,9 +1617,24 @@ mod tests {
             .unwrap()
             .expect("input must issue a request");
         view.update(cx, |this, window, cx| {
-            this.settings_result(request.clone(), Ok(result), window, cx)
-        })
-        .unwrap();
+            if request.method == "GET" {
+                this.settings_result(request.clone(), Ok(result), window, cx);
+            } else {
+                struct Server { method: &'static str, path: String, body: Option<Value>, reply: Value }
+                impl ht_core::Transport for Server {
+                    fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> { assert_eq!(path, "/user/context"); Ok(ht_core::http::Response { status:200, body:serde_json::json!({"success":true,"user":{"id":1}}) }) }
+                    fn post(&mut self, path: &str, body: &Value, key: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> { self.mutate("POST", path, body, key) }
+                    fn mutate(&mut self, method: &str, path: &str, body: &Value, key: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                        assert_eq!(method, self.method); assert_eq!(path, self.path); assert_eq!(body, self.body.as_ref().unwrap_or(&Value::Null)); assert!(!key.is_empty());
+                        Ok(ht_core::http::Response { status:200, body:self.reply.clone() })
+                    }
+                }
+                let mut server = Server { method:request.method, path:request.path.clone(), body:request.body.clone(), reply:result };
+                let drained = this.db.drain_once(&mut server, chrono::Utc::now().timestamp()).unwrap();
+                assert!(matches!(drained, ht_core::Drain::Applied(_)), "{drained:?}");
+                assert!(!this.poll_settings_write(window, cx));
+            }
+        }).unwrap();
         request
     }
 
@@ -2254,7 +2311,7 @@ mod mutation_tests {
         .unwrap();
         click(view, &mut cx, "settings.board.archive");
         click(view, &mut cx, "settings.board.confirm-archive");
-        let request = reply(view, &mut cx, serde_json::json!({"success": true}));
+        let request = reply(view, &mut cx, serde_json::json!({"success": true, "project":{"id":15,"status":"Archive"}}));
         assert_eq!(request.body.unwrap()["status"], "Archive");
         measured(view, &mut cx, "inbox.tabs");
         view.read_with(&cx, |this, _| {
@@ -2536,6 +2593,7 @@ mod return_tests {
             });
             let mut visual = gpui::VisualTestContext::from_window(view.into(), cx);
             view.read_with(&visual, |this, _| assert!(this.shell.settings)).unwrap();
+            crate::ui::shell::tests::draw(view, &mut visual);
             visual.simulate_keystrokes("escape");
             view.read_with(&visual, |this, _| {
                 assert!(!this.shell.settings);

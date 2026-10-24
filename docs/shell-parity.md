@@ -123,3 +123,36 @@ F438 hard reset includes browser-account-wide logout, FCM device removal and
 `POST /api/auth/force-signout` (`hooks/MultiPages/HTC/useSignout.ts:36-83`,
 `app/api/auth/force-signout/route.ts:9-10`: cookie-token `revokeSessionToken`).
 Clearing queued native edits alone would not implement that contract.
+
+## shell2 implemented entry points and queue discipline
+
+- P1 F197/F210 palette entry points open the existing Feedback/Invite forms;
+  unavailable feedback delivery and full membership administration remain B5/B18.
+- F252/F304 open Calendar/Learn without changing their values. The web command
+  payload selects a section, not a control focus target (`AllCommands.ts:630-635,994-999`).
+- F334 opens Board settings; F335 opens the command's exact help URL
+  `https://hypertask.ai/help` (not the different Learn-resource URL);
+  F337 toggles/persists Quick Tips. F343 is the web's CLI **modal**, with
+  install/sign-in copy, docs, Close/Escape/outside dismissal, not a redirect
+  mislabeled as a modal. Its MCP link opens the already-supported instructions;
+  token/client management is still B12.
+- F434 now supports `--screen settings` direct entry. In-session settings never
+  change the underlying workspace/search/table/task context; direct close uses
+  the remembered cached board or Inbox/home when absent/invalid.
+- Supported section commands and keyboard-shortcut help reuse the existing
+  settings/shortcut components. No cookie-only per-control commands are shown.
+- All settings/invite writes now enter `Db::enqueue(Write::Shell)` rather than
+  starting an HTTP write thread. `ShellWrite` only accepts the already-supported
+  personal-bearer MCP method/path pairs. Queue draining checks `/user/context`
+  against the frozen account id before any mutation, preserving idempotency,
+  retries, restart durability and permanent errors. Successful acknowledgements
+  are consumed once by the original form; no server success is inferred from
+  enqueue. One-time webhook receipts are removed when consumed, never logged.
+  Existing GPUI form fixtures now drain the actual queue before showing success.
+
+Bearer route evidence for the allowlist (relative to web `src`):
+`lib/mcp/operations/user/profile/operation.ts:40-47`,
+`lib/mcp/operations/skills/operation.ts:71-87`,
+`lib/mcp/operations/projects/archive/operation.ts:20-23,88`,
+`lib/mcp/operations/webhooks/operation.ts:150-154,293-294`;
+these use `validateMcpRouteAuth` (aliased as `validateMcpAuth`), not web cookies.

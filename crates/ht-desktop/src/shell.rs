@@ -740,6 +740,7 @@ pub(super) mod tests {
         cx.update(crate::input::init);
         let view = cx.open_window(size(px(1440.), px(900.)), |window, cx| {
             let mut db = Db::memory().unwrap();
+            db.kv_set("current-user-id", "1").unwrap();
             db.apply_response(&serde_json::json!({"success": true, "projects": [
                 {"id": 15, "title": "Alpha", "name": "Alpha", "status": "Normal", "ownerId": 1},
                 {"id": 16, "title": "Beta", "name": "Beta", "status": "Normal", "ownerId": 1}
@@ -1317,6 +1318,7 @@ impl Desktop {
         self.shell.invite = false;
         self.shell.invite_emails.clear();
         self.shell.shortcuts = false;
+        self.shell.cli = false;
         self.shell.reset_destination();
         self.shell.search_board = None;
         self.shell

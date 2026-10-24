@@ -18,6 +18,7 @@ impl Desktop {
         self.shell
             .invite_input
             .update(cx, |input, cx| input.set_content(String::new(), cx));
+        self.settings_request("GET", "/user/context".into(), None, window, cx);
         window.focus(&self.shell.invite_input.focus_handle(cx), cx);
         cx.notify();
     }

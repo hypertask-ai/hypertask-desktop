@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Write {
+    Shell { request: crate::ShellWrite },
     EditorImprove { task_id:i64, command:crate::ImproveCommand, text:String },
     DiscardDraft { task_id:i64, draft_type:crate::DraftType },
     TaskTitle {
@@ -77,6 +78,10 @@ impl Db {
     pub(crate) fn enqueue_in_transaction(&mut self,write:Write,now:i64)->Result<i64> {
         let db=self;
         let (entity, kind, payload) = match &write {
+            Write::Shell { request } => {
+                request.validate()?;
+                ("shell".into(), "shell_write", serde_json::to_value(request)?)
+            }
             Write::EditorImprove {task_id,command,text}=>{
                 let task=db.task(*task_id)?.context("task is not cached")?;
                 ensure!(!text.trim().is_empty(),"editor content must not be empty");
@@ -152,6 +157,7 @@ impl Db {
 
     fn apply_optimistic(&self, id: i64, kind: &str, payload: &Value, now: i64) -> Result<()> {
         match kind {
+            "shell_write" => (),
             "task_title" | "task_section" => {
                 let mut task = self
                     .raw("Task", &payload["task_id"])?
@@ -338,10 +344,24 @@ impl Db {
                 json!({"task_id":row.payload_json["task_id"],"text":row.payload_json["text"],"kind":"qa","content_type":"html"}),
             ),
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
-            "comment_action" | "comment_draft" => ("", Value::Null),
+            "comment_action" | "comment_draft" | "shell_write" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
-        let response = if row.kind == "draft_discard" {
+        let response = if row.kind == "shell_write" {
+            let request: crate::ShellWrite = serde_json::from_value(row.payload_json.clone())?;
+            request.validate()?;
+            let (method, path, body) = request.request();
+            match transport.get("/user/context") {
+                Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true => {
+                    if response.body["user"]["id"] == request.user_id {
+                        transport.mutate(method, path, body, &row.client_id)
+                    } else {
+                        Ok(Response { status:403, body:json!({"success":false,"error":"Settings write belongs to another account"}) })
+                    }
+                }
+                response => response,
+            }
+        } else if row.kind == "draft_discard" {
             crate::editor_queue::discard(transport,&row.payload_json,&row.client_id)
         } else if row.kind == "comment_draft" {
             if self.current_user_id() != row.payload_json["user_id"].as_i64() {
@@ -382,6 +402,9 @@ impl Db {
             db.conn.execute("UPDATE mutation_queue SET status=?,last_error=?,next_attempt_at=?,lease_until=NULL WHERE id=? AND attempts=?",
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
+                if row.kind == "shell_write" {
+                    db.kv_set(&format!("shell-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
+                }
                 db.fail_editor(row.id,&row.kind,&row.payload_json,&result.1)?;
                 if row.kind == "comment_action" {
                     db.upsert_comment(row.payload_json["task_id"].as_i64().context("missing task id")?, &row.payload_json["before"])?;
@@ -410,6 +433,15 @@ impl Db {
             let active: bool = db.conn.query_row("SELECT EXISTS(SELECT 1 FROM mutation_queue WHERE id=? AND attempts=? AND status='inflight')", params![row.id,row.attempts], |r| r.get(0))?;
             if !active { return Ok(()); }
             match row.kind.as_str() {
+                "shell_write" => {
+                    // Preserve the acknowledgement until the initiating form consumes it.
+                    db.kv_set(&format!("shell-result:{}", row.client_id), &json!({"value":body}).to_string())?;
+                    if row.payload_json["path"] == "/projects/archive" {
+                        let project = body.get("project").context("archive response missing project")?;
+                        ensure!(project["id"] == row.payload_json["body"]["project_id"], "archive returned another board");
+                        db.upsert("Project", project)?;
+                    }
+                }
                 "editor_improve"|"draft_discard"=>db.resolve_editor(row.id,&row.kind,&row.payload_json,body)?,
                 "comment_draft" => db.resolve_comment_draft(&row.payload_json, body)?,
                 "comment_action" => db.resolve_comment_action(&row.payload_json, body)?,
