@@ -34,17 +34,38 @@ try {
   const web = await page.evaluate(() => Object.fromEntries(
     ['footer', 'important', 'agents'].map(id => [id, document.getElementById(id).getBoundingClientRect().width]),
   ));
+  const diagnostics = await page.evaluate(async fonts => {
+    for (const [family, weights] of Object.entries(fonts)) {
+      for (const [weight, data] of Object.entries(weights)) {
+        const face = new FontFace(family, `url(data:font/ttf;base64,${data})`, { weight });
+        document.fonts.add(await face.load());
+      }
+    }
+    const measure = () => Object.fromEntries(['footer', 'important', 'agents'].map(id => [id, document.getElementById(id).getBoundingClientRect().width]));
+    const result = {};
+    for (const family of ['WebFullStatic', 'WebLatinStatic']) {
+      document.body.style.fontFamily = family;
+      result[family] = measure();
+    }
+    document.body.style.fontFamily = 'WebPlex';
+    document.body.style.fontKerning = 'none';
+    result.withoutKerning = measure();
+    return result;
+  }, Object.fromEntries([
+    ['WebFullStatic', 'crates/ht-desktop/assets/fonts'],
+    ['WebLatinStatic', 'evidence/web-fonts/latin-probe'],
+  ].map(([family, path]) => [family, Object.fromEntries([400, 600].map(weight => [weight, readFileSync(`${path}/IBMPlexSans-${weight}.ttf`).toString('base64')]))])));
   const inbox = JSON.parse(readFileSync('evidence/layout/parity/inbox.json', 'utf8'));
   const elements = Object.fromEntries(inbox.elements.map(e => [e.key, e]));
   const probes = [
     ['footer', 'footer.text', 106],
     ['important', 'inbox.tab.0', 96],
     ['agents', 'inbox.tab.1', 72],
-  ].map(([id, key, frozenWidth]) => ({ key, webWidth: web[id], nativeWidth: elements[key].w, frozenWidth }));
+  ].map(([id, key, frozenWidth]) => ({ key, webWidth: web[id], nativeWidth: elements[key].w, frozenWidth, fullStaticWidth: diagnostics.WebFullStatic[id], latinStaticWidth: diagnostics.WebLatinStatic[id], withoutKerningWidth: diagnostics.withoutKerning[id] }));
   const receipt = { font: url, digest, width: 1920, height: 1009, scale: 1, probes };
   writeFileSync('evidence/layout/font-metrics.json', JSON.stringify(receipt, null, 2) + '\n');
+  for (const probe of probes) console.log(`FONT_METRIC ${JSON.stringify(probe)}`);
   for (const probe of probes) {
-    console.log(`FONT_METRIC ${JSON.stringify(probe)}`);
     assert.ok(Math.abs(probe.webWidth - probe.nativeWidth) <= 1.5, JSON.stringify(probe));
   }
   console.log('LAYOUT_WEB_FONT_METRICS_OK');
