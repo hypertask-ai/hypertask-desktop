@@ -1519,7 +1519,7 @@ impl Desktop {
                     .unwrap_or_else(|| "No tags".into()),
             ),
         ];
-        if let Some(date) = task.extra["startDate"].as_str() { rows.push(("Start date", short_date(date))); }
+        if let Some(date) = task.extra.get("startDate").and_then(|value| value.as_str()) { rows.push(("Start date", short_date(date))); }
         let row_count = rows.len();
         div()
             .w(px(312.))
@@ -1567,7 +1567,7 @@ impl Desktop {
                     .flex()
                     .items_start()
                     .gap(px(20.))
-                    .when(matches!(label, "Assignees" | "Agents" | "Priority" | "Due date" | "Tags" | "Task size" | "ID"), |d| {
+                    .when(matches!(label, "Assignees" | "Agents" | "Priority" | "Due date" | "Start date" | "Tags" | "Task size" | "ID"), |d| {
                         d.cursor_pointer().on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.open_task_field(label, window, cx);
@@ -1620,6 +1620,7 @@ impl Desktop {
                     .layout_key(&self.layout, format!("task.meta.{i}"), None)
             }))
             .child(self.task_time_row(cx))
+            .child(self.task_relations_rows(task, cx))
             .when(self.moving, |d| {
                 d.child(
                     div()
@@ -1794,6 +1795,7 @@ impl Render for Desktop {
         }
         if self.screen==Screen::Board {self.load_board_views(cx);self.load_archived_on_board(cx);}
         self.load_task_time(cx);
+        self.load_task_relations(cx);
         self.tick_task_time(cx);
         self.prepare_comment_readers(window,cx);
         self.restore_comment_draft(cx);

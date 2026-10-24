@@ -21,6 +21,7 @@ pub(super) enum Modal {
     DueDate,
     WaitingOn,
     Recurrence,
+    Relation(ht_core::RelationKind),
     Delete,
 }
 #[derive(Clone)]
@@ -40,6 +41,7 @@ enum ChoiceAction {
     DueDate(i64),
     WaitingOn(Option<i64>),
     Recurrence(Option<&'static str>),
+    Relation(usize),
     Task(i64),
     Board(i64),
     Delete,
@@ -74,6 +76,7 @@ impl Interaction {
         });
         cx.observe(&query, |this, _, cx| {
             this.interaction.choice = 0;
+            if matches!(this.interaction.modal, Some(Modal::Relation(_))) { this.search_relation_tasks(cx); }
             cx.notify();
         })
         .detach();
@@ -732,6 +735,7 @@ impl Desktop {
             .query
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.interaction.modal = Some(modal);
+        if matches!(modal, Modal::Relation(_)) { self.search_relation_tasks(cx); }
         self.interaction.choice = 0;
         self.interaction
             .modal_scroll
@@ -894,10 +898,11 @@ impl Desktop {
                     action: ChoiceAction::Column(c.id),
                 })
                 .collect(),
+            Some(Modal::Relation(_)) => self.task_actions.relations.iter().enumerate().map(|(index,task)| Choice { name:format!("{} {}",task["ticketNumber"].as_str().unwrap_or(""),task["title"].as_str().unwrap_or("")),action:ChoiceAction::Relation(index) }).collect(),
             Some(Modal::Recurrence) => {
                 let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return vec![]; };
                 let mut rows = vec![];
-                if task.extra["recurrence"].is_string() { rows.push(Choice { name:"Don't repeat".into(), action:ChoiceAction::Recurrence(None) }); }
+                if task.extra.get("recurrence").is_some_and(|value| value.is_string()) { rows.push(Choice { name:"Don't repeat".into(), action:ChoiceAction::Recurrence(None) }); }
                 rows.extend([("Daily","Every day"),("Weekdays","Every weekday (Mon–Fri)"),("Weekly","Every week"),("Biweekly","Every 2 weeks"),("Monthly","Every month")].into_iter().map(|(id,name)|Choice {name:name.into(),action:ChoiceAction::Recurrence(Some(id))}));
                 rows
             }
@@ -995,7 +1000,7 @@ impl Desktop {
         .filter(|c| {
             matches!(
                 self.interaction.modal,
-                Some(Modal::Commands | Modal::Search | Modal::LocalSearch)
+                Some(Modal::Commands | Modal::Search | Modal::LocalSearch | Modal::Relation(_))
             ) || c.name.to_lowercase().contains(&query.to_lowercase())
         })
         .collect()
@@ -1019,11 +1024,14 @@ impl Desktop {
             }
         }
         let query = self.interaction.query.read(cx).content.trim().to_owned();
-        let keep_open = matches!(choice.action, ChoiceAction::WaitingOn(_)) || matches!(self.interaction.modal,Some(Modal::Assign|Modal::Tags))
+        let keep_open = matches!(choice.action, ChoiceAction::WaitingOn(_) | ChoiceAction::Relation(_)) || matches!(self.interaction.modal,Some(Modal::Assign|Modal::Tags))
             && matches!(choice.action,ChoiceAction::Assignee(_)|ChoiceAction::Agent(_)|ChoiceAction::Label(_))
             && !(self.screen == Screen::Board && !self.interaction.bulk.is_empty());
         if !keep_open { self.close_modal(window, cx); }
         match choice.action {
+            ChoiceAction::Relation(index) => {
+                if let (Some(task), Some(Modal::Relation(relation)), Some(target)) = (self.selected_task(), self.interaction.modal, self.task_actions.relations.get(index).cloned()) { self.queue_task_action(task, ht_core::TaskAction::Relation { target, relation }, window, cx); }
+            }
             ChoiceAction::Recurrence(rule) => {
                 if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::Recurrence(rule.map(str::to_owned)), window, cx); }
             }
@@ -1166,7 +1174,7 @@ impl Desktop {
                             task_id,
                             patch: TaskPatch::Status(Status::Deleted),
                         },
-                        ChoiceAction::Recurrence(_) | ChoiceAction::WaitingOn(_) | ChoiceAction::Command(_) | ChoiceAction::CreateLabel
+                        ChoiceAction::Relation(_) | ChoiceAction::Recurrence(_) | ChoiceAction::WaitingOn(_) | ChoiceAction::Command(_) | ChoiceAction::CreateLabel
                         | ChoiceAction::Task(_)
                         | ChoiceAction::Board(_) => {
                             unreachable!()
@@ -1254,6 +1262,7 @@ impl Desktop {
                     Modal::DueDate => "Set due date",
                     Modal::WaitingOn => "Blocked by person",
                     Modal::Recurrence => "Repeat task",
+                    Modal::Relation(kind) => kind.title(),
                     Modal::Delete => "Delete task?",
                     Modal::Commands => unreachable!(),
                 }
@@ -1277,6 +1286,8 @@ impl Desktop {
                 ""
             };
             let checked = self.selected_task().and_then(|id|self.db.task(id).ok().flatten()).is_some_and(|task| match choice.action {
+                ChoiceAction::WaitingOn(user) => task.extra.get("waitingOnUserId").and_then(|value|value.as_i64()) == user,
+                ChoiceAction::Recurrence(rule) => task.extra.get("recurrence").and_then(|value|value.as_str()) == rule,
                 ChoiceAction::Column(id) => task.section_id == Some(id),
                 ChoiceAction::Priority(index) => task.extra.get("priority").is_some_and(|p|p["priority_index"] == index),
                 ChoiceAction::Size(index) => task.extra.get("estimate").is_some_and(|p|p["estimate_index"] == index),
@@ -1349,6 +1360,10 @@ impl Desktop {
                         Some(choice.name),
                     ),
             );
+        }
+        if matches!(modal, Modal::Relation(_)) {
+            let message = if self.task_actions.search_loading { Some("Loading tasks…") } else if self.task_actions.search_failed { Some("Couldn't load tasks. Try searching again.") } else if self.task_actions.relations.is_empty() { Some(if query.trim().is_empty() { "No recently worked tasks yet" } else { "No matching tasks" }) } else { None };
+            if let Some(message) = message { list = list.child(div().p(px(16.)).text_color(color(t.muted)).child(message).layout_key(&self.layout,"task.relations.search-status",Some(message.into()))); }
         }
         div()
             .id("interaction-backdrop")

@@ -252,7 +252,7 @@ impl Desktop {
         else {
             return;
         };
-        let selected = (if start { task.extra["startDate"].as_str() } else { task.due_date.as_deref() })
+        let selected = (if start { task.extra.get("startDate").and_then(|value| value.as_str()) } else { task.due_date.as_deref() })
             .and_then(|date| chrono::DateTime::parse_from_rfc3339(date).ok())
             .map(|date| date.with_timezone(&Local).date_naive())
             .unwrap_or_else(|| Local::now().date_naive());
@@ -282,7 +282,7 @@ impl Desktop {
                 .task(due.task)
                 .ok()
                 .flatten()
-                .is_some_and(|task| if due.start { task.extra["startDate"].is_string() } else { task.due_date.is_some() })
+                .is_some_and(|task| if due.start { task.extra.get("startDate").is_some_and(|value| value.is_string()) } else { task.due_date.is_some() })
             {
                 choices.push(("Reset".into(), None));
             }

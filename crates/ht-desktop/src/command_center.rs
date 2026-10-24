@@ -50,6 +50,7 @@ pub enum ShellCommand {
     WaitingOn,
     AssignMe,
     Recurrence,
+    Relation(ht_core::RelationKind),
     BoardTime,
     DuplicateTask(bool),
 }
@@ -120,6 +121,10 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     }
     if task {
         for (key, name, keys, keywords, action) in [
+            ("addRelatedTask", "Add related task", "", "add link related task relation associate connect", ShellCommand::Relation(ht_core::RelationKind::RelatedTo)),
+            ("markBlockedBy", "Mark blocked by", "", "mark blocked by dependency waiting prerequisite task relation", ShellCommand::Relation(ht_core::RelationKind::BlockedBy)),
+            ("markAsBlocking", "Mark as blocking", "", "mark blocking blocks dependency task relation", ShellCommand::Relation(ht_core::RelationKind::BlockedTo)),
+            ("markDuplicateOf", "Mark duplicate of", "", "mark duplicate of same repeated task relation", ShellCommand::Relation(ht_core::RelationKind::Duplicate)),
             ("setRecurrence", "Repeat task", "", "repeat recurring recurrence every daily weekly monthly weekdays cadence schedule routine", ShellCommand::Recurrence),
             ("setStartDate", "Set start date", "", "start begin kickoff scheduled from date when planned", ShellCommand::StartDate),
             ("blockedByPerson", "Blocked by person…", "SHIFT B", "blocked waiting blocker block person stuck", ShellCommand::WaitingOn),

@@ -13,9 +13,16 @@ fn seed(db: &mut Db) {
         &json!([{"id":42,"displayName":"Me"},{"id":7,"displayName":"Alex"}]).to_string(),
     )
     .unwrap();
+    db.apply_task(&json!({"id":1,"title":"Task","projectId":15,"status":"Normal","relatedFromTasks":[{"id":77,"sourceTaskId":1,"targetTaskId":3,"relationType":"RelatedTo","targetTask":{"id":3,"projectId":15,"uniqueIndex":3,"title":"Existing"}}],"relatedToTasks":[]})).unwrap();
 }
 fn ack(change: &TaskAction) -> Value {
     match change {
+        TaskAction::Relation { target, relation } => {
+            json!([{"id":88,"sourceTaskId":1,"targetTaskId":target["id"],"targetTask":target,"relationType":relation}])
+        }
+        TaskAction::RemoveRelation(id) => {
+            json!({"status":200,"json":{"id":id,"sourceTaskId":1,"targetTaskId":3}})
+        }
         TaskAction::Recurrence(rule) => json!({"id":1,"recurrence":rule}),
         TaskAction::StartDate(date) => json!({"id":1,"startDate":date}),
         TaskAction::WaitingOn(user) => {
@@ -53,6 +60,9 @@ impl Transport for Server {
         })
     }
 }
+fn target() -> Value {
+    json!({"id":2,"projectId":15,"uniqueIndex":2,"title":"Other","ticketNumber":"HT-2"})
+}
 fn changes() -> Vec<TaskAction> {
     vec![
         TaskAction::StartDate(Some("2026-10-01T09:00:00+02:00".into())),
@@ -60,6 +70,23 @@ fn changes() -> Vec<TaskAction> {
         TaskAction::WaitingOn(Some(7)),
         TaskAction::WaitingOn(None),
         TaskAction::AssignMe,
+        TaskAction::RemoveRelation(77),
+        TaskAction::Relation {
+            target: target(),
+            relation: ht_core::RelationKind::RelatedTo,
+        },
+        TaskAction::Relation {
+            target: target(),
+            relation: ht_core::RelationKind::BlockedBy,
+        },
+        TaskAction::Relation {
+            target: target(),
+            relation: ht_core::RelationKind::BlockedTo,
+        },
+        TaskAction::Relation {
+            target: target(),
+            relation: ht_core::RelationKind::Duplicate,
+        },
         TaskAction::Recurrence(None),
         TaskAction::Recurrence(Some("Daily".into())),
         TaskAction::Recurrence(Some("Weekdays".into())),
@@ -94,6 +121,22 @@ fn task_daily_commands_persist_optimistically_and_accept_or_rollback_exact_web_w
             let row = db.mutations().unwrap()[0].clone();
             let optimistic = serde_json::to_value(db.task(1).unwrap().unwrap()).unwrap();
             match &change {
+                TaskAction::RemoveRelation(id) => assert!(
+                    !optimistic["relatedFromTasks"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|row| row["id"] == *id)
+                ),
+                TaskAction::Relation { target, relation } => assert!(
+                    optimistic["relatedFromTasks"]
+                        .as_array()
+                        .unwrap()
+                        .iter()
+                        .any(|row| row["targetTaskId"] == target["id"]
+                            && row["relationType"] == json!(relation)
+                            && row["pending"] == true)
+                ),
                 TaskAction::Recurrence(rule) => assert_eq!(optimistic["recurrence"], json!(rule)),
                 TaskAction::StartDate(date) => assert_eq!(optimistic["startDate"], json!(date)),
                 TaskAction::WaitingOn(user) => {
@@ -148,6 +191,8 @@ fn task_daily_commands_persist_optimistically_and_accept_or_rollback_exact_web_w
                 for field in [
                     "startDate",
                     "recurrence",
+                    "relatedFromTasks",
+                    "relatedToTasks",
                     "waitingOnUserId",
                     "waitingOnSetById",
                     "waitingOnSetAt",

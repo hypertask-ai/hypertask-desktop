@@ -426,3 +426,20 @@ fn daily_task_action_routes_send_desktop_bearer_without_cookies_and_preserve_ref
         assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
     }}
 }
+
+#[test]
+fn relation_picker_reads_and_add_remove_writes_use_web_routes_bearer_and_keep_denials() {
+    for (method,path,body) in [
+        ("GET","/api/projects/getAllMinimal?mode=ExtraMinimal",Value::Null),
+        ("GET","/api/tasks/single?id=1",Value::Null),
+        ("POST","/api/tasks/searchAll",json!({"projectIds":[15],"mode":"recent","currentTaskId":1})),
+        ("POST","/api/tasks/searchAll",json!({"projectIds":[15],"searchQuery":"Other"})),
+        ("POST","/api/tasks/addRelations",ht_core::TaskAction::Relation{target:json!({"id":2,"projectId":15,"uniqueIndex":2}),relation:ht_core::RelationKind::BlockedBy}.request(1,42).unwrap().1),
+        ("POST","/api/tasks/removeRelation",ht_core::TaskAction::RemoveRelation(88).request(1,42).unwrap().1),
+    ] {for status in [200,401,403] {
+        let (url,thread,receive)=server(status,"{\"message\":\"Forbidden\"}");let mut http=Http::with_base(&url,"desktop-relations-token".into()).unwrap();
+        let response=if method=="GET"{http.get(path)}else{http.post(path,&body,"relation-client")}.unwrap();assert_eq!(response.status,status);assert_eq!(response.body["message"],"Forbidden");
+        let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("{method} {path} HTTP/1.1\r\n")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-relations-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));
+        if method=="POST"{assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);}thread.join().unwrap();
+    }}
+}

@@ -5,8 +5,273 @@ use serde_json::Value;
 #[derive(Default)]
 pub(super) struct TaskActions {
     pending: Option<(String, i64, i64, TaskAction)>,
+    pub relations: Vec<Value>,
+    pub search_loading: bool,
+    pub search_failed: bool,
+    search_generation: u64,
+    loaded: Option<(i64, i64)>,
+    load_generation: u64,
 }
 impl Desktop {
+    pub(super) fn load_task_relations(&mut self, cx: &mut Context<Self>) {
+        if self.options.offline
+            || self.screen != Screen::Task
+            || self.task_actions.pending.is_some()
+        {
+            return;
+        }
+        let (Some(task), Some(user), Some(token)) = (
+            self.selected_task(),
+            self.db.current_user_id(),
+            self.cli_token(),
+        ) else {
+            return;
+        };
+        if self.task_actions.loaded == Some((user, task)) {
+            return;
+        }
+        self.task_actions.loaded = Some((user, task));
+        self.task_actions.load_generation += 1;
+        let generation = self.task_actions.load_generation;
+        let expected = token.clone();
+        let (send, receive) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let result = ht_core::Http::new(token).and_then(|mut http| {
+                let identity = ht_core::Transport::get(&mut http, "/user/context")?;
+                anyhow::ensure!(
+                    identity.status == 200 && identity.body["user"]["id"] == user,
+                    "Unauthorized"
+                );
+                ht_core::task_relations::details(&mut http, task)
+            });
+            let _ = send.send(result);
+        });
+        cx.spawn(async move |view, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(50))
+                    .await;
+                match receive.try_recv() {
+                    Ok(result) => {
+                        let _ = view.update(cx, |this, cx| {
+                            if this.task_actions.load_generation != generation
+                                || this.db.current_user_id() != Some(user)
+                                || this.cli_token().as_deref() != Some(expected.as_str())
+                            {
+                                return;
+                            }
+                            match result.and_then(|source| {
+                                this.db.cache_task_relations(user, task, &source)
+                            }) {
+                                Ok(()) => this.reload(),
+                                Err(error) => this.error = Some(error.to_string()),
+                            }
+                            cx.notify();
+                        });
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
+                    _ => break,
+                }
+            }
+        })
+        .detach();
+    }
+    pub(super) fn task_relations_rows(
+        &self,
+        task: &TaskView,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        let mut groups = std::collections::BTreeMap::<&str, Vec<(Value, Value)>>::new();
+        for (field, from, other) in [
+            ("relatedFromTasks", true, "targetTask"),
+            ("relatedToTasks", false, "sourceTask"),
+        ] {
+            for relation in task
+                .extra
+                .get(field)
+                .and_then(Value::as_array)
+                .into_iter()
+                .flatten()
+            {
+                let Some(kind) = serde_json::from_value::<ht_core::RelationKind>(
+                    relation["relationType"].clone(),
+                )
+                .ok() else {
+                    continue;
+                };
+                if relation[other].is_object() {
+                    groups
+                        .entry(kind.section(from))
+                        .or_default()
+                        .push((relation.clone(), relation[other].clone()));
+                }
+            }
+        }
+        let mut content = div().flex().flex_col().gap(px(8.));
+        for title in [
+            "Blocked by",
+            "Blocks",
+            "Duplicate of",
+            "Duplicate",
+            "Related",
+        ] {
+            let Some(rows) = groups.remove(title) else {
+                continue;
+            };
+            let mut group = div().mt(px(16.)).flex().flex_col().gap(px(8.)).child(title);
+            for (relation, other) in rows {
+                let id = relation["id"].as_i64().unwrap_or(0);
+                let task_id = task.id;
+                let target = other["id"].as_i64().unwrap_or(0);
+                group = group.child(
+                    div()
+                        .group("task-relation")
+                        .flex()
+                        .items_center()
+                        .gap(px(6.))
+                        .min_h(px(20.))
+                        .child(
+                            div()
+                                .id(SharedString::from(format!("task-relation-{id}")))
+                                .flex_1()
+                                .cursor_pointer()
+                                .child(format!(
+                                    "{} {}",
+                                    other["ticketNumber"].as_str().unwrap_or("").to_uppercase(),
+                                    other["title"].as_str().unwrap_or("")
+                                ))
+                                .on_click(cx.listener(move |this, _, _, cx| {
+                                    this.open_task(target, cx);
+                                }))
+                                .layout_key(&self.layout, format!("task.relation.{id}"), None),
+                        )
+                        .when(id > 0, |d| {
+                            d.child(
+                                div()
+                                    .id(SharedString::from(format!("remove-relation-{id}")))
+                                    .cursor_pointer()
+                                    .opacity(0.)
+                                    .group_hover("task-relation", |d| d.opacity(1.))
+                                    .child("×")
+                                    .on_click(cx.listener(move |this, _, window, cx| {
+                                        cx.stop_propagation();
+                                        this.queue_task_action(
+                                            task_id,
+                                            TaskAction::RemoveRelation(id),
+                                            window,
+                                            cx,
+                                        );
+                                    }))
+                                    .layout_key(
+                                        &self.layout,
+                                        format!("task.relation.remove.{id}"),
+                                        None,
+                                    ),
+                            )
+                        }),
+                );
+            }
+            content = content.child(group);
+        }
+        content.into_any_element()
+    }
+
+    pub(super) fn search_relation_tasks(&mut self, cx: &mut Context<Self>) {
+        self.task_actions.search_generation += 1;
+        let generation = self.task_actions.search_generation;
+        self.task_actions.relations.clear();
+        self.task_actions.search_failed = false;
+        self.task_actions.search_loading = false;
+        let Some(task) = self.selected_task() else {
+            return;
+        };
+        let query = self.interaction.query.read(cx).content.trim().to_owned();
+        if self.options.offline {
+            self.task_actions.relations = self
+                .db
+                .search_tasks(&query, None)
+                .unwrap_or_default()
+                .into_iter()
+                .filter(|row| row.id != task)
+                .filter_map(|row| serde_json::to_value(row).ok())
+                .collect();
+            return;
+        }
+        let Some(user) = self.db.current_user_id() else {
+            self.task_actions.search_failed = true;
+            return;
+        };
+        let Some(token) = self.cli_token() else {
+            self.task_actions.search_failed = true;
+            return;
+        };
+        self.task_actions.search_loading = true;
+        cx.spawn(async move |view, cx| {
+            if !query.is_empty() {
+                cx.background_executor()
+                    .timer(Duration::from_millis(150))
+                    .await;
+            }
+            if !view
+                .update(cx, |this, _| {
+                    this.task_actions.search_generation == generation
+                        && matches!(
+                            this.interaction.modal,
+                            Some(interactions::Modal::Relation(_))
+                        )
+                })
+                .unwrap_or(false)
+            {
+                return;
+            }
+            let expected = token.clone();
+            let (send, receive) = std::sync::mpsc::channel();
+            std::thread::spawn(move || {
+                let result = ht_core::Http::new(token).and_then(|mut http| {
+                    let identity = ht_core::Transport::get(&mut http, "/user/context")?;
+                    anyhow::ensure!(
+                        identity.status == 200 && identity.body["user"]["id"] == user,
+                        "Unauthorized"
+                    );
+                    ht_core::task_relations::search(&mut http, task, &query)
+                });
+                let _ = send.send(result);
+            });
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(50))
+                    .await;
+                match receive.try_recv() {
+                    Ok(result) => {
+                        let _ = view.update(cx, |this, cx| {
+                            if this.task_actions.search_generation != generation
+                                || !matches!(
+                                    this.interaction.modal,
+                                    Some(interactions::Modal::Relation(_))
+                                )
+                                || this.selected_task() != Some(task)
+                                || this.db.current_user_id() != Some(user)
+                                || this.cli_token().as_deref() != Some(expected.as_str())
+                            {
+                                return;
+                            }
+                            this.task_actions.search_loading = false;
+                            match result {
+                                Ok(rows) => this.task_actions.relations = rows,
+                                Err(_) => this.task_actions.search_failed = true,
+                            }
+                            cx.notify();
+                        });
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
+                    _ => break,
+                }
+            }
+        })
+        .detach();
+    }
     pub(super) fn queue_task_action(
         &mut self,
         task: i64,
@@ -81,6 +346,12 @@ impl Desktop {
             self.reload();
             if self.error.is_none() && self.selected_task() == Some(task) {
                 match change {
+                    TaskAction::Relation { relation, .. }
+                        if self.interaction.modal
+                            == Some(interactions::Modal::Relation(relation)) =>
+                    {
+                        self.close_modal(window, cx)
+                    }
                     TaskAction::StartDate(_) => self.finish_start_date(task, window, cx),
                     TaskAction::WaitingOn(_)
                         if self.interaction.modal == Some(interactions::Modal::WaitingOn) =>
@@ -128,6 +399,12 @@ mod tests {
             assert_eq!(*body, request);
             assert!(!key.is_empty());
             let reply = match &self.1 {
+                TaskAction::Relation { target, relation } => {
+                    json!([{"id":88,"sourceTaskId":1,"targetTaskId":target["id"],"targetTask":target,"relationType":relation}])
+                }
+                TaskAction::RemoveRelation(id) => {
+                    json!({"status":200,"json":{"id":id,"sourceTaskId":1,"targetTaskId":2}})
+                }
                 TaskAction::Recurrence(rule) => json!({"id":1,"recurrence":rule}),
                 TaskAction::StartDate(date) => json!({"id":1,"startDate":date}),
                 TaskAction::WaitingOn(user) => {
@@ -363,5 +640,68 @@ mod tests {
                 .unwrap();
             }
         }
+    }
+    #[gpui::test]
+    fn relation_command_families_search_other_tasks_queue_once_and_restore_both_refusals(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx,|this,_,_|{this.db.apply_task(&json!({"id":2,"projectId":15,"sectionId":10,"title":"Other","ticketNumber":"HT-2","uniqueIndex":2,"status":"Normal"})).unwrap();}).unwrap();
+        for kind in [
+            ht_core::RelationKind::RelatedTo,
+            ht_core::RelationKind::BlockedBy,
+            ht_core::RelationKind::BlockedTo,
+            ht_core::RelationKind::Duplicate,
+        ] {
+            for status in [401, 403, 200] {
+                view.update(&mut cx,|this,_,_|{this.db.apply_task(&json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","relatedFromTasks":[],"relatedToTasks":[]})).unwrap();}).unwrap();
+                palette(&mut cx, kind.title());
+                cx.simulate_input("Other");
+                cx.simulate_keystrokes("enter enter");
+                view.update(&mut cx,|this,window,cx|{
+                    let rows=this.db.mutations().unwrap();let pending:Vec<_>=rows.iter().filter(|row|row.status!="failed").collect();assert_eq!(pending.len(),1);
+                    let change:TaskAction=serde_json::from_value(pending[0].payload_json["change"].clone()).unwrap();
+                    assert_eq!(this.db.task(1).unwrap().unwrap().extra["relatedFromTasks"][0]["targetTaskId"],2);
+                    this.db.drain_once(&mut Server(status,change),chrono::Utc::now().timestamp()+1).unwrap();this.poll_task_action(window,cx);
+                    if status!=200 {assert_eq!(this.error.as_deref(),Some("Forbidden"));assert_eq!(this.interaction.modal,Some(interactions::Modal::Relation(kind)));assert!(this.db.task(1).unwrap().unwrap().extra["relatedFromTasks"].as_array().unwrap().is_empty());}
+                    else {assert!(this.interaction.modal.is_none());assert_eq!(this.db.task(1).unwrap().unwrap().extra["relatedFromTasks"][0]["id"],88);}
+                }).unwrap();
+                if status != 200 {
+                    cx.simulate_keystrokes("escape");
+                } else {
+                    measured(view, &mut cx, "task.relation.88");
+                }
+            }
+        }
+        for status in [401, 403, 200] {
+            click(view, &mut cx, "task.relation.remove.88");
+            view.update(&mut cx, |this, window, cx| {
+                assert!(
+                    this.db.task(1).unwrap().unwrap().extra["relatedFromTasks"]
+                        .as_array()
+                        .unwrap()
+                        .is_empty()
+                );
+                this.db
+                    .drain_once(
+                        &mut Server(status, TaskAction::RemoveRelation(88)),
+                        chrono::Utc::now().timestamp() + 1,
+                    )
+                    .unwrap();
+                this.poll_task_action(window, cx);
+                assert_eq!(
+                    this.db.task(1).unwrap().unwrap().extra["relatedFromTasks"]
+                        .as_array()
+                        .unwrap()
+                        .is_empty(),
+                    status == 200
+                );
+            })
+            .unwrap();
+        }
+        palette(&mut cx, "Add related task");
+        cx.simulate_input("does not exist");
+        measured(view, &mut cx, "task.relations.search-status");
+        cx.simulate_keystrokes("escape");
     }
 }

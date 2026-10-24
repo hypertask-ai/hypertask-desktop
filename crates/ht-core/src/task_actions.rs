@@ -13,6 +13,11 @@ pub enum TaskAction {
     WaitingOn(Option<i64>),
     AssignMe,
     Recurrence(Option<String>),
+    RemoveRelation(i64),
+    Relation {
+        target: Value,
+        relation: crate::RelationKind,
+    },
 }
 impl TaskAction {
     pub fn request(&self, task: i64, user: i64) -> Result<(&'static str, Value)> {
@@ -32,6 +37,22 @@ impl TaskAction {
                 (
                     "/api/tasks/waiting-on",
                     json!({"taskId":task,"userId":user_id}),
+                )
+            }
+            Self::RemoveRelation(id) => {
+                ensure!(*id > 0, "Task relation is unavailable");
+                ("/api/tasks/removeRelation", json!({"relationId":id}))
+            }
+            Self::Relation { target, relation } => {
+                ensure!(
+                    target["id"].as_i64().is_some_and(|id| id > 0 && id != task)
+                        && target["projectId"].as_i64().is_some_and(|id| id > 0)
+                        && target["uniqueIndex"].as_i64().is_some_and(|id| id > 0),
+                    "Task is unavailable"
+                );
+                (
+                    "/api/tasks/addRelations",
+                    json!({"relations":{"currentTaskId":task,"relatedTasks":[{"projectId":target["projectId"],"uniqueIndex":target["uniqueIndex"],"relationType":relation}]}}),
                 )
             }
             Self::Recurrence(rule) => {
@@ -57,6 +78,8 @@ impl TaskAction {
         match self {
             Self::StartDate(_) => &["startDate"],
             Self::Recurrence(_) => &["recurrence"],
+            Self::Relation { .. } => &["relatedFromTasks"],
+            Self::RemoveRelation(_) => &["relatedFromTasks", "relatedToTasks"],
             Self::WaitingOn(_) => &["waitingOnUserId", "waitingOnSetById", "waitingOnSetAt"],
             Self::AssignMe => &["assignees", "assigneeCount"],
         }
@@ -67,6 +90,8 @@ impl TaskAction {
             Self::WaitingOn(_) => "Unable to update blocked by person",
             Self::AssignMe => "Unable to assign this task",
             Self::Recurrence(_) => "Could not update the repeat rule",
+            Self::Relation { .. } => "Unable to add task relation",
+            Self::RemoveRelation(_) => "Unable to remove task relation",
         }
     }
 }
@@ -81,6 +106,18 @@ impl Db {
                 && row.payload_json["task_id"] == task),
             "Wait for the previous task update"
         );
+        if let TaskAction::RemoveRelation(id) = change {
+            ensure!(
+                ["relatedFromTasks", "relatedToTasks"]
+                    .iter()
+                    .any(|field| before[*field]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|row| row["id"] == *id)),
+                "Task relation is unavailable"
+            );
+        }
         if let TaskAction::WaitingOn(Some(id)) = change {
             ensure!(
                 self.project_members(
@@ -115,6 +152,24 @@ impl Db {
             .raw("Task", &payload["task_id"])?
             .context("Task is unavailable")?;
         match serde_json::from_value::<TaskAction>(payload["change"].clone())? {
+            TaskAction::RemoveRelation(id) => {
+                for field in ["relatedFromTasks", "relatedToTasks"] {
+                    let rows: Vec<_> = task[field]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .filter(|row| row["id"] != id)
+                        .cloned()
+                        .collect();
+                    task[field] = json!(rows);
+                }
+            }
+            TaskAction::Relation { target, relation } => {
+                crate::task_relations::put(
+                    &mut task,
+                    json!({"id":-target["id"].as_i64().context("Task is unavailable")?,"sourceTaskId":payload["task_id"],"targetTaskId":target["id"],"relationType":relation,"targetTask":target,"pending":true}),
+                );
+            }
             TaskAction::StartDate(date) => task["startDate"] = json!(date),
             TaskAction::Recurrence(rule) => task["recurrence"] = json!(rule),
             TaskAction::WaitingOn(user) => {
@@ -205,6 +260,16 @@ impl Db {
                     body: json!({"success":true,"value":response.body}),
                 }
             }
+            Ok(response)
+                if response.status == 200
+                    && matches!(change, TaskAction::Relation { .. })
+                    && response.body.as_array().is_some_and(Vec::is_empty) =>
+            {
+                Response {
+                    status: 409,
+                    body: json!({"message":"Task relation already exists or cannot be added"}),
+                }
+            }
             Ok(response) if (400..500).contains(&response.status) => response,
             _ => Response {
                 status: 409,
@@ -226,7 +291,16 @@ impl Db {
         let mut task = self
             .raw("Task", &payload["task_id"])?
             .context("Task is unavailable")?;
-        if matches!(change, TaskAction::AssignMe) {
+        if matches!(change, TaskAction::RemoveRelation(_)) {
+            // The deleted row is already absent optimistically; the server confirms its id.
+        } else if matches!(change, TaskAction::Relation { .. }) {
+            for relation in value
+                .as_array()
+                .context("Invalid relation acknowledgement")?
+            {
+                crate::task_relations::put(&mut task, relation.clone());
+            }
+        } else if matches!(change, TaskAction::AssignMe) {
             let rows: Vec<_> = value["body"]
                 .as_array()
                 .unwrap()
@@ -274,6 +348,22 @@ impl TaskAction {
             return false;
         }
         match self {
+            Self::RemoveRelation(id) => {
+                value["status"] == 200
+                    && value["json"]["id"] == *id
+                    && (value["json"]["sourceTaskId"] == payload["task_id"]
+                        || value["json"]["targetTaskId"] == payload["task_id"])
+            }
+            Self::Relation { target, relation } => value.as_array().is_some_and(|rows| {
+                rows.len() == 1
+                    && rows.iter().all(|row| {
+                        row["id"].as_i64().is_some_and(|id| id > 0)
+                            && row["sourceTaskId"] == payload["task_id"]
+                            && row["targetTaskId"] == target["id"]
+                            && row["relationType"] == json!(relation)
+                            && row["targetTask"]["id"] == target["id"]
+                    })
+            }),
             Self::Recurrence(rule) => {
                 value["id"] == payload["task_id"] && value.get("recurrence") == Some(&json!(rule))
             }

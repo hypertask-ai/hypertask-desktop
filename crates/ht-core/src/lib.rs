@@ -61,3 +61,6 @@ pub use task_time::TimeWrite;
 pub mod task_actions;
 pub use task_actions::TaskAction;
 mod memory;
+
+pub mod task_relations;
+pub use task_relations::RelationKind;
