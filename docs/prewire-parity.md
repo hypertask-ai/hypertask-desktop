@@ -1,5 +1,9 @@
 # HTPR-7381: full-sign-in client prewire
 
+Continuation: [prewire-followup.md](prewire-followup.md) records the newly wired
+AI lifecycle, scope/context, configured-model subset and save/view management.
+Its explicit remaining-work list supersedes the corresponding historical gaps below.
+
 This draft is **not whole-ticket parity**. HTPR-7699's server authorization is
 approved, not deployed for every route. Existing blocker ledgers remain useful
 inventories; “cookie-only” is no longer a reason to omit native work. This file
@@ -40,13 +44,14 @@ never automatically resends an uncertain create, including after restart.
   board settings, attachment staging/finalization, and tutorial lifecycle/step
   execution have not been implemented here. Existing supported commands remain;
   no inert “full list”, successful upload, or locally completed tour is added.
-- **AI A2/A3:** explicit server create/rename/delete/delete-all and durable
-  comment-to-chat branching still need native queued handlers. Existing local
-  new-chat behavior is not claimed as successful server session creation.
-- **AI A4/A5:** configured model/provider/plan availability, durable model
-  preferences, and full team/recent-board scope/entity search are not implemented.
-  Existing model/context controls remain a subset. Never infer feature flags,
-  provider credentials, billing eligibility, or board/team associations.
+- **AI A2/A3:** server create/rename/delete/delete-all and durable comment-to-chat
+  branching now have queued handlers and mocked acceptance/refusal tests; see
+  the follow-up. Fullscreen history-rail geometry and live acceptance remain open.
+- **AI A4/A5:** team/recent-board scope and all entity-search kinds are now wired.
+  Configured provider/custom-model reads and durable model preference are wired
+  as a subset. Exact model/effort submenu presentation, no-current-board team
+  resolution and deployment-specific legacy billing mapping remain open.
+  Never infer flags, provider credentials, billing or board/team associations.
 - **All untouched blocker rows** in shell/AI/p2/compose ledgers retain their
   existing partial/blocker classifications. They are not made ready by approval
   of server work or by another row's passing mocked tests.
