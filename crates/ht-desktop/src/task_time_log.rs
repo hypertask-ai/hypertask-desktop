@@ -72,7 +72,7 @@ impl Form {
             .from_local_datetime(&day.and_hms_opt(12, 0, 0).unwrap())
             .earliest()
             .ok_or_else(|| anyhow::anyhow!("Pick a date"))?;
-        let note = self.note.read(cx).content.clone();
+        let note = self.note.read(cx).content.to_string();
         anyhow::ensure!(
             note.encode_utf16().count() <= 500,
             "Note must be at most 500 characters"
