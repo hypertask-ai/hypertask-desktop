@@ -402,3 +402,15 @@ fn web_numeric_ranks_fit_before_between_and_after_without_changing_format() {
     assert!(ht_core::task_rank(Some(b),None).unwrap().as_str() > b);
     assert!(ht_core::task_rank(Some(a),Some(a)).is_err());
 }
+
+#[test]
+fn denied_ranked_move_does_not_revert_newer_title_and_cannot_stack_stale_rollbacks(){
+    let mut db=Db::memory().unwrap();seed(&mut db);
+    let change=BoardWrite::PositionTask{task:1,project:15,section:11,title:"Doing".into(),ranking:"A0100".into()};
+    db.enqueue(Write::Board{change:change.clone()},100).unwrap();
+    assert!(db.enqueue(Write::Board{change},100).is_err());
+    db.enqueue(Write::TaskTitle{task_id:1,title:"Newer title".into()},100).unwrap();
+    let mut response=server("PUT","/api/tasks/moveTask",json!({"section_title":"Doing","sectionId":11,"taskId":1,"ranking":"A0100","projectId":15}),json!({"message":"Forbidden"}));response.status=403;
+    assert!(matches!(db.drain_once(&mut response,100).unwrap(),Drain::Failed(_)));
+    let task=db.task(1).unwrap().unwrap();assert_eq!(task.section_id,Some(10));assert_eq!(task.title,"Newer title");
+}

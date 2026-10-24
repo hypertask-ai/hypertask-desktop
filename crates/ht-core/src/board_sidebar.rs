@@ -7,7 +7,7 @@ pub fn load(transport:&mut impl Transport)->Result<(i64,Value,Value)> {
     let identity=transport.get("/user/context")?;
     ensure!(identity.status==200 && identity.body["success"]==true,"Unauthorized");
     let user=identity.body["user"]["id"].as_i64().filter(|id|*id>0).context("Unauthorized")?;
-    let teams=transport.post("/api/teams/getAllSidebar",&json!({}),"sidebar-read")?;
+    let teams=transport.post("/api/teams/getAllSidebar",&json!({"userId":user}),"sidebar-read")?;
     let favorites=transport.get("/api/favorites/getFavorites")?;
     let read=|r:Response|->Result<Value>{ensure!((200..300).contains(&r.status),"{}",r.body["message"].as_str().or(r.body["error"].as_str()).unwrap_or("Request failed"));ensure!(r.body.is_array(),"Invalid board metadata");Ok(r.body)};
     Ok((user,read(teams)?,read(favorites)?))

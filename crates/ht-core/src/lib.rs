@@ -37,3 +37,6 @@ pub use ranking::task_rank;
 pub mod task_create;
 
 pub mod board_sidebar;
+
+pub mod board_views;
+pub use board_views::ViewWrite;

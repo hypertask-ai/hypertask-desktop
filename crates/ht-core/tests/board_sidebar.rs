@@ -12,7 +12,7 @@ impl Transport for Server{
     fn mutate(&mut self,method:&str,path:&str,body:&Value,_:&str)->Result<Response,TransportError>{
         self.calls.push((method.into(),path.into(),body.clone()));
         let reply=match path{
-            "/api/teams/getAllSidebar"=>{assert_eq!(method,"POST");assert_eq!(body,&json!({}));teams()},
+            "/api/teams/getAllSidebar"=>{assert_eq!(method,"POST");assert_eq!(body,&json!({"userId":42}));teams()},
             "/api/favorites/reorderFavorites"=>{assert_eq!(method,"PUT");assert_eq!(body,&json!({"favorites":[{"projectId":16},{"projectId":15}]}));json!({"ok":true})},
             _=>panic!("unexpected {path}")
         };

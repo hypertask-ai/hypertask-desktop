@@ -83,6 +83,8 @@ mod task_fields;
 mod board_mutations;
 #[path = "board.rs"]
 mod board;
+#[path = "board_views.rs"]
+mod board_views;
 
 #[path = "interactions.rs"]
 mod interactions;
@@ -123,6 +125,7 @@ pub struct Desktop {
     comment_input: Entity<TextInput>,
     interaction: interactions::Interaction,
     task_fields: task_fields::TaskFields,
+    views: board_views::Views,
     board_actions: board::BoardActions,
     board_forms: board_mutations::Forms,
     comment_actions: comment_actions::CommentActions,
@@ -241,6 +244,7 @@ impl Desktop {
             comment_input,
             interaction: interactions::Interaction::new(cx),
             task_fields: task_fields::TaskFields::new(cx),
+            views: board_views::Views::new(cx),
             board_actions: board::BoardActions::new(cx),
             board_forms: board_mutations::Forms::new(cx),
             comment_actions: comment_actions::CommentActions::new(cx),
@@ -612,7 +616,7 @@ impl Desktop {
         if self.mention_key(event, window, cx) { return; }
         if self.unread_review_key(event,window,cx) {return;}
         if self.comment_reader_key(event, window, cx) { return; }
-        if self.board_form_key(event, window, cx) || self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
+        if self.view_key(event, window, cx) || self.board_form_key(event, window, cx) || self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
         if self.inbox_key(event, window, cx) { return; }
         if self.shell_key(event, window, cx) {
             return;
@@ -847,6 +851,8 @@ impl Desktop {
                             .children(["filter", "arrow-up-down", "ellipsis"].into_iter().map(
                                 |name| {
                                     div()
+                                        .when(name!="ellipsis", |d|d.id(name).cursor_pointer()
+                                            .on_click(cx.listener(move |this,_,window,cx|this.open_view_panel(if name=="filter"{board_views::Panel::Filters}else{board_views::Panel::Sort},window,cx))))
                                         .size(px(32.))
                                         .flex()
                                         .items_center()
@@ -858,6 +864,7 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, "board.header", None),
             )
+            .child(self.board_view_tabs(cx))
             .when(self.board_actions.searching, |d| d.child(self.board_search(cx)))
             .when(!self.interaction.bulk.is_empty(), |d| d.child(self.board_selection_bar(cx)))
             .child(
@@ -1738,6 +1745,7 @@ impl Render for Desktop {
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
         }
+        if self.screen==Screen::Board {self.load_board_views(cx);}
         self.prepare_comment_readers(window,cx);
         self.restore_comment_draft(cx);
         if self.inbox_actions.review.is_some() {return self.unread_review_screen(cx).into_any_element();}
@@ -1837,6 +1845,7 @@ impl Render for Desktop {
             .child(self.inbox_reminder_overlay(cx))
             .child(self.due_date_overlay(cx))
             .child(self.board_form_overlay(cx))
+            .child(self.view_overlay(cx))
             .into_any_element()
     }
 }

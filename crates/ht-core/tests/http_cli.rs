@@ -274,3 +274,12 @@ fn sidebar_web_requests_use_desktop_bearer_on_accept_and_refusal(){
         }
     }
 }
+
+#[test]
+fn board_view_web_routes_send_bearer_and_unmodified_body_on_accept_and_refusal(){
+    for path in ["/api/projects/boardTasks","/api/projects/views/unsaved-view","/api/projects/views/switch-view","/api/projects/views/create-view","/api/projects/views/update-view","/api/projects/views/update-order","/api/projects/views/set-default-order","/api/projects/views/reset-order","/api/projects/views/reset-to-default"] {for status in [200,401,403]{
+        let(url,thread,receive)=server(status,"{}");let mut http=Http::with_base(&url,"desktop-views-token".into()).unwrap();let body=json!({"projectId":15,"board_sorting_mode":"Priority"});
+        assert_eq!(http.post(path,&body,"view-key").unwrap().status,status);
+        let request=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(request.starts_with(&format!("POST {path} HTTP/1.1")));assert!(request.to_lowercase().contains("authorization: bearer desktop-views-token\r\n"));assert_eq!(serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
+    }}
+}
