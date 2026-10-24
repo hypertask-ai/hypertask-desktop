@@ -24,6 +24,13 @@ pub(super) enum Panel {
     RenameView,
     DeleteView,
 }
+#[derive(Clone)]
+struct ViewDrag { id: String, title: String }
+impl Render for ViewDrag {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+        div().p(px(8.)).bg(color(0x30343b)).text_color(color(0xffffff)).child(self.title.clone())
+    }
+}
 pub(super) struct Views {
     pub loaded: i64,
     loading: bool,
@@ -416,6 +423,7 @@ impl Desktop {
                         | Panel::BlockedByPerson
                         | Panel::ValueMatch
                         | Panel::Columns
+                        | Panel::Manage
                 )
             ) {
                 self.views.panel = None;
@@ -484,7 +492,7 @@ impl Desktop {
                     ));
                 }
                 choices.extend(
-                    ht_core::board_views::ordered_views(&project)
+                    self.ordered_board_views(&project)
                         .into_iter()
                         .map(|view| {
                             (
@@ -765,7 +773,7 @@ impl Desktop {
                         .db
                         .board_project(self.options.board)
                         .unwrap_or(Value::Null);
-                    let mut views = ht_core::board_views::ordered_views(&project);
+                    let mut views = self.ordered_board_views(&project);
                     if action == "alphabetical" {
                         views.sort_by_key(|v| {
                             (
@@ -777,6 +785,7 @@ impl Desktop {
                     self.queue_view(if action=="default"{"set-default-order"}else{"update-order"},json!({"viewOrder":views.iter().map(|v|v["id"].clone()).collect::<Vec<_>>()}),window,cx);
                     return;
                 }
+                if value["id"].as_str().is_some_and(|id| id.starts_with("builtin:")) { return; }
                 self.views.editing = value["id"].as_str().map(str::to_owned);
                 self.open_view_panel(Panel::RenameView, window, cx);
                 self.views.input.update(cx, |input, cx| {
@@ -1396,76 +1405,56 @@ impl Desktop {
             }
         }
     }
+    fn ordered_board_views(&self, project: &Value) -> Vec<Value> {
+        let mut views = ht_core::board_views::ordered_views(project);
+        views.extend(ht_core::board_views::builtin_views(project, self.views.decisions));
+        let order = project["project_view"]["user_project_views"][0]["view_order"].as_array().or_else(|| project["project_view"]["default_view_order"].as_array());
+        views.sort_by_key(|view| if view["id"] == project["project_view"]["default_view_id"] { 0 } else { 1 + order.and_then(|order| order.iter().position(|id| *id == view["id"])).unwrap_or(usize::MAX - 1) });
+        views
+    }
+    fn hidden_view_tabs(&self) -> Value {
+        self.db.kv_get("hiddenViewTabIds").ok().flatten().and_then(|value| serde_json::from_str(&value).ok()).filter(Value::is_object).unwrap_or(json!({}))
+    }
+    fn show_empty_view_tabs(&self) -> bool { self.db.kv_get("showEmptyViewTabs").ok().flatten().as_deref() == Some("true") }
+    fn view_tab_key(&self, id: &str) -> String { if id.starts_with("builtin:") { format!("{}:{id}", self.options.board) } else { id.into() } }
+    fn toggle_view_tab(&mut self, id: &str, cx: &mut Context<Self>) {
+        let mut hidden = self.hidden_view_tabs();
+        let key = self.view_tab_key(id);
+        hidden[&key] = json!(hidden[&key] != true);
+        if let Err(error) = self.db.kv_set("hiddenViewTabIds", &hidden.to_string()) { self.error = Some(error.to_string()); }
+        cx.notify();
+    }
+    fn rendered_board_views(&self, project: &Value) -> Vec<Value> {
+        let hidden = self.hidden_view_tabs();
+        let active = self.views.builtin.get(&self.options.board).map(|id| json!(id)).unwrap_or_else(|| project["project_view"]["user_project_views"][0]["appliedView"]["id"].as_str().map(|id| json!(id)).unwrap_or_else(|| project["project_view"]["default_view_id"].clone()));
+        self.ordered_board_views(project).into_iter().filter(|view| {
+            view["id"] == active || view["id"] == project["project_view"]["default_view_id"] ||
+            (hidden[self.view_tab_key(view["id"].as_str().unwrap_or(""))] != true && (self.show_empty_view_tabs() || self.db.view_task_count(self.options.board, view).unwrap_or(0) > 0))
+        }).collect()
+    }
+    fn reorder_view_tab(&mut self, moved: &str, before: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let project = self.db.board_project(self.options.board).unwrap_or(Value::Null);
+        if project["project_view"]["default_view_id"] == moved || project["project_view"]["default_view_id"] == before || moved == before { return; }
+        let mut views = self.ordered_board_views(&project);
+        let Some(source) = views.iter().position(|view| view["id"] == moved) else { return; };
+        let Some(destination) = views.iter().position(|view| view["id"] == before) else { return; };
+        let view = views.remove(source);
+        views.insert(destination, view);
+        self.queue_view("update-order", json!({"viewOrder":views.iter().map(|view| &view["id"]).collect::<Vec<_>>()}), window, cx);
+    }
     pub(super) fn board_view_tabs(&self, cx: &mut Context<Self>) -> AnyElement {
-        let project = self
-            .db
-            .board_project(self.options.board)
-            .unwrap_or(Value::Null);
-        if !project["project_view"].is_object() {
-            return div().into_any_element();
-        }
-        let mut views = ht_core::board_views::ordered_views(&project);
-        views.extend(
-            ht_core::board_views::builtin_views(&project, self.views.decisions)
-                .into_iter()
-                .filter(|view| {
-                    self.views
-                        .builtin
-                        .get(&self.options.board)
-                        .is_some_and(|id| view["id"] == *id)
-                        || self
-                            .db
-                            .board_in_view(self.options.board, view["id"].as_str())
-                            .is_ok_and(|columns| {
-                                columns.iter().any(|column| !column.cards.is_empty())
-                            })
-                }),
-        );
-        let order = project["project_view"]["user_project_views"][0]["view_order"]
-            .as_array()
-            .or_else(|| project["project_view"]["default_view_order"].as_array());
-        views.sort_by_key(|view| {
-            if view["id"] == project["project_view"]["default_view_id"] {
-                0
-            } else {
-                1 + order
-                    .and_then(|order| order.iter().position(|id| *id == view["id"]))
-                    .unwrap_or(usize::MAX - 1)
-            }
-        });
-        div()
-            .px(px(24.))
-            .flex()
-            .gap(px(12.))
-            .children(views.into_iter().enumerate().map(|(i, view)| {
+        let project = self.db.board_project(self.options.board).unwrap_or(Value::Null);
+        if !project["project_view"].is_object() { return div().into_any_element(); }
+        div().px(px(24.)).flex().gap(px(12.))
+            .children(self.rendered_board_views(&project).into_iter().enumerate().map(|(i, view)| {
                 let id = view["id"].clone();
-                let title = view["title"].as_str().unwrap_or("").to_owned();
-                div()
-                    .id(("saved-view", i))
-                    .cursor_pointer()
-                    .child(title)
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        this.select_board_view(id.clone(), window, cx);
-                    }))
+                let title = if id == project["project_view"]["default_view_id"] { project["title"].as_str().unwrap_or("") } else { view["title"].as_str().unwrap_or("") }.to_owned();
+                div().id(("saved-view", i)).cursor_pointer().child(title.clone())
+                    .on_click(cx.listener(move |this, _, window, cx| this.select_board_view(id.clone(), window, cx)))
+                    .layout_key(&self.layout, format!("board.view.tab.{i}"), Some(title))
             }))
-            .child(
-                div()
-                    .id("save-current-view")
-                    .cursor_pointer()
-                    .child("Save view")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_view_panel(Panel::Save, window, cx)
-                    })),
-            )
-            .child(
-                div()
-                    .id("manage-board-views")
-                    .cursor_pointer()
-                    .child("Manage views")
-                    .on_click(cx.listener(|this, _, window, cx| {
-                        this.open_view_panel(Panel::Manage, window, cx)
-                    })),
-            )
+            .child(div().id("save-current-view").cursor_pointer().child("Save view").on_click(cx.listener(|this, _, window, cx| this.open_view_panel(Panel::Save, window, cx))))
+            .child(div().id("manage-board-views").cursor_pointer().child("Manage views").on_click(cx.listener(|this, _, window, cx| this.open_view_panel(Panel::Manage, window, cx))))
             .into_any_element()
     }
     fn can_set_view_default(&self, project: &Value) -> bool {
@@ -1612,6 +1601,10 @@ impl Desktop {
                     .bg(color(t.comment))
                     .rounded(px(6.))
                     .child(title)
+                    .when(panel == Panel::Manage, |d| d.child(div().id("show-empty-view-tabs").p(px(8.)).cursor_pointer().child(format!("Show views with 0 tasks    {}", if self.show_empty_view_tabs() { "✓" } else { "" })).on_click(cx.listener(|this, _, _, cx| {
+                        if let Err(error) = this.db.kv_set("showEmptyViewTabs", if this.show_empty_view_tabs() { "false" } else { "true" }) { this.error = Some(error.to_string()); }
+                        cx.notify();
+                    }))))
                     .when(Self::view_searchable(panel), |d| {
                         d.child(self.views.query.clone())
                     })
@@ -1700,16 +1693,23 @@ impl Desktop {
                         self.view_choices()
                             .into_iter()
                             .enumerate()
-                            .map(|(i, (name, _))| {
+                            .map(|(i, (name, value))| {
+                                let view_id = value["id"].as_str().unwrap_or("").to_owned();
+                                let is_view = panel == Panel::Manage && !view_id.is_empty();
+                                let is_default = is_view && self.db.board_project(self.options.board).is_ok_and(|project| project["project_view"]["default_view_id"] == view_id);
+                                let hidden = self.hidden_view_tabs()[self.view_tab_key(&view_id)] == true;
+                                let builtin = view_id.starts_with("builtin:");
                                 div()
                                     .id(("view-option", i))
                                     .p(px(8.))
                                     .cursor_pointer()
                                     .when(i == self.views.choice, |d| d.bg(color(t.active)))
+                                    .flex().gap(px(8.))
+                                    .when(is_view && !is_default, |d| d.on_drag(ViewDrag { id: view_id.clone(), title: name.clone() }, |drag, _, _, cx| cx.new(|_| drag.clone())).on_drop(cx.listener({ let id = view_id.clone(); move |this, drag: &ViewDrag, window, cx| this.reorder_view_tab(&drag.id, &id, window, cx) })))
                                     .child(name)
-                                    .on_click(cx.listener(move |this, _, window, cx| {
-                                        this.choose_view_option(i, window, cx)
-                                    }))
+                                    .when(!builtin, |d| d.on_click(cx.listener(move |this, _, window, cx| this.choose_view_option(i, window, cx))))
+                                    .when(is_view, |d| d.child(div().text_color(color(t.muted)).child(self.db.view_task_count(self.options.board, &value).unwrap_or(0).to_string())))
+                                    .when(is_view && !is_default, |d| d.child(div().id(("view-tab-visibility", i)).cursor_pointer().child(if hidden { "Show" } else { "Hide" }).on_click(cx.listener(move |this, _, _, cx| { cx.stop_propagation(); this.toggle_view_tab(&view_id, cx); }))))
                                     .layout_key(
                                         &self.layout,
                                         format!("board.view.option.{i}"),
@@ -1870,6 +1870,62 @@ mod management_tests {
             }
         }
     }
+    #[gpui::test]
+    fn view_visibility_and_zero_task_tabs_are_local_persistent_and_keep_default_and_active(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        view.update_in(cx, |this, window, cx| {
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"default_view_id":"default","allViews":[{"id":"default","title":"Default"},{"id":"nonempty","title":"All"},{"id":"empty","title":"Nobody","board_filters":{"addedFilters":[{"type":"Priority","searchPayload":[{"priority_index":1}]}]}}],"user_project_views":[{}]}}]})).unwrap();
+            this.switch(Screen::Board, cx);
+            let project = this.db.board_project(15).unwrap();
+            let contains = |views: Vec<Value>, id: &str| views.iter().any(|view| view["id"] == id);
+            assert!(!contains(this.rendered_board_views(&project), "empty"));
+            assert!(contains(this.rendered_board_views(&project), "default"));
+            this.db.kv_set("showEmptyViewTabs", "true").unwrap();
+            assert!(contains(this.rendered_board_views(&project), "empty"));
+            this.toggle_view_tab("empty", cx);
+            assert_eq!(this.hidden_view_tabs()["empty"], true);
+            assert!(!contains(this.rendered_board_views(&project), "empty"));
+            this.toggle_view_tab("default", cx);
+            assert!(contains(this.rendered_board_views(&project), "default"));
+            this.toggle_view_tab("builtin:my-tasks", cx);
+            assert_eq!(this.hidden_view_tabs()["15:builtin:my-tasks"], true);
+            this.select_board_view(json!("builtin:my-tasks"), window, cx);
+            assert!(contains(this.rendered_board_views(&project), "builtin:my-tasks"));
+            this.options.board = 16;
+            assert_ne!(this.hidden_view_tabs()[this.view_tab_key("builtin:my-tasks")], true);
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
+    }
+    #[gpui::test]
+    fn dragging_view_order_keeps_default_fixed_includes_builtins_and_rolls_back_both_refusals(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        for status in [401, 403, 200] {
+            view.update_in(cx, |this, window, cx| {
+                this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"default_view_id":"default","allViews":[{"id":"default","title":"Default"},{"id":"first","title":"First"},{"id":"last","title":"Last"}],"user_project_views":[{}]}}]})).unwrap();
+                this.open_view_panel(Panel::Manage, window, cx);
+                let before = this.db.board_project(15).unwrap();
+                this.reorder_view_tab("default", "last", window, cx);
+                assert!(this.views.pending.is_none());
+                this.reorder_view_tab("last", "first", window, cx);
+                let row = this.db.mutations().unwrap().into_iter().find(|row| row.status != "failed").unwrap();
+                let change: ht_core::ViewWrite = serde_json::from_value(row.payload_json["change"].clone()).unwrap();
+                let order = change.body["viewOrder"].as_array().unwrap();
+                assert_eq!(&order[..3], &[json!("default"), json!("last"), json!("first")]);
+                assert!(order.contains(&json!("builtin:my-tasks")));
+                assert_eq!(this.db.board_project(15).unwrap()["project_view"]["user_project_views"][0]["view_order"], json!(order));
+                this.db.drain_once(&mut Web { status, reply:json!({"viewOrder":order}), expected:change.clone() }, chrono::Utc::now().timestamp()+1).unwrap();
+                assert!(!this.poll_view(window, cx));
+                assert_eq!(this.views.panel, Some(Panel::Manage));
+                if status != 200 {
+                    assert_eq!(this.db.board_project(15).unwrap()["project_view"], before["project_view"]);
+                    assert_eq!(this.error.as_deref(), Some("Unable to save view order"));
+                }
+            });
+        }
+    }
+
 }
 
 #[cfg(test)]

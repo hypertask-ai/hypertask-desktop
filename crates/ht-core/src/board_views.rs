@@ -179,6 +179,19 @@ impl Db {
             Ok(())
         })
     }
+    pub fn view_task_count(&self, project: i64, view: &Value) -> Result<usize> {
+        let board = self.board_project(project)?;
+        let mut tasks = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Normal'", [project])?;
+        if let Some(id) = view["id"].as_str().filter(|id| id.starts_with("builtin:")) {
+            return Ok(tasks.iter().filter(|task| builtin_matches(id, task, &board, self.current_user_id(), chrono::Utc::now().timestamp())).count());
+        }
+        let columns = view["board_columns_view"].as_array().or_else(|| board["section"].as_array());
+        tasks.retain(|task| columns.is_some_and(|columns| columns.iter().any(|column| column["visibility"] != false && column.get("id").or_else(|| column.get("sectionId")) == task.get("sectionId"))));
+        let running = self.kv_get(&format!("web-running-timers:{}:{project}", self.current_user_id().unwrap_or(0)))?.and_then(|value| serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();
+        filter_sort(&mut tasks, view, &board, &running);
+        tasks.retain(|task| match view["board_subtask_setting"].as_str() { Some("None" | "Parent") => task["parentTask"].is_null(), Some("Card") => task["parentTask"].is_null() || task["subTasks"].as_array().is_some_and(|rows| !rows.is_empty()), _ => true });
+        Ok(tasks.len())
+    }
     pub fn board_project(&self, project: i64) -> Result<Value> {
         let mut value=self.raw("Project", &json!(project))?.context("Board is unavailable")?;
         value["section"]=json!(self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 ORDER BY ranking,id",[project])?);

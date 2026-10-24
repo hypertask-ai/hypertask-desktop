@@ -341,3 +341,17 @@ fn archived_board_toggle_is_queued_optimistic_and_refusals_restore_visibility_af
         assert_eq!(db.board(15).unwrap()[0].cards.len(), 2);
     }
 }
+
+#[test]
+fn saved_view_counts_use_the_view_own_columns_filters_and_subtask_mode_not_the_active_view() {
+    let mut db = Db::memory().unwrap(); seed(&mut db);
+    let all = json!({"id":"all"});
+    assert_eq!(db.view_task_count(15, &all).unwrap(), 2);
+    let urgent = json!({"id":"urgent","board_filters":{"addedFilters":[{"type":"Priority","searchPayload":[{"priority_index":1}]}]}});
+    assert_eq!(db.view_task_count(15, &urgent).unwrap(), 1);
+    assert_eq!(db.view_task_count(15, &json!({"board_columns_view":[]})).unwrap(), 0);
+    db.apply_response(&json!({"success":true,"tasks":[{"id":2,"projectId":15,"sectionId":10,"title":"Urgent child","status":"Normal","priority":{"priority_index":1},"parentTask":{"id":1}}]})).unwrap();
+    let mut parents = urgent.clone(); parents["board_subtask_setting"] = json!("Parent");
+    assert_eq!(db.view_task_count(15, &parents).unwrap(), 0);
+    assert_eq!(db.view_task_count(15, &urgent).unwrap(), 1);
+}
