@@ -43,9 +43,18 @@ try {
     }
     const measure = () => Object.fromEntries(['footer', 'important', 'agents'].map(id => [id, document.getElementById(id).getBoundingClientRect().width]));
     const result = {};
-    for (const family of ['WebFullStatic', 'WebLatinStatic']) {
+    result.glyphs = {};
+    const canvas = document.createElement('canvas').getContext('2d');
+    for (const family of ['WebPlex', 'WebFullStatic', 'WebLatinStatic']) {
       document.body.style.fontFamily = family;
       result[family] = measure();
+      result.glyphs[family] = {};
+      for (const weight of [400, 600]) {
+        canvas.font = `${weight} 14px ${family}`;
+        result.glyphs[family][weight] = Object.fromEntries(
+          [...new Set('Command centerImportantAgents')].map(char => [char, canvas.measureText(char).width]),
+        );
+      }
     }
     document.body.style.fontFamily = 'WebPlex';
     document.body.style.fontKerning = 'none';
@@ -62,7 +71,7 @@ try {
     ['important', 'inbox.tab.0', 96],
     ['agents', 'inbox.tab.1', 72],
   ].map(([id, key, frozenWidth]) => ({ key, webWidth: web[id], nativeWidth: elements[key].w, frozenWidth, fullStaticWidth: diagnostics.WebFullStatic[id], latinStaticWidth: diagnostics.WebLatinStatic[id], withoutKerningWidth: diagnostics.withoutKerning[id] }));
-  const receipt = { font: url, digest, width: 1920, height: 1009, scale: 1, probes };
+  const receipt = { font: url, digest, width: 1920, height: 1009, scale: 1, probes, diagnostics };
   writeFileSync('evidence/layout/font-metrics.json', JSON.stringify(receipt, null, 2) + '\n');
   for (const probe of probes) console.log(`FONT_METRIC ${JSON.stringify(probe)}`);
   for (const probe of probes) {

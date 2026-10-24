@@ -6,6 +6,7 @@ from pathlib import Path
 from urllib.request import urlopen
 
 from fontTools.ttLib import TTFont
+from fontTools import subset
 from fontTools.varLib.instancer import instantiateVariableFont
 
 OUT = Path("evidence/web-fonts")
@@ -27,6 +28,12 @@ for weight in [400, 500, 600, 700]:
         axes = {axis.axisTag: weight if axis.axisTag == "wght" else axis.defaultValue for axis in font["fvar"].axes}
         face = instantiateVariableFont(font, axes, inplace=False, updateFontNames=True)
         face.flavor = None
+        # The web asset (ibmPlexSans.ts:3) is unhinted. Preserve every glyph,
+        # but do not import the full source's different TrueType hint programs.
+        if name == "full":
+            unhinted = subset.Subsetter(options=subset.Options(hinting=False, retain_gids=True))
+            unhinted.populate(glyphs=face.getGlyphOrder())
+            unhinted.subset(face)
         directory = OUT if name == "full" else OUT / "latin-probe"
         directory.mkdir(exist_ok=True)
         face.save(directory / f"IBMPlexSans-{weight}.ttf")
