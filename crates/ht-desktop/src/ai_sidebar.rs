@@ -1276,7 +1276,7 @@ impl Render for AiSidebar {
             });
         let mut composer = div()
             .id("ai-composer")
-            .on_mouse_down_out(cx.listener(|this, event, _, cx| {
+            .on_mouse_down_out(cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
                 if this.model_menu && !this.models.menu_bounds.get().is_some_and(|bounds| bounds.contains(&event.position)) { this.model_menu=false;cx.notify(); }
                 if this.context_picker.scope_open { this.context_picker.scope_open=false;cx.notify(); }
             }))
