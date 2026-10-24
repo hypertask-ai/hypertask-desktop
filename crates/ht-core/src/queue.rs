@@ -21,6 +21,10 @@ pub enum Write {
         task_id: i64,
         text: String,
     },
+    CommentDraft {
+        task_id: i64,
+        text: Option<String>,
+    },
     CommentAction {
         task_id: i64,
         comment_id: i64,
@@ -99,7 +103,20 @@ impl Db {
                 ensure!(!text.trim().is_empty(), "comment must not be empty");
                 ensure!(text.encode_utf16().count() <= 5000, "comment must be 5000 characters or less");
                 ensure!(db.task(*task_id)?.is_some(), "task is not cached");
-                (format!("task:{task_id}"), "task_comment", json!({"task_id":task_id,"text":text}))
+                let draft = db.comment_draft(*task_id)?.filter(|s| !s.is_empty());
+                let user = db.current_user_id();
+                let payload = json!({"task_id":task_id,"text":text,"draft_text":draft,"draft_user_id":user.filter(|_| draft.is_some())});
+                if draft.is_some() { db.save_local_comment_draft(*task_id, "")?; }
+                (format!("task:{task_id}"), "task_comment", payload)
+            }
+            Write::CommentDraft { task_id, text } => {
+                ensure!(db.task(*task_id)?.is_some(), "draft task is not cached");
+                let user = db.current_user_id().context("sync your account before saving drafts")?;
+                if let Some(text) = text { ensure!(!text.trim().is_empty(), "draft must not be empty"); }
+                db.save_local_comment_draft(*task_id, text.as_deref().unwrap_or(""))?;
+                let entity = format!("draft:{user}:{task_id}");
+                db.conn.execute("DELETE FROM mutation_queue WHERE entity=? AND status='pending' AND attempts=0", [&entity])?;
+                (entity, "comment_draft", json!({"task_id":task_id,"user_id":user,"draft_type":"comment","text":text}))
             }
             Write::CommentAction { task_id, comment_id, change } => {
                 change.validate()?;
@@ -187,6 +204,7 @@ impl Db {
             }
             "editor_improve"=>(),
             "draft_discard"=>self.optimistic_discard(payload)?,
+            "comment_draft" => self.optimistic_comment_draft(payload)?,
             "comment_action" => self.optimistic_comment_action(payload)?,
             "task_comment" => {
                 let timestamp = chrono::DateTime::from_timestamp(now, 0)
@@ -320,11 +338,20 @@ impl Db {
                 json!({"task_id":row.payload_json["task_id"],"text":row.payload_json["text"],"kind":"qa","content_type":"html"}),
             ),
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
-            "comment_action" => ("", Value::Null),
+            "comment_action" | "comment_draft" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
         let response = if row.kind == "draft_discard" {
             crate::editor_queue::discard(transport,&row.payload_json,&row.client_id)
+        } else if row.kind == "comment_draft" {
+            if self.current_user_id() != row.payload_json["user_id"].as_i64() {
+                Ok(Response {
+                    status: 403,
+                    body: json!({"success":false,"error":"Draft belongs to another account"}),
+                })
+            } else {
+                crate::comment_draft::send_draft(transport, &row.payload_json, &row.client_id)
+            }
         } else if row.kind == "comment_action" {
             let change: crate::CommentWrite =
                 serde_json::from_value(row.payload_json["change"].clone())?;
@@ -362,6 +389,7 @@ impl Db {
                     db.reapply_pending()?;
                 }
                 if row.kind == "task_comment" {
+                    db.restore_failed_comment_draft(&row.payload_json)?;
                     db.conn.execute("DELETE FROM Comment WHERE id=?", [-row.id])?;
                     db.request_refetch("comments", row.payload_json["task_id"].as_i64().context("missing task id")?)?;
                 }
@@ -383,6 +411,7 @@ impl Db {
             if !active { return Ok(()); }
             match row.kind.as_str() {
                 "editor_improve"|"draft_discard"=>db.resolve_editor(row.id,&row.kind,&row.payload_json,body)?,
+                "comment_draft" => db.resolve_comment_draft(&row.payload_json, body)?,
                 "comment_action" => db.resolve_comment_action(&row.payload_json, body)?,
                 "task_title" | "task_section" | "task_patch" => {
                     let task = body.get("task").or_else(|| body["tasks"].as_array().and_then(|v| v.iter().find(|t| t["id"] == row.payload_json["task_id"]))).context("mutation response missing task")?;
@@ -395,6 +424,7 @@ impl Db {
                     ensure!(comment["id"].as_i64().is_some_and(|id| id>0), "invalid comment id");
                     db.upsert_comment(row.payload_json["task_id"].as_i64().context("missing task id")?, comment)?;
                     db.conn.execute("DELETE FROM Comment WHERE id=?", [-row.id])?;
+                    db.clear_sent_comment_draft(&row.payload_json, row.created_at)?;
                     db.request_refetch("task", row.payload_json["task_id"].as_i64().unwrap())?;
                 }
                 "inbox_archive" => {
@@ -404,7 +434,7 @@ impl Db {
                 _ => bail!("unknown mutation kind"),
             }
             if let Some(task_id)=row.payload_json["task_id"].as_i64() {
-                let kind=if row.kind=="task_comment"{Some(crate::DraftType::Comment)}else if row.kind=="task_patch"&&row.payload_json["description"].is_string(){Some(crate::DraftType::Description)}else{None};
+                let kind=if row.kind=="task_comment" && db.comment_draft(task_id)?.is_none_or(|html| html.is_empty()){Some(crate::DraftType::Comment)}else if row.kind=="task_patch"&&row.payload_json["description"].is_string(){Some(crate::DraftType::Description)}else{None};
                 if let Some(draft_type)=kind {
                     if db.editor_drafts(task_id)?.iter().any(|d|d["draftType"]==draft_type.as_str()) {
                         db.enqueue_in_transaction(Write::DiscardDraft{task_id,draft_type},now)?;

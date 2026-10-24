@@ -196,6 +196,7 @@ impl<T: Transport> Sync<T> {
         };
         // Keep drafts separate from published task content; pending discards overlay the cache.
         self.db.transaction(|db| {
+            db.cache_comment_drafts(task_id, drafts)?;
             let mut task = db
                 .raw("Task", &json!(task_id))?
                 .context("draft task not cached")?;

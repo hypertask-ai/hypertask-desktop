@@ -107,13 +107,10 @@ impl Desktop {
 
     fn toggle_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shell.ai_open = !self.shell.ai_open;
-        if self.shell.ai_open {
-            if let Some(sidebar) = &self.ai_sidebar {
-                sidebar.update(cx, |sidebar, cx| sidebar.expand(cx));
-            }
-        } else {
-            window.focus(&self.focus, cx);
+        if let Some(sidebar) = &self.ai_sidebar {
+            sidebar.update(cx, |sidebar, cx| sidebar.set_open(self.shell.ai_open, cx));
         }
+        if !self.shell.ai_open { window.focus(&self.focus, cx); }
         cx.notify();
     }
 

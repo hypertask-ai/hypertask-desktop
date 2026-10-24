@@ -43,7 +43,7 @@ impl Desktop {
             .flex_col()
             .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
             .when(
-                self.detail.as_ref().is_some_and(|d| {
+                self.db.comment_draft(self.options.task).ok().flatten().is_some_and(|s| !s.is_empty()) || self.detail.as_ref().is_some_and(|d| {
                     d.task
                         .extra
                         .get("hasCommentDraft")

@@ -93,7 +93,7 @@ impl Desktop {
     }
 
     pub(super) fn comment_body_html(&self, cx: &App) -> String {
-        self.comment_input.read(cx).html()
+        self.comment_draft_body(cx)
     }
 
     pub(super) fn run_comment_action(
@@ -131,6 +131,41 @@ impl Desktop {
         };
         let id = comment.id;
         match action {
+            Action::CopyCommentContent => {
+                let text = RichText::parse(&comment.text, self.colors).text;
+                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+            }
+            Action::CopyCommentLink => {
+                if let Some(task) = self.detail.as_ref().map(|d| &d.task)
+                    && let Some(index) = task.extra["uniqueIndex"].as_i64()
+                {
+                    // Web fragments identify the displayed comment index, not its database id.
+                    cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!(
+                        "https://app.hypertask.ai/detail/project-{}/{index}#comment-{}",
+                        task.project_id,
+                        self.interaction.task_part - 1
+                    )));
+                }
+            }
+            Action::CopyCommentToAiChat => {
+                let Some(creator) = comment.extra.get("creator") else {
+                    return;
+                };
+                let Some(user) = creator["id"].as_i64() else {
+                    return;
+                };
+                let name = escape(creator["displayName"].as_str().unwrap_or(""));
+                let quote = format!(
+                    "<span data-type=\"mention\" class=\"mention\" data-id=\"{user}\" data-label=\"name\" uniqueindex=\"\" projectid=\"\" text=\"{name}\" contenteditable=\"false\">{name}</span> said <blockquote>{}</blockquote><p></p>",
+                    comment.text
+                );
+                if let Some(sidebar) = &self.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| {
+                        sidebar.insert_comment_quote(quote, window, cx)
+                    });
+                    self.shell.ai_open = true;
+                }
+            }
             Action::ExpandComment => {
                 let last = self
                     .detail
@@ -349,6 +384,29 @@ impl Desktop {
             for (key, name, keys, action, enabled) in [
                 ("editcomment", "Edit comment", "", Action::EditComment, own),
                 (
+                    "copyCommentContent",
+                    "Copy comment content",
+                    "",
+                    Action::CopyCommentContent,
+                    true,
+                ),
+                (
+                    "copyCommentLink",
+                    "Copy comment URL",
+                    "",
+                    Action::CopyCommentLink,
+                    self.detail
+                        .as_ref()
+                        .is_some_and(|d| d.task.extra["uniqueIndex"].as_i64().is_some()),
+                ),
+                (
+                    "copyCommentToAiChat",
+                    "Copy comment to AI chat",
+                    "",
+                    Action::CopyCommentToAiChat,
+                    self.ai_sidebar.is_some(),
+                ),
+                (
                     "fastLikeComment",
                     "Like comment",
                     "L",
@@ -530,10 +588,21 @@ impl Desktop {
                                     cx.stop_propagation();
                                     this.interaction.task_part = i + 1;
                                     this.run_shortcut(Action::Commands, window, cx);
-                                })),
+                                }))
+                                .layout_key(
+                                    &self.layout,
+                                    format!("task.comment.{i}.options"),
+                                    None,
+                                ),
                         )
                     })
-                    .child(short_date(&comment.created_at)),
+                    .child({
+                        let exact = exact_comment_time(&comment.created_at);
+                        div()
+                            .id(("comment-timestamp", i))
+                            .child(short_date(&comment.created_at))
+                            .tooltip(move |_, cx| comment_tooltip(exact.clone(), cx))
+                    }),
             )
             .child(if editing {
                 div()
@@ -738,6 +807,16 @@ impl Desktop {
             )
             .into_any_element()
     }
+}
+
+fn exact_comment_time(time: &str) -> String {
+    chrono::DateTime::parse_from_rfc3339(time)
+        .map(|date| {
+            date.with_timezone(&chrono::Local)
+                .format("%a, %b %-d %Y at %-I:%M %p")
+                .to_string()
+        })
+        .unwrap_or_else(|_| time.to_owned())
 }
 
 struct CommentTooltip(String);
@@ -1045,6 +1124,10 @@ mod tests {
             assert!(!elements.iter().any(|e| e["key"] == "task.composer.resize"));
             assert!(this.comment_input.read(cx).content.contains("More text"));
         });
+    }
+
+    mod parity {
+        include!("comment_parity.rs");
     }
 
     #[test]

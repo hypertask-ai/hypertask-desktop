@@ -48,12 +48,18 @@ enum Editing {
     ExistingComment,
 }
 
+#[path = "ai_workspace.rs"]
+mod ai_workspace;
+
 #[path = "comment_actions.rs"]
 mod comment_actions;
 #[path = "editor_actions.rs"]
 mod editor_actions;
 #[path = "shell.rs"]
 mod shell;
+
+#[path = "comment_drafts.rs"]
+mod comment_drafts;
 
 #[path = "comments.rs"]
 mod comments;
@@ -93,6 +99,7 @@ pub struct Desktop {
     comment_input: Entity<TextInput>,
     interaction: interactions::Interaction,
     comment_actions: comment_actions::CommentActions,
+    comment_drafts: comment_drafts::CommentDrafts,
     moving: bool,
     footer: bool,
     ready_scheduled: bool,
@@ -136,18 +143,27 @@ impl Desktop {
                 cx,
             ).comment_editor()
         });
-        cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
+        cx.observe(&comment_input, |this, _, cx| { this.observe_comment_draft(cx); cx.notify(); }).detach();
         if options.background {
             cx.observe(&title_input, |_, _, cx| cx.notify()).detach();
         }
         let focus = cx.focus_handle();
         let (mut signin, secret) = SignIn::start(options.offline);
         let ai_sidebar = (AI_CHAT_PANEL_SHOWN || options.ai_sidebar).then(|| {
-            cx.new(|cx| AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx))
+            cx.new(|cx| {
+                let mut sidebar = AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx);
+                sidebar.restore_presentation(&db);
+                sidebar
+            })
         });
         let ai_sidebar_subscription = ai_sidebar
             .as_ref()
-            .map(|sidebar| cx.observe(sidebar, |_, _, cx| cx.notify()));
+            .map(|sidebar| cx.observe(sidebar, |this, sidebar, cx| {
+                let sidebar = sidebar.read(cx);
+                this.shell.ai_open = sidebar.is_open();
+                if let Err(error) = sidebar.persist_presentation(&this.db) { this.error = Some(error.to_string()); }
+                cx.notify();
+            }));
         let worker = secret.clone().and_then(|secret| Self::start_worker(&options, &mut signin, secret));
         let auto_board = !options.offline && !options.board_given && signin.is_interactive();
         let mut options = options;
@@ -157,6 +173,7 @@ impl Desktop {
         let detail_scroll = ScrollHandle::new();
         let mut shell = shell::Shell::new(&db, cx);
         shell.set_token(secret.clone());
+        if let Some(sidebar) = &ai_sidebar { shell.ai_open = sidebar.read(cx).is_open(); }
         let mut view = Self {
             shell,
             focus,
@@ -194,6 +211,7 @@ impl Desktop {
             comment_input,
             interaction: interactions::Interaction::new(cx),
             comment_actions: comment_actions::CommentActions::new(cx),
+            comment_drafts: comment_drafts::CommentDrafts::default(),
             moving: false,
             footer: true,
             ready_scheduled: false,
@@ -448,6 +466,7 @@ impl Desktop {
     }
 
     fn switch(&mut self, screen: Screen, cx: &mut Context<Self>) {
+        self.exit_ai_fullscreen(cx);
         if self.auto_board && screen == Screen::Board {
             Self::resolve_board(&self.db, &mut self.options);
             let _ = self
@@ -544,6 +563,7 @@ impl Desktop {
             self.finish_editor_job(cx);
             self.editing = Editing::None;
             if comment {
+                self.comment_draft_sent();
                 self.comment_input
                     .update(cx, |input, cx| input.reset(window, cx));
             }
@@ -564,7 +584,10 @@ impl Desktop {
                 sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
                 return;
             }
-            if sidebar.read(cx).has_focus(window, cx) {
+            let commands = (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
+                && event.keystroke.key == "k" && !event.keystroke.modifiers.shift && !event.keystroke.modifiers.alt;
+            if (sidebar.read(cx).has_focus(window, cx)
+                || sidebar.read(cx).mode() == crate::ai_sidebar::DisplayMode::Fullscreen) && !commands {
                 return;
             }
         }
@@ -2033,12 +2056,13 @@ impl Render for Desktop {
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
         }
+        self.restore_comment_draft(cx);
         if let Some(sidebar) = &self.ai_sidebar {
             let task = (self.screen != Screen::Board)
                 .then(|| self.selected_task())
                 .flatten();
             let scope = Scope::load(&self.db, self.screen, self.options.board, task);
-            sidebar.update(cx, |sidebar, cx| sidebar.set_scope(scope, cx));
+            sidebar.update(cx, |sidebar, cx| { sidebar.capture = self.layout.clone(); sidebar.fit_viewport(f32::from(window.viewport_size().width), cx); sidebar.set_scope(scope, cx); });
         }
         if self.shell.settings {
             return self.settings_screen(window, cx).into_any_element();
@@ -2090,17 +2114,17 @@ impl Render for Desktop {
                     )
                     .layout_key(&self.layout, "main", None),
             )
-            .when_some(self.ai_sidebar.clone().filter(|_| self.shell.ai_open), |d, sidebar| {
-                let width = sidebar.read(cx).width();
-                d.child(
-                    div()
-                        .w(px(width))
-                        .flex_shrink_0()
-                        .h_full()
-                        .child(sidebar)
-                        .layout_key(&self.layout, "rightpanel", None),
-                )
-            })
+            .on_mouse_move(cx.listener(|this, event, window, cx| {
+                if let Some(sidebar) = &this.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.resize_move(event, window, cx));
+                }
+            }))
+            .on_mouse_up(gpui::MouseButton::Left, cx.listener(|this, event, window, cx| {
+                if let Some(sidebar) = &this.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.resize_end(event, window, cx));
+                }
+            }))
+            .child(self.ai_panel(window, cx))
             .child(self.shell_reopen(cx))
             .child(self.shell_overlay(window, cx))
             .child(self.interaction_overlay(window, cx))

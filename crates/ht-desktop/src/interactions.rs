@@ -226,7 +226,8 @@ impl Desktop {
     ) {
         use Action::*;
         match action {
-            ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
+            PinAiChat | FullscreenAiChat => self.ai_command(action, cx),
+            CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
             | ExpandComment | ExpandComments => self.run_comment_action(action, window, cx),
             Commands => self.show_modal(Modal::Commands, window, cx),
             Inbox | Board => {
@@ -281,7 +282,9 @@ impl Desktop {
                 }
             }
             DiscardDraft => {
-                if !self.discard_editor_draft(cx) {return;}
+                if self.editing == Editing::None {
+                    if !self.discard_comment_draft(cx) { return; }
+                } else if !self.discard_editor_draft(cx) { return; }
                 match self.editing {
                     Editing::Description => self.interaction.description.update(cx, |input, cx| {
                         input.set_html(self.detail.as_ref().map_or("", |d| d.task.description.as_str()), cx)
@@ -729,6 +732,14 @@ impl Desktop {
     fn command_rows(&self) -> Vec<command_center::Command> {
         let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
         self.add_comment_commands(&mut rows);
+        if self.ai_sidebar.is_some() {
+            for (key, name, action) in [
+                ("pinAiChatOpen", "Pin AI chat open", Action::PinAiChat),
+                ("fullScreenAiChat", "Open AI chat full screen", Action::FullscreenAiChat),
+            ] {
+                rows.push(command_center::Command { key: key.into(), name: name.into(), group: "AI", keys: String::new(), keywords: "ai chat", action: CommandAction::Shortcut(action) });
+            }
+        }
         if self
             .selected_task()
             .and_then(|id| self.db.task(id).ok().flatten())

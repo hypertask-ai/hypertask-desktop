@@ -1,3 +1,4 @@
+use crate::layout::LayoutKey;
 use crate::{
     input::TextInput,
     rich_text::RichText,
@@ -20,6 +21,11 @@ use std::{
     thread,
     time::Duration,
 };
+
+#[path = "ai_presentation.rs"]
+mod presentation;
+pub use presentation::DisplayMode;
+use presentation::Presentation;
 
 #[derive(Clone, PartialEq)]
 pub struct Scope {
@@ -130,7 +136,10 @@ struct ActiveTurn {
 
 pub struct AiSidebar {
     colors: Theme,
+    presentation: Presentation,
+    pub capture: crate::layout::Capture,
     input: Entity<TextInput>,
+    draft_quotes: Vec<(String, String)>,
     input_scroll: ScrollHandle,
     _input_subscription: gpui::Subscription,
     focus: FocusHandle,
@@ -156,8 +165,7 @@ pub struct AiSidebar {
 
 impl AiSidebar {
     pub fn expand(&mut self, cx: &mut Context<Self>) {
-        self.collapsed = false;
-        cx.notify();
+        self.set_open(true, cx);
     }
 
     pub fn set_theme(&mut self, colors: Theme, cx: &mut Context<Self>) {
@@ -210,7 +218,10 @@ impl AiSidebar {
         .detach();
         Self {
             colors,
+            presentation: Presentation::default(),
+            capture: None,
             input,
+            draft_quotes: vec![],
             input_scroll,
             _input_subscription: input_subscription,
             focus: cx.focus_handle(),
@@ -241,6 +252,7 @@ impl AiSidebar {
         self.chats = vec![Chat::new()];
         self.selected = 0;
         self.history.clear();
+        self.draft_quotes.clear();
         self.history_pending = None;
         self.history_error = None;
         self.chat_pending = None;
@@ -278,7 +290,7 @@ impl AiSidebar {
                     self.previous_focus = Some(previous);
                 }
             }
-            self.collapsed = false;
+            self.set_open(true, cx);
             window.focus(&focus, cx);
         }
         cx.notify();
@@ -289,7 +301,11 @@ impl AiSidebar {
     }
 
     pub fn width(&self) -> f32 {
-        if self.collapsed { 28. } else { 420. }
+        if self.collapsed && self.mode() == DisplayMode::Sidebar {
+            28.
+        } else {
+            self.presentation.width
+        }
     }
 
     fn toggle_history(&mut self, cx: &mut Context<Self>) {
@@ -381,6 +397,7 @@ impl AiSidebar {
                     self.chat_pending = None;
                     self.chats.push(chat);
                     self.selected = self.chats.len() - 1;
+                    self.scroll.scroll_to_bottom();
                     self.history_menu = false;
                     cx.notify();
                 }
@@ -396,6 +413,7 @@ impl AiSidebar {
 
     fn new_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.chat_pending = None;
+        self.draft_quotes.clear();
         self.chats.push(Chat::new());
         self.selected = self.chats.len() - 1;
         self.include_context = true;
@@ -406,7 +424,41 @@ impl AiSidebar {
         cx.notify();
     }
 
+    pub fn insert_comment_quote(
+        &mut self,
+        html: String,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        use gpui::EntityInputHandler;
+        let plain = RichText::parse(&html, self.colors).text;
+        self.input.update(cx, |input, cx| {
+            input.replace_text_in_range(None, &plain, window, cx)
+        });
+        self.draft_quotes.push((plain, html));
+        self.set_open(true, cx);
+        window.focus(&self.input.focus_handle(cx), cx);
+    }
+
+    fn prompt_body(&self, text: &str) -> String {
+        let mut message = text.to_owned();
+        if !self.draft_quotes.is_empty() {
+            message = quote_text_html(text);
+            for (plain, html) in &self.draft_quotes {
+                let escaped = quote_text_html(plain);
+                let escaped = &escaped[3..escaped.len() - 4];
+                message = message.replacen(escaped, html, 1);
+            }
+        }
+        message
+    }
+
     fn send(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+        let message = self.prompt_body(if self.draft_quotes.is_empty() {
+            text.trim()
+        } else {
+            &text
+        });
         let text = text.trim().to_owned();
         if text.is_empty() || self.active.is_some() {
             return;
@@ -432,7 +484,7 @@ impl AiSidebar {
         }
         let history: Vec<Message> = chat.messages.iter().map(|m| m.message.clone()).collect();
         let body = ai_chat::request(
-            &text,
+            &message,
             &ids,
             &ai_chat::session_id(),
             MODELS[self.model],
@@ -472,6 +524,7 @@ impl AiSidebar {
             rich: RichText::default(),
         });
         chat.status = "Working…".into();
+        self.scroll.scroll_to_bottom();
         self.active = Some(ActiveTurn {
             ids,
             chat: self.selected,
@@ -481,6 +534,7 @@ impl AiSidebar {
             stopping: false,
             client,
         });
+        self.draft_quotes.clear();
         self.input.update(cx, |input, cx| input.reset(window, cx));
         cx.notify();
     }
@@ -510,8 +564,13 @@ impl AiSidebar {
         cx.notify();
     }
 
+    fn away_from_latest(&self) -> bool {
+        f32::from(self.scroll.max_offset().y + self.scroll.offset().y) > 4.
+    }
+
     fn poll(&mut self, cx: &mut Context<Self>) {
         self.poll_history(cx);
+        let follow_latest = !self.away_from_latest();
         let Some(active) = &mut self.active else {
             return;
         };
@@ -583,7 +642,7 @@ impl AiSidebar {
                 &chat.messages[active.assistant].message.content,
                 self.colors,
             );
-            if active.chat == self.selected {
+            if active.chat == self.selected && follow_latest {
                 self.scroll.scroll_to_bottom();
             }
         }
@@ -606,6 +665,14 @@ impl AiSidebar {
         } else if modifiers.control && modifiers.shift && matches!(key, "o" | "j") {
             self.new_chat(window, cx);
         } else if key == "escape" {
+            if self.model_menu || self.history_menu || self.more_menu {
+                self.model_menu = false;
+                self.history_menu = false;
+                self.more_menu = false;
+                cx.notify();
+                cx.stop_propagation();
+                return;
+            }
             if self.active.is_some() {
                 self.stop(cx);
             } else if let Some(previous) = &self.previous_focus {
@@ -637,6 +704,16 @@ fn icon(name: &'static str, tint: u32) -> impl IntoElement {
         .flex_shrink_0()
 }
 
+fn quote_text_html(text: &str) -> String {
+    format!(
+        "<p>{}</p>",
+        text.replace('&', "&amp;")
+            .replace('<', "&lt;")
+            .replace('>', "&gt;")
+            .replace('\n', "<br>")
+    )
+}
+
 fn markdown(text: &str, colors: Theme) -> RichText {
     let parser = pulldown_cmark::Parser::new_ext(
         text,
@@ -648,24 +725,52 @@ fn markdown(text: &str, colors: Theme) -> RichText {
 }
 
 impl Render for AiSidebar {
-    fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
+    fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.colors;
+        self.fit_viewport(f32::from(window.viewport_size().width), cx);
         if self.collapsed {
             return div()
                 .id("ai-collapsed")
-                .w(px(28.))
+                .w(px(if self.mode() == DisplayMode::Sidebar {
+                    28.
+                } else {
+                    200.
+                }))
                 .h_full()
                 .border_l_1()
                 .border_color(color(t.border))
                 .bg(color(t.container))
                 .cursor_pointer()
                 .on_click(cx.listener(|this, _, window, cx| this.focus_composer(window, cx)))
-                .child(
+                .child(if self.mode() == DisplayMode::Sidebar {
                     div()
                         .mt(px(25.))
                         .ml(px(6.))
-                        .child(icon("chevron-left", t.muted)),
-                )
+                        .child(icon("chevron-left", t.muted))
+                } else {
+                    div()
+                        .px(px(12.))
+                        .py(px(8.))
+                        .flex()
+                        .items_center()
+                        .gap(px(8.))
+                        .child(icon("sparkles", t.muted))
+                        .child(
+                            div()
+                                .flex_1()
+                                .truncate()
+                                .child(self.chats[self.selected].title.clone()),
+                        )
+                        .child(
+                            div()
+                                .id("ai-minimized-close")
+                                .child(icon("x", t.muted))
+                                .on_click(cx.listener(|this, _, _, cx| {
+                                    cx.stop_propagation();
+                                    this.set_open(false, cx);
+                                })),
+                        )
+                })
                 .into_any_element();
         }
         let chat = &self.chats[self.selected];
@@ -689,8 +794,12 @@ impl Render for AiSidebar {
             .min_h_0()
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
+            .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
             .px(px(24.))
-            .py(px(16.));
+            .py(px(16.))
+            .when(self.mode() == DisplayMode::Fullscreen, |d| {
+                d.w_full().max_w(px(800.)).mx_auto()
+            });
         if empty {
             let mut welcome = div()
                 .size_full()
@@ -744,7 +853,30 @@ impl Render for AiSidebar {
                         div()
                             .id(("ai-message", index))
                             .mb(px(20.))
-                            .child(message.rich.element()),
+                            .child(message.rich.element())
+                            .when(!message.message.content.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .id(("ai-copy-response", index))
+                                        .text_size(px(11.))
+                                        .cursor_pointer()
+                                        .child("Copy response")
+                                        .on_click(cx.listener(move |this, _, _, cx| {
+                                            let text = this.chats[this.selected].messages[index]
+                                                .rich
+                                                .text
+                                                .clone();
+                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
+                                                text,
+                                            ));
+                                        }))
+                                        .layout_key(
+                                            &self.capture,
+                                            format!("ai.response.{index}.copy"),
+                                            None,
+                                        ),
+                                )
+                            }),
                     );
                 }
             }
@@ -789,7 +921,8 @@ impl Render for AiSidebar {
                     .id("ai-new")
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.new_chat(window, cx)))
-                    .child(icon("square-pen", t.muted)),
+                    .child(icon("square-pen", t.muted))
+                    .layout_key(&self.capture, "ai.new", None),
             )
             .child(
                 div()
@@ -800,27 +933,76 @@ impl Render for AiSidebar {
                         this.history_menu = false;
                         cx.notify();
                     }))
-                    .child(icon("ellipsis", t.muted)),
+                    .child(icon("ellipsis", t.muted))
+                    .layout_key(&self.capture, "ai.more", None),
             )
             .child(
                 div()
                     .id("ai-collapse")
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| {
-                        this.collapsed = true;
+                        if this.mode() == DisplayMode::Sidebar {
+                            this.set_open(false, cx);
+                        } else {
+                            this.collapsed = true;
+                        }
                         if let Some(previous) = &this.previous_focus {
                             window.focus(previous, cx);
                         }
                         cx.notify();
                     }))
-                    .child(icon("chevron-right", t.muted)),
+                    .child(icon(
+                        if self.mode() == DisplayMode::Sidebar {
+                            "chevron-right"
+                        } else {
+                            "minus"
+                        },
+                        t.muted,
+                    ))
+                    .layout_key(&self.capture, "ai.close", None),
             );
+        if self.mode() == DisplayMode::Fullscreen {
+            header = div()
+                .h(px(48.))
+                .w_full()
+                .flex_shrink_0()
+                .px(px(16.))
+                .flex()
+                .items_center()
+                .gap(px(8.))
+                .child(icon("sparkles", t.accent))
+                .child(
+                    div()
+                        .flex_1()
+                        .truncate()
+                        .child(self.chats[self.selected].title.clone()),
+                )
+                .child(
+                    div()
+                        .id("ai-exit-fullscreen")
+                        .cursor_pointer()
+                        .p(px(4.))
+                        .on_click(cx.listener(|this, _, _, cx| this.exit_fullscreen(cx)))
+                        .child(icon("minimize-2", t.muted))
+                        .layout_key(&self.capture, "ai.fullscreen.exit", None),
+                );
+        }
         if self.history_menu {
             header = header.bg(color(t.container));
         }
+        let mut header_area = div()
+            .id("ai-header-area")
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                if this.history_menu || this.more_menu {
+                    this.history_menu = false;
+                    this.more_menu = false;
+                    cx.notify();
+                }
+            }))
+            .child(header);
         let mut panel = div()
             .id("ai-sidebar")
-            .w(px(420.))
+            .w_full()
             .flex_shrink_0()
             .h_full()
             .min_h_0()
@@ -831,7 +1013,7 @@ impl Render for AiSidebar {
             .flex_col()
             .track_focus(&self.focus)
             .on_key_down(cx.listener(Self::key_down))
-            .child(header);
+            .relative();
         if self.history_menu {
             let mut menu = div()
                 .id("ai-history")
@@ -852,6 +1034,7 @@ impl Render for AiSidebar {
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.chat_pending = None;
                             this.selected = index;
+                            this.scroll.scroll_to_bottom();
                             this.history_menu = false;
                             cx.notify();
                         }))
@@ -900,15 +1083,59 @@ impl Render for AiSidebar {
                         .child(error.clone()),
                 );
             }
-            panel = panel.child(menu);
+            header_area = header_area.child(menu);
         }
         if self.more_menu {
-            panel = panel.child(
+            header_area = header_area.child(
                 div()
+                    .id("ai-overflow-menu")
                     .mx(px(16.))
                     .p(px(8.))
                     .bg(color(t.card))
                     .rounded(px(6.))
+                    .children(
+                        [
+                            (
+                                "ai-pin",
+                                if self.presentation.pinned {
+                                    "Unpin AI chat"
+                                } else {
+                                    "Pin AI chat open"
+                                },
+                            ),
+                            (
+                                "ai-mode",
+                                if self.mode() == DisplayMode::Sidebar {
+                                    "Toggle Floating View"
+                                } else {
+                                    "Toggle Sidebar View"
+                                },
+                            ),
+                            ("ai-fullscreen", "Open full screen"),
+                        ]
+                        .into_iter()
+                        .map(|(id, label)| {
+                            div()
+                                .id(id)
+                                .p(px(6.))
+                                .cursor_pointer()
+                                .hover(|d| d.bg(color(t.hover)))
+                                .child(label)
+                                .on_click(cx.listener(move |this, _, _, cx| match id {
+                                    "ai-pin" => this.toggle_pin(cx),
+                                    "ai-mode" => this.set_mode(
+                                        if this.mode() == DisplayMode::Sidebar {
+                                            DisplayMode::Floating
+                                        } else {
+                                            DisplayMode::Sidebar
+                                        },
+                                        cx,
+                                    ),
+                                    _ => this.set_mode(DisplayMode::Fullscreen, cx),
+                                }))
+                                .layout_key(&self.capture, id.replace('-', "."), None)
+                        }),
+                    )
                     .child(
                         div()
                             .id("ai-new-menu")
@@ -917,17 +1144,26 @@ impl Render for AiSidebar {
                             .hover(|d| d.bg(color(t.hover)))
                             .on_click(cx.listener(|this, _, window, cx| this.new_chat(window, cx)))
                             .child("New AI Chat"),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(color(t.muted))
-                            .child("Ordinary AI · provider access is checked by the server"),
                     ),
             );
         }
         panel = panel
+            .child(header_area)
             .child(transcript)
+            .when(self.away_from_latest(), |d| {
+                d.child(
+                    div()
+                        .id("ai-scroll-latest")
+                        .cursor_pointer()
+                        .mx(px(20.))
+                        .child("↓")
+                        .on_click(cx.listener(|this, _, _, cx| {
+                            this.scroll.scroll_to_bottom();
+                            cx.notify();
+                        }))
+                        .layout_key(&self.capture, "ai.latest", None),
+                )
+            })
             .when(!status.is_empty(), |d| {
                 d.child(
                     div()
@@ -949,6 +1185,13 @@ impl Render for AiSidebar {
                 )
             });
         let mut composer = div()
+            .id("ai-composer")
+            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                if this.model_menu {
+                    this.model_menu = false;
+                    cx.notify();
+                }
+            }))
             .mx(px(12.))
             .mb(px(8.))
             .p(px(8.))
@@ -1069,7 +1312,14 @@ impl Render for AiSidebar {
                     }),
             );
         composer = composer.child(controls);
-        panel.child(composer).into_any_element()
+        if self.mode() == DisplayMode::Fullscreen {
+            composer = composer.w_full().max_w(px(800.)).mx_auto();
+        }
+        panel = panel.child(composer);
+        if self.mode() == DisplayMode::Sidebar {
+            panel = panel.child(self.resize_edge(cx));
+        }
+        panel.into_any_element()
     }
 }
 
@@ -1301,3 +1551,7 @@ mod tests {
         .unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "ai_message_tests.rs"]
+mod message_tests;

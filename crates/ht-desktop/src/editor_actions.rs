@@ -143,7 +143,9 @@ impl Desktop {
             }
             _ => return false,
         };
-        if !self.enqueue(
+        if kind == DraftType::Comment {
+            if !self.discard_comment_draft(cx) { return false; }
+        } else if !self.enqueue(
             Write::DiscardDraft {
                 task_id: self.options.task,
                 draft_type: kind,
