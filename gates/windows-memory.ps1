@@ -6,7 +6,8 @@ param(
     [Parameter(Mandatory)][string]$Out,
     [string]$HeavyManifest,
     [string]$AiHistory,
-    [string]$Assets
+    [string]$Assets,
+    [switch]$StartupProof
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -50,54 +51,6 @@ public class MemoryWindow {
         BitConverter.GetBytes(1080).CopyTo(mode, 176);
         int test = ChangeDisplaySettings(mode, 2);
         return test == 0 ? ChangeDisplaySettings(mode, 0) : test;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    public struct MemoryInfo {
-        public IntPtr BaseAddress, AllocationBase;
-        public uint AllocationProtect;
-        public UIntPtr RegionSize;
-        public uint State, Protect, Type;
-    }
-    [StructLayout(LayoutKind.Sequential)]
-    public struct WorkingSetEntry { public IntPtr Address; public UIntPtr Attributes; }
-    public class Region {
-        public string Type, Path;
-        public long CommittedBytes, ResidentBytes;
-    }
-    [DllImport("kernel32.dll")] static extern IntPtr OpenProcess(uint access, bool inherit, int pid);
-    [DllImport("kernel32.dll")] static extern bool CloseHandle(IntPtr h);
-    [DllImport("kernel32.dll")] static extern UIntPtr VirtualQueryEx(IntPtr h, IntPtr address, out MemoryInfo info, UIntPtr size);
-    [DllImport("psapi.dll")] static extern bool QueryWorkingSetEx(IntPtr h, [In, Out] WorkingSetEntry[] entries, uint size);
-    [DllImport("psapi.dll", CharSet = CharSet.Unicode)] static extern uint GetMappedFileName(IntPtr h, IntPtr address, System.Text.StringBuilder path, uint size);
-    public static System.Collections.Generic.List<Region> Map(int pid) {
-        var regions = new System.Collections.Generic.List<Region>();
-        IntPtr process = OpenProcess(0x410, false, pid);
-        if (process == IntPtr.Zero) throw new Exception("OpenProcess failed");
-        try {
-            long address = 0;
-            MemoryInfo info;
-            while (VirtualQueryEx(process, new IntPtr(address), out info, (UIntPtr)Marshal.SizeOf<MemoryInfo>()) != UIntPtr.Zero) {
-                long size = (long)info.RegionSize.ToUInt64();
-                if (size <= 0) break;
-                if (info.State == 0x1000) {
-                    var path = new System.Text.StringBuilder(1024);
-                    if (info.Type != 0x20000) GetMappedFileName(process, info.BaseAddress, path, 1024);
-                    var pages = new WorkingSetEntry[(size + 4095) / 4096];
-                    for (int i = 0; i < pages.Length; i++) pages[i].Address = new IntPtr(info.BaseAddress.ToInt64() + (long)i * 4096);
-                    if (!QueryWorkingSetEx(process, pages, (uint)(pages.Length * Marshal.SizeOf<WorkingSetEntry>()))) throw new Exception("QueryWorkingSetEx failed");
-                    long resident = 0;
-                    foreach (var page in pages) if ((page.Attributes.ToUInt64() & 1) != 0) resident += 4096;
-                    regions.Add(new Region {
-                        Type = info.Type == 0x20000 ? "Private" : info.Type == 0x1000000 ? "Image" : "Mapped",
-                        Path = path.ToString(), CommittedBytes = size, ResidentBytes = resident
-                    });
-                }
-                long next = info.BaseAddress.ToInt64() + size;
-                if (next <= address) break;
-                address = next;
-            }
-        } finally { CloseHandle(process); }
-        return regions;
     }
     public struct Rect { public int Left, Top, Right, Bottom; }
 }
@@ -160,7 +113,9 @@ foreach ($round in 1..3) {
                 Dpi = [MemoryWindow]::GetDpiForWindow($h); Maximized = $true
             }
             if ($round -eq 3) {
-                [MemoryWindow]::Map($p.Id) | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Out "$screen-map.json") -Encoding UTF8
+                $inspection = & "$PSScriptRoot/windows-memory-inspect.ps1" -ProcessId $p.Id
+                $inspection | Set-Content (Join-Path $Out "$screen-inspection.json") -Encoding UTF8
+                ($inspection | ConvertFrom-Json).Regions | ConvertTo-Json -Depth 5 | Set-Content (Join-Path $Out "$screen-map.json") -Encoding UTF8
                 $bmp = New-Object System.Drawing.Bitmap ($rect.Right), ($rect.Bottom)
                 $g = [System.Drawing.Graphics]::FromImage($bmp)
                 $dc = $g.GetHdc()
@@ -169,6 +124,41 @@ foreach ($round in 1..3) {
                 } finally { $g.ReleaseHdc($dc) }
                 $bmp.Save((Join-Path $Out "$screen.png"))
                 $g.Dispose(); $bmp.Dispose()
+            }
+            if ($StartupProof) {
+                # CI only: a real restore/maximize cycle invalidates layout and
+                # redraws the scene. Private GPUI messages require a secret token;
+                # sending one externally can succeed while doing no rendering.
+                $renderTime = [System.Diagnostics.Stopwatch]::StartNew()
+                foreach ($command in 9, 3) {
+                    $beforeRender = (Get-Item $env:GPUI_MEMORY_RECEIPT).LastWriteTimeUtc
+                    [MemoryWindow]::ShowWindowAsync($h, $command) | Out-Null
+                    $deadline = [DateTime]::UtcNow.AddSeconds(5)
+                    do {
+                        Start-Sleep -Milliseconds 100
+                        $rendered = (Get-Item $env:GPUI_MEMORY_RECEIPT).LastWriteTimeUtc -gt $beforeRender
+                    } while (-not $rendered -and [DateTime]::UtcNow -lt $deadline)
+                    if (-not $rendered) { throw "No rendered receipt after ShowWindow($command)" }
+                }
+                $renderTime.Stop()
+                if (-not [MemoryWindow]::IsZoomed($h)) { throw 'Warm window not maximized' }
+                $warmRect = New-Object MemoryWindow+Rect
+                [MemoryWindow]::GetClientRect($h, [ref]$warmRect) | Out-Null
+                if ($warmRect.Right -ne $rect.Right -or $warmRect.Bottom -ne $rect.Bottom) { throw 'Warm geometry changed' }
+                $rows[-1] | Add-Member -NotePropertyName WarmRestoreMaximizeMilliseconds -NotePropertyValue $renderTime.Elapsed.TotalMilliseconds
+                $rows[-1] | Add-Member -NotePropertyName WarmRendererReceiptUpdated -NotePropertyValue $true
+                $bmp = New-Object System.Drawing.Bitmap ($rect.Right), ($rect.Bottom)
+                $g = [System.Drawing.Graphics]::FromImage($bmp)
+                $dc = $g.GetHdc()
+                try {
+                    if (-not [MemoryWindow]::PrintWindow($h, $dc, 3)) { throw 'Warm PrintWindow failed' }
+                } finally { $g.ReleaseHdc($dc) }
+                if ($round -eq 3) { $bmp.Save((Join-Path $Out "$screen-warm.png")) }
+                $g.Dispose(); $bmp.Dispose()
+                Start-Sleep -Seconds 22
+                $p.Refresh()
+                $rows[-1] | Add-Member -NotePropertyName WarmWorkingSet64 -NotePropertyValue $p.WorkingSet64
+                $rows[-1] | Add-Member -NotePropertyName WarmPrivateMemorySize64 -NotePropertyValue $p.PrivateMemorySize64
             }
         } finally {
             Remove-Item Env:GPUI_MEMORY_RECEIPT -ErrorAction SilentlyContinue

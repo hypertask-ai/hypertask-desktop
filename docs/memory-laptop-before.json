@@ -1,0 +1,434 @@
+{
+  "TimestampUtc": "2026-10-24T20:21:04.2996185Z",
+  "Pid": 23744,
+  "WorkingSet64": 106840064,
+  "PrivateMemorySize64": 83890176,
+  "ClientWidth": 1920,
+  "ClientHeight": 1009,
+  "Dpi": 96,
+  "Maximized": true,
+  "Gpu": [
+    {
+      "Name": "pid_23744_luid_0x00000000_0x00011214_phys_0",
+      "DedicatedUsage": 0,
+      "SharedUsage": 37220352,
+      "TotalCommitted": 37220352
+    }
+  ],
+  "GpuCounterError": null,
+  "Modules": [
+    {
+      "ModuleName": "ht-desktop.exe",
+      "ModuleMemorySize": 14864384
+    },
+    {
+      "ModuleName": "ntdll.dll",
+      "ModuleMemorySize": 2523136
+    },
+    {
+      "ModuleName": "KERNEL32.DLL",
+      "ModuleMemorySize": 831488
+    },
+    {
+      "ModuleName": "KERNELBASE.dll",
+      "ModuleMemorySize": 4198400
+    },
+    {
+      "ModuleName": "advapi32.dll",
+      "ModuleMemorySize": 770048
+    },
+    {
+      "ModuleName": "msvcrt.dll",
+      "ModuleMemorySize": 692224
+    },
+    {
+      "ModuleName": "sechost.dll",
+      "ModuleMemorySize": 688128
+    },
+    {
+      "ModuleName": "RPCRT4.dll",
+      "ModuleMemorySize": 1146880
+    },
+    {
+      "ModuleName": "shell32.dll",
+      "ModuleMemorySize": 7979008
+    },
+    {
+      "ModuleName": "msvcp_win.dll",
+      "ModuleMemorySize": 667648
+    },
+    {
+      "ModuleName": "ucrtbase.dll",
+      "ModuleMemorySize": 1359872
+    },
+    {
+      "ModuleName": "USER32.dll",
+      "ModuleMemorySize": 1929216
+    },
+    {
+      "ModuleName": "win32u.dll",
+      "ModuleMemorySize": 159744
+    },
+    {
+      "ModuleName": "GDI32.dll",
+      "ModuleMemorySize": 176128
+    },
+    {
+      "ModuleName": "gdi32full.dll",
+      "ModuleMemorySize": 1220608
+    },
+    {
+      "ModuleName": "combase.dll",
+      "ModuleMemorySize": 3715072
+    },
+    {
+      "ModuleName": "oleaut32.dll",
+      "ModuleMemorySize": 888832
+    },
+    {
+      "ModuleName": "ole32.dll",
+      "ModuleMemorySize": 1679360
+    },
+    {
+      "ModuleName": "psapi.dll",
+      "ModuleMemorySize": 32768
+    },
+    {
+      "ModuleName": "shcore.dll",
+      "ModuleMemorySize": 1019904
+    },
+    {
+      "ModuleName": "imm32.dll",
+      "ModuleMemorySize": 200704
+    },
+    {
+      "ModuleName": "bcryptprimitives.dll",
+      "ModuleMemorySize": 704512
+    },
+    {
+      "ModuleName": "ws2_32.dll",
+      "ModuleMemorySize": 528384
+    },
+    {
+      "ModuleName": "dwrite.dll",
+      "ModuleMemorySize": 2531328
+    },
+    {
+      "ModuleName": "uiautomationcore.dll",
+      "ModuleMemorySize": 4325376
+    },
+    {
+      "ModuleName": "userenv.dll",
+      "ModuleMemorySize": 212992
+    },
+    {
+      "ModuleName": "comctl32.dll",
+      "ModuleMemorySize": 2691072
+    },
+    {
+      "ModuleName": "dwmapi.dll",
+      "ModuleMemorySize": 188416
+    },
+    {
+      "ModuleName": "dxgi.dll",
+      "ModuleMemorySize": 1290240
+    },
+    {
+      "ModuleName": "d3d11.dll",
+      "ModuleMemorySize": 2486272
+    },
+    {
+      "ModuleName": "dcomp.dll",
+      "ModuleMemorySize": 2260992
+    },
+    {
+      "ModuleName": "winmm.dll",
+      "ModuleMemorySize": 225280
+    },
+    {
+      "ModuleName": "bcrypt.dll",
+      "ModuleMemorySize": 172032
+    },
+    {
+      "ModuleName": "VCRUNTIME140.dll",
+      "ModuleMemorySize": 180224
+    },
+    {
+      "ModuleName": "powrprof.dll",
+      "ModuleMemorySize": 385024
+    },
+    {
+      "ModuleName": "kernel.appcore.dll",
+      "ModuleMemorySize": 110592
+    },
+    {
+      "ModuleName": "Microsoft.Internal.WarpPal.dll",
+      "ModuleMemorySize": 106496
+    },
+    {
+      "ModuleName": "icuuc.dll",
+      "ModuleMemorySize": 36864
+    },
+    {
+      "ModuleName": "CRYPTBASE.DLL",
+      "ModuleMemorySize": 49152
+    },
+    {
+      "ModuleName": "icu.DLL",
+      "ModuleMemorySize": 2744320
+    },
+    {
+      "ModuleName": "UMPDC.dll",
+      "ModuleMemorySize": 86016
+    },
+    {
+      "ModuleName": "windows.storage.dll",
+      "ModuleMemorySize": 9101312
+    },
+    {
+      "ModuleName": "shlwapi.dll",
+      "ModuleMemorySize": 417792
+    },
+    {
+      "ModuleName": "uxtheme.dll",
+      "ModuleMemorySize": 684032
+    },
+    {
+      "ModuleName": "MSCTF.dll",
+      "ModuleMemorySize": 1425408
+    },
+    {
+      "ModuleName": "clbcatq.dll",
+      "ModuleMemorySize": 716800
+    },
+    {
+      "ModuleName": "WindowsCodecs.dll",
+      "ModuleMemorySize": 2326528
+    },
+    {
+      "ModuleName": "profapi.dll",
+      "ModuleMemorySize": 167936
+    },
+    {
+      "ModuleName": "dxcore.dll",
+      "ModuleMemorySize": 278528
+    },
+    {
+      "ModuleName": "directxdatabasehelper.dll",
+      "ModuleMemorySize": 389120
+    },
+    {
+      "ModuleName": "cfgmgr32.dll",
+      "ModuleMemorySize": 335872
+    },
+    {
+      "ModuleName": "igd10iumd64.dll",
+      "ModuleMemorySize": 5357568
+    },
+    {
+      "ModuleName": "apphelp.dll",
+      "ModuleMemorySize": 651264
+    },
+    {
+      "ModuleName": "igd10umt64xe.DLL",
+      "ModuleMemorySize": 38805504
+    },
+    {
+      "ModuleName": "igc64.dll",
+      "ModuleMemorySize": 85565440
+    },
+    {
+      "ModuleName": "igdgmm2_64.dll",
+      "ModuleMemorySize": 540672
+    },
+    {
+      "ModuleName": "igdgmm64.dll",
+      "ModuleMemorySize": 3694592
+    },
+    {
+      "ModuleName": "ControlLib.dll",
+      "ModuleMemorySize": 319488
+    },
+    {
+      "ModuleName": "IntelControlLib.dll",
+      "ModuleMemorySize": 729088
+    },
+    {
+      "ModuleName": "igdml64.dll",
+      "ModuleMemorySize": 1683456
+    },
+    {
+      "ModuleName": "Windows.UI.dll",
+      "ModuleMemorySize": 1421312
+    },
+    {
+      "ModuleName": "Windows.UI.Immersive.dll",
+      "ModuleMemorySize": 1384448
+    },
+    {
+      "ModuleName": "directmanipulation.dll",
+      "ModuleMemorySize": 667648
+    },
+    {
+      "ModuleName": "dataexchange.dll",
+      "ModuleMemorySize": 376832
+    },
+    {
+      "ModuleName": "twinapi.appcore.dll",
+      "ModuleMemorySize": 2428928
+    },
+    {
+      "ModuleName": "textinputframework.dll",
+      "ModuleMemorySize": 1335296
+    },
+    {
+      "ModuleName": "sxs.dll",
+      "ModuleMemorySize": 663552
+    },
+    {
+      "ModuleName": "mswsock.dll",
+      "ModuleMemorySize": 442368
+    },
+    {
+      "ModuleName": "DNSAPI.dll",
+      "ModuleMemorySize": 1409024
+    },
+    {
+      "ModuleName": "DSPARSE.dll",
+      "ModuleMemorySize": 53248
+    },
+    {
+      "ModuleName": "IPHLPAPI.DLL",
+      "ModuleMemorySize": 208896
+    },
+    {
+      "ModuleName": "NSI.dll",
+      "ModuleMemorySize": 40960
+    },
+    {
+      "ModuleName": "TextShaping.dll",
+      "ModuleMemorySize": 1040384
+    },
+    {
+      "ModuleName": "rasadhlp.dll",
+      "ModuleMemorySize": 45056
+    },
+    {
+      "ModuleName": "fwpuclnt.dll",
+      "ModuleMemorySize": 548864
+    }
+  ],
+  "RegionsByType": {
+    "Private": {
+      "CommittedBytes": 78032896,
+      "ResidentBytes": 67051520,
+      "PrivateResidentBytes": 67043328,
+      "ShareableResidentBytes": 8192,
+      "SharedResidentBytes": 8192
+    },
+    "Image": {
+      "CommittedBytes": 233562112,
+      "ResidentBytes": 46055424,
+      "PrivateResidentBytes": 4157440,
+      "ShareableResidentBytes": 41897984,
+      "SharedResidentBytes": 41897984
+    },
+    "Mapped": {
+      "CommittedBytes": 51593216,
+      "ResidentBytes": 1617920,
+      "PrivateResidentBytes": 0,
+      "ShareableResidentBytes": 1617920,
+      "SharedResidentBytes": 1617920
+    }
+  },
+  "FileResidentBytes": {
+    "igd10umt64xe.dll": 6586368,
+    "igc64.dll": 6025216,
+    "ht-desktop.exe": 5611520,
+    "ntdll.dll": 2523136,
+    "combase.dll": 1990656,
+    "igdgmm64.dll": 1753088,
+    "DWrite.dll": 1368064,
+    "KernelBase.dll": 1085440,
+    "d3d11.dll": 1056768,
+    "windows.storage.dll": 1052672,
+    "shell32.dll": 929792,
+    "dxgi.dll": 729088,
+    "msctf.dll": 720896,
+    "rpcrt4.dll": 688128,
+    "UIAutomationCore.dll": 647168,
+    "ucrtbase.dll": 610304,
+    "dcomp.dll": 544768,
+    "user32.dll": 516096,
+    "TextInputFramework.dll": 458752,
+    "IntelControlLib.dll": 446464,
+    "twinapi.appcore.dll": 425984,
+    "kernel32.dll": 405504,
+    "dnsapi.dll": 401408,
+    "directmanipulation.dll": 380928,
+    "uxtheme.dll": 364544,
+    "directxdatabasehelper.dll": 348160,
+    "Windows.UI.dll": 344064,
+    "comctl32.dll": 331776,
+    "ole32.dll": 327680,
+    "msvcp_win.dll": 323584,
+    "gdi32full.dll": 323584,
+    "SHCore.dll": 315392,
+    "igdgmm2_64.dll": 307200,
+    "oleaut32.dll": 307200,
+    "igd10iumd64.dll": 303104,
+    "advapi32.dll": 299008,
+    "Windows.UI.Immersive.dll": 262144,
+    "DXCore.dll": 262144,
+    "sechost.dll": 253952,
+    "TextShaping.dll": 249856,
+    "ws2_32.dll": 241664,
+    "igdml64.dll": 233472,
+    "clbcatq.dll": 233472,
+    "msvcrt.dll": 233472,
+    "mswsock.dll": 221184,
+    "ControlLib.dll": 208896,
+    "WindowsCodecs.dll": 176128,
+    "shlwapi.dll": 172032,
+    "apphelp.dll": 163840,
+    "gdi32.dll": 159744,
+    "FWPUCLNT.DLL": 155648,
+    "sxs.dll": 139264,
+    "DataExchange.dll": 135168,
+    "icu.dll": 131072,
+    "cfgmgr32.dll": 126976,
+    "win32u.dll": 126976,
+    "bcryptprimitives.dll": 122880,
+    "bcrypt.dll": 118784,
+    "dwmapi.dll": 106496,
+    "imm32.dll": 102400,
+    "winmm.dll": 90112,
+    "Microsoft.Internal.WarpPal.dll": 90112,
+    "IPHLPAPI.DLL": 90112,
+    "SortDefault.nls": 86016,
+    "~FontCache-FontFace.dat": 86016,
+    "locale.nls": 77824,
+    "userenv.dll": 77824,
+    "profapi.dll": 77824,
+    "DirectXApps.sdb": 73728,
+    "~FontCache-S-1-5-21-3096528014-3733694850-2539211625-1001.dat": 69632,
+    "powrprof.dll": 69632,
+    "vcruntime140.dll": 65536,
+    "kernel.appcore.dll": 65536,
+    "umpdc.dll": 49152,
+    "rasadhlp.dll": 40960,
+    "cryptbase.dll": 40960,
+    "dsparse.dll": 32768,
+    "icuuc.dll": 24576,
+    "psapi.dll": 24576,
+    "nsi.dll": 24576,
+    "l_intl.nls": 16384,
+    "segoeui.ttf": 16384,
+    "C_1252.NLS": 12288,
+    "user32.dll.mui": 12288,
+    "seguiemj.ttf": 12288,
+    "C_437.NLS": 8192,
+    "local.db-shm": 4096
+  },
+  "Note": "Read-only installed process; non-atomic map. Counter is post-map. Initial counter was 114769920 bytes; no after-install claim."
+}

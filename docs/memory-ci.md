@@ -1,5 +1,9 @@
 # Windows memory gate (HTPR-7381)
 
+The historical measurements below predate mem4. See [memory-laptop.md](memory-laptop.md)
+for the read-only laptop attribution and explicitly disclosed one-shot residency
+policy; new receipts also include warm counters and private/shared resident axes.
+
 Measurements run only on GitHub-hosted `windows-2025`, never on the VPS or the
 owner's laptop. The ordinary Windows build job starts the release executable
 against a fresh copy of the imported `fixtures/demo` database for each sample:

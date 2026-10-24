@@ -127,3 +127,29 @@ pub fn data_read_usage() -> serde_json::Value {
         "BoardReadNetRequestedBytes": READ_BYTES[1].load(Ordering::Relaxed),
     })
 }
+
+#[cfg(all(windows, not(feature = "untrimmed-startup")))]
+pub fn trim_after_startup(cx: &gpui::App) {
+    let executor = cx.background_executor().clone();
+    cx.background_executor().spawn(async move {
+        executor.timer(std::time::Duration::from_secs(5)).await;
+        // Startup touches font/driver/DLL pages that need not stay resident while
+        // idle. This only evicts pages, not allocations; active pages fault back
+        // in normally. Never repeat it on a timer or on navigation.
+        use windows::Win32::System::{
+            ProcessStatus::EmptyWorkingSet,
+            Threading::GetCurrentProcess,
+        };
+        let result = unsafe { EmptyWorkingSet(GetCurrentProcess()) };
+        if let Err(error) = &result {
+            eprintln!("Hypertask: startup working-set trim failed: {error}");
+        }
+        if let Some(path) = std::env::var_os("GPUI_MEMORY_RECEIPT") {
+            let path = std::path::PathBuf::from(path).with_extension("startup.json");
+            let _ = std::fs::write(path, serde_json::json!({
+                "StartupTrimSucceeded": result.is_ok(), "DelaySeconds": 5,
+                "Repeats": false,
+            }).to_string());
+        }
+    }).detach();
+}
