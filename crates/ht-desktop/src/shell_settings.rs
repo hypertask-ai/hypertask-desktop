@@ -2212,7 +2212,7 @@ mod mutation_tests {
         reply(
             view,
             &mut cx,
-            serde_json::json!({"skills": [{"slug": "keep", "name": "Keep"}, {"slug": "skip", "name": "Skip"}]}),
+            serde_json::json!({"success": true, "skills": [{"slug": "keep", "name": "Keep"}, {"slug": "skip", "name": "Skip"}]}),
         );
         click(view, &mut cx, "settings.skill.preview.skip");
         click(view, &mut cx, "settings.skill.import");
