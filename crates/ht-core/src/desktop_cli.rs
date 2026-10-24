@@ -76,6 +76,8 @@ pub struct Draft {
     pub title: String,
     pub description: String,
     #[serde(default)]
+    pub custom_fields: Vec<Value>,
+    #[serde(default)]
     pub due_date: Option<String>,
     #[serde(default)]
     pub labels: Vec<String>,
@@ -125,6 +127,7 @@ pub fn writer_drafts(body: &Value) -> Result<Vec<Draft>> {
                         .into(),
                     priority: None,
                     estimate: None,
+                    custom_fields: t["customFields"].as_array().cloned().unwrap_or_default(),
                     due_date: t["dueDate"].as_str().map(str::to_owned),
                     labels: t["labelIds"]
                         .as_array()
@@ -144,6 +147,8 @@ pub fn writer_drafts(body: &Value) -> Result<Vec<Draft>> {
                 .any(|l| l.starts_with("event: error") || l.starts_with("event: done")),
             "Task writer interrupted"
         );
+        let custom_fields = marker(&mut html,"ai-generated-task-custom-fields")
+            .and_then(|s|serde_json::from_str::<Value>(&s).ok()).and_then(|v|v.as_array().cloned()).unwrap_or_default();
         let title =
             marker(&mut html, "ai-generated-task-title").context("writer returned no title")?;
         let due_date = marker(&mut html, "ai-generated-task-due-date");
@@ -166,6 +171,7 @@ pub fn writer_drafts(body: &Value) -> Result<Vec<Draft>> {
         vec![Draft {
             title,
             description: html,
+            custom_fields,
             due_date,
             labels,
             priority,
@@ -247,6 +253,7 @@ pub(crate) fn compose(
         let drafts = if drafts.is_empty() {
             vec![Draft {
                 title: text.trim().into(),
+                custom_fields: vec![],
                 description: format!("<p>{}</p>", escape(text).replace('\n', "<br>")),
                 due_date: None,
                 labels: vec![],
@@ -286,6 +293,7 @@ pub(crate) fn compose(
         if body["estimate"].is_null() { if let Some(value) = draft.estimate.and_then(crate::task_create::estimate) {body["estimate"]=value;} }
         if let Some(date) = &draft.due_date { body["writerDueDate"] = json!(date); body["writerTimeZone"] = payload["time_zone"].clone(); }
         if !draft.labels.is_empty() && body["tags"].as_array().is_none_or(|tags|tags.is_empty()) { body["writerLabelIds"] = json!(draft.labels); }
+        if !draft.custom_fields.is_empty() {body["customFields"]=json!(draft.custom_fields);}
         let sent_key = format!("compose-sent:{key}:{index}");
         if db.kv_get(&sent_key).ok().flatten().is_some() { return refused(409); }
         db.kv_set(&sent_key, "true").map_err(|_|TransportError::InvalidResponse)?;

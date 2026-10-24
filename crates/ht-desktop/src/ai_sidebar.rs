@@ -1,3 +1,4 @@
+use anyhow::Context as _;
 use crate::layout::LayoutKey;
 use crate::{
     input::TextInput,
@@ -157,10 +158,12 @@ pub struct AiSidebar {
     model_menu: bool,
     history_menu: bool,
     history: Vec<Arc<Session>>,
-    history_pending: Option<Receiver<Result<Vec<Arc<Session>>, String>>>,
+    history_pending: Option<Receiver<Result<(Vec<Arc<Session>>, Option<String>), String>>>,
     history_error: Option<String>,
     history_limit: usize,
-    chat_pending: Option<Receiver<Chat>>,
+    history_next: Option<String>,
+    history_append: bool,
+    chat_pending: Option<Receiver<Result<Chat,String>>>,
     more_menu: bool,
     collapsed: bool,
     scroll: ScrollHandle,
@@ -243,6 +246,8 @@ impl AiSidebar {
             history_pending: None,
             history_error: None,
             history_limit: 30,
+            history_next: None,
+            history_append: false,
             chat_pending: None,
             more_menu: false,
             collapsed: false,
@@ -257,6 +262,8 @@ impl AiSidebar {
         self.chats = vec![Chat::new()];
         self.selected = 0;
         self.history.clear();
+        self.history_next=None;
+        self.history_append=false;
         self.draft_quotes.clear();
         self.history_pending = None;
         self.history_error = None;
@@ -318,37 +325,39 @@ impl AiSidebar {
         self.history_menu = !self.history_menu;
         self.model_menu = false;
         self.more_menu = false;
-        if self.history_menu && self.history_pending.is_none() {
-            self.history_error = None;
-            self.history_limit = 30;
-            if let Some(client) = self.client.clone() {
-                let (send, receive) = mpsc::channel();
-                match thread::Builder::new()
-                    .name("ht-ai-history".into())
-                    .spawn(move || {
-                        let result = client
-                            .sessions()
-                            .map(|sessions| sessions.into_iter().map(Arc::new).collect())
-                            .map_err(|e| e.to_string());
-                        let _ = send.send(result);
-                    }) {
-                    Ok(_) => self.history_pending = Some(receive),
-                    Err(error) => self.history_error = Some(error.to_string()),
-                }
-            } else {
-                self.history_error = Some("Sign in to load server history".into());
-            }
-        }
+        if self.history_menu && self.history_pending.is_none() { self.load_history(false,cx); }
+        cx.notify();
+    }
+
+    fn load_history(&mut self, append:bool, cx:&mut Context<Self>) {
+        if self.history_pending.is_some(){return;}
+        self.history_error=None;self.history_append=append;
+        if !append {self.history_limit=30;self.history_next=None;}
+        let cursor=self.history_next.clone();
+        if let Some(client)=self.client.clone(){
+            let(send,receive)=mpsc::channel();
+            match thread::Builder::new().name("ht-ai-history".into()).spawn(move||{
+                let result=client.session_page(cursor.as_deref()).map(|page|(page.sessions.into_iter().map(Arc::new).collect(),page.next_cursor)).map_err(|e|e.to_string());
+                let _=send.send(result);
+            }){Ok(_)=>self.history_pending=Some(receive),Err(error)=>self.history_error=Some(error.to_string())}
+        }else{self.history_error=Some("Sign in to load server history".into());}
         cx.notify();
     }
 
     fn open_history_chat(&mut self, index: usize, cx: &mut Context<Self>) {
         let session = Arc::clone(&self.history[index]);
         let colors = self.colors;
+        let client = self.client.clone();
         let (send, receive) = mpsc::channel();
         match thread::Builder::new()
             .name("ht-ai-transcript".into())
             .spawn(move || {
+                let session = if session.has_messages.is_some() {
+                    match client.context("Sign in to load server history").and_then(|client|client.transcript(&session.id)) {
+                        Ok(session)=>Arc::new(session),
+                        Err(error)=>{let _=send.send(Err(error.to_string()));return;}
+                    }
+                }else{session};
                 let id = session.id.clone();
                 let title = session.title.clone().unwrap_or_else(|| "AI Chat".into());
                 let messages = session
@@ -364,13 +373,13 @@ impl AiSidebar {
                         ChatMessage { message, rich }
                     })
                     .collect();
-                let _ = send.send(Chat {
+                let _ = send.send(Ok(Chat {
                     id,
                     title,
                     messages,
                     status: String::new(),
                     error: None,
-                });
+                }));
             }) {
             Ok(_) => self.chat_pending = Some(receive),
             Err(error) => self.history_error = Some(error.to_string()),
@@ -384,7 +393,11 @@ impl AiSidebar {
                 Ok(result) => {
                     self.history_pending = None;
                     match result {
-                        Ok(sessions) => self.history = sessions,
+                        Ok((sessions,next)) => {
+                            if self.history_append {for session in sessions{if !self.history.iter().any(|s|s.id==session.id){self.history.push(session);}}self.history_limit=self.history.len();}
+                            else{self.history=sessions;}
+                            self.history_next=next;
+                        },
                         Err(error) => self.history_error = Some(error),
                     }
                     cx.notify();
@@ -399,7 +412,8 @@ impl AiSidebar {
         }
         if let Some(pending) = &self.chat_pending {
             match pending.try_recv() {
-                Ok(chat) => {
+                Ok(Err(error)) => {self.chat_pending=None;self.history_error=Some(error);cx.notify();}
+                Ok(Ok(chat)) => {
                     self.chat_pending = None;
                     self.chats.push(chat);
                     self.selected = self.chats.len() - 1;
@@ -1067,15 +1081,14 @@ impl Render for AiSidebar {
                         .child(session.title.clone().unwrap_or_else(|| "AI Chat".into())),
                 );
             }
-            if self.history.len() > self.history_limit {
+            if self.history_next.is_some() || self.history.len() > self.history_limit {
                 menu = menu.child(
                     div()
                         .id("ai-history-more")
                         .p(px(6.))
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.history_limit += 30;
-                            cx.notify();
+                            if this.history_next.is_some(){this.load_history(true,cx);}else{this.history_limit+=30;cx.notify();}
                         }))
                         .child("Show more"),
                 );
@@ -1469,14 +1482,15 @@ mod tests {
             assert_eq!(sidebar.width(), 420.);
             let (send, receive) = mpsc::channel();
             sidebar.history_pending = Some(receive);
-            send.send(Ok(vec![Arc::new(Session {
+            send.send(Ok((vec![Arc::new(Session {
                 id: "remote-session".into(),
+                has_messages: None,
                 title: Some("Web history".into()),
                 messages: vec![Message {
                     role: "assistant".into(),
                     content: "Saved reply".into(),
                 }],
-            })]))
+            })],None)))
             .unwrap();
             sidebar.poll(cx);
             assert_eq!(sidebar.history.len(), 1);

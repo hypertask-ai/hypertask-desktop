@@ -423,3 +423,12 @@ fn compose_and_saved_comment_queue_refuse_a_different_bearer_account() {
         assert!(server.calls.is_empty());
     }
 }
+
+#[test]
+fn writer_custom_fields_survive_json_and_html_without_leaking_markers_into_description(){
+    let fields=json!([{"fieldId":"field-1","value":"é"}]);
+    let drafts=writer_drafts(&json!({"tasks":[{"title":"Task","description":"<p>Body</p>","customFields":fields}]})).unwrap();
+    assert_eq!(drafts[0].custom_fields,fields.as_array().unwrap().clone());
+    let html=format!("<h1 id='ai-generated-task-title'>Task</h1><span id='ai-generated-task-custom-fields'>{fields}</span><p>Body</p>");
+    let drafts=writer_drafts(&json!(html)).unwrap();assert_eq!(drafts[0].custom_fields,fields.as_array().unwrap().clone());assert_eq!(drafts[0].description,"<p>Body</p>");
+}

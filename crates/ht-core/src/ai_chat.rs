@@ -84,11 +84,22 @@ pub struct Message {
     pub content: String,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Debug, Deserialize, Serialize)]
 pub struct Session {
     pub id: String,
     pub title: Option<String>,
+    #[serde(default)]
     pub messages: Vec<Message>,
+    #[serde(default, rename = "hasMessages", skip_serializing_if = "Option::is_none")]
+    pub has_messages: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct SessionPage {
+    pub success: bool,
+    pub sessions: Vec<Session>,
+    #[serde(default, rename = "nextCursor")]
+    pub next_cursor: Option<String>,
 }
 
 // The legacy endpoint returns every transcript. Parse directly from the reader on a worker,
@@ -346,6 +357,40 @@ impl Client {
             Err(error) => bail!("AI history request failed: {error}"),
         };
         parse_sessions(response.into_reader())
+    }
+
+    pub fn session_page(&self, cursor: Option<&str>) -> Result<SessionPage> {
+        let mut params = url::form_urlencoded::Serializer::new(String::new());
+        params.append_pair("compat", "htpr-6924").append_pair("limit", "30");
+        if let Some(cursor) = cursor { params.append_pair("cursor", cursor); }
+        let page: SessionPage = self.get_history(&format!("/api/ai-chat/all-sessions?{}", params.finish()))?;
+        ensure!(page.success, "Could not load chat history");
+        Ok(page)
+    }
+
+    pub fn transcript(&self, id: &str) -> Result<Session> {
+        let params = url::form_urlencoded::Serializer::new(String::new())
+            .append_pair("compat", "htpr-6924").append_pair("sessionId", id).finish();
+        #[derive(Deserialize)]
+        struct Transcript { success: bool, session: Option<Session>, sessions: Option<Vec<Session>> }
+        let response: Transcript = self.get_history(&format!("/api/ai-chat/all-sessions?{params}"))?;
+        ensure!(response.success, "Could not load chat history");
+        let session = response.session.or_else(|| response.sessions?.into_iter().find(|s|s.id==id)).context("Session not found")?;
+        ensure!(session.id==id, "Server returned another chat session");
+        Ok(session)
+    }
+
+    fn get_history<T: serde::de::DeserializeOwned>(&self, path: &str) -> Result<T> {
+        let response = match self.agent.get(&format!("{}{path}",self.base))
+            .set("Authorization", &format!("Bearer {}",self.token)).set("Accept","application/json").call() {
+            Ok(response) => response,
+            Err(ureq::Error::Status(status,response)) => {
+                let mut body=String::new();response.into_reader().take(64*1024).read_to_string(&mut body)?;
+                bail!("{}",refusal(status,&body));
+            },
+            Err(error) => bail!("AI history request failed: {error}"),
+        };
+        serde_json::from_reader(response.into_reader().take(MAX_HISTORY_BYTES)).context("Could not load chat history")
     }
 
     pub fn cancel(&self, ids: &TurnIds) -> Result<()> {
@@ -671,6 +716,24 @@ mod tests {
             .unwrap_err();
         assert_eq!(error.to_string(), "HTTP 403: History denied");
         server.join().unwrap();
+    }
+
+    #[test]
+    fn paged_history_and_transcripts_use_web_queries_with_bearer_and_preserve_denials() {
+        for cursor in [None,Some("next_cursor")] {
+            let(base,server)=server("200 OK","application/json",r#"{"success":true,"sessions":[{"id":"saved","title":"Saved","hasMessages":true}],"nextCursor":"next_cursor"}"#);
+            let page=Client::with_base(&base,"human-token".into()).unwrap().session_page(cursor).unwrap();
+            assert_eq!(page.next_cursor.as_deref(),Some("next_cursor"));assert!(page.sessions[0].messages.is_empty());assert_eq!(page.sessions[0].has_messages,Some(true));
+            let(headers,_)=server.join().unwrap();assert!(headers.starts_with(if cursor.is_some(){"GET /api/ai-chat/all-sessions?compat=htpr-6924&limit=30&cursor=next_cursor HTTP/1.1"}else{"GET /api/ai-chat/all-sessions?compat=htpr-6924&limit=30 HTTP/1.1"}));assert!(headers.to_lowercase().contains("authorization: bearer human-token\r\n"));
+        }
+        let(base,server)=server("200 OK","application/json",r#"{"success":true,"session":{"id":"saved","title":"Saved","messages":[{"role":"assistant","content":"Real saved reply"}]}}"#);
+        let session=Client::with_base(&base,"human-token".into()).unwrap().transcript("saved").unwrap();assert_eq!(session.messages[0].content,"Real saved reply");
+        let(headers,_)=server.join().unwrap();assert!(headers.starts_with("GET /api/ai-chat/all-sessions?compat=htpr-6924&sessionId=saved HTTP/1.1"));assert!(!headers.to_lowercase().contains("cookie:"));
+        for status in ["401 Unauthorized","403 Forbidden"] {for transcript in [false,true]{
+            let(base,server)=self::server(status,"application/json",r#"{"error":"History denied"}"#);
+            let client=Client::with_base(&base,"human-token".into()).unwrap();
+            let error=if transcript{client.transcript("saved").unwrap_err()}else{client.session_page(None).unwrap_err()};assert!(error.to_string().contains("History denied"));server.join().unwrap();
+        }}
     }
 
     #[test]
