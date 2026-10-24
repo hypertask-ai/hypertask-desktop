@@ -119,6 +119,7 @@ impl Options {
 struct Assets;
 impl AssetSource for Assets {
     fn load(&self, path: &str) -> Result<Option<Cow<'static, [u8]>>> {
+        if path == "htc-logo" { return Ok(Some(Cow::Borrowed(include_bytes!("../assets/icons/htc-logo.png").as_slice()))); }
         macro_rules! icons {
             ($($name:literal),*) => { match path {
                 $($name => Some(Cow::Borrowed(include_bytes!(concat!("../assets/icons/", $name, ".svg")).as_slice())),)*

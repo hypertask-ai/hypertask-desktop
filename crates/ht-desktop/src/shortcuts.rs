@@ -103,6 +103,8 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         ("o", false, true, false) if screen == Screen::Task => Some(Action::ExpandComments),
         ("r", false, false, false) if screen == Screen::Task => Some(Action::ReactComment),
         ("l", false, false, false) if screen == Screen::Task => Some(Action::LikeComment),
+        ("+" | "=", true, true, false) => Some(Action::Commands),
+        ("+", true, false, false) => Some(Action::Commands),
         ("m", true, false, false) => Some(Action::Comment),
         ("e", true, false, false) => Some(Action::Archive),
         ("f", true, false, false) if screen != Screen::Task => Some(Action::LocalSearch),
@@ -138,7 +140,7 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         }
         ("l" | "right", false, false, false) if screen == Screen::Board => Some(Action::NextColumn),
         ("enter", false, false, false) => Some(Action::Open),
-        ("e", false, false, false) if screen == Screen::Board => Some(Action::Rename),
+
         ("e", false, false, false) => Some(Action::ArchiveNotification),
         ("f2", false, false, false) => Some(Action::Rename),
         ("m", false, false, false) => Some(Action::MoveColumn),

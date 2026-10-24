@@ -72,6 +72,11 @@ mod inbox;
 
 #[path = "comments.rs"]
 mod comments;
+#[path = "task_fields.rs"]
+mod task_fields;
+#[path = "board.rs"]
+mod board;
+
 #[path = "interactions.rs"]
 mod interactions;
 
@@ -108,6 +113,8 @@ pub struct Desktop {
     title_input: Entity<TextInput>,
     comment_input: Entity<TextInput>,
     interaction: interactions::Interaction,
+    task_fields: task_fields::TaskFields,
+    board_actions: board::BoardActions,
     comment_actions: comment_actions::CommentActions,
     comment_drafts: comment_drafts::CommentDrafts,
     moving: bool,
@@ -221,6 +228,8 @@ impl Desktop {
             title_input,
             comment_input,
             interaction: interactions::Interaction::new(cx),
+            task_fields: task_fields::TaskFields::new(cx),
+            board_actions: board::BoardActions::new(cx),
             comment_actions: comment_actions::CommentActions::new(cx),
             comment_drafts: comment_drafts::CommentDrafts::default(),
             moving: false,
@@ -380,7 +389,10 @@ impl Desktop {
     }
 
     fn load_columns(&mut self, project: i64) -> anyhow::Result<()> {
-        let columns = self.db.board(project)?;
+        let mut columns = self.db.board(project)?;
+        if self.screen == Screen::Board && self.board_actions.project == project {
+            for column in &mut columns { column.cards.retain(|task| board::search_matches(task, &self.board_actions.search_text)); }
+        }
         let lists = columns
             .iter()
             .map(|col| {
@@ -574,6 +586,7 @@ impl Desktop {
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         if self.unread_review_key(event,window,cx) {return;}
         if self.comment_reader_key(event, window, cx) { return; }
+        if self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
         if self.inbox_key(event, window, cx) { return; }
         if self.shell_key(event, window, cx) {
             return;
@@ -821,6 +834,8 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, "board.header", None),
             )
+            .when(self.board_actions.searching, |d| d.child(self.board_search(cx)))
+            .when(!self.interaction.bulk.is_empty(), |d| d.child(self.board_selection_bar(cx)))
             .child(
                 div()
                     .id("board-columns")
@@ -1096,6 +1111,7 @@ impl Desktop {
                                     ),
                             )
                             .child(div().flex_1())
+                            .child(self.card_controls(id, column, row, cx))
                             .when(self.inbox.iter().any(|n| n.task_id == Some(id)), |d| {
                                 d.child(
                                     div()
@@ -1120,6 +1136,12 @@ impl Desktop {
                                             },
                                         ))
                                         .font_weight(FontWeight::BOLD)
+                                        .id(("card-inbox", id as u64))
+                                        .on_click(cx.listener(move |this, _, window, cx| {
+                                            cx.stop_propagation();
+                                            this.column = column; this.selected = row;
+                                            this.run_shortcut(crate::shortcuts::Action::ArchiveNotification, window, cx);
+                                        }))
                                         .child("In inbox")
                                         .layout_key(
                                             &self.layout,
@@ -1456,10 +1478,16 @@ impl Desktop {
                     .flex()
                     .items_start()
                     .gap(px(20.))
+                    .when(matches!(label, "Assignees" | "Priority" | "Due date" | "Tags" | "Task size" | "ID"), |d| {
+                        d.cursor_pointer().on_click(cx.listener(move |this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.open_task_field(label, window, cx);
+                        }))
+                    })
                     .when(label == "Status", |d| {
-                        d.cursor_pointer().on_click(cx.listener(|this, _, _, cx| {
-                            this.moving = !this.moving;
-                            cx.notify();
+                        d.cursor_pointer().on_click(cx.listener(|this, _, window, cx| {
+                            cx.stop_propagation();
+                            this.run_shortcut(crate::shortcuts::Action::MoveColumn, window, cx);
                         }))
                     })
                     .child(
@@ -1490,24 +1518,12 @@ impl Desktop {
                                 },
                                 Some(value),
                             ))
-                            .when(label == "Status", |d| {
-                                d.child(
-                                    svg()
-                                        .path("arrow-right")
-                                        .size(px(11.))
-                                        .text_color(color(0x8e9093))
-                                        .flex_shrink_0()
-                                        .mb(px(2.)),
-                                )
+                            .when(label == "Status" && self.has_next_status(task), |d| {
+                                d.child(self.next_status_button(cx))
                             })
                             .when(label == "Project", |d| {
                                 d.child(
-                                    svg()
-                                        .path("corner-left-up")
-                                        .size(px(11.))
-                                        .text_color(color(0x8e9093))
-                                        .flex_shrink_0()
-                                        .mb(px(2.)),
+                                    self.task_board_button(cx),
                                 )
                             }),
                     )
@@ -1760,6 +1776,7 @@ impl Render for Desktop {
             .child(self.interaction_overlay(window, cx))
             .child(self.comment_overlay(cx))
             .child(self.inbox_reminder_overlay(cx))
+            .child(self.due_date_overlay(cx))
             .into_any_element()
     }
 }

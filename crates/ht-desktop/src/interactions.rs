@@ -23,7 +23,7 @@ pub(super) enum Modal {
 }
 #[derive(Clone)]
 pub(super) struct Choice {
-    name: String,
+    pub(super) name: String,
     action: ChoiceAction,
 }
 #[derive(Clone, Copy)]
@@ -106,6 +106,7 @@ impl Desktop {
             self.interaction.last_shift = shortcuts::shifted(key);
             cx.notify();
         }
+        if self.board_actions.searching && self.board_actions.search.focus_handle(cx).is_focused(window) && key.key != "escape" { return; }
         if key.key == "k" && ctrl && !key.modifiers.shift && !key.modifiers.alt {
             if self.interaction.modal == Some(Modal::Commands) {
                 self.close_modal(window, cx);
@@ -433,7 +434,7 @@ impl Desktop {
             Tags => self.show_modal(Modal::Tags, window, cx),
             Priority => self.show_modal(Modal::Priority, window, cx),
             Size => self.show_modal(Modal::Size, window, cx),
-            DueDate => self.show_modal(Modal::DueDate, window, cx),
+            DueDate => self.show_due_date(window, cx),
             Delete => self.show_modal(Modal::Delete, window, cx),
             CopyId | CopyTitleId | CopyUrl | CopyTitleUrl => self.copy_task(action, cx),
             Search | LocalSearch | Boards => self.show_modal(
@@ -558,7 +559,7 @@ impl Desktop {
         let id = if self.screen == Screen::Inbox {
             self.selection_id()
         } else {
-            self.task_inbox_ids().first().copied()
+            self.selected_task().and_then(|task| self.inbox.iter().find(|n| n.task_id == Some(task)).map(|n| n.id))
         };
         if let Some(notification_id) = id {
             return self.enqueue(Write::InboxArchive { notification_id }, cx);
@@ -674,7 +675,7 @@ impl Desktop {
         cx.notify();
     }
 
-    fn show_modal(&mut self, modal: Modal, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn show_modal(&mut self, modal: Modal, window: &mut Window, cx: &mut Context<Self>) {
         if !matches!(
             modal,
             Modal::Commands | Modal::Search | Modal::LocalSearch | Modal::Boards
@@ -736,6 +737,7 @@ impl Desktop {
     fn command_rows(&self) -> Vec<command_center::Command> {
         let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
         self.add_comment_commands(&mut rows);
+        self.add_board_commands(&mut rows);
         if self.ai_sidebar.is_some() {
             for (key, name, action) in [
                 ("pinAiChatOpen", "Pin AI chat open", Action::PinAiChat),
