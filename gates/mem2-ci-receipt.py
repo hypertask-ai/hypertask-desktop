@@ -32,9 +32,12 @@ assert {job['name'] for job in jobs} == expected
 for job in jobs:
     assert job['conclusion'] == 'success', job['name']
     print(f"CI_JOB_SUCCESS {job['name']} {job['url']}")
-logs = gh('run', 'view', str(run['id']), '-R', repo, '--log')
+platform_logs = {}
+for platform in ('ubuntu-24.04', 'windows-2025', 'macos-15'):
+    job = next(job for job in jobs if job['name'] == platform)
+    platform_logs[platform] = gh('api', f'repos/{repo}/actions/jobs/{job["databaseId"]}/logs')
 proof = next(job for job in jobs if job['name'] == 'Windows memory receipt and budget')
-logs += gh('api', f'repos/{repo}/actions/jobs/{proof["databaseId"]}/logs')
+logs = gh('api', f'repos/{repo}/actions/jobs/{proof["databaseId"]}/logs')
 for test in (
     'theme_fonts_load_before_use_and_repeated_switches_do_not_reload',
     'memory_receipt_observes_sqlite_without_changing_cached_tasks',
@@ -46,8 +49,8 @@ for test in (
     'draft_emptiness_matches_use_has_drafts_and_wrong_task_is_rejected',
 ):
     for platform in ('ubuntu-24.04', 'windows-2025', 'macos-15'):
-        assert any(line.startswith(platform + '\t') and test in line and ' ... ok' in line
-                   for line in logs.splitlines()), (platform, test)
+        assert any(test in line and ' ... ok' in line
+                   for line in platform_logs[platform].splitlines()), (platform, test)
     print(f'CI_FIXTURE_PROVEN {test}')
 for screen in ('inbox', 'board', 'task'):
     assert f'MEMORY_VISUAL_IDENTICAL {screen}' in logs

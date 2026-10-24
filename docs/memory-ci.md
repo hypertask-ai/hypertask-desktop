@@ -176,3 +176,23 @@ allocation ceiling on all three CI platforms. SQLite's setting is a soft page
 target, not an allocation-byte ceiling. The request was tightened to 256 KiB;
 the original actual-memory assertion remains unchanged, and both the setting
 and actual cache bytes are now recorded rather than assuming they are equal.
+
+## Bounded-cache receipt
+
+[CI 40116151008](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40116151008),
+source `7661604d9778ad6cd3b092309e7bcaa365ebb17b`, passed all six jobs. Same-source
+before -> after median working sets were:
+
+| Screen | Before MB | After MB |
+| --- | ---: | ---: |
+| Inbox | 62.779392 | 61.845504 |
+| Board | 73.478144 | 72.122368 |
+| Task | 80.539648 | 79.085568 |
+
+All three exact RGB/layout comparisons and all three over-budget rejection
+controls passed. SQLite's measured cache is now **266,168 bytes on every
+screen**, versus 914,616 / 1,093,048 / 1,358,520 bytes in the original cache.
+The setting receipt independently reports `-256`. The 128-task persistence and
+actual-cache-ceiling regression passed on Ubuntu, Windows and macOS, as did the
+synced-author/summary/Draft rendering regression. This is a hosted CI result,
+not a measurement of the owner's reported 114 MB laptop workload.
