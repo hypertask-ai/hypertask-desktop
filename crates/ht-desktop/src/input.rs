@@ -31,6 +31,7 @@ impl gpui::EventEmitter<EditorRequest> for TextInput {}
 #[derive(Clone)]
 pub struct QuoteSelection { pub html: String }
 impl gpui::EventEmitter<QuoteSelection> for TextInput {}
+// Equal UTF-8 widths preserve the source byte offsets used by selection and IME.
 fn concealed(text: &str) -> SharedString {
     text.chars().map(|ch| match ch.len_utf8() { 1 => '*', 2 => '×', 3 => '•', _ => '🔒' }).collect::<String>().into()
 }

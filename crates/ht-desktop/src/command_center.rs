@@ -449,8 +449,9 @@ mod tests {
         let rows = commands(Screen::Inbox, false);
         assert!(rows.iter().all(|r| r.group != "Task"));
         assert!(!rows.iter().any(|r| {
-            ["calendarSettings", "openAiTaskWriter", "settingsApiKeysOpenaiApiKey", "startKanbanTutorial"].contains(&r.key.as_str())
+            ["calendarSettings", "openAiTaskWriter", "settingsAiModelsGdprSafeMode", "startKanbanTutorial"].contains(&r.key.as_str())
         }));
+        assert_eq!(rows.iter().find(|row|row.key=="settingsApiKeysOpenaiApiKey").unwrap().action, CommandAction::Shell(ShellCommand::Settings("apiKeys")));
         let rows = commands(Screen::Task, true);
         assert_eq!(rows[0].group, "Task");
         assert!(edit_distance_one("archive", "archvie"));

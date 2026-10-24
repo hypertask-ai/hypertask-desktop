@@ -1,6 +1,7 @@
 use super::*;
 use ht_core::{Http,ai_models::Configuration};
 use serde_json::{Value,json};
+use std::{cell::Cell, rc::Rc};
 
 pub(super) struct Models {
     token:Option<String>,
@@ -15,9 +16,11 @@ pub(super) struct Models {
     pending_team:Option<String>,
     requested:Option<(Option<String>,Option<String>,Option<String>)>,
     pub(super) submenu:Option<bool>,
+    pub(super) anchor:Rc<Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
+    pub(super) menu_bounds:Rc<Cell<Option<gpui::Bounds<gpui::Pixels>>>>,
 }
 impl Models {
-    pub(super) fn new(token:Option<String>)->Self{Self{token,team:None,pending:None,configuration:None,selected:None,previous:None,write:None,failed:false,error:None,pending_team:None,requested:None,submenu:None}}
+    pub(super) fn new(token:Option<String>)->Self{Self{token,team:None,pending:None,configuration:None,selected:None,previous:None,write:None,failed:false,error:None,pending_team:None,requested:None,submenu:None,anchor:Rc::new(Cell::new(None)),menu_bounds:Rc::new(Cell::new(None))}}
 }
 #[derive(Clone)]
 pub enum PreferenceRequest { Cache{user:i64,settings:Value}, Save{user:i64,settings:Value,updates:Value}, Settings{team:String,section:&'static str} }
@@ -88,8 +91,9 @@ impl AiSidebar {
         let id=self.models.configuration.as_ref().and_then(|config|config.nearest(family,effort)).and_then(|model|model["id"].as_str()).map(str::to_owned);
         if let Some(id)=id{self.choose_model(&id,cx);}
     }
-    pub(super) fn model_options(&self,cx:&mut Context<Self>)->gpui::AnyElement {
-        let mut menu=div().id("ai-model-options").w(px(250.)).p(px(6.));
+    pub(super) fn model_options(&self,window:&Window,cx:&mut Context<Self>)->gpui::AnyElement {
+        let capture=self.models.menu_bounds.clone();
+        let mut menu=div().id("ai-model-options").relative().w(px(250.)).max_h(window.viewport_size().height-px(16.)).overflow_y_scroll().p(px(6.)).rounded(px(4.)).bg(color(self.colors.comment)).shadow(vec![gpui::BoxShadow{inset:false,color:gpui::rgba(0x00000073).into(),offset:gpui::point(px(0.),px(8.)),blur_radius:px(30.),spread_radius:px(0.)}]);
         if let Some(config)=&self.models.configuration {
             let selected=self.models.selected.as_deref().and_then(ht_core::ai_models::option);
             let family=selected.and_then(|model|model["family"].as_str()).unwrap_or("");
@@ -117,7 +121,7 @@ impl AiSidebar {
             let default=config.default.clone();let disabled=ht_core::ai_models::option(&default).is_none_or(|model|config.plan.as_deref()==Some("BYOK") && config.locked(model));
             menu=menu.child(div().id("ai-model-reset").p(px(8.)).child("Reset to default").when(!disabled,|d|d.cursor_pointer().on_click(cx.listener(move|this,_,_,cx|this.choose_model(&default,cx)))));
         }
-        menu.into_any_element()
+        menu.child(gpui::canvas(move|bounds,_,_|capture.set(Some(bounds)),|_,_,_,_|{}).absolute().size_full()).layout_key(&self.capture,"ai.models.menu",None)
     }
 }
 
@@ -166,5 +170,35 @@ mod refusal_tests {
             sidebar.models.error=Some("Forbidden".into());sidebar.input.update(cx,|input,cx|input.set_content("Keep this note".into(),cx));sidebar.send("Keep this note".into(),window,cx);
             assert!(sidebar.active.is_none());assert!(sidebar.session_pending.is_none());assert_eq!(sidebar.input.read(cx).content.as_ref(),"Keep this note");assert_eq!(sidebar.chats[0].error.as_deref(),Some("Forbidden"));
         }).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod popup_tests {
+    use super::*;
+    #[gpui::test]
+    fn model_popup_is_anchored_above_toggle_keeps_composer_geometry_and_accepts_inside_and_outside_clicks(cx:&mut gpui::TestAppContext){
+        cx.update(crate::input::init);
+        let(view,cx)=cx.add_window_view(|window,cx|{
+            let focus=cx.focus_handle();let mut sidebar=AiSidebar::new(crate::theme::THEMES[1],None,focus,window,cx);
+            sidebar.capture=Some(Rc::new(std::cell::RefCell::new(crate::layout::LayoutDump::default())));
+            sidebar.models.requested=Some((None,None,None));sidebar.models.team=Some("team".into());sidebar.models.selected=Some("gpt-6-luna-high".into());
+            sidebar.models.configuration=Some(Configuration{user:42,team:"team".into(),options:ht_core::ai_models::catalog().to_vec(),selected:"gpt-6-luna-high".into(),settings:json!({}),byok:json!([]),plan:Some("Pro".into()),default:"gpt-6-luna".into(),custom_label:None});sidebar
+        });
+        for mode in [DisplayMode::Sidebar,DisplayMode::Floating,DisplayMode::Fullscreen]{
+            view.update_in(cx,|sidebar,_,cx|{sidebar.set_mode(mode,cx);sidebar.model_menu=false;});
+            let draw=|cx:&mut gpui::VisualTestContext|cx.draw(gpui::point(px(0.),px(0.)),gpui::size(px(1440.),px(900.)),|_,_|view.clone().into_element());
+            draw(cx);
+            let measured=|cx:&gpui::VisualTestContext,key:&str|view.read_with(cx,|sidebar,_|sidebar.capture.as_ref().unwrap().borrow().interaction_elements().into_iter().find(|element|element["key"]==key).unwrap());
+            let input=measured(cx,"ai.models.composer");let toggle=measured(cx,"ai.models.toggle");
+            cx.simulate_click(gpui::point(px(toggle["x"].as_f64().unwrap() as f32+10.),px(toggle["y"].as_f64().unwrap() as f32+8.)),Default::default());draw(cx);
+            view.read_with(cx,|sidebar,_|assert!(sidebar.model_menu));let menu=measured(cx,"ai.models.menu");let after=measured(cx,"ai.models.composer");
+            for key in ["x","y","w","h"]{assert_eq!(input[key],after[key],"{mode:?} {key}: popup must not reflow composer");}
+            assert!(menu["y"].as_f64().unwrap()+menu["h"].as_f64().unwrap()<=toggle["y"].as_f64().unwrap()+1.,"menu must open above toggle");
+            cx.simulate_click(gpui::point(px(menu["x"].as_f64().unwrap() as f32+20.),px(menu["y"].as_f64().unwrap() as f32+16.)),Default::default());draw(cx);
+            view.read_with(cx,|sidebar,_|{assert!(sidebar.model_menu);assert_eq!(sidebar.models.submenu,Some(false));});
+            cx.simulate_click(gpui::point(px(1400.),px(10.)),Default::default());
+            view.read_with(cx,|sidebar,_|{assert!(!sidebar.model_menu);assert!(sidebar.models.write.is_none());assert!(sidebar.chats[0].messages.is_empty());});
+        }
     }
 }

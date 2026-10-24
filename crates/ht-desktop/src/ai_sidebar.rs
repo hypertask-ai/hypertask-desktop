@@ -1276,12 +1276,9 @@ impl Render for AiSidebar {
             });
         let mut composer = div()
             .id("ai-composer")
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                if this.model_menu || this.context_picker.scope_open {
-                    this.context_picker.scope_open=false;
-                    this.model_menu = false;
-                    cx.notify();
-                }
+            .on_mouse_down_out(cx.listener(|this, event, _, cx| {
+                if this.model_menu && !this.models.menu_bounds.get().is_some_and(|bounds| bounds.contains(&event.position)) { this.model_menu=false;cx.notify(); }
+                if this.context_picker.scope_open { this.context_picker.scope_open=false;cx.notify(); }
             }))
             .mx(px(12.))
             .mb(px(8.))
@@ -1299,10 +1296,14 @@ impl Render for AiSidebar {
                     .max_h(px(160.))
                     .overflow_y_scroll()
                     .text_size(px(14.))
-                    .child(self.input.clone()),
+                    .child(self.input.clone())
+                    .layout_key(&self.capture,"ai.models.composer",None),
             );
         if !self.skill_choices(cx).is_empty() { composer = composer.child(self.skill_menu(cx)); }
-        if self.model_menu {composer=composer.child(self.model_options(cx));}
+        if self.model_menu {
+            let position=self.models.anchor.get().map(|bounds|gpui::point(bounds.left(),bounds.top()-px(6.))).unwrap_or(gpui::point(px(8.),window.viewport_size().height-px(48.)));
+            composer=composer.child(gpui::deferred(gpui::anchored().position(position).anchor(gpui::Anchor::BottomLeft).snap_to_window_with_margin(px(8.)).child(self.model_options(window,cx))).with_priority(2));
+        }
         composer=composer.child(self.context_menu(cx));
         let label=self.context_label();
         let controls = div()
@@ -1324,8 +1325,11 @@ impl Render for AiSidebar {
                         if this.model_menu {this.retry_models(cx);}
                         cx.notify();
                     }))
+                    .relative()
                     .child(self.model_label())
-                    .child(icon("chevron-down", t.muted)),
+                    .child(icon("chevron-down", t.muted))
+                    .child(gpui::canvas({let anchor=self.models.anchor.clone();move|bounds,_,_|anchor.set(Some(bounds))},|_,_,_,_|{}).absolute().size_full())
+                    .layout_key(&self.capture,"ai.models.toggle",Some(self.model_label())),
             )
             .child(
                 div()
