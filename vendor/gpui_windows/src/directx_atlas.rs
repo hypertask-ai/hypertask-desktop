@@ -43,6 +43,19 @@ impl DirectXAtlas {
         })))
     }
 
+    pub(crate) fn texture_bytes(&self) -> [u64; 3] {
+        let lock = self.0.lock();
+        [
+            &lock.backend.monochrome_textures,
+            &lock.backend.polychrome_textures,
+            &lock.backend.subpixel_textures,
+        ].map(|textures| textures.textures.iter().flatten().map(|texture| {
+            let mut desc = D3D11_TEXTURE2D_DESC::default();
+            unsafe { texture.texture.GetDesc(&mut desc) };
+            u64::from(desc.Width) * u64::from(desc.Height) * u64::from(texture.bytes_per_pixel)
+        }).sum())
+    }
+
     /// Returns the view backing `id`, or `None` once every tile in it has been
     /// removed. A scene can still reference such a texture when a cached view
     /// replays a paint from before the image was dropped, so callers must skip

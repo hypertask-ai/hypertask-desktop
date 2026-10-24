@@ -613,3 +613,63 @@ fn inbox_stale_or_undated_snapshots_cannot_regress_an_authoritative_task() {
         assert_eq!(sync.db.inbox().unwrap()[0].title, "Synthetic fidelity task");
     }
 }
+
+#[test]
+fn fidelity_upgrades_list_only_database_and_persists_authors_summary_and_drafts() {
+    let f: Value = serde_json::from_str(include_str!("../../../fixtures/task-fidelity.json")).unwrap();
+    let file = tempfile::NamedTempFile::new().unwrap();
+    {
+        let mut db = Db::open(file.path()).unwrap();
+        db.apply_response(&f["list"]).unwrap();
+        assert!(!db.task(101).unwrap().unwrap().extra.contains_key("createdBy"));
+    }
+    let mut sync = Sync::new(Db::open(file.path()).unwrap(), Script::new(vec![
+        f["sections"].clone(), f["list"].clone(), f["detail"].clone(), f["drafts"].clone(),
+        f["list"].clone(), page(vec![], 0), page(vec![], 0),
+    ]));
+    sync.board(15).unwrap();
+    assert_eq!(sync.transport.paths[2], "/tasks?task_id=101,102,103");
+    sync.drafts(101).unwrap();
+    sync.delta(15).unwrap();
+    drop(sync);
+    let db = Db::open(file.path()).unwrap();
+    let cards = db.board(15).unwrap().remove(0).cards;
+    for (index, id) in [101, 102, 103].into_iter().enumerate() {
+        let task = db.task_detail(id).unwrap().unwrap().task;
+        assert_eq!(cards[index], task);
+        assert_eq!(task.description, "<p>Published description</p>");
+        if id == 103 {
+            assert!(task.extra["createdBy"].is_null());
+        } else {
+            assert_eq!(task.extra["createdBy"], f["detail"]["tasks"][index]["createdBy"]);
+        }
+    }
+    let human = db.task(101).unwrap().unwrap();
+    assert_eq!(human.extra["ai_summary"], f["detail"]["tasks"][0]["ai_summary"]);
+    for key in ["hasDescriptionDraft", "hasCommentDraft", "hasBoardDraft"] {
+        assert_eq!(human.extra[key], true, "{key}");
+    }
+    assert!(db.task(102).unwrap().unwrap().extra["ai_summary"].is_null());
+}
+
+#[test]
+fn bounded_sync_cache_evicts_pages_without_losing_persisted_offline_content() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let mut db = Db::open(file.path()).unwrap();
+    let description = "offline content ".repeat(1024);
+    for id in 1..=128 {
+        db.apply_task(&json!({"id":id,"title":format!("task {id}"),"projectId":15,
+            "status":"Normal","description":description})).unwrap();
+    }
+    if cfg!(feature = "bounded-sync-cache") {
+        let usage = db.memory_usage().unwrap();
+        eprintln!("BOUNDED_SYNC_CACHE {usage}");
+        assert_eq!(usage["SqliteCacheSizeSetting"], -256);
+        assert!(usage["SqliteCacheBytes"].as_u64().unwrap() < 600_000, "{usage}");
+    }
+    drop(db);
+    let db = Db::open(file.path()).unwrap();
+    for id in 1..=128 {
+        assert_eq!(db.task_detail(id).unwrap().unwrap().task.description, description);
+    }
+}

@@ -29,3 +29,14 @@ pub fn print() -> anyhow::Result<()> {
 pub fn print() -> anyhow::Result<()> {
     Ok(())
 }
+
+pub fn write_store_receipt(db: &ht_core::Db) {
+    let Some(path) = std::env::var_os("GPUI_MEMORY_RECEIPT") else { return };
+    let path = std::path::PathBuf::from(path).with_extension("store.json");
+    let result = db.memory_usage().and_then(|usage| {
+        std::fs::write(path, serde_json::to_vec(&usage)?).map_err(Into::into)
+    });
+    if let Err(error) = result {
+        eprintln!("Hypertask: store memory measurement failed: {error:#}");
+    }
+}

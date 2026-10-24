@@ -4,6 +4,7 @@ mod ai_sidebar;
 mod behavior;
 mod command_center;
 mod footer;
+mod fonts;
 mod input;
 mod editor_document;
 mod emoji;
@@ -193,21 +194,7 @@ fn run() -> Result<()> {
     gpui_platform::application()
         .with_assets(Assets)
         .run(move |cx: &mut App| {
-            let fonts: Vec<Cow<'static, [u8]>> = vec![
-                Cow::Borrowed(include_bytes!("../assets/fonts/IBMPlexSans-400.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/IBMPlexSans-500.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/IBMPlexSans-600.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/IBMPlexSans-700.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/Inter.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/Inter-500.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/Inter-600.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/Inter-700.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/LiberationMono-Bold.ttf")),
-                Cow::Borrowed(include_bytes!("../assets/fonts/Newsreader-Italic.ttf")),
-            ];
-            cx.text_system()
-                .add_fonts(fonts)
-                .expect("load embedded fonts");
+            fonts::load(options.theme, cx);
             input::init(cx);
             if cfg!(target_os = "linux") {
                 cx.set_text_rendering_mode(gpui::TextRenderingMode::Grayscale);

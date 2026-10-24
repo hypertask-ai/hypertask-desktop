@@ -338,7 +338,42 @@ impl DirectXRenderer {
             return Ok(());
         }
         self.render(scene, background_appearance)?;
+        self.write_memory_receipt();
         self.present()
+    }
+
+    fn write_memory_receipt(&self) {
+        let Some(path) = std::env::var_os("GPUI_MEMORY_RECEIPT") else { return };
+        let [mono, image, subpixel] = self.atlas.texture_bytes();
+        let p = &self.pipelines;
+        let instance_bytes = p.shadow_pipeline.buffer_size * std::mem::size_of::<Shadow>()
+            + p.quad_pipeline.buffer_size * std::mem::size_of::<Quad>()
+            + p.path_rasterization_pipeline.buffer_size * std::mem::size_of::<PathRasterizationSprite>()
+            + p.path_sprite_pipeline.buffer_size * std::mem::size_of::<PathSprite>()
+            + p.underline_pipeline.buffer_size * std::mem::size_of::<Underline>()
+            + p.mono_sprites.buffer_size * std::mem::size_of::<MonochromeSprite>()
+            + p.subpixel_sprites.buffer_size * std::mem::size_of::<SubpixelSprite>()
+            + p.poly_sprites.buffer_size * std::mem::size_of::<PolychromeSprite>();
+        let path_bytes = self.resources.as_ref().map_or(0, |resources| {
+            if resources.path_intermediate_texture.is_some() {
+                u64::from(self.width) * u64::from(self.height) * 4 * (1 + u64::from(PATH_MULTISAMPLE_COUNT))
+            } else { 0 }
+        });
+        let swap_bytes = self.resources.as_ref().and_then(|r| unsafe {
+            r.swap_chain.GetDesc1().ok()
+        }).map_or(0, |desc| u64::from(desc.Width) * u64::from(desc.Height) * 4 * u64::from(desc.BufferCount));
+        // Resource payload sizes, not resident pages: driver/allocator overhead is
+        // intentionally left to the independent process working-set receipt.
+        let json = format!(
+            "{{\"MonochromeAtlasBytes\":{mono},\"ImageAtlasBytes\":{image},\"FontAtlasBytes\":{subpixel},\"InstanceBufferBytes\":{instance_bytes},\"PathTextureBytes\":{path_bytes},\"SwapChainBytes\":{swap_bytes}}}"
+        );
+        let path = std::path::PathBuf::from(path);
+        let temporary = path.with_extension("tmp");
+        if let Err(error) = std::fs::write(&temporary, json)
+            .and_then(|_| std::fs::rename(&temporary, &path))
+        {
+            log::error!("writing memory owners: {error}");
+        }
     }
 
     /// Clear the render target for `background_appearance` and encode every
@@ -1699,7 +1734,9 @@ fn report_live_objects(device: &ID3D11Device) -> Result<()> {
     Ok(())
 }
 
-const BUFFER_COUNT: usize = 3;
+// Two buffers are sufficient for FLIP_SEQUENTIAL; keep three only for CI's
+// otherwise identical before/after memory and pixel comparison.
+const BUFFER_COUNT: usize = if cfg!(feature = "triple-buffer") { 3 } else { 2 };
 
 pub(crate) mod shader_resources {
     use anyhow::Result;

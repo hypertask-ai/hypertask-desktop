@@ -1,0 +1,91 @@
+use super::*;
+use crate::ui::shell::tests::{draw, measured};
+use gpui::VisualTestContext;
+use ht_core::{Sync, Transport, http::{Response, TransportError}};
+use serde_json::Value;
+use std::collections::VecDeque;
+
+struct Fixture(VecDeque<Value>);
+impl Transport for Fixture {
+    fn get(&mut self, _: &str) -> std::result::Result<Response, TransportError> {
+        Ok(Response { status: 200, body: self.0.pop_front().expect("unexpected fixture request") })
+    }
+    fn post(&mut self, _: &str, _: &Value, _: &str) -> std::result::Result<Response, TransportError> {
+        panic!("fidelity rendering must not write to the server")
+    }
+}
+
+#[gpui::test]
+fn synced_fidelity_fixture_renders_real_authors_saved_summary_and_web_draft_markers(
+    cx: &mut gpui::TestAppContext,
+) {
+    cx.update(crate::input::init);
+    let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| {
+        let f: Value = serde_json::from_str(include_str!("../../../fixtures/task-fidelity.json")).unwrap();
+        let mut sync = Sync::new(Db::memory().unwrap(), Fixture(VecDeque::from([
+            f["sections"].clone(), f["list"].clone(), f["detail"].clone(), f["drafts"].clone(),
+        ])));
+        sync.board(15).unwrap();
+        sync.drafts(101).unwrap();
+        assert!(sync.transport.0.is_empty());
+        let options = Options::parse([
+            "--offline", "--screen", "task", "--task", "101", "--board", "15",
+        ].map(String::from)).unwrap();
+        let mut view = Desktop::new(sync.db, options, window, cx);
+        view.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+        view.ready_scheduled = true;
+        window.focus(&view.focus, cx);
+        view
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    draw(view, &mut cx);
+    assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "Real Human");
+    assert_eq!(measured(view, &mut cx, "task.description.draft")["text"], "Draft");
+    assert_eq!(measured(view, &mut cx, "task.composer.draft")["text"], "Draft");
+    view.read_with(&mut cx, |this, _| {
+        assert_eq!(this.summary.as_ref(), "Stored summary, not generated.");
+        assert_eq!(this.detail.as_ref().unwrap().task.description, "<p>Published description</p>");
+        assert_eq!(full_task_summary(&this.detail.as_ref().unwrap().task.extra),
+            "## Summary\n- **Stored** summary, not generated. [1]\n- Another item.");
+        assert!(this.db.mutations().unwrap().is_empty());
+    }).unwrap();
+    cx.simulate_keystrokes("i");
+    assert_eq!(measured(view, &mut cx, "task.summary.full")["text"],
+        "## Summary\n- **Stored** summary, not generated. [1]\n- Another item."
+            .chars().take(40).collect::<String>());
+    cx.simulate_keystrokes("escape");
+    view.update(&mut cx, |this, window, cx| {
+        this.open_task(102, cx);
+        window.focus(&this.focus, cx);
+    }).unwrap();
+    draw(view, &mut cx);
+    assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "Actual Runner");
+    view.read_with(&mut cx, |this, _| assert!(this.summary.is_empty())).unwrap();
+    view.update(&mut cx, |this, _, cx| this.open_task(103, cx)).unwrap();
+    draw(view, &mut cx);
+    assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "Unknown author");
+    view.update(&mut cx, |this, _, cx| this.switch(Screen::Board, cx)).unwrap();
+    draw(view, &mut cx);
+    let badge = measured(view, &mut cx, "board.card.0.draft");
+    assert_eq!(badge["text"], "Draft");
+    assert_eq!(badge["color"], "#c2cfa5");
+    assert_eq!(badge["fontWeight"], 500.0);
+    assert_eq!(badge["lineHeight"], 22.0);
+    view.read_with(&mut cx, |this, _| {
+        assert_eq!(this.columns[0].cards[0].extra["createdBy"]["displayName"], "Real Human");
+        assert!(this.db.mutations().unwrap().is_empty());
+    }).unwrap();
+}
+
+#[test]
+fn creator_prefers_the_agent_not_the_agents_owner_and_handles_missing_agent_names() {
+    for (extra, expected) in [
+        (serde_json::json!({"createdBy":{"displayName":"Owner","agent":{"displayName":"Runner"}}}), "Runner"),
+        (serde_json::json!({"agent":{"displayName":"Runner"},"user":{"displayName":"Owner"}}), "Runner"),
+        (serde_json::json!({"agent":null,"createdBy":{"displayName":"Human"}}), "Human"),
+        (serde_json::json!({"createdBy":{"displayName":"","email":"human@example.test"}}), "human@example.test"),
+        (serde_json::json!({}), "Unknown author"),
+    ] {
+        assert_eq!(creator_name(extra.as_object().unwrap()), expected);
+    }
+}

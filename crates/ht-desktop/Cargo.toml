@@ -3,6 +3,10 @@ name = "ht-desktop"
 edition.workspace = true
 version.workspace = true
 
+[features]
+default = ["lazy-theme-fonts", "ht-core/bounded-sync-cache"]
+lazy-theme-fonts = []
+
 [dependencies]
 gpui = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["profiler"] }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["x11", "wayland"] }
