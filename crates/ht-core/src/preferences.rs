@@ -36,7 +36,7 @@ pub fn merge(before:&Value,updates:&Value)->Value {
     settings
 }
 impl Db {
-    pub fn web_preferences(&self)->Result<Value>{let user=self.current_user_id().context("Unauthorized")?;self.kv_get(&key(user))?.map(|s|serde_json::from_str(&s).map_err(Into::into)).transpose()?.context("Load preferences before changing them")}
+    pub fn web_preferences(&self)->Result<Value>{let user=self.current_user_id().context("Unauthorized")?;self.kv_get(&key(user))?.map(|s|serde_json::from_str::<Value>(&s)).transpose()?.context("Load preferences before changing them")}
     pub fn cache_web_preferences(&self,user:i64,settings:&Value)->Result<()> {ensure!(self.current_user_id()==Some(user) && settings.is_object(),"Wrong preference account");self.kv_set(&key(user),&settings.to_string())}
     pub(crate) fn optimistic_preferences(&self,payload:&Value)->Result<()> {if self.current_user_id()==payload["user_id"].as_i64(){let settings=merge(&self.web_preferences()?,&payload["updates"]);self.cache_web_preferences(payload["user_id"].as_i64().unwrap(),&settings)?;}Ok(())}
     pub(crate) fn rollback_preferences(&self,payload:&Value)->Result<()> {self.kv_set(&key(payload["user_id"].as_i64().context("Missing preference account")?),&payload["before"].to_string())}
