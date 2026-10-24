@@ -47,6 +47,7 @@ use presentation::Presentation;
 pub struct Scope {
     context: DefaultContext,
     team_id: Option<String>,
+    last_team: Option<String>,
     label: String,
     suggestions: Vec<String>,
     model_default: Option<String>,
@@ -54,9 +55,12 @@ pub struct Scope {
 
 impl Scope {
     pub fn load(db: &Db, screen: Screen, project: i64, task_id: Option<i64>) -> Self {
-        let task = task_id.and_then(|id| db.task(id).ok().flatten());
+        let task = (screen != Screen::Inbox).then_some(task_id).flatten().and_then(|id| db.task(id).ok().flatten());
         let project = task.as_ref().map_or(project, |t| t.project_id);
         let (board_name, team_id) = ai_chat::project_metadata(db, project);
+        let team_id=if screen==Screen::Inbox {None}else{team_id};
+        if let Some(team)=&team_id {let _=db.kv_set("lastBoardTeamId",team);}
+        let last_team=db.kv_get("lastBoardTeamId").ok().flatten();
         let columns = if screen == Screen::Board {
             db.board(project).unwrap_or_default()
         } else {
@@ -107,9 +111,10 @@ impl Scope {
                 view_name: (screen != Screen::Inbox).then_some(board_name),
             },
             team_id,
+            last_team,
             label,
             suggestions,
-            model_default:db.board_project(project).ok().and_then(|p|p["ai_custom_instructions"][0]["model_selected"].as_str().map(str::to_owned)),
+            model_default:(screen!=Screen::Inbox).then(||db.board_project(project).ok()).flatten().and_then(|p|p["ai_custom_instructions"][0]["model_selected"].as_str().map(str::to_owned)),
         }
     }
 }
@@ -524,7 +529,7 @@ impl AiSidebar {
         if text.is_empty() || self.active.is_some() || self.session_pending.is_some() {
             return;
         }
-        if self.client.is_some() && self.scope.as_ref().and_then(|s|s.team_id.as_ref()).is_some() && self.models.configuration.is_none(){
+        if self.client.is_some() && self.models.configuration.is_none(){
             if let Some(error)=&self.models.error{self.chats[self.selected].error=Some(error.clone());}
             cx.notify();return;
         }
@@ -1314,6 +1319,7 @@ impl Render for AiSidebar {
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.model_menu = !this.model_menu;
+                        this.models.submenu=None;
                         this.context_picker.scope_open=false;
                         if this.model_menu {this.retry_models(cx);}
                         cx.notify();

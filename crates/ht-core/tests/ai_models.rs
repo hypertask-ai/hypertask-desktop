@@ -4,10 +4,12 @@ struct Server{deny:Option<(&'static str,u16)>,writes:u16,calls:Vec<String>}
 impl Transport for Server{
     fn get(&mut self,path:&str)->Result<Response,TransportError>{
         self.calls.push(path.into());
-        let body=if path=="/user/context"{json!({"success":true,"user":{"id":42}})}else if path.starts_with("/api/teams/getTeam?"){json!({"id":"team","subscriptionPlan":[]})}else if path.starts_with("/api/teams/aiFeatureModels?"){json!({"aiChat":{"model":null,"effectiveModel":"gpt-6-luna"}})}else if path.starts_with("/api/teams/aiProviderSettings?"){json!({"providers":[{"key":"openai","enabled":true},{"key":"anthropic","enabled":false},{"key":"google","enabled":true}]})}else if path.starts_with("/api/teams/byokKeys?"){json!({"gdprSafeMode":true,"keys":[{"provider":"custom","enabled":true,"hasSecret":true,"baseUrl":"https://example.invalid","modelId":"custom-model","gdprCompliant":false}]})}else if path=="/api/users/preferences"{json!({"success":true,"settings":{"playGifs":false,"aiModelPreferences":{"aiChat":"gemini-3.1-flash-lite","teams":{"other":{"aiChat":"gpt-6.1-sol"},"team":{"aiChat":"gpt-5.6-luna-high"}}}}})}else{panic!("unexpected {path}")};
+        let body=if path=="/api/flags"{json!({"flags":{}})}else if path=="/user/context"{json!({"success":true,"user":{"id":42}})}else if path.starts_with("/api/teams/getTeam?"){json!({"id":path.split("teamId=").nth(1).unwrap(),"subscriptionPlan":[]})}else if path.starts_with("/api/teams/aiFeatureModels?"){json!({"aiChat":{"model":null,"effectiveModel":"gpt-6-luna"}})}else if path.starts_with("/api/teams/aiProviderSettings?"){json!({"providers":[{"key":"openai","enabled":true},{"key":"anthropic","enabled":false},{"key":"google","enabled":true}]})}else if path.starts_with("/api/teams/byokKeys?"){json!({"gdprSafeMode":true,"keys":[{"provider":"custom","enabled":true,"hasSecret":true,"baseUrl":"https://example.invalid","modelId":"custom-model","gdprCompliant":false}]})}else if path=="/api/users/preferences"{json!({"success":true,"settings":{"playGifs":false,"aiModelPreferences":{"aiChat":"gemini-3.1-flash-lite","teams":{"other":{"aiChat":"gpt-6.1-sol"},"team":{"aiChat":"gpt-5.6-luna-high"}}}}})}else{panic!("unexpected {path}")};
         Ok(if let Some((prefix,status))=self.deny.filter(|(prefix,_)|path.starts_with(prefix)){let _=prefix;Response{status,body:json!({"error":"Forbidden"})}}else{Response{status:200,body}})
     }
-    fn post(&mut self,path:&str,body:&Value,_:&str)->Result<Response,TransportError>{assert_eq!(path,"/api/users/preferences");assert_eq!(body,&json!({"aiModelPreferences":{"aiChat":"gemini-3.5-flash-lite"},"aiModelPreferencesTeamId":"team"}));Ok(Response{status:self.writes,body:if self.writes==200{json!({"success":true,"settings":{"playGifs":false,"aiModelPreferences":{"teams":{"other":{"aiChat":"gpt-6.1-sol"},"team":{"aiChat":"gemini-3.5-flash-lite"}}}}})}else{json!({"error":"Unauthorized"})}})}
+    fn post(&mut self,path:&str,body:&Value,_:&str)->Result<Response,TransportError>{
+        if path=="/api/teams/getAllSidebar"{assert_eq!(body,&json!({"userId":42}));self.calls.push(path.into());return Ok(if let Some((_,status))=self.deny.filter(|(prefix,_)|path.starts_with(prefix)){Response{status,body:json!({"error":"Forbidden"})}}else{Response{status:200,body:json!([{"id":"other"},{"id":"team"}])}});}
+        assert_eq!(path,"/api/users/preferences");assert_eq!(body,&json!({"aiModelPreferences":{"aiChat":"gemini-3.5-flash-lite"},"aiModelPreferencesTeamId":"team"}));Ok(Response{status:self.writes,body:if self.writes==200{json!({"success":true,"settings":{"playGifs":false,"aiModelPreferences":{"teams":{"other":{"aiChat":"gpt-6.1-sol"},"team":{"aiChat":"gemini-3.5-flash-lite"}}}}})}else{json!({"error":"Unauthorized"})}})}
 }
 #[test]
 fn configured_picker_reads_real_provider_custom_preference_and_plan_data(){
@@ -40,4 +42,28 @@ fn duplicate_or_wrong_account_preference_request_cannot_replace_an_optimistic_pi
     db.enqueue_web_preferences(42,&before,update.clone(),1).unwrap();let optimistic=db.web_preferences().unwrap();
     assert!(db.enqueue_web_preferences(42,&before,update.clone(),2).is_err());assert_eq!(db.web_preferences().unwrap(),optimistic);
     assert!(db.enqueue_web_preferences(99,&before,update,2).is_err());assert_eq!(db.web_preferences().unwrap(),optimistic);
+}
+
+#[test]
+fn no_board_model_team_uses_verified_last_membership_or_first_and_never_ignores_refusal(){
+    for last in [Some("team"),Some("revoked"),None]{
+        let mut server=Server{deny:None,writes:200,calls:vec![]};
+        let result=ai_models::load_for_scope(&mut server,None,last,None);
+        assert_eq!(result.unwrap().team,if last==Some("team"){"team"}else{"other"});
+        assert_eq!(&server.calls[..2],&["/user/context","/api/teams/getAllSidebar"]);
+    }
+    for status in [401,403]{let mut server=Server{deny:Some(("/api/teams/getAllSidebar",status)),writes:200,calls:vec![]};assert!(ai_models::load_for_scope(&mut server,None,Some("team"),None).is_err());assert_eq!(server.calls.len(),2);}
+}
+
+#[test]
+fn family_effort_nearest_reset_and_custom_labels_use_the_web_catalog(){
+    let mut server=Server{deny:None,writes:200,calls:vec![]};let mut config=ai_models::load(&mut server,"team",None).unwrap();
+    config.options=ai_models::catalog().to_vec();config.custom_label=Some("My endpoint".into());
+    assert_eq!(config.default,"gpt-6-luna");assert_eq!(config.nearest("gpt-6.1-sol",Some("high")).unwrap()["id"],"gpt-6.1-sol-high");
+    assert_eq!(config.nearest("claude-opus-5-5",Some("standard")).unwrap()["id"],"claude-opus-5-5-instant");
+    assert_eq!(config.nearest("gemini-3.8-flash",Some("high")).unwrap()["id"],"gemini-3.8-flash");
+    assert_eq!(config.efforts("gpt-6-luna").iter().map(|model|ai_models::effort_label(model)).collect::<Vec<_>>(),vec!["Light","Standard","High"]);
+    assert_eq!(config.efforts("claude-opus-5-5").iter().map(|model|ai_models::effort_label(model)).collect::<Vec<_>>(),vec!["Instant","Thinking"]);
+    assert_eq!(config.families().iter().filter(|model|model["family"]=="gpt-6-luna").count(),1);
+    assert_eq!(config.label(ai_models::option("custom").unwrap()),"My endpoint");
 }
