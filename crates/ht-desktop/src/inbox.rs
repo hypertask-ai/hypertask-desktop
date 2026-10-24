@@ -382,6 +382,7 @@ impl Desktop {
             .map(|html| RichText::parse(html, t).text.to_string())
             .filter(|text| !text.trim().is_empty())
             .unwrap_or_else(|| notification_label(n.raw_json["type"].as_str().unwrap_or("")));
+        let metadata = inbox_metadata(&n.raw_json["task"]);
         let source = n.source.clone().unwrap_or_default();
         let source = match n.raw_json["unreadCount"]
             .as_u64()
@@ -513,13 +514,24 @@ impl Desktop {
                                         format!("inbox.row.{row}.kind"),
                                         Some(kind),
                                     ),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(color(t.muted))
-                            .child(inbox_metadata(&n.raw_json["task"])),
+                            )
+                            .when(!metadata.is_empty(), |d| {
+                                d.child(
+                                    div()
+                                        .flex_shrink_0()
+                                        .max_w(px(180.))
+                                        .overflow_hidden()
+                                        .whitespace_nowrap()
+                                        .text_size(px(11.))
+                                        .text_color(color(t.muted))
+                                        .child(metadata.clone())
+                                        .layout_key(
+                                            &self.layout,
+                                            format!("inbox.row.{row}.meta"),
+                                            Some(metadata),
+                                        ),
+                                )
+                            }),
                     )
                     .child(
                         div()
@@ -580,6 +592,56 @@ mod tests {
         ]})).unwrap();
         view.screen=Screen::Inbox;view.reload();view.split=view.splits.iter().position(|s|s=="All").unwrap();view.filter_inbox();
     }
+    #[gpui::test]
+    fn inbox_metadata_shares_content_gap_without_an_empty_outer_column(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        for priority in [String::new(), "High".to_owned(), "High priority ".repeat(30)] {
+            let has_metadata = !priority.is_empty();
+            let view: WindowHandle<Desktop> = cx.add_window(|window, cx| {
+                let mut v = desktop(window, cx);
+                seed(&mut v);
+                v.db.apply_response(&json!({"success":true,"user_notifications":[{
+                    "id":102,"taskId":2,"projectId":15,"status":"Normal","seen":true,
+                    "createdAt":"2026-01-02T00:00:00Z","type":"TaskReminder",
+                    "task":{"title":"Other","ticketNumber":"HT-2","priority":
+                        if has_metadata { json!({"Priority_Value":priority}) } else { json!(null) }
+                    }
+                }]})).unwrap();
+                v.reload();
+                v.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+                v.ready_scheduled = true;
+                v
+            });
+            let mut cx = VisualTestContext::from_window(view.into(), cx);
+            draw(view, &mut cx);
+            view.read_with(&mut cx, |this, _| {
+                let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+                let kind = elements.iter().find(|e| e["key"] == "inbox.row.0.kind").unwrap();
+                let actions = elements.iter().find(|e| e["key"] == "inbox.row.0.actions").unwrap();
+                let meta = elements.iter().find(|e| e["key"] == "inbox.row.0.meta");
+                let kind_right = kind["x"].as_f64().unwrap() + kind["w"].as_f64().unwrap();
+                let content_right = if has_metadata {
+                    let meta = meta.expect("nonempty metadata must be rendered");
+                    assert_eq!(meta["text"], priority.chars().take(40).collect::<String>());
+                    assert!(meta["w"].as_f64().unwrap() <= 180.);
+                    assert_eq!(meta["h"], kind["h"], "metadata must stay on the inherited single line");
+                    if priority.len() > 40 {
+                        assert_eq!(meta["w"], 180.);
+                    }
+                    assert!((meta["x"].as_f64().unwrap() - kind_right - 8.).abs() <= 1.);
+                    meta["x"].as_f64().unwrap() + meta["w"].as_f64().unwrap()
+                } else {
+                    assert!(meta.is_none(), "empty metadata must not consume a flex gap");
+                    kind_right
+                };
+                assert!((actions["x"].as_f64().unwrap() - content_right - 32.).abs() <= 1.);
+                assert!(this.db.mutations().unwrap().is_empty());
+            }).unwrap();
+        }
+    }
+
     #[gpui::test]
     fn inbox_real_search_filters_title_ticket_and_escape_restores_split_without_navigation(cx: &mut gpui::TestAppContext) {
         cx.update(crate::input::init);

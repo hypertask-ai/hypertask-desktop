@@ -453,6 +453,44 @@ mod tests {
         }).unwrap();
     }
     #[gpui::test]
+    fn board_comment_and_assignee_metadata_stays_in_the_ticket_row(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (comments, assignees, notification) in [(2, 0, false), (0, 1, false), (2, 1, true)] {
+            let (view, mut cx) = visual(cx);
+            view.update(&mut cx, |this, _, cx| {
+                this.db.apply_task(&json!({
+                    "id":1,"projectId":15,"sectionId":10,"title":"Needle",
+                    "ticketNumber":"HT-1","status":"Normal",
+                    "commentCount":comments,"assigneeCount":assignees
+                })).unwrap();
+                if notification {
+                    this.db.apply_response(&json!({"success":true,"user_notifications":[{
+                        "id":101,"taskId":1,"projectId":15,"status":"Normal",
+                        "seen":true,"createdAt":"2026-01-01T00:00:00Z"
+                    }]})).unwrap();
+                }
+                this.reload();
+                cx.notify();
+            }).unwrap();
+            draw(view, &mut cx);
+            view.read_with(&mut cx, |this, _| {
+                let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+                let meta = elements.iter().find(|e| e["key"] == "board.card.0.meta").unwrap();
+                let ticket = elements.iter().find(|e| e["key"] == "board.card.0.id").unwrap();
+                let title = elements.iter().find(|e| e["key"] == "board.card.0.title").unwrap();
+                let meta_top = meta["y"].as_f64().unwrap();
+                let meta_bottom = meta_top + meta["h"].as_f64().unwrap();
+                assert_eq!(meta["h"], 22.);
+                assert!(meta_top <= ticket["y"].as_f64().unwrap());
+                assert!(meta_bottom >= ticket["y"].as_f64().unwrap() + ticket["h"].as_f64().unwrap());
+                assert!((title["y"].as_f64().unwrap() - meta_bottom - 6.).abs() <= 1.);
+                assert!(this.db.mutations().unwrap().is_empty());
+            }).unwrap();
+        }
+    }
+
+    #[gpui::test]
     fn board_checkbox_selects_without_opening_and_card_click_preserves_selection(
         cx: &mut gpui::TestAppContext,
     ) {

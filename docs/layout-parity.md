@@ -322,3 +322,94 @@ the VPS). The new lock contract failed on that real drift while all 28 text
 tests passed. Linux CI requires `git diff --exit-code -- Cargo.lock` after
 workspace/backend tests, so green checks cannot silently use an uncommitted
 regenerated lock.
+
+## Remaining-box audit after the main reset
+
+Acceptance recorded before implementation: `internal/LOOK-REMAINING-GATES.md`.
+Baseline SHA `4ed0152857d7a23bd63551f188dc53d5125a5d8b`, CI
+[40104519238](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40104519238).
+The downloaded `layout-dumps` artifact independently reproduces **68 raw / 34
+matched** with the unchanged comparer at logical width 1920. Outputs are
+`evidence/look-remaining-before{,-parity}.txt`.
+
+A residual inbox geometry defect was obscured by the different synthetic title:
+notification content ended at **x=1308**, while the live content ends at
+**x=1340**. Native code rendered an empty metadata item as a fourth outer flex
+column, consuming an unnecessary 32px gap. The web has only three outer columns,
+and mounts metadata inside the title/content column instead:
+
+- `src/components/notifications/NotificationRow.tsx:58-81`: outer `space-x-8`,
+  inner `gap-2`, metadata inside the inner content column, actions outside it.
+- `src/components/Common/TaskRowComponents/TaskTitle.tsx:41-45`: no metadata DOM
+  when empty; populated metadata is `shrink-0`, clipped at desktop max-width 180px.
+- `TaskTitle.tsx:56-59`: existing priority label uses 11px typography.
+
+All citations refer to web revision `6f9901764d355aba7bfc76e4e62ff255e0b68b31`.
+The native correction follows that hierarchy and existing metadata text, without
+adding UI or fitting coordinates to the reference. A hosted-CI visual regression
+covers both empty and populated metadata, asserting the source's 8px inner and
+32px outer gaps and no queued writes. No existing gate or fixture is changed.
+
+This corrects a component of an already-counted box difference; the count cannot
+be claimed reduced unless the entire content-dependent box falls within the
+original comparer tolerance. Collector-only rail keys remain present, and
+synthetic names/tickets/dates/card badges remain unchanged rather than being
+replaced with live content to improve a number. Final CI measurement follows.
+
+The dense board artifact exposes a second hierarchy defect: existing comment and
+assignee metadata was rendered as a separate row below the title. Web
+`src/components/PageComponents/Kanban/KanbanTaskComponents/TaskTopRow.tsx:68-83,93-134`
+places both in the ticket row, including alongside the optional inbox badge.
+`TaskTopRow.tsx:69` supplies its 4px item gap;
+`KanbanTaskComponents/CommentAndAssignees.tsx:15-19` and
+`TaskTopRow.tsx:148-159` give comment/assignee height 22px via
+`tailwind.config.ts:27` (`h-labelComponent`) and avatar `size=22`.
+`TaskDraggableContainer.tsx:94-96` supplies the existing 6px gap between card rows.
+The native change relocates the already-supported metadata into that row,
+retaining its existing content and controls, with a 22px container and 4px gap.
+A CI visual regression covers comments alone, assignees alone and both together
+with an inbox badge; metadata must share the ticket row above the title.
+
+The ten matched residuals were individually checked against source:
+
+| Residual | Why its full box still cannot be made identical by layout constants |
+| --- | --- |
+| inbox author/title/kind | Synthetic names, ticket and task title differ. The title's intrinsic width sets the following content start (`NotificationRow.tsx:62-78`, `TaskRowComponents/TaskTitle.tsx:157-208`); the extra 32px native gap is corrected, not the text. |
+| inbox section | YESTERDAY versus LAST WEEK; existing source 12px bold/14.4px typography agrees. |
+| board title/count | Synthetic Board versus QA Team Board; label width sets count x (`HeaderComponents/ViewTabsBar.tsx:192-196`). |
+| board first-card title/id | Synthetic card one / QA-101 versus live title / QABO-7; intrinsic text, same source typography (`KanbanTaskCard.tsx:267-272`, `styles/tailwindThemes/graphite.css:108-112`). |
+| board second-card | Live card has an In inbox badge; synthetic card has no notification. The web mounts this badge conditionally (`TaskTopRow.tsx:93-124`); adding a fake badge would be unsupported. |
+| task ticket | QA-103 versus QABO-5; source renders the actual ticket (`TaskInfoColumn/TaskInfo.tsx:288-307`). |
+
+The other 24 matched differences are the unchanged live collector's eight
+unsampled rail keys per screen. No control is removed and neither collector,
+comparer nor fixture is modified to manufacture a count reduction.
+
+
+The inbox-only checkpoint is independently green at SHA
+`2358b8c734a5b78f07c4d6bffbfb87157e3a0ff9`, CI
+[40105979341](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40105979341):
+Ubuntu, Windows x64, macOS, Windows ARM64 and Windows memory receipt/budget all
+success; the unchanged ram2-only historical baseline is skipped. The new inbox
+visual regression passed on all three test platforms; the strict font and layout
+contracts passed. Downloaded CI artifact `evidence/look-remaining-inbox/parity`
+shows content right edge **1308 → 1340**, actions x **1372** unchanged, and outer
+gap **64 → 32px**. Totals remain **68 raw / 34 matched**, honestly: no synthetic
+text or badge is changed to force a full-box pass. Final board-placement proof
+will be attached to PR 18 with its exact final SHA and CI artifact identity.
+
+Final review also preserves the source's nonwrapping metadata clipping
+(`TaskRowComponents/TaskTitle.tsx:36-45`): the 180px native container now explicitly
+uses nowrap rather than wrapping long metadata into the fixed-height inbox row.
+The same CI regression adds a long-priority case, requiring width <=180px,
+single-line height, and both unchanged source gaps. This is additive coverage,
+not a relaxation of the existing layout contract.
+
+CI 40108538957 rejected an incorrect new test-only assumption: 11px metadata
+inherits the content container's fixed 19.5px line-height (the same line-height
+as its adjacent notification content), so an invented <=18px assertion is not a
+valid single-line oracle. The regression now requires exact equality with the
+adjacent single-line content's measured height, retaining the mandatory 180px
+clip, exact long-case 180px width, and 8px/32px gaps. No application dimensions,
+existing assertion, gate tolerance or fixture is changed to accommodate that
+failure. Final proof is bound to the corrected descendant below via PR 18.
