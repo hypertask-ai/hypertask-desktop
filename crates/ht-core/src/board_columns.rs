@@ -71,7 +71,8 @@ impl Db {
         if change.body["newSection"]["deleted"] == true {
             ensure!(tasks.is_empty() || project["section"].as_array().is_some_and(|sections| sections.iter().any(|other| other["id"]!=section["id"])), "This is the board's last column. Move or delete its cards first.");
         }
-        Ok(json!({"section":section,"tasks":tasks}))
+        let destination=project["section"].as_array().into_iter().flatten().find(|other|other["id"]!=section["id"]);
+        Ok(json!({"section":section,"tasks":tasks,"destination":destination}))
     }
     pub(crate) fn optimistic_column(&self, change:&ViewWrite, mutation:i64, now:i64) -> Result<()> {
         if change.route == "column-create" {
@@ -139,7 +140,16 @@ impl Db {
         for field in fields {current[field]=snapshot["section"][field].clone();}
         if change.route != "column-visibility" { self.upsert("Section",&current)?; }
         for task in snapshot["tasks"].as_array().into_iter().flatten() {
-            if let Some(mut current)=self.raw("Task",&task["id"])? {let fields:&[&str]=if change.body["newSection"]["deleted"]==true {&["sectionId","section","sectionChangedAt"]}else{&["section"]};for field in fields {current[*field]=task[*field].clone();}self.upsert_task(&current)?;}
+            if let Some(mut current)=self.raw("Task",&task["id"])? {
+                let deleting=change.body["newSection"]["deleted"]==true;
+                // A later acknowledged move/rename owns its fields even if this older write fails.
+                let still_optimistic=if deleting {current["sectionId"]==snapshot["destination"]["id"] && current["section"]==snapshot["destination"]["section_title"]}
+                    else {current["sectionId"]==snapshot["section"]["id"] && current["section"]==change.body["newSection"]["section_title"]};
+                if still_optimistic {
+                    let fields:&[&str]=if deleting {&["sectionId","section","sectionChangedAt"]}else{&["section"]};
+                    for field in fields {current[*field]=task[*field].clone();}self.upsert_task(&current)?;
+                }
+            }
         }
         Ok(())
     }

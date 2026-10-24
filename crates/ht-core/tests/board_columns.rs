@@ -70,3 +70,16 @@ fn column_counts_are_not_capped_at_the_task_search_limit() {
     db.apply_response(&json!({"success":true,"tasks":tasks})).unwrap();
     assert_eq!(db.column_task_count(15,10).unwrap(),125);
 }
+
+#[test]
+fn refused_column_delete_does_not_overwrite_a_newer_acknowledged_task_move() {
+    let mut db=Db::memory().unwrap();seed(&mut db);
+    db.apply_response(&json!({"success":true,"sections":[section(12,"Review","A0300")]})).unwrap();
+    let body=json!({"projectId":15,"userId":42,"sectionId":10,"newSection":{"deleted":true}});
+    let id=db.enqueue(Write::View{change:ViewWrite{project:15,route:"column-update".into(),body}},100).unwrap();
+    assert_eq!(db.task(1).unwrap().unwrap().section_id,Some(11));
+    db.apply_response(&json!({"success":true,"tasks":[{"id":1,"projectId":15,"sectionId":12,"section":"Review","title":"New title","status":"Normal"}]})).unwrap();
+    let result=db.drain_once(&mut Server{status:403,path:"/api/section/update",body:json!({"userId":42,"sectionId":10,"newSection":{"deleted":true}}),reply:Value::Null,calls:0,user:42},100).unwrap();
+    assert_eq!(result,Drain::Failed(id));
+    assert_eq!(db.task(1).unwrap().unwrap().section_id,Some(12));assert_eq!(db.task(1).unwrap().unwrap().title,"New title");
+}

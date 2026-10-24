@@ -50,6 +50,7 @@ pub(super) struct Views {
     column_deferred: std::collections::VecDeque<(String, Value)>,
     column_reorder: bool,
     column_error: String,
+    column_title_blur: Option<gpui::Subscription>,
     pending: Option<String>,
     choice: usize,
     editing: Option<String>,
@@ -95,6 +96,7 @@ impl Views {
             column_deferred: Default::default(),
             column_reorder: false,
             column_error: String::new(),
+            column_title_blur: None,
             pending: None,
             choice: 0,
             editing: None,
@@ -118,6 +120,7 @@ impl Views {
 }
 impl Desktop {
     pub(super) fn invalidate_board_views(&mut self, cx: &mut Context<Self>) {
+        self.views.column_title_blur = None;
         self.views.column_deferred.clear();
         self.views.column_auto_select = false;
         self.views.column_edit = None;
@@ -2343,6 +2346,7 @@ impl Desktop {
     fn edit_column(&mut self, id:i64, window:&mut Window, cx:&mut Context<Self>) {
         if id<=0 {return;}
         let Some(section)=self.managed_columns().into_iter().find(|section|section["id"]==id) else{return;};
+        self.views.column_title_blur=None;
         self.views.column_edit=Some(id);
         if self.views.column_auto_select {
             self.views.column_auto_select=false;
@@ -2352,13 +2356,16 @@ impl Desktop {
             self.open_view_panel(Panel::EditColumn,window,cx);
             self.views.input.update(cx,|input,cx|{input.configure("Enter column name",false,cx);input.set_content(section["section_title"].as_str().unwrap_or("").into(),cx);});
             let handle=self.views.input.focus_handle(cx);
-            cx.on_blur(&handle,window,|this,window,cx| {
+            self.views.column_title_blur=Some(cx.on_blur(&handle,window,|this,window,cx| {
                 if this.views.panel==Some(Panel::EditColumn) {this.save_column_title(window,cx);}
-            }).detach();
+            }));
         }
         cx.notify();
     }
     fn queue_column(&mut self, route:&str, mut body:Value, window:&mut Window, cx:&mut Context<Self>) {
+        if self.views.panel==Some(Panel::EditColumn) && !(route=="column-update" && body["newSection"]["section_title"].is_string()) {
+            self.save_column_title(window,cx);
+        }
         body["projectId"]=json!(self.options.board);
         if route=="column-update" {body["userId"]=json!(self.db.current_user_id());}
         if self.views.pending.is_some() {self.views.column_deferred.push_back((route.into(),body));cx.notify();return;}
@@ -2447,7 +2454,7 @@ impl Desktop {
                 Some(Panel::EditColumn)=>{self.save_column_title(window,cx);self.open_view_panel(Panel::Columns,window,cx);},
                 Some(Panel::DeleteColumn)=>{if let Some(id)=self.views.column_edit {self.queue_column("column-update",json!({"sectionId":id,"newSection":{"deleted":true}}),window,cx);}},
                 Some(Panel::ColumnAssignees)=>self.choose_column_person(self.views.choice,window,cx),
-                _=>{if let Some(id)=self.managed_columns().get(self.views.choice).and_then(|section|section["id"].as_i64()){self.edit_column(id,window,cx);}},
+                _=>{let columns:Vec<_>=self.managed_columns().into_iter().filter(|section|!self.views.column_auto_select || section["visibility"]==true).collect();if let Some(id)=columns.get(self.views.choice).and_then(|section|section["id"].as_i64()){self.edit_column(id,window,cx);}},
             },
             "up"=>self.views.choice=self.views.choice.saturating_sub(1),
             "down"=>{let count=if self.views.panel==Some(Panel::ColumnAssignees){self.column_people().len()}else{self.managed_columns().len()};self.views.choice=(self.views.choice+1).min(count.saturating_sub(1));},
@@ -2460,7 +2467,15 @@ impl Desktop {
         let mut content=div().flex().flex_col().gap(px(12.)).child(div().flex().justify_between()
             .child(match panel {Panel::Columns if self.views.column_auto_select=>"Auto-assign: choose a column",Panel::Columns=>"Manage board columns",Panel::AddColumn=>"Add Column",Panel::ColumnAssignees=>"Auto-assign",_=>"Edit board column"})
             .child(div().id("columns-back").cursor_pointer().child(if matches!(panel,Panel::Columns|Panel::AddColumn){"×"}else{"←"}).on_click(cx.listener(|this,_,window,cx|this.column_back(window,cx))).layout_key(&self.layout,"board.columns.back",None)));
-        if panel==Panel::Columns {
+        if panel==Panel::Columns && self.views.column_auto_select {
+            for (index,section) in self.managed_columns().into_iter().enumerate().filter(|(_,section)|section["visibility"]==true) {
+                let id=section["id"].as_i64().unwrap_or(0);
+                content=content.child(div().id(("autoassign-column-choice",index)).p(px(8.)).cursor_pointer()
+                    .child(section["section_title"].as_str().unwrap_or("").to_owned())
+                    .on_click(cx.listener(move|this,_,window,cx|this.edit_column(id,window,cx)))
+                    .layout_key(&self.layout,format!("board.columns.edit.{id}"),None));
+            }
+        } else if panel==Panel::Columns {
             content=content.child(div().flex().justify_between()
                 .child(div().id("columns-empty").cursor_pointer().child(format!("Show empty board columns   {}",if self.view_settings()["board_empty_sections"]=="Hidden"{"□"}else{"✓"})).on_click(cx.listener(|this,_,window,cx|this.toggle_empty_columns(window,cx))).layout_key(&self.layout,"board.columns.empty",None))
                 .child(div().id("columns-add").cursor_pointer().child("+").on_click(cx.listener(|this,_,window,cx|this.open_view_panel(Panel::AddColumn,window,cx))).layout_key(&self.layout,"board.columns.add",None)));
@@ -2495,9 +2510,9 @@ impl Desktop {
                 .child(div().id("column-is-done").cursor_pointer().child(format!("Tickets here are finished    {}",if done{"✓"}else{"□"})).child(div().text_color(color(self.colors.muted)).child("Ends the ticket's cycle. Reports, Inbox Zero and agents all treat it as done.")).on_click(cx.listener(move|this,_,window,cx|this.queue_column("column-update",json!({"sectionId":id,"newSection":{"isDone":!done}}),window,cx))).layout_key(&self.layout,"board.columns.done",None))
                 .child("Views").child(description)
                 .child(div().flex().gap(px(16.)).children([(true,"Show in all views"),(false,"Hide in all views")].into_iter().map(|(visible,name)|div().id(if visible{"column-show-all"}else{"column-hide-all"}).cursor_pointer().child(name).on_click(cx.listener(move|this,_,window,cx|this.queue_column("column-visibility",json!({"sectionId":id,"visible":visible}),window,cx))).layout_key(&self.layout,if visible{"board.columns.show-all"}else{"board.columns.hide-all"},None))))
-                .child(div().id("column-autoassign").cursor_pointer().child(format!("Auto-assign    {assigned}")).on_click(cx.listener(|this,_,window,cx|{this.open_view_panel(Panel::ColumnAssignees,window,cx);window.focus(&this.views.query.focus_handle(cx),cx);})).layout_key(&self.layout,"board.columns.autoassign",None))
+                .child(div().id("column-autoassign").cursor_pointer().child(format!("Auto-assign    {assigned}")).on_click(cx.listener(|this,_,window,cx|{this.save_column_title(window,cx);this.open_view_panel(Panel::ColumnAssignees,window,cx);window.focus(&this.views.query.focus_handle(cx),cx);})).layout_key(&self.layout,"board.columns.autoassign",None))
                 .child("Danger zone").child("Delete board column").child("Its tickets move to the first column.")
-                .child(div().id("column-delete").cursor_pointer().child("Delete").on_click(cx.listener(|this,_,_,cx|{this.views.panel=Some(Panel::DeleteColumn);cx.notify();})).layout_key(&self.layout,"board.columns.delete",None));
+                .child(div().id("column-delete").cursor_pointer().child("Delete").on_click(cx.listener(|this,_,window,cx|{this.save_column_title(window,cx);this.views.panel=Some(Panel::DeleteColumn);cx.notify();})).layout_key(&self.layout,"board.columns.delete",None));
             if panel==Panel::DeleteColumn {content=content.child(format!("Delete board column “{}”?",section["section_title"].as_str().unwrap_or("")))
                 .child(div().id("column-confirm-delete").cursor_pointer().child("Delete board column").on_click(cx.listener(move|this,_,window,cx|this.queue_column("column-update",json!({"sectionId":id,"newSection":{"deleted":true}}),window,cx))).layout_key(&self.layout,"board.columns.confirm-delete",None))
                 .child(div().id("column-cancel-delete").cursor_pointer().child("Cancel").on_click(cx.listener(|this,_,_,cx|{this.views.panel=Some(Panel::EditColumn);cx.notify();})).layout_key(&self.layout,"board.columns.cancel-delete",None));}
@@ -2565,7 +2580,8 @@ mod column_manager_tests {
         cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
         for status in [401,403,200] {
             view.update(&mut cx,|this,window,cx|{seed(this);this.edit_column(10,window,cx);}).unwrap();cx.simulate_keystrokes("ctrl-a");cx.simulate_input("Backlog");
-            view.update(&mut cx,|this,window,cx|{this.save_column_title(window,cx);this.queue_column("column-update",json!({"sectionId":10,"newSection":{"isDone":true}}),window,cx);assert_eq!(this.views.column_deferred.len(),1);settle(this,status,window,cx);assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);settle(this,200,window,cx);let project=this.db.board_project(15).unwrap();assert_eq!(project["section"][0]["section_title"],if status==200{"Backlog"}else{"Todo"});assert_eq!(project["section"][0]["isDone"],true);}).unwrap();
+            click(view,&mut cx,"board.columns.done");
+            view.update(&mut cx,|this,window,cx|{assert_eq!(this.views.column_deferred.len(),1);settle(this,status,window,cx);assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);settle(this,200,window,cx);let project=this.db.board_project(15).unwrap();assert_eq!(project["section"][0]["section_title"],if status==200{"Backlog"}else{"Todo"});assert_eq!(project["section"][0]["isDone"],true);}).unwrap();
         }
     }
     #[gpui::test]

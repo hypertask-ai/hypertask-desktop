@@ -88,6 +88,7 @@ mod board_mutations;
 mod board;
 #[path = "board_views.rs"]
 mod board_views;
+#[path = "task_time.rs"]
 mod task_time;
 
 #[path = "interactions.rs"]
