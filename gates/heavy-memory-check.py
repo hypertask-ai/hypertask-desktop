@@ -3,6 +3,7 @@ import argparse
 import copy
 import json
 import sqlite3
+import statistics
 from html.parser import HTMLParser
 from pathlib import Path
 import subprocess
@@ -107,6 +108,9 @@ def check_limits(data, budget):
         assert 0 < budget[f'{screen}WorkingSet64'] < 100_000_000
         assert budget[f'{screen}WorkingSet64'] == min(99_000_000, budget[f'Baseline{screen.title()}WorkingSet64'] * 102 // 100)
         assert median['WorkingSet64'] <= budget[f'{screen}WorkingSet64'], f'{screen} exceeds heavy budget'
+        samples = [s for s in data['Samples'] if s['Screen'] == screen]
+        assert all(s['WarmRendererReceiptUpdated'] and s['WarmWorkingSet64'] > 0 for s in samples)
+        assert statistics.median(s['WarmWorkingSet64'] for s in samples) <= budget[f'{screen}WorkingSet64'], f'{screen} warmed working set exceeds heavy budget'
 
 
 parser = argparse.ArgumentParser(description=__doc__)
@@ -175,4 +179,15 @@ if budget:
             print(f'HEAVY_OVER_BUDGET_CONTROL_REJECTED {screen}')
         else:
             raise AssertionError(f'Over-budget {screen} accepted')
+        invalid = copy.deepcopy(data)
+        for sample in invalid['Samples']:
+            if sample['Screen'] == screen:
+                sample['WarmWorkingSet64'] = budget[f'{screen}WorkingSet64'] + 1
+        try:
+            check_limits(invalid, budget)
+        except AssertionError as error:
+            assert str(error) == f'{screen} warmed working set exceeds heavy budget'
+            print(f'HEAVY_WARM_OVER_BUDGET_CONTROL_REJECTED {screen}')
+        else:
+            raise AssertionError(f'Over-budget warm {screen} accepted')
 print('HEAVY_MEMORY_RECEIPT_VERIFIED')

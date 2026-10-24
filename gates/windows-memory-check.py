@@ -33,6 +33,9 @@ def check_budget(data, budget):
         assert budget[f'{screen}WorkingSet64'] < 100_000_000
         median = next(m for m in data['Medians'] if m['Screen'] == screen.lower())
         assert median['WorkingSet64'] <= budget[f'{screen}WorkingSet64'], f'{screen} exceeds measured baseline + 2%'
+        samples = [s for s in data['Samples'] if s['Screen'] == screen.lower()]
+        assert all(s['WarmRendererReceiptUpdated'] and s['WarmWorkingSet64'] > 0 for s in samples)
+        assert statistics.median(s['WarmWorkingSet64'] for s in samples) <= budget[f'{screen}WorkingSet64'], f'{screen} warmed working set exceeds measured baseline + 2%'
     assert budget['InboxWorkingSet64'] < 65_514_086, 'Do not loosen the previous frozen inbox gate'
     assert (data['DisplayWidth'], data['DisplayHeight']) == (budget['DisplayWidth'], budget['DisplayHeight'])
     assert all((sample['ClientWidth'], sample['ClientHeight'], sample['Dpi']) ==
@@ -75,6 +78,17 @@ if args.budget:
             print(f'MEMORY_OVER_BUDGET_CONTROL_REJECTED {screen.lower()}')
         else:
             raise AssertionError(f'Budget accepted an over-limit {screen} receipt')
+        warm_over = json.loads(json.dumps(data))
+        for sample in warm_over['Samples']:
+            if sample['Screen'] == screen.lower():
+                sample['WarmWorkingSet64'] = budget[f'{screen}WorkingSet64'] + 1
+        try:
+            check_budget(warm_over, budget)
+        except AssertionError as error:
+            assert str(error) == f'{screen} warmed working set exceeds measured baseline + 2%'
+            print(f'MEMORY_WARM_OVER_BUDGET_CONTROL_REJECTED {screen.lower()}')
+        else:
+            raise AssertionError(f'Budget accepted an over-limit warm {screen} receipt')
 if args.target:
     assert all(m['WorkingSet64'] < 100_000_000 for m in data['Medians']), '100 MB target not reached'
 if args.compare:

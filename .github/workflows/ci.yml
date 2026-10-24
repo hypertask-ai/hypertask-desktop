@@ -105,6 +105,7 @@ jobs:
           -Fixtures fixtures/demo
           -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
           -Out evidence/windows-memory
+          -StartupProof
       - name: Validate Windows memory receipt
         if: runner.os == 'Windows'
         run: python gates/windows-memory-check.py evidence/windows-memory --owners --budget gates/windows-memory-budget.json
@@ -131,6 +132,7 @@ jobs:
           -Assets evidence/heavy-assets
           -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
           -Out evidence/windows-memory-heavy
+          -StartupProof
       - name: Validate heavy account receipt
         if: runner.os == 'Windows'
         run: python gates/heavy-memory-check.py evidence/windows-memory-heavy --budget gates/windows-memory-heavy-budget.json
@@ -179,37 +181,42 @@ jobs:
           path: target/aarch64-pc-windows-msvc/release/ht-desktop.exe
           retention-days: 14
   windows-memory-baselines:
-    name: memory-${{ github.head_ref == 'mem3' && 'heavy-full-task-reads' || github.head_ref == 'mem2' && 'eager-fonts-triple-buffer' || matrix.revision }}
-    if: github.event_name == 'pull_request' && contains(fromJSON('["ram2","mem2","mem3"]'), github.head_ref)
+    name: memory-${{ github.head_ref == 'mem4' && 'untrimmed-startup' || github.head_ref == 'mem3' && 'heavy-full-task-reads' || github.head_ref == 'mem2' && 'eager-fonts-triple-buffer' || matrix.revision }}
+    if: github.event_name == 'pull_request' && contains(fromJSON('["ram2","mem2","mem3","mem4"]'), github.head_ref)
     strategy:
       fail-fast: false
       matrix:
-        revision: ${{ fromJSON(contains(fromJSON('["mem2","mem3"]'), github.head_ref) && format('["{0}"]', github.event.pull_request.head.sha) || '["3d002231efdbc5ea4b823e5a1af430e912a168d9", "5016a9ebe48b03dbac2f2312c170878166586c59"]') }}
+        revision: ${{ fromJSON(contains(fromJSON('["mem2","mem3","mem4"]'), github.head_ref) && format('["{0}"]', github.event.pull_request.head.sha) || '["3d002231efdbc5ea4b823e5a1af430e912a168d9", "5016a9ebe48b03dbac2f2312c170878166586c59"]') }}
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - name: Preserve current measurement script
         shell: pwsh
-        run: Copy-Item gates/windows-memory.ps1 "$env:RUNNER_TEMP/windows-memory.ps1"
+        run: |
+          Copy-Item gates/windows-memory.ps1 "$env:RUNNER_TEMP/windows-memory.ps1"
+          Copy-Item gates/windows-memory-inspect.ps1 "$env:RUNNER_TEMP/windows-memory-inspect.ps1"
       - uses: actions/checkout@v4
         with:
           ref: ${{ matrix.revision }}
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p ht-desktop -p ht-core
-        if: github.head_ref != 'mem2' && github.head_ref != 'mem3'
+        if: github.head_ref != 'mem2' && github.head_ref != 'mem3' && github.head_ref != 'mem4'
       - name: Build identical code with eager fonts, three buffers and the original sync cache
         if: github.head_ref == 'mem2'
         run: cargo build --release --no-default-features -p ht-desktop -p ht-core -p gpui_windows --features gpui_windows/triple-buffer
       - name: Build identical code with full task reads
         if: github.head_ref == 'mem3'
         run: cargo build --release --no-default-features -p ht-desktop -p ht-core --features ht-desktop/lazy-theme-fonts,ht-core/bounded-sync-cache
+      - name: Build identical code without startup residency trim
+        if: github.head_ref == 'mem4'
+        run: cargo build --release -p ht-desktop -p ht-core --features ht-desktop/untrimmed-startup
       - name: Generate identical heavy account
-        if: github.head_ref == 'mem3'
+        if: github.head_ref == 'mem3' || github.head_ref == 'mem4'
         run: python gates/heavy-fixture.py evidence/heavy-fixtures
-      - name: Measure heavy full-task-read control
-        if: github.head_ref == 'mem3'
+      - name: Measure heavy comparison control
+        if: github.head_ref == 'mem3' || github.head_ref == 'mem4'
         shell: pwsh
         run: >-
           ./gates/windows-memory.ps1
@@ -221,11 +228,12 @@ jobs:
           -Assets evidence/heavy-assets
           -Revision '${{ matrix.revision }}'
           -Out evidence/windows-memory-heavy-baseline
+          -StartupProof:('${{ github.head_ref }}' -eq 'mem4')
       - name: Validate heavy control
-        if: github.head_ref == 'mem3'
+        if: github.head_ref == 'mem3' || github.head_ref == 'mem4'
         run: python gates/heavy-memory-check.py evidence/windows-memory-heavy-baseline
-      - name: Upload heavy full-task-read control
-        if: github.head_ref == 'mem3' && always()
+      - name: Upload heavy comparison control
+        if: (github.head_ref == 'mem3' || github.head_ref == 'mem4') && always()
         uses: actions/upload-artifact@v4
         with:
           name: windows-memory-heavy-baseline
@@ -241,6 +249,7 @@ jobs:
           -Fixtures fixtures/demo
           -Revision '${{ matrix.revision }}'
           -Out evidence/windows-memory
+          -StartupProof:('${{ github.head_ref }}' -eq 'mem4')
       - uses: actions/upload-artifact@v4
         if: github.head_ref != 'mem3' && always()
         with:
@@ -249,7 +258,7 @@ jobs:
           if-no-files-found: error
   windows-memory-proof:
     name: Windows memory receipt and budget
-    # Comparative baselines run for ram2/mem2/mem3; frozen budgets apply on every PR/main.
+    # Comparative baselines run for ram2/mem2/mem3/mem4; frozen budgets apply on every PR/main.
     if: >-
       ${{ !cancelled() && needs.build.result == 'success' &&
       (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
@@ -264,7 +273,7 @@ jobs:
       - name: Validate current Windows receipt, target and frozen budget
         run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json
       - run: python3 -m pip install Pillow
-        if: github.event_name == 'pull_request' && contains(fromJSON('["ram2","mem2","mem3"]'), github.head_ref)
+        if: github.event_name == 'pull_request' && contains(fromJSON('["ram2","mem2","mem3","mem4"]'), github.head_ref)
       - name: Compare memory optimization pixels and layout
         if: github.event_name == 'pull_request' && github.head_ref == 'mem2'
         run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json --require-improvement --compare evidence/memory-proof/windows-memory-${{ github.event.pull_request.head.sha }}
@@ -279,3 +288,8 @@ jobs:
       - name: Compare heavy memory, pixels and layout against full-task reads
         if: github.event_name == 'pull_request' && github.head_ref == 'mem3'
         run: python3 gates/heavy-memory-check.py evidence/memory-proof/windows-memory-heavy --budget gates/windows-memory-heavy-budget.json --compare evidence/memory-proof/windows-memory-heavy-baseline
+      - name: Compare startup residency, warm repaint, pixels and ownership
+        if: github.event_name == 'pull_request' && github.head_ref == 'mem4'
+        run: |
+          python3 gates/mem4-proof.py evidence/memory-proof/windows-memory evidence/memory-proof/windows-memory-${{ github.event.pull_request.head.sha }}
+          python3 gates/mem4-proof.py evidence/memory-proof/windows-memory-heavy evidence/memory-proof/windows-memory-heavy-baseline
