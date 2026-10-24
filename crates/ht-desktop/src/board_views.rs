@@ -495,7 +495,7 @@ impl Desktop {
             });
         }
         if self.views.pending.is_none() {
-            if let Some((route,body))=self.views.column_deferred.pop_front() {self.queue_column(&route,body,window,cx);}
+            if let Some((route,body))=self.views.column_deferred.pop_front() {self.queue_column_write(&route,body,window,cx);}
         }
         cx.notify();
         false
@@ -2366,10 +2366,13 @@ impl Desktop {
         }
         cx.notify();
     }
-    fn queue_column(&mut self, route:&str, mut body:Value, window:&mut Window, cx:&mut Context<Self>) {
+    fn queue_column(&mut self, route:&str, body:Value, window:&mut Window, cx:&mut Context<Self>) {
         if self.views.panel==Some(Panel::EditColumn) && !(route=="column-update" && body["newSection"]["section_title"].is_string()) {
             self.save_column_title(window,cx);
         }
+        self.queue_column_write(route,body,window,cx);
+    }
+    fn queue_column_write(&mut self, route:&str, mut body:Value, window:&mut Window, cx:&mut Context<Self>) {
         body["projectId"]=json!(self.options.board);
         if route=="column-update" {body["userId"]=json!(self.db.current_user_id());}
         if self.views.pending.is_some() {self.views.column_deferred.push_back((route.into(),body));cx.notify();return;}
@@ -2422,7 +2425,7 @@ impl Desktop {
             }
         }
         if self.views.pending.is_none() {
-            if let Some((route,body))=self.views.column_deferred.pop_front() { self.queue_column(&route,body,window,cx); }
+            if let Some((route,body))=self.views.column_deferred.pop_front() { self.queue_column_write(&route,body,window,cx); }
         }
         cx.notify();false
     }
@@ -2586,7 +2589,7 @@ mod column_manager_tests {
         for status in [401,403,200] {
             view.update(&mut cx,|this,window,cx|{seed(this);this.edit_column(10,window,cx);}).unwrap();cx.simulate_keystrokes("ctrl-a");cx.simulate_input("Backlog");
             click(view,&mut cx,"board.columns.done");
-            view.update(&mut cx,|this,window,cx|{assert_eq!(this.views.column_deferred.len(),1);settle(this,status,window,cx);assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);settle(this,200,window,cx);let project=this.db.board_project(15).unwrap();assert_eq!(project["section"][0]["section_title"],if status==200{"Backlog"}else{"Todo"});assert_eq!(project["section"][0]["isDone"],true);}).unwrap();
+            view.update(&mut cx,|this,window,cx|{assert_eq!(this.views.column_deferred.len(),1);settle(this,status,window,cx);assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);let next=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();assert_eq!(next.payload_json["change"]["body"]["newSection"],json!({"isDone":true}));settle(this,200,window,cx);let project=this.db.board_project(15).unwrap();assert_eq!(project["section"][0]["section_title"],if status==200{"Backlog"}else{"Todo"});assert_eq!(project["section"][0]["isDone"],true);}).unwrap();
         }
     }
     #[gpui::test]
