@@ -1311,7 +1311,9 @@ impl Shell {
 }
 
 impl Desktop {
+    pub(super) fn cli_token(&self) -> Option<String> { self.shell.token.clone() }
     pub(super) fn set_shell_token(&mut self, token: Option<String>, cx: &mut Context<Self>) {
+        self.mentions.invalidate();
         self.shell.set_token(token);
         self.shell.settings = false;
         self.shell.boards = false;

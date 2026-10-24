@@ -8,6 +8,7 @@ use serde_json::{Value, json};
 pub enum CommentWrite {
     Edit { text: String },
     Delete,
+    Saved { public: bool },
     Reaction { emoji: String, active: bool },
 }
 
@@ -32,7 +33,7 @@ impl CommentWrite {
                     "invalid emoji"
                 );
             }
-            Self::Delete => (),
+            Self::Delete | Self::Saved { .. } => (),
         }
         Ok(())
     }
@@ -42,6 +43,7 @@ impl CommentWrite {
         match self {
             Self::Edit { text } => ("PATCH", path, json!({"text":text,"content_type":"html"})),
             Self::Delete => ("DELETE", path, json!({})),
+            Self::Saved { .. } => unreachable!("saved comments require task and project scope"),
             Self::Reaction { emoji, active } => (
                 "POST",
                 format!("{path}/reactions"),
@@ -71,6 +73,7 @@ impl Db {
                 comment["commentText"] = comment["text"].clone();
                 self.upsert_comment(task_id, &comment)?;
             }
+            CommentWrite::Saved { .. } => (),
             CommentWrite::Delete => {
                 self.conn.execute(
                     "DELETE FROM Comment WHERE id=? AND taskId=?",
@@ -98,6 +101,16 @@ impl Db {
         let task_id = payload["task_id"].as_i64().context("missing task id")?;
         let id = &payload["comment_id"];
         match action {
+            CommentWrite::Saved { public } => {
+                ensure!(body["active"].is_boolean(), "missing saved state");
+                let mut comment = self.raw("Comment", id)?.unwrap_or_else(||payload["before"].clone());
+                let mut saved = comment["savedContent"].as_array().cloned().unwrap_or_default();
+                let kind = if public {"Public"} else {"Private"};
+                saved.retain(|s| !(s["type"] == kind && (public || s["userId"] == payload["user_id"])));
+                if body["active"] == true { saved.push(body["saved"].clone()); }
+                comment["savedContent"] = json!(saved);
+                self.upsert_comment(task_id, &comment)?;
+            }
             CommentWrite::Delete => {
                 self.conn
                     .execute("DELETE FROM Comment WHERE id=?", [id.as_i64().unwrap()])?;

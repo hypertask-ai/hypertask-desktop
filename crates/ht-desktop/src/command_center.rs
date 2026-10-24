@@ -52,6 +52,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     if screen == Screen::Inbox {
         add("swipeThroughUnread","Swipe through unread","Inbox","","review unread notifications",ReviewUnread);
     }
+    add("composeTask", "New Task", "Navigate", "CTRL J", "compose create task AI writer", Compose);
     add(
         "copyCurrentPageUrl",
         "Copy current page URL",

@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Write {
+    ComposeTask { project_id: i64, text: String, time_zone: String },
     Shell { request: crate::ShellWrite },
     Board { change: crate::BoardWrite },
     EditorImprove { task_id:i64, command:crate::ImproveCommand, text:String },
@@ -81,6 +82,12 @@ impl Db {
     pub(crate) fn enqueue_in_transaction(&mut self,write:Write,now:i64)->Result<i64> {
         let db=self;
         let (entity, kind, payload) = match &write {
+            Write::ComposeTask { project_id, text, time_zone } => {
+                ensure!(*project_id > 0 && !text.trim().is_empty(), "choose a board and describe the task");
+                let user = db.current_user_id().context("sign in before composing a task")?;
+                let project = db.raw("Project", &json!(project_id))?.context("board is unavailable")?;
+                (format!("compose:{project_id}"), "compose_task", json!({"project":project,"text":text,"time_zone":time_zone,"user_id":user}))
+            }
             Write::Board { change } => {
                 change.request()?;
                 let user = db.current_user_id().context("sync your account before changing a board")?;
@@ -189,7 +196,7 @@ impl Db {
 
     fn apply_optimistic(&self, id: i64, kind: &str, payload: &Value, now: i64) -> Result<()> {
         match kind {
-            "shell_write" => (),
+            "shell_write" | "compose_task" => (),
             "board_write" => {
                 if let crate::BoardWrite::AssignAgent { task, agent, active } = serde_json::from_value(payload["change"].clone())? {
                     let mut task_row = self.raw("Task",&json!(task))?.context("task is not cached")?;
@@ -402,10 +409,12 @@ impl Db {
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
             "inbox_seen" => ("/inbox/seen", json!({"notification_ids":row.payload_json["notification_ids"]})),
             "inbox_remind" => ("/inbox/archive", json!({"notification_ids":row.payload_json["notification_ids"],"remind_at":row.payload_json["remind_at"]})),
-            "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
+            "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
-        let response = if row.kind == "board_write" {
+        let response = if row.kind == "compose_task" {
+            crate::desktop_cli::compose(self, transport, &row.payload_json, &row.client_id)
+        } else if row.kind == "board_write" {
             let change: crate::BoardWrite = serde_json::from_value(row.payload_json["change"].clone())?;
             let (method, path, body) = change.request()?;
             match transport.get("/user/context") {
@@ -444,12 +453,27 @@ impl Db {
         } else if row.kind == "comment_action" {
             let change: crate::CommentWrite =
                 serde_json::from_value(row.payload_json["change"].clone())?;
-            let (method, path, body) = change.request(
-                row.payload_json["comment_id"]
-                    .as_i64()
-                    .context("missing comment id")?,
-            );
-            transport.mutate(method, &path, &body, &row.client_id)
+            if let crate::CommentWrite::Saved { public } = change {
+                // toggleSaved has no idempotency support: never replay an uncertain toggle.
+                if row.attempts > 1 { Ok(Response { status: 409, body: json!({"success":false}) }) }
+                else if self.current_user_id() != row.payload_json["user_id"].as_i64() {
+                    Ok(Response { status:403, body:json!({"success":false}) })
+                } else {
+                    let request = crate::desktop_cli::saved_request(
+                        row.payload_json["task_id"].as_i64().unwrap(),
+                        row.payload_json["before"]["projectId"].as_i64().or_else(|| self.task(row.payload_json["task_id"].as_i64().unwrap()).ok().flatten().map(|t|t.project_id)).unwrap_or(0),
+                        row.payload_json["comment_id"].as_i64().unwrap(), public, false);
+                    match transport.mutate(&request.method, &request.path, &request.body, &row.client_id) {
+                        Ok(Response {status:200, body}) if body["saved"]["commentId"] == row.payload_json["comment_id"] => Ok(Response {status:200,body:json!({"success":true,"active":true,"saved":body["saved"]})}),
+                        Ok(Response {status:201, body}) if body.as_object().is_some_and(|v|v.is_empty()) => Ok(Response {status:201,body:json!({"success":true,"active":false})}),
+                        Ok(Response {status, ..}) if (400..500).contains(&status) => Ok(Response {status,body:json!({"success":false})}),
+                        _ => Ok(Response {status:409,body:json!({"success":false,"error":"Saved-comment result uncertain; refresh before trying again"})}),
+                    }
+                }
+            } else {
+                let (method, path, body) = change.request(row.payload_json["comment_id"].as_i64().context("missing comment id")?);
+                transport.mutate(method, &path, &body, &row.client_id)
+            }
         } else {
             transport.post(path, &body, &row.client_id)
         };
@@ -471,6 +495,7 @@ impl Db {
             db.conn.execute("UPDATE mutation_queue SET status=?,last_error=?,next_attempt_at=?,lease_until=NULL WHERE id=? AND attempts=?",
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
+                if row.kind == "compose_task" { db.kv_set(&format!("compose-result:{}",row.client_id), &json!({"error":result.1}).to_string())?; }
                 if row.kind == "board_write" {
                     if !row.payload_json["before"].is_null() { db.upsert_task(&row.payload_json["before"])?; db.reapply_pending()?; }
                     db.kv_set(&format!("board-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
@@ -516,6 +541,12 @@ impl Db {
             let active: bool = db.conn.query_row("SELECT EXISTS(SELECT 1 FROM mutation_queue WHERE id=? AND attempts=? AND status='inflight')", params![row.id,row.attempts], |r| r.get(0))?;
             if !active { return Ok(()); }
             match row.kind.as_str() {
+                "compose_task" => {
+                    let tasks = body["tasks"].as_array().context("missing composed tasks")?;
+                    ensure!(!tasks.is_empty(), "no tasks created");
+                    for task in tasks { db.upsert_task(task)?; }
+                    db.kv_set(&format!("compose-result:{}",row.client_id), &body.to_string())?;
+                }
                 "board_write" => {
                     let change: crate::BoardWrite = serde_json::from_value(row.payload_json["change"].clone())?;
                     change.resolve(db, body, now)?;

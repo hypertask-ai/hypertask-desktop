@@ -233,11 +233,12 @@ impl Desktop {
     ) {
         use Action::*;
         match action {
+            Compose => self.open_compose(window, cx),
             ExpandSummary => {
                 if !self.summary.is_empty() { self.task_fields.summary_open = !self.task_fields.summary_open; }
             }
             PinAiChat | FullscreenAiChat => self.ai_command(action, cx),
-            CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
+            StarComment | PinComment | CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
             | ExpandComment | ExpandComments => self.run_comment_action(action, window, cx),
             Commands => self.show_modal(Modal::Commands, window, cx),
             Inbox | Board => {
@@ -1339,6 +1340,7 @@ impl Desktop {
                     .flex()
                     .flex_col()
                     .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
+                    .when(self.compose_open(), |d| d.child(self.compose_tabs(cx)))
                     .child(
                         div()
                             .h(px(44.))

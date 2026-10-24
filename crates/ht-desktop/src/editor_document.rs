@@ -903,6 +903,18 @@ impl Document {
         }
         empty(&self.parts)
     }
+    pub fn replace_inline_html(&mut self, range: Range<usize>, html: &str) -> usize {
+        let fragment=Html::parse_fragment(html);
+        let mut spans=vec![];
+        inline(fragment.root_element(),&[],&mut spans);
+        let mut at=range.start;
+        self.replace(range,"",&[]);
+        for span in spans {
+            self.replace(at..at,&span.text,&span.marks);
+            at+=span.text.len();
+        }
+        at
+    }
     pub fn insert_html(&mut self, range: Range<usize>, html: &str) -> usize {
         self.replace(range.clone(), "", &[]);
         let (index, local) = self.location(range.start);

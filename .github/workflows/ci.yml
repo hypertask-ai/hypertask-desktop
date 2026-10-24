@@ -33,7 +33,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: ai-live-request
-          path: target/ai-live-request.json
+          path: |
+            target/ai-live-request.json
+            target/compose-live-requests.json
           if-no-files-found: error
       - run: cargo build --release -p ht-desktop -p ht-core
       - name: Layout dump contract

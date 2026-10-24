@@ -4,6 +4,9 @@ use gpui::Keystroke;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Action {
     Commands,
+    Compose,
+    StarComment,
+    PinComment,
     Back,
     Open,
     Comment,
@@ -85,6 +88,7 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
     if k == "escape" && !ctrl && !m.alt && !shift {
         return Some(Action::Back);
     }
+    if ctrl && !m.alt && !shift && k == "j" { return Some(Action::Compose); }
     if editor {
         return match (k, ctrl, shift, m.alt) {
             ("enter", true, true, true) => Some(Action::Save {
@@ -100,6 +104,8 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         };
     }
     match (k, ctrl, shift, m.alt) {
+        ("s", true, true, false) if screen == Screen::Task => Some(Action::StarComment),
+        ("p", true, true, false) if screen == Screen::Task => Some(Action::PinComment),
         ("3", true, true, false) if screen == Screen::Task => Some(Action::DeleteComment),
         ("i", false, false, false) if screen == Screen::Task => Some(Action::ExpandSummary),
         ("o", false, false, false) if screen == Screen::Task => Some(Action::ExpandComment),
@@ -180,7 +186,7 @@ mod tests {
     #[test]
     fn modifiers_do_not_trigger_plain_shortcuts() {
         for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
-            assert_eq!(key("ctrl-j", screen, false), None);
+            assert_eq!(key("ctrl-j", screen, false), Some(Action::Compose));
             assert_eq!(key("alt-j", screen, false), None);
             assert_eq!(key("ctrl-e", screen, false), Some(Action::Archive));
             assert_eq!(key("ctrl-k", screen, true), Some(Action::Commands));

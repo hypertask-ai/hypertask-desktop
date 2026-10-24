@@ -133,11 +133,19 @@ impl Http {
         if !path.starts_with('/') || path.starts_with("//") {
             return Err(TransportError::InvalidResponse);
         }
+        let endpoint = if path.starts_with("/api/") {
+            let mut url = url::Url::parse(&self.base).map_err(|_| TransportError::InvalidResponse)?;
+            let (path, query) = path.split_once('?').map_or((path, None), |(p, q)| (p, Some(q)));
+            url.set_path(path);
+            url.set_query(query);
+            url.to_string()
+        } else { format!("{}{path}", self.base) };
         let mut request = self
             .agent
-            .request(method, &format!("{}{path}", self.base))
+            .request(method, &endpoint)
             .set("Authorization", &format!("Bearer {}", self.token))
             .set("Accept", "application/json");
+        if path == "/api/ai/task-writer" { request = request.timeout(Duration::from_secs(310)); }
         if path=="/ai/improve" {request=request.timeout(Duration::from_secs(70));}
         if let Some(client_id) = client_id {
             request = request
@@ -154,7 +162,9 @@ impl Http {
                 if status == 401 {
                     self.unauthorized.store(true, Ordering::SeqCst);
                 }
-                let body = r.into_json().unwrap_or(Value::Null);
+                let writer_text = path == "/api/ai/task-writer" && !r.header("Content-Type").unwrap_or("").contains("application/json");
+                let body = if writer_text { r.into_string().map(Value::String).unwrap_or(Value::Null) }
+                    else { r.into_json().unwrap_or(Value::Null) };
                 if (200..300).contains(&status) && body.is_null() {
                     return Err(TransportError::InvalidResponse);
                 }

@@ -1,4 +1,5 @@
 pub mod ai_chat;
+pub mod desktop_cli;
 pub mod auth;
 mod catalog;
 mod board_write;

@@ -51,6 +51,11 @@ enum Editing {
 #[path = "ai_workspace.rs"]
 mod ai_workspace;
 
+#[path = "compose.rs"]
+mod compose;
+#[path = "mentions.rs"]
+mod mentions;
+
 #[path = "comment_selection.rs"]
 mod comment_selection;
 
@@ -85,6 +90,8 @@ mod interactions;
 pub struct Desktop {
     pub focus: FocusHandle,
     shell: shell::Shell,
+    compose: compose::Compose,
+    mentions: mentions::Mentions,
     db: Db,
     options: Options,
     colors: Theme,
@@ -196,6 +203,8 @@ impl Desktop {
         if let Some(sidebar) = &ai_sidebar { shell.ai_open = sidebar.read(cx).is_open(); }
         let mut view = Self {
             shell,
+            compose: compose::Compose::new(cx),
+            mentions: mentions::Mentions::new(),
             focus,
             screen: options.screen,
             previous: Screen::Board,
@@ -247,6 +256,7 @@ impl Desktop {
             _ai_sidebar_subscription: ai_sidebar_subscription,
         };
         view.bind_editors(cx);
+        view.bind_mentions(cx);
         view.reload();
         view.init_shell(window, cx);
         view.request_sync();
@@ -596,6 +606,9 @@ impl Desktop {
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.compose_key(event, window, cx) { return; }
+        if self.compose_open() { self.interaction_key(event, window, cx); return; }
+        if self.mention_key(event, window, cx) { return; }
         if self.unread_review_key(event,window,cx) {return;}
         if self.comment_reader_key(event, window, cx) { return; }
         if self.board_form_key(event, window, cx) || self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
@@ -1789,6 +1802,8 @@ impl Render for Desktop {
             .child(self.shell_overlay(window, cx))
             .child(self.interaction_overlay(window, cx))
             .child(self.comment_overlay(cx))
+            .child(self.compose_overlay(window, cx))
+            .child(self.mention_overlay(window, cx))
             .child(self.inbox_reminder_overlay(cx))
             .child(self.due_date_overlay(cx))
             .child(self.board_form_overlay(cx))

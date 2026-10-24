@@ -36,6 +36,28 @@ impl TextInput {
         self=self.multiline_editor();self.set_html(html,cx);self.read_only=true;self
     }
     pub fn has_selection(&self) -> bool { !self.selected_range.is_empty() }
+    pub fn input_bounds(&self) -> Option<Bounds<Pixels>> { self.last_bounds }
+    pub fn mention_token(&self) -> Option<(Range<usize>, String)> {
+        if !self.selected_range.is_empty() || self.marked_range.is_some() {return None;}
+        let before = &self.content[..self.selected_range.end];
+        let start = before.rfind('@')?;
+        if start > 0 && !before[..start].ends_with(char::is_whitespace) {return None;}
+        let query = &before[start+1..];
+        if query.starts_with(' ') || query.contains('\n') {return None;}
+        Some((start..self.selected_range.end,query.to_owned()))
+    }
+    pub fn insert_mention(&mut self, range: Range<usize>, html: &str, window: &mut Window, cx: &mut Context<Self>) {
+        if self.read_only {return;}
+        self.remember_edit();
+        if let Some(editor)=&mut self.editor {
+            let end=editor.document.replace_inline_html(range,html);
+            self.content=editor.document.text().into();
+            self.selected_range=end..end;
+            self.last_layout=None;
+            window.notify_text_input_changed(&self.focus_handle);
+            cx.notify();
+        }
+    }
     pub fn slash_token(&self) -> Option<(Range<usize>, String)> {
         if !self.selected_range.is_empty() { return None; }
         let before = &self.content[..self.selected_range.end];

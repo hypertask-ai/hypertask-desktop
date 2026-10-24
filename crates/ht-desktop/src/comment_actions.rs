@@ -134,6 +134,9 @@ impl Desktop {
         };
         let id = comment.id;
         match action {
+            Action::StarComment | Action::PinComment => {
+                self.enqueue(Write::CommentAction {task_id:self.options.task,comment_id:id,change:CommentWrite::Saved {public:action == Action::PinComment}},cx);
+            }
             Action::CopyCommentContent => {
                 let text = RichText::parse(&comment.text, self.colors).text;
                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
@@ -385,6 +388,8 @@ impl Desktop {
             let own =
                 comment.creator_id.is_some() && comment.creator_id == self.db.current_user_id();
             for (key, name, keys, action, enabled) in [
+                ("starComment", "Star comment", "CTRL SHIFT S", Action::StarComment, true),
+                ("pinComment", "Pin comment", "CTRL SHIFT P", Action::PinComment, true),
                 ("editcomment", "Edit comment", "", Action::EditComment, own),
                 (
                     "copyCommentContent",
