@@ -292,6 +292,12 @@ impl Db {
 
     pub fn board(&self, project_id: i64) -> Result<Vec<BoardColumn>> {self.board_in_view(project_id,None)}
     pub fn board_in_view(&self,project_id:i64,builtin:Option<&str>)->Result<Vec<BoardColumn>>{
+        self.board_view_rows(project_id,builtin,false)
+    }
+    pub fn board_cards_in_view(&self,project_id:i64,builtin:Option<&str>)->Result<Vec<BoardColumn>>{
+        self.board_view_rows(project_id,builtin,cfg!(feature="compact-task-reads"))
+    }
+    fn board_view_rows(&self,project_id:i64,builtin:Option<&str>,compact:bool)->Result<Vec<BoardColumn>>{
         let mut sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
         let project=self.board_project(project_id).unwrap_or(Value::Null);
         let mut settings=crate::board_views::settings(&project);
@@ -299,55 +305,60 @@ impl Db {
         if let Some(columns)=settings["board_columns_view"].as_array().filter(|_|project.is_object()){
             sections.retain(|section|columns.iter().any(|column|column.get("id").or_else(||column.get("sectionId"))==section.get("id") && column["visibility"]==true));
         }
-        let mut tasks = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Normal' ORDER BY ranking ASC,updatedAt DESC,id ASC", [project_id])?;
+        let projection=if !compact {"raw_json"} else if settings["board_filters"]["addedFilters"].as_array().is_some_and(|filters|filters.iter().any(|filter|filter["type"]=="Starred")) {
+            // Starred filters need the saved rows until matching, not in display cards.
+            "json_remove(raw_json, '$.description', '$.attachments', '$.pullRequests', '$.customFieldValues', '$.followers', '$.sub_tasks')"
+        } else {"json_remove(raw_json, '$.description', '$.attachments', '$.pullRequests', '$.savedContent', '$.customFieldValues', '$.followers', '$.sub_tasks')"};
+        let mut tasks = self.json_rows(&format!("SELECT {projection} FROM Task WHERE projectId=? AND status='Normal' ORDER BY ranking ASC,updatedAt DESC,id ASC"), [project_id])?;
         let running=self.kv_get(&format!("web-running-timers:{}:{project_id}",self.current_user_id().unwrap_or(0)))?.and_then(|value|serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();
         if let Some(builtin)=builtin{tasks.retain(|task|crate::board_views::builtin_matches(builtin,task,&project,self.current_user_id(),chrono::Utc::now().timestamp()));}
         crate::board_views::filter_sort(&mut tasks,&settings,&project,&running);
         tasks.retain(|task|match settings["board_subtask_setting"].as_str(){Some("None"|"Parent")=>task["parentTask"].is_null(),Some("Card")=>task["parentTask"].is_null() || task["subTasks"].as_array().is_some_and(|subtasks|!subtasks.is_empty()),_=>true});
         let show_archived = settings["board_show_archived"].as_bool().unwrap_or(self.kv_get("showArchivedOnBoard")?.as_deref() == Some("true"));
         if show_archived {
-            let mut archived = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Archive'", [project_id])?;
+            let mut archived = self.json_rows(&format!("SELECT {projection} FROM Task WHERE projectId=? AND status='Archive'"), [project_id])?;
             if let Some(ids) = self.kv_get(&format!("web-archived-tasks:{}:{project_id}", self.current_user_id().unwrap_or(0)))?.and_then(|value| serde_json::from_str::<Vec<Value>>(&value).ok()) {
                 archived.retain(|task| ids.contains(&task["id"]));
             }
             crate::board_views::sort_archived(&mut archived, &settings, &project);
             tasks.extend(archived);
         }
+        if compact { for task in &mut tasks { for field in ["description","attachments","pullRequests","savedContent","customFieldValues","followers","sub_tasks"] { task.as_object_mut().context("Invalid task")?.remove(field); } } }
         let cards = tasks
             .into_iter()
             .map(task_view)
             .collect::<Result<Vec<_>>>()?;
-        sections
+        let mut columns=sections
             .into_iter()
             .filter(|section|(settings["board_empty_sections"]!="Hidden" && builtin!=Some("builtin:decisions")) || cards.iter().any(|task|task.section_id==section["id"].as_i64() || (task.section_id.is_none() && task.section==section["section_title"].as_str().unwrap_or(""))))
-            .map(|s| {
-                let id = integer(&s, "id")?;
-                let title = s["section_title"]
-                    .as_str()
-                    .context("section title missing")?
-                    .to_owned();
-                Ok(BoardColumn {
-                    id,
-                    ranking: s["ranking"]
-                        .as_str()
-                        .context("section ranking missing")?
-                        .to_owned(),
-                    cards: cards
-                        .iter()
-                        .filter(|t| {
-                            t.section_id == Some(id)
-                                || (t.section_id.is_none() && t.section == title)
-                        })
-                        .cloned()
-                        .collect(),
-                    title,
-                })
-            })
-            .collect()
+            .map(|section|Ok(BoardColumn {id:integer(&section,"id")?,title:section["section_title"].as_str().context("section title missing")?.to_owned(),ranking:section["ranking"].as_str().context("section ranking missing")?.to_owned(),cards:vec![]}))
+            .collect::<Result<Vec<_>>>()?;
+        for task in cards {
+            let section_id=task.section_id;let section=task.section.clone();
+            let mut matches=columns.iter_mut().filter(|column|section_id==Some(column.id) || (section_id.is_none() && section==column.title)).peekable();
+            while let Some(column)=matches.next() {
+                if matches.peek().is_none() {column.cards.push(task);break;}
+                column.cards.push(task.clone());
+            }
+        }
+        Ok(columns)
+    }
+
+    /// Cards omit detail-only bodies; detail/editor/search still read the complete task.
+    pub fn board_cards(&self, project_id:i64)->Result<Vec<BoardColumn>> {self.board_cards_in_view(project_id,None)}
+
+    /// Row metadata only; the complete notification and task stay in the sync store.
+    pub fn inbox_rows(&self) -> Result<Vec<InboxItem>> {
+        if !cfg!(feature = "compact-task-reads") { return self.inbox(); }
+        self.read_inbox("CASE WHEN json_type(n.raw_json, '$.task')='object' THEN json_set(n.raw_json, '$.task', json_object('id', json_extract(n.raw_json, '$.task.id'), 'title', json_extract(n.raw_json, '$.task.title'), 'ticketNumber', json_extract(n.raw_json, '$.task.ticketNumber'), 'projectId', json_extract(n.raw_json, '$.task.projectId'), 'uniqueIndex', json_extract(n.raw_json, '$.task.uniqueIndex'), 'status', json_extract(n.raw_json, '$.task.status'), 'dueDate', json_extract(n.raw_json, '$.task.dueDate'), 'priority', json_extract(n.raw_json, '$.task.priority'), 'estimate', json_extract(n.raw_json, '$.task.estimate'), 'taskLabels', json_extract(n.raw_json, '$.task.taskLabels'))) ELSE n.raw_json END")
     }
 
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {
-        self.json_rows("SELECT n.raw_json FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC", [])?
+        self.read_inbox("n.raw_json")
+    }
+
+    fn read_inbox(&self, projection: &str) -> Result<Vec<InboxItem>> {
+        self.json_rows(&format!("SELECT {projection} FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC"), [])?
             .into_iter().map(|n| {
                 let actors = n["recentActors"].as_array();
                 let source = if actors.is_some_and(|actors| actors.len() >= 2) {
@@ -357,9 +368,16 @@ impl Db {
                     ["/fromAgent/displayName", "/fromUser/displayName"].into_iter()
                         .find_map(|path| n.pointer(path).and_then(Value::as_str)).map(str::to_owned)
                 };
-                let task = n["taskId"].as_i64().map(|id| self.task(id)).transpose()?.flatten();
-                let title = task.as_ref().map(|t| t.title.clone()).unwrap_or_else(|| n.pointer("/task/title").or_else(|| n.get("message")).and_then(Value::as_str).unwrap_or("").to_owned());
-                let ticket_number = task.and_then(|t| t.ticket_number).or_else(|| n.pointer("/task/ticketNumber").and_then(Value::as_str).map(str::to_owned));
+                let task = n["taskId"].as_i64().map(|id| -> Result<Option<(String, Option<String>)>> {
+                    if cfg!(feature = "compact-task-reads") {
+                        Ok(self.conn.query_row("SELECT title,ticketNumber FROM Task WHERE id=?", [id],
+                            |row| Ok((row.get(0)?, row.get(1)?))).optional()?)
+                    } else {
+                        Ok(self.task(id)?.map(|t| (t.title, t.ticket_number)))
+                    }
+                }).transpose()?.flatten();
+                let title = task.as_ref().map(|t| t.0.clone()).unwrap_or_else(|| n.pointer("/task/title").or_else(|| n.get("message")).and_then(Value::as_str).unwrap_or("").to_owned());
+                let ticket_number = task.and_then(|t| t.1).or_else(|| n.pointer("/task/ticketNumber").and_then(Value::as_str).map(str::to_owned));
                 Ok(InboxItem { id: integer(&n,"id")?, task_id: n["taskId"].as_i64(), title,
                     ticket_number, source,
                     seen: n["seen"].as_bool().unwrap_or(false), created_at: n["createdAt"].as_str().context("notification createdAt missing")?.to_owned(), raw_json: n })

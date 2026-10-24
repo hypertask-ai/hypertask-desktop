@@ -6,7 +6,7 @@ use serde_json::{Value, json};
 impl Db {
     pub fn memory_usage(&self) -> Result<Value> {
         let setting: i64 = self.conn.query_row("PRAGMA cache_size", [], |row| row.get(0))?;
-        let mut usage = json!({"SqliteCacheSizeSetting": setting});
+        let mut usage = json!({"SqliteCacheSizeSetting": setting, "CompactTaskReads": cfg!(feature = "compact-task-reads")});
         for (key, operation) in [
             ("SqliteCacheBytes", ffi::SQLITE_DBSTATUS_CACHE_USED),
             ("SqliteSchemaBytes", ffi::SQLITE_DBSTATUS_SCHEMA_USED),
@@ -21,6 +21,16 @@ impl Db {
             };
             ensure!(status == ffi::SQLITE_OK, "SQLite memory status failed");
             usage[key] = json!(current);
+        }
+        for (key, sql) in [
+            ("StoredTasks", "SELECT count(*) FROM Task"),
+            ("StoredTaskJsonBytes", "SELECT coalesce(sum(length(CAST(raw_json AS BLOB))),0) FROM Task"),
+            ("StoredDescriptionBytes", "SELECT coalesce(sum(length(CAST(description AS BLOB))),0) FROM Task"),
+            ("StoredNotifications", "SELECT count(*) FROM Notification"),
+            ("StoredNotificationJsonBytes", "SELECT coalesce(sum(length(CAST(raw_json AS BLOB))),0) FROM Notification"),
+        ] {
+            let bytes: i64 = self.conn.query_row(sql, [], |row| row.get(0))?;
+            usage[key] = json!(bytes);
         }
         Ok(usage)
     }

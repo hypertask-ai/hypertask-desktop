@@ -23,6 +23,9 @@ use std::{
     time::Duration,
 };
 
+#[path = "ai_memory.rs"]
+mod memory;
+
 #[path = "ai_skills.rs"]
 mod skills;
 
@@ -62,7 +65,7 @@ impl Scope {
         if let Some(team)=&team_id {let _=db.kv_set("lastBoardTeamId",team);}
         let last_team=db.kv_get("lastBoardTeamId").ok().flatten();
         let columns = if screen == Screen::Board {
-            db.board(project).unwrap_or_default()
+            db.board_cards(project).unwrap_or_default()
         } else {
             vec![]
         };
@@ -252,7 +255,7 @@ impl AiSidebar {
             }
         })
         .detach();
-        Self {
+        let mut sidebar = Self {
             colors,
             presentation: Presentation::default(),
             capture: None,
@@ -287,7 +290,9 @@ impl AiSidebar {
             collapsed: false,
             scroll: ScrollHandle::new(),
             active: None,
-        }
+        };
+        sidebar.load_memory_history(cx);
+        sidebar
     }
 
     pub fn set_token(&mut self, token: Option<String>, cx: &mut Context<Self>) {

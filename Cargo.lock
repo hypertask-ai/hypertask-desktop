@@ -2678,6 +2678,7 @@ dependencies = [
  "open",
  "pulldown-cmark",
  "scraper",
+ "serde",
  "serde_json",
  "unicode-segmentation",
  "windows 0.62.2",

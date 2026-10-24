@@ -3,7 +3,10 @@ param(
     [Parameter(Mandatory)][string]$CoreExe,
     [Parameter(Mandatory)][string]$Fixtures,
     [Parameter(Mandatory)][string]$Revision,
-    [Parameter(Mandatory)][string]$Out
+    [Parameter(Mandatory)][string]$Out,
+    [string]$HeavyManifest,
+    [string]$AiHistory,
+    [string]$Assets
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -111,6 +114,17 @@ Write-Host "Requested 1920x1080: result=$displayResult; actual=$($display.Width)
 $seed = Join-Path $Out 'fixtures.db'
 & $CoreExe --db $seed import-fixtures $Fixtures
 if ($LASTEXITCODE -ne 0) { throw 'Fixture import failed' }
+if ($HeavyManifest) {
+    Copy-Item $HeavyManifest (Join-Path $Out 'heavy-manifest.json')
+    $env:HT_MEMORY_AI_HISTORY = (Resolve-Path $AiHistory).Path
+}
+$assetServer = $null
+if ($Assets) {
+    $assetServer = Start-Process python -WindowStyle Hidden -PassThru -ArgumentList @(
+        '-m', 'http.server', '8765', '--bind', '127.0.0.1', '--directory', "`"$((Resolve-Path $Assets).Path)`""
+    )
+}
+try {
 $rows = @()
 foreach ($round in 1..3) {
     foreach ($screen in 'inbox', 'board', 'task') {
@@ -185,4 +199,12 @@ foreach ($m in $medians) {
 $table | Write-Host
 if ($env:GITHUB_STEP_SUMMARY) {
     @("## Memory: $Revision", "Display $($display.Width)x$($display.Height), maximized, 8 s, median of three. MB = 1,000,000 bytes.") + $table | Add-Content $env:GITHUB_STEP_SUMMARY
+}
+
+} finally {
+    Remove-Item Env:HT_MEMORY_AI_HISTORY -ErrorAction SilentlyContinue
+    if ($assetServer -and -not $assetServer.HasExited) {
+        Stop-Process -Id $assetServer.Id -Force
+        $assetServer.WaitForExit()
+    }
 }

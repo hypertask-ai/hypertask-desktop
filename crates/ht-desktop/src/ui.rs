@@ -49,6 +49,12 @@ enum Editing {
     ExistingComment,
 }
 
+#[path = "board_viewport.rs"]
+mod board_viewport;
+
+#[path = "memory_owners.rs"]
+mod memory_owners;
+
 #[path = "ai_workspace.rs"]
 mod ai_workspace;
 
@@ -381,7 +387,7 @@ impl Desktop {
 
     fn reload(&mut self) {
         let result: anyhow::Result<()> = (|| {
-            self.inbox = self.db.inbox()?;
+            self.inbox = crate::memory::measure_read(0, || self.db.inbox_rows())?;
             match self.screen {
                 Screen::Inbox => {
                     self.reload_inbox_tabs();
@@ -424,7 +430,7 @@ impl Desktop {
     }
 
     fn load_columns(&mut self, project: i64) -> anyhow::Result<()> {
-        let mut columns = self.db.board_in_view(project,(self.screen==Screen::Board).then(||self.views.builtin.get(&project).map(String::as_str)).flatten())?;
+        let mut columns = crate::memory::measure_read(1, || self.db.board_cards_in_view(project,(self.screen==Screen::Board).then(||self.views.builtin.get(&project).map(String::as_str)).flatten()))?;
         if self.screen == Screen::Board && self.board_actions.project == project {
             for column in &mut columns { column.cards.retain(|task| board::search_matches(task, &self.board_actions.search_text)); }
         }
@@ -878,6 +884,7 @@ impl Desktop {
                 div()
                     .id("board-columns")
                     .track_scroll(&self.board_scroll)
+                    .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
                     .overflow_x_scroll()
                     .flex_1()
                     .min_h_0()
@@ -1010,7 +1017,7 @@ impl Desktop {
                                     ),
                             )
                             .when_some(self.board_create_input(c.id), |d,input|d.child(input))
-                            .child(
+                            .when(self.board_column_visible(i, column_width, board_width, window, cx), |d| d.child(
                                 list(
                                     self.column_lists[i].clone(),
                                     cx.processor(move |this, row: usize, _, cx| {
@@ -1019,7 +1026,7 @@ impl Desktop {
                                 )
                                 .flex_1()
                                 .min_h_0(),
-                            )
+                            ))
                             .layout_key(&self.layout, format!("board.column.{i}"), None)
                     })),
             )
@@ -1773,6 +1780,7 @@ impl Render for Desktop {
                 }),
             );
         }
+        self.write_memory_owners(cx);
         if !self.ready_scheduled {
             crate::memory::write_store_receipt(&self.db);
             self.ready_scheduled = true;

@@ -76,6 +76,13 @@ pub(crate) fn block_size(tag: &str) -> f32 {
 }
 
 impl RichText {
+    pub(crate) fn memory_payload_bytes(&self) -> usize {
+        self.text.len() + self.highlights.len() * std::mem::size_of::<(Range<usize>, HighlightStyle)>()
+            + self.blocks.iter().map(|b| b.text.len() + b.prefix.len()
+                + b.highlights.len() * std::mem::size_of::<(Range<usize>, HighlightStyle)>()
+                + b.links.iter().map(|(_, url)| url.len()).sum::<usize>()).sum::<usize>()
+    }
+
     pub fn parse(html: &str, theme: Theme) -> Self {
         let document = Document::parse(html);
         let light = color(theme.page).l > 0.5;
