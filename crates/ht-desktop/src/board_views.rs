@@ -1975,9 +1975,9 @@ mod advanced_control_tests {
         }
         view.update_in(cx,|this,window,cx|{
             this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}}]})).unwrap();this.open_view_panel(Panel::Sort,window,cx);
-            for index in [1,5,2]{this.choose_view_option(index,window,cx);settle(this,200,window,cx);assert_eq!(this.views.panel,Some(Panel::Sort));}
+            for mode in ["Priority","Title","DueDate"]{let index=this.view_choices().iter().position(|(_,value)|*value==mode).unwrap();this.choose_view_option(index,window,cx);settle(this,200,window,cx);assert_eq!(this.views.panel,Some(Panel::Sort));}
             assert_eq!(this.sort_levels().len(),3);assert_eq!(this.sort_levels()[1]["mode"],"Title");assert_eq!(this.sort_levels()[1]["order"],"Ascending");
-            this.choose_view_option(4,window,cx);assert!(this.views.pending.is_none());assert_eq!(this.sort_levels().len(),3);
+            assert_eq!(this.view_choices(),vec![("Manual".into(),json!("Manual"))]);assert!(this.views.pending.is_none());assert_eq!(this.sort_levels().len(),3);
             let mut levels=this.sort_levels();levels.remove(0);this.save_sort_levels(levels,window,cx);settle(this,200,window,cx);assert_eq!(this.view_settings()["board_sorting_mode"],"Title");
         });
     }
