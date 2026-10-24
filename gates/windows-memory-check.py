@@ -68,6 +68,7 @@ if args.compare:
             old, new = old.convert('RGB'), new.convert('RGB')
             assert old.size == new.size
             assert len(old.getcolors(old.width * old.height)) > 20, 'Blank capture'
-            assert ImageChops.difference(old, new).getbbox() is None, f'{screen} pixels changed'
+            bounds = ImageChops.difference(old, new).getbbox()
+            assert bounds is None, f'{screen} pixels changed in {bounds}'
         print(f'MEMORY_VISUAL_IDENTICAL {screen}')
 print('MEMORY_RECEIPT_VERIFIED')

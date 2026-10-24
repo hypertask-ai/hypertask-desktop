@@ -57,7 +57,7 @@ jobs:
           -Out evidence/windows-memory
       - name: Validate Windows memory receipt
         if: runner.os == 'Windows'
-        run: python gates/windows-memory-check.py evidence/windows-memory
+        run: python gates/windows-memory-check.py evidence/windows-memory --budget gates/windows-memory-budget.json
       - name: Upload Windows memory
         if: runner.os == 'Windows' && always()
         uses: actions/upload-artifact@v4
@@ -152,4 +152,4 @@ jobs:
       - name: Validate historical and fixed receipts; compare PR 11 pixels
         run: |
           python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory-3d002231efdbc5ea4b823e5a1af430e912a168d9
-          python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --compare evidence/memory-proof/windows-memory-5016a9ebe48b03dbac2f2312c170878166586c59
+          python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --budget gates/windows-memory-budget.json --compare evidence/memory-proof/windows-memory-5016a9ebe48b03dbac2f2312c170878166586c59
