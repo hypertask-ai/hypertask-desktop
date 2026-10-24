@@ -124,6 +124,14 @@ impl AiSidebar {
         self.more_menu = false;
     }
 
+    pub fn fit_viewport(&mut self, viewport: f32, cx: &mut Context<Self>) {
+        let width = Presentation::clamp(self.presentation.width, viewport);
+        if width != self.presentation.width {
+            self.presentation.width = width;
+            cx.notify();
+        }
+    }
+
     pub fn resize_move(&mut self, event: &MouseMoveEvent, window: &Window, cx: &mut Context<Self>) {
         if let Some((start_x, start_width)) = self.presentation.drag {
             self.presentation.width = Presentation::clamp(

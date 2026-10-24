@@ -397,6 +397,7 @@ impl AiSidebar {
                     self.chat_pending = None;
                     self.chats.push(chat);
                     self.selected = self.chats.len() - 1;
+                    self.scroll.scroll_to_bottom();
                     self.history_menu = false;
                     cx.notify();
                 }
@@ -439,7 +440,25 @@ impl AiSidebar {
         window.focus(&self.input.focus_handle(cx), cx);
     }
 
+    fn prompt_body(&self, text: &str) -> String {
+        let mut message = text.to_owned();
+        if !self.draft_quotes.is_empty() {
+            message = quote_text_html(text);
+            for (plain, html) in &self.draft_quotes {
+                let escaped = quote_text_html(plain);
+                let escaped = &escaped[3..escaped.len() - 4];
+                message = message.replacen(escaped, html, 1);
+            }
+        }
+        message
+    }
+
     fn send(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
+        let message = self.prompt_body(if self.draft_quotes.is_empty() {
+            text.trim()
+        } else {
+            &text
+        });
         let text = text.trim().to_owned();
         if text.is_empty() || self.active.is_some() {
             return;
@@ -464,15 +483,6 @@ impl AiSidebar {
             context.view_name = None;
         }
         let history: Vec<Message> = chat.messages.iter().map(|m| m.message.clone()).collect();
-        let mut message = text.clone();
-        if !self.draft_quotes.is_empty() {
-            message = quote_text_html(&text);
-            for (plain, html) in &self.draft_quotes {
-                let escaped = quote_text_html(plain);
-                let escaped = &escaped[3..escaped.len() - 4];
-                message = message.replacen(escaped, html, 1);
-            }
-        }
         let body = ai_chat::request(
             &message,
             &ids,
@@ -514,6 +524,7 @@ impl AiSidebar {
             rich: RichText::default(),
         });
         chat.status = "Working…".into();
+        self.scroll.scroll_to_bottom();
         self.active = Some(ActiveTurn {
             ids,
             chat: self.selected,
@@ -716,10 +727,7 @@ fn markdown(text: &str, colors: Theme) -> RichText {
 impl Render for AiSidebar {
     fn render(&mut self, window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let t = self.colors;
-        self.presentation.width = Presentation::clamp(
-            self.presentation.width,
-            f32::from(window.viewport_size().width),
-        );
+        self.fit_viewport(f32::from(window.viewport_size().width), cx);
         if self.collapsed {
             return div()
                 .id("ai-collapsed")
@@ -990,6 +998,7 @@ impl Render for AiSidebar {
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.chat_pending = None;
                             this.selected = index;
+                            this.scroll.scroll_to_bottom();
                             this.history_menu = false;
                             cx.notify();
                         }))
@@ -1503,3 +1512,7 @@ mod tests {
         .unwrap();
     }
 }
+
+#[cfg(test)]
+#[path = "ai_message_tests.rs"]
+mod message_tests;

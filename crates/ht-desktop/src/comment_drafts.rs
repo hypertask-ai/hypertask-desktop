@@ -118,6 +118,61 @@ mod tests {
     use serde_json::json;
 
     #[gpui::test]
+    fn comment_autosave_debounces_and_freezes_task_identity_before_navigation(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let mut db = Db::memory().unwrap();
+            db.kv_set("current-user-id", "42").unwrap();
+            for id in [1, 2] {
+                db.apply_task(&json!({"id":id,"projectId":15,"title":"Task","status":"Normal"}))
+                    .unwrap();
+            }
+            Desktop::new(
+                db,
+                Options::parse(["--offline", "--screen", "task", "--task", "1"].map(String::from))
+                    .unwrap(),
+                window,
+                cx,
+            )
+        });
+        cx.run_until_parked();
+        view.update_in(cx, |this, window, cx| this.edit_comment(window, cx));
+        cx.simulate_input("First");
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        view.read_with(cx, |this, _| {
+            assert!(this.db.mutations().unwrap().is_empty())
+        });
+        cx.simulate_input(" latest");
+        view.update_in(cx, |this, _, cx| {
+            this.open_task(2, cx);
+            this.restore_comment_draft(cx);
+        });
+        cx.executor().advance_clock(Duration::from_millis(250));
+        cx.run_until_parked();
+        view.read_with(cx, |this, _| {
+            assert!(this.db.mutations().unwrap().is_empty())
+        });
+        cx.executor().advance_clock(Duration::from_millis(500));
+        cx.run_until_parked();
+        view.read_with(cx, |this, cx| {
+            let rows = this.db.mutations().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].kind, "comment_draft");
+            assert_eq!(rows[0].payload_json["task_id"], 1);
+            assert!(
+                rows[0].payload_json["text"]
+                    .as_str()
+                    .unwrap()
+                    .contains("First latest")
+            );
+            assert!(this.comment_input.read(cx).content.is_empty());
+        });
+    }
+
+    #[gpui::test]
     fn comment_drafts_restore_per_task_and_do_not_leak_between_users(
         cx: &mut gpui::TestAppContext,
     ) {
