@@ -20,6 +20,7 @@ open = "5"
 ego-tree = "0.10"
 
 [target.'cfg(windows)'.dependencies]
+mimalloc = { version = "0.1", default-features = false }
 windows = { version = "0.62", features = ["Win32_Foundation", "Win32_System_ProcessStatus", "Win32_System_Threading", "Win32_UI_HiDpi"] }
 
 [target.'cfg(target_os = "linux")'.dependencies]

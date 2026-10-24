@@ -1,3 +1,8 @@
+// Windows' shared process heap retains fragmented small UI/document allocations.
+#[cfg(windows)]
+#[global_allocator]
+static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
+
 #[cfg(windows)]
 pub fn print() -> anyhow::Result<()> {
     use anyhow::Context as _;

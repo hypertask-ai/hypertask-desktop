@@ -145,11 +145,11 @@ jobs:
           retention-days: 14
   windows-memory-baselines:
     name: memory-${{ matrix.revision }}
-    if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
+    if: github.event_name == 'pull_request' && (github.head_ref == 'ram2' || github.head_ref == 'mem2')
     strategy:
       fail-fast: false
       matrix:
-        revision: ['3d002231efdbc5ea4b823e5a1af430e912a168d9', '5016a9ebe48b03dbac2f2312c170878166586c59']
+        revision: ${{ fromJSON(github.head_ref == 'mem2' && '["a5505cc141315f0c35ef876b6adfc66a9af3799b"]' || '["3d002231efdbc5ea4b823e5a1af430e912a168d9", "5016a9ebe48b03dbac2f2312c170878166586c59"]') }}
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
@@ -195,7 +195,10 @@ jobs:
       - name: Validate current Windows receipt, target and frozen budget
         run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --budget gates/windows-memory-budget.json
       - run: python3 -m pip install Pillow
-        if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
+        if: github.event_name == 'pull_request' && (github.head_ref == 'ram2' || github.head_ref == 'mem2')
+      - name: Compare memory optimization pixels and layout
+        if: github.event_name == 'pull_request' && github.head_ref == 'mem2'
+        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --budget gates/windows-memory-budget.json --compare evidence/memory-proof/windows-memory-a5505cc141315f0c35ef876b6adfc66a9af3799b
       # PR 11 predates shipped UI additions; pixel identity is only the ram2 optimization contract.
       - name: Validate historical and fixed receipts; compare PR 11 pixels
         if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
