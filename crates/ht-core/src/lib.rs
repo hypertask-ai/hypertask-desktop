@@ -2,6 +2,7 @@ pub mod ai_chat;
 pub mod auth;
 mod catalog;
 mod comment_write;
+mod comment_draft;
 pub mod db;
 pub mod generated;
 pub mod http;

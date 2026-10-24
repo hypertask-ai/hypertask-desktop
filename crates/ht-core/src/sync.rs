@@ -194,9 +194,9 @@ impl<T: Transport> Sync<T> {
                         ))
             })
         };
-        // Only flags are needed for markers; never replace published content
-        // with a draft or infer server drafts from the local mutation queue.
+        // Draft text is cached separately; never replace published content with it.
         self.db.transaction(|db| {
+            db.cache_comment_drafts(task_id, drafts)?;
             let mut task = db
                 .raw("Task", &json!(task_id))?
                 .context("draft task not cached")?;
@@ -209,7 +209,8 @@ impl<T: Transport> Sync<T> {
                         .as_str()
                         .is_some_and(|text| !text.is_empty() && text != "<p></p>")
             }));
-            db.upsert("Task", &task)
+            db.upsert("Task", &task)?;
+            db.reapply_pending()
         })
     }
 

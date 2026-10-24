@@ -56,6 +56,9 @@ mod comment_actions;
 #[path = "shell.rs"]
 mod shell;
 
+#[path = "comment_drafts.rs"]
+mod comment_drafts;
+
 #[path = "comments.rs"]
 mod comments;
 #[path = "interactions.rs"]
@@ -94,6 +97,7 @@ pub struct Desktop {
     comment_input: Entity<TextInput>,
     interaction: interactions::Interaction,
     comment_actions: comment_actions::CommentActions,
+    comment_drafts: comment_drafts::CommentDrafts,
     moving: bool,
     footer: bool,
     ready_scheduled: bool,
@@ -137,7 +141,7 @@ impl Desktop {
                 cx,
             ).multiline_editor()
         });
-        cx.observe(&comment_input, |_, _, cx| cx.notify()).detach();
+        cx.observe(&comment_input, |this, _, cx| { this.observe_comment_draft(cx); cx.notify(); }).detach();
         if options.background {
             cx.observe(&title_input, |_, _, cx| cx.notify()).detach();
         }
@@ -205,6 +209,7 @@ impl Desktop {
             comment_input,
             interaction: interactions::Interaction::new(cx),
             comment_actions: comment_actions::CommentActions::new(cx),
+            comment_drafts: comment_drafts::CommentDrafts::default(),
             moving: false,
             footer: true,
             ready_scheduled: false,
@@ -553,6 +558,7 @@ impl Desktop {
         if self.enqueue(write, cx) {
             self.editing = Editing::None;
             if comment {
+                self.comment_draft_sent();
                 self.comment_actions.clear_quotes();
                 self.comment_input
                     .update(cx, |input, cx| input.reset(window, cx));
@@ -2043,6 +2049,7 @@ impl Render for Desktop {
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
         }
+        self.restore_comment_draft(cx);
         if let Some(sidebar) = &self.ai_sidebar {
             let task = (self.screen != Screen::Board)
                 .then(|| self.selected_task())

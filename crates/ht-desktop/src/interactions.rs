@@ -282,6 +282,7 @@ impl Desktop {
                 }
             }
             DiscardDraft => {
+                self.discard_comment_draft(cx);
                 self.comment_actions.clear_quotes();
                 self.comment_input
                     .update(cx, |input, cx| input.reset(window, cx));
