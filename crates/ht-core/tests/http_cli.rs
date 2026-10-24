@@ -261,3 +261,16 @@ fn native_task_creation_routes_send_exact_web_json_and_bearer_on_accept_and_refu
         thread.join().unwrap();
     }}
 }
+
+#[test]
+fn sidebar_web_requests_use_desktop_bearer_on_accept_and_refusal(){
+    for (method,path,body) in [("POST","/api/teams/getAllSidebar",json!({})),("GET","/api/favorites/getFavorites",Value::Null),("PUT","/api/favorites/reorderFavorites",json!({"favorites":[{"projectId":15}]}))] {
+        for status in [200,401,403]{
+            let(url,thread,receive)=server(status,"[]");let mut http=Http::with_base(&url,"desktop-sidebar-token".into()).unwrap();
+            let response=if method=="GET"{http.get(path)}else{http.mutate(method,path,&body,"favorites-key")}.unwrap();assert_eq!(response.status,status);
+            let request=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(request.starts_with(&format!("{method} {path} HTTP/1.1")));assert!(request.to_lowercase().contains("authorization: bearer desktop-sidebar-token\r\n"));
+            if method!="GET"{assert_eq!(serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),body);}
+            thread.join().unwrap();
+        }
+    }
+}

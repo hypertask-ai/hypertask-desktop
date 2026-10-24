@@ -4,6 +4,7 @@ use navigation::Destination;
 use serde_json::Value;
 
 pub(super) struct Shell {
+    metadata_loading: bool,
     expanded: bool,
     hovered: Option<usize>,
     pub ai_open: bool,
@@ -61,6 +62,7 @@ impl Shell {
         });
         cx.observe(&feedback_input, |_, _, cx| cx.notify()).detach();
         Self {
+            metadata_loading: false,
             agents: false,
             destination: Destination::Workspace,
             search_input,
@@ -118,6 +120,7 @@ impl Desktop {
 
     fn toggle_boards(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shell.boards = !self.shell.boards;
+        if self.shell.boards { self.load_switcher_metadata(window,cx); }
         self.shell
             .query
             .update(cx, |input, cx| input.set_content(String::new(), cx));
@@ -554,33 +557,8 @@ impl Desktop {
 
     fn shell_boards(&self, cx: &App) -> Vec<Value> {
         let query = self.shell.query.read(cx).content.to_lowercase();
-        let mut boards: Vec<_> = self
-            .db
-            .projects()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|b| b["status"].as_str().is_none_or(|status| status == "Normal"))
-            .filter(|b| {
-                b["title"]
-                    .as_str()
-                    .or(b["name"].as_str())
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .contains(&query)
-            })
-            .collect();
-        if self.shell.recent {
-            boards.sort_by_cached_key(|b| {
-                std::cmp::Reverse(
-                    self.db
-                        .kv_get(&format!("boardUsed:{}", b["id"]))
-                        .ok()
-                        .flatten()
-                        .and_then(|s| s.parse::<u128>().ok())
-                        .unwrap_or(0),
-                )
-            });
-        }
+        let mut boards = self.switcher_boards();
+        boards.retain(|b| b["title"].as_str().or(b["name"].as_str()).unwrap_or("").to_lowercase().contains(&query));
         boards
     }
 
@@ -677,37 +655,16 @@ impl Desktop {
                                 },
                             )),
                     )
+                    .child(div().id("favorites-drop-target").px(px(16.)).py(px(8.)).child("Favorite Boards")
+                        .on_drop(cx.listener(|this, drag:&sidebar::BoardDrag, _, cx| this.drop_favorite(drag.project,None,true,cx)))
+                        .layout_key(&self.layout,"shell.boards.favorites",None))
                     .child(
                         div()
                             .id("boards-list")
                             .flex_1()
                             .overflow_y_scroll()
                             .track_scroll(&self.shell.scroll)
-                            .children(self.shell_boards(cx).into_iter().enumerate().map(
-                                |(i, board)| {
-                                    let id = board["id"].as_i64().unwrap_or(0);
-                                    let title = board["title"]
-                                        .as_str()
-                                        .or(board["name"].as_str())
-                                        .unwrap_or("")
-                                        .to_owned();
-                                    div()
-                                        .id(("shell-board", id as u64))
-                                        .px(px(16.))
-                                        .py(px(8.))
-                                        .cursor_pointer()
-                                        .when(i == self.shell.choice, |d| d.bg(color(t.active)))
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.choose_board(id, window, cx)
-                                        }))
-                                        .child(title.clone())
-                                        .layout_key(
-                                            &self.layout,
-                                            format!("shell.board.{i}"),
-                                            Some(title),
-                                        )
-                                },
-                            )),
+                            .children(self.switcher_rows(cx)),
                     )
                     .child(
                         div()
@@ -1419,3 +1376,6 @@ impl Desktop {
         self.apply_shell_theme(theme, cx);
     }
 }
+
+#[path = "shell_sidebar.rs"]
+mod sidebar;

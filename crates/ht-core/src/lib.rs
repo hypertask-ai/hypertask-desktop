@@ -35,3 +35,5 @@ mod ranking;
 pub use ranking::task_rank;
 
 pub mod task_create;
+
+pub mod board_sidebar;
