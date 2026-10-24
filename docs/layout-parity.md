@@ -11,7 +11,8 @@ inbox, board, and task dumps. `layout-dumps` also contains `parity/`: a syntheti
 three-column/two-card, one-notification, empty-description/no-comment fixture.
 This preserves the dense fixture's badge, label, metadata and comment coverage,
 while allowing comparison without mistaking different content cardinality for a
-layout defect. Text content is never compared or copied from the live account.
+layout defect. Text content is never compared. Task, comment and user content is synthetic;
+generic tab labels mirror the measurement so their width differences are visible.
 
 Unmodified comparer:
 `/home/valentin/projects/hypertask-desktop-wt-public/internal/gates/layout-compare.py`.
