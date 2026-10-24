@@ -340,6 +340,7 @@ impl Desktop {
                             .overflow_y_scroll()
                             .track_scroll(&self.shell.settings_state.scroll)
                             .flex()
+                            .items_start()
                             .justify_center()
                             .child(
                                 div()

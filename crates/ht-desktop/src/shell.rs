@@ -218,6 +218,16 @@ impl Desktop {
         let editor = self.title_input.focus_handle(cx).is_focused(window)
             || self.comment_input.focus_handle(cx).is_focused(window)
             || self
+                .comment_actions
+                .input
+                .focus_handle(cx)
+                .is_focused(window)
+            || self
+                .comment_actions
+                .query
+                .focus_handle(cx)
+                .is_focused(window)
+            || self
                 .interaction
                 .description
                 .focus_handle(cx)
@@ -226,7 +236,11 @@ impl Desktop {
                 .ai_sidebar
                 .as_ref()
                 .is_some_and(|s| s.read(cx).has_focus(window, cx));
-        if editor || self.interaction.modal.is_some() {
+        if editor
+            || self.interaction.modal.is_some()
+            || self.comment_actions.delete_id.is_some()
+            || self.comment_actions.reaction_id.is_some()
+        {
             return false;
         }
         match (key.key.as_str(), ctrl, m.shift, m.alt) {
