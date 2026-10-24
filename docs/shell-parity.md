@@ -93,3 +93,33 @@ The uncommitted `internal/FEATURES.md` records only rows with final SHA-bound CI
 proof as Done. A partial row remains partial even when its implemented subset
 has passing tests. This ledger is deliberately not a claim that the entire
 HTPR-7381 inventory is finished.
+
+## shell2 reconciliation before implementation
+
+Reconciled the supplied 674-row ignored inventory against origin/main `cf763ef`,
+this ledger, `docs/ai-parity.md`, `docs/compose-comments.md`, and the supplied
+ignored `internal/SHELL_STATUS.md` (which is not present on origin/main).
+Initial counts, in done/partial/missing/blocked order: P1 **60/32/74/176**;
+all priorities **106/56/336/176**. Blocked is a primary inventory status now.
+A partial implementation is not proof of its full row; existing receipts and
+original audit totals are historical, not shell2 executable evidence.
+
+Additional exact boundaries found while reconciling the remaining P1 rows:
+
+| Ref | Exact route(s) and auth boundary | Consequence |
+| --- | --- | --- |
+| B19 | `POST /api/ai/audio-transcript`, `app/api/ai/audio-transcript/route.ts:98-101`: `getSessionUser(request.headers)`. Both ordinary and improved dictation use this route (`improve` field). | F117/F118 cannot transcribe with the app's MCP bearer; no local provider credentials or fake microphone result. |
+| B20 | `POST /api/tasks/uploadUrl`, `POST /api/tasks/uploadFinalize`, `pages/api/tasks/uploadUrl.ts:1-5`, `uploadFinalize.ts:1-5`: `taskWriteHandler` -> `getSessionUser`, `lib/api/task-writes/route.ts:89`. Fallback `POST /api/tasks/n8nUpload`, `pages/api/tasks/n8nUpload.ts:102-108`: `getSessionUser`. | F125's task-editor attachment upload contract is session-only; no pretend upload or substituted agent attachment contract. |
+| B21 | `POST /api/tours/update`, `pages/api/tours/update.ts:15-18`: `verifySession(req.cookies[SESSION_COOKIE])`; `lib/tours/hooks/useTour.tsx:130-133` and `useTourStatus.ts:67-74` persist start/completion/skip here. Onboarding/welcome requires board/team context from B2 (`components/generalCommandActions.ts:101-108`, `commandDispatcher.ts:610-614`). | F336/F339/F340/F341 remain blocked, including durable tutorial status and real task-writer prerequisites; no fake completed local tour. |
+| B22 | `POST /api/search/document`, `pages/api/search/document.ts:30-37`: `getSessionUser`. Web search chips/project scopes feed this route (`hooks/Search/useSearch.ts:151,310`). | F401 retains contextual cached search, but full search is blocked. MCP task search is not the mixed web document/search-chip response contract. |
+| B23 | Legacy shell's team/favorite read contracts are B2/B17 (`components/sidebars/LeftSidebar` and `components/sidebars/RightSidebar`); `commandDispatcher.ts:490-493` switches the entire shell, not rail expansion. | F226 cannot reproduce the old authenticated shell with absent board/team/favorite metadata. Do not mislabel `[` expansion as old/new design parity. |
+
+F033 remains partial with B2/B17 team/favorite gaps; F010 remains partial with
+unavailable command contracts (B1–B23 and AI A1–A9), not a full command-set claim.
+F435's current web picker (`components/Modals/Settings/SettingsBoardPicker.tsx:16-24,73-111`)
+has no text search field: its unmet contract is authenticated team filtering and
+synchronization (B2), not a missing native search input. No invented input added.
+F438 hard reset includes browser-account-wide logout, FCM device removal and
+`POST /api/auth/force-signout` (`hooks/MultiPages/HTC/useSignout.ts:36-83`,
+`app/api/auth/force-signout/route.ts:9-10`: cookie-token `revokeSessionToken`).
+Clearing queued native edits alone would not implement that contract.
