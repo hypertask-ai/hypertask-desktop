@@ -355,3 +355,32 @@ be claimed reduced unless the entire content-dependent box falls within the
 original comparer tolerance. Collector-only rail keys remain present, and
 synthetic names/tickets/dates/card badges remain unchanged rather than being
 replaced with live content to improve a number. Final CI measurement follows.
+
+The dense board artifact exposes a second hierarchy defect: existing comment and
+assignee metadata was rendered as a separate row below the title. Web
+`src/components/PageComponents/Kanban/KanbanTaskComponents/TaskTopRow.tsx:68-83,93-134`
+places both in the ticket row, including alongside the optional inbox badge.
+`TaskTopRow.tsx:69` supplies its 4px item gap;
+`KanbanTaskComponents/CommentAndAssignees.tsx:17-19` and
+`TaskTopRow.tsx:148-159` give comment/assignee height 22px via
+`tailwind.config.ts:27` (`h-labelComponent`) and avatar `size=22`.
+`TaskDraggableContainer.tsx:94-96` supplies the existing 6px gap between card rows.
+The native change relocates the already-supported metadata into that row,
+retaining its existing content and controls, with a 22px container and 4px gap.
+A CI visual regression covers comments alone, assignees alone and both together
+with an inbox badge; metadata must share the ticket row above the title.
+
+The ten matched residuals were individually checked against source:
+
+| Residual | Why its full box still cannot be made identical by layout constants |
+| --- | --- |
+| inbox author/title/kind | Synthetic names, ticket and task title differ. The title's intrinsic width sets the following content start (`NotificationRow.tsx:62-78`, `TaskRowComponents/TaskTitle.tsx:157-208`); the extra 32px native gap is corrected, not the text. |
+| inbox section | YESTERDAY versus LAST WEEK; existing source 12px bold/14.4px typography agrees. |
+| board title/count | Synthetic Board versus QA Team Board; label width sets count x (`HeaderComponents/ViewTabsBar.tsx:192-196`). |
+| board first-card title/id | Synthetic card one / QA-101 versus live title / QABO-7; intrinsic text, same source typography (`KanbanTaskCard.tsx:267-272`, `styles/tailwindThemes/graphite.css:108-112`). |
+| board second-card | Live card has an In inbox badge; synthetic card has no notification. The web mounts this badge conditionally (`TaskTopRow.tsx:93-124`); adding a fake badge would be unsupported. |
+| task ticket | QA-103 versus QABO-5; source renders the actual ticket (`TaskInfoColumn/TaskInfo.tsx:288-307`). |
+
+The other 24 matched differences are the unchanged live collector's eight
+unsampled rail keys per screen. No control is removed and neither collector,
+comparer nor fixture is modified to manufacture a count reduction.

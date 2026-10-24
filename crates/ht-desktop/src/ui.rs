@@ -1165,6 +1165,49 @@ impl Desktop {
                                             Some("In inbox".into()),
                                         ),
                                 )
+                            })
+                            .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
+                                d.child(
+                                    div()
+                                        .flex()
+                                        .h(px(22.))
+                                        .items_center()
+                                        .gap(px(4.))
+                                        .text_color(color(t.muted))
+                                        .text_size(px(11.))
+                                        .when(task.comment_count > 0, |d| {
+                                            d.child(
+                                                div()
+                                                    .flex()
+                                                    .gap(px(4.))
+                                                    .items_center()
+                                                    .child(icon("message-square", t.muted, 12.))
+                                                    .child(task.comment_count.to_string()),
+                                            )
+                                        })
+                                        .when(task.assignee_count > 0, |d| {
+                                            d.child(
+                                                div()
+                                                    .flex()
+                                                    .gap(px(4.))
+                                                    .items_center()
+                                                    .child(icon("user-round", t.muted, 12.))
+                                                    .child(task.assignee_count.to_string()),
+                                            )
+                                        })
+                                        .layout_key(
+                                            &self.layout,
+                                            format!("board.card.{index}.meta"),
+                                            Some(
+                                                [task.comment_count, task.assignee_count]
+                                                    .into_iter()
+                                                    .filter(|count| *count > 0)
+                                                    .map(|count| count.to_string())
+                                                    .collect::<Vec<_>>()
+                                                    .join(" "),
+                                            ),
+                                        ),
+                                )
                             }),
                     )
                     .child(
@@ -1227,47 +1270,6 @@ impl Desktop {
                             )
                         },
                     )
-                    .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
-                        d.child(
-                            div()
-                                .flex()
-                                .gap(px(12.))
-                                .text_color(color(t.muted))
-                                .text_size(px(11.))
-                                .when(task.comment_count > 0, |d| {
-                                    d.child(
-                                        div()
-                                            .flex()
-                                            .gap(px(4.))
-                                            .items_center()
-                                            .child(icon("message-square", t.muted, 12.))
-                                            .child(task.comment_count.to_string()),
-                                    )
-                                })
-                                .when(task.assignee_count > 0, |d| {
-                                    d.child(
-                                        div()
-                                            .flex()
-                                            .gap(px(4.))
-                                            .items_center()
-                                            .child(icon("user-round", t.muted, 12.))
-                                            .child(task.assignee_count.to_string()),
-                                    )
-                                })
-                                .layout_key(
-                                    &self.layout,
-                                    format!("board.card.{index}.meta"),
-                                    Some(
-                                        [task.comment_count, task.assignee_count]
-                                            .into_iter()
-                                            .filter(|count| *count > 0)
-                                            .map(|count| count.to_string())
-                                            .collect::<Vec<_>>()
-                                            .join(" "),
-                                    ),
-                                ),
-                        )
-                    })
                     .when_some(labels, |d, labels| {
                         d.child(
                             div().flex().flex_wrap().gap(px(4.)).children(
