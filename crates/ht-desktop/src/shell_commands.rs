@@ -9,6 +9,10 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::DeclineDuplicate => {
+                self.show_modal(crate::ui::interactions::Modal::Relation(ht_core::RelationKind::Duplicate), window, cx);
+                self.task_actions.decline_duplicate = true;
+            }
             ShellCommand::Relation(kind) => self.show_modal(crate::ui::interactions::Modal::Relation(kind), window, cx),
             ShellCommand::Recurrence => self.show_modal(crate::ui::interactions::Modal::Recurrence, window, cx),
             ShellCommand::StartDate => self.show_start_date(window, cx),

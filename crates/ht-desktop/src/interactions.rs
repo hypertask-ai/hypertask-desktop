@@ -738,7 +738,7 @@ impl Desktop {
             .query
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.interaction.modal = Some(modal);
-        if matches!(modal, Modal::Relation(_)) { self.search_relation_tasks(cx); }
+        if matches!(modal, Modal::Relation(_)) { self.task_actions.decline_duplicate = false; self.search_relation_tasks(cx); }
         self.interaction.choice = 0;
         self.interaction
             .modal_scroll
@@ -792,7 +792,7 @@ impl Desktop {
                 !matches!(
                     r.action,
                     CommandAction::Shortcut(Action::Assign | Action::MoveColumn)
-                    | CommandAction::Shell(command_center::ShellCommand::AcceptTask | command_center::ShellCommand::DeclineTask)
+                    | CommandAction::Shell(command_center::ShellCommand::AcceptTask | command_center::ShellCommand::DeclineTask | command_center::ShellCommand::DeclineDuplicate)
                 )
             });
             if let Some(row) = rows.iter_mut().find(|r| r.key == "archiveTask") {
@@ -1269,6 +1269,7 @@ impl Desktop {
                     Modal::WaitingOn => "Blocked by person",
                     Modal::Recurrence => "Repeat task",
                     Modal::Templates => "New task from template",
+                    Modal::Relation(_) if self.task_actions.decline_duplicate => "Decline as duplicate of…",
                     Modal::Relation(kind) => kind.title(),
                     Modal::Delete => "Delete task?",
                     Modal::Commands => unreachable!(),

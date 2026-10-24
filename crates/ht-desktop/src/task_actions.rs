@@ -6,6 +6,7 @@ use serde_json::Value;
 pub(super) struct TaskActions {
     pending: Option<(String, i64, i64, TaskAction)>,
     pub relations: Vec<Value>,
+    pub decline_duplicate: bool,
     pub templates: Value,
     pub templates_project: i64,
     templates_generation: u64,
@@ -517,13 +518,16 @@ impl Desktop {
             return;
         }
         self.task_actions.clear_waiting = false;
-        match self.db.enqueue(
-            Write::TaskAction {
-                task_id: task,
-                change: change.clone(),
-            },
-            chrono::Utc::now().timestamp(),
-        ) {
+        let write = if let TaskAction::Relation { target, relation: ht_core::RelationKind::Duplicate } = &change {
+            if self.task_actions.decline_duplicate {
+                Write::DeclineDuplicate { task_id: task, target: target.clone() }
+            } else {
+                Write::TaskAction { task_id: task, change: change.clone() }
+            }
+        } else {
+            Write::TaskAction { task_id: task, change: change.clone() }
+        };
+        match self.db.enqueue(write, chrono::Utc::now().timestamp()) {
             Ok(id) => {
                 // An older detail read must not replace this write after its queue row resolves.
                 self.task_actions.load_generation += 1;
@@ -578,6 +582,12 @@ impl Desktop {
         else {
             return true;
         };
+        if let Some(next) = result["next"].as_str() {
+            self.task_actions.pending = Some((next.to_owned(), user, task, TaskAction::Decline));
+            self.reload();
+            cx.notify();
+            return true;
+        }
         self.task_actions.pending = None;
         if self.db.current_user_id() == Some(user) {
             self.error = result["error"].as_str().map(|error| {
@@ -589,6 +599,12 @@ impl Desktop {
             });
             self.task_actions.clear_waiting = false;
             self.reload();
+            if matches!(change, TaskAction::Decline) && self.task_actions.decline_duplicate {
+                self.task_actions.decline_duplicate = false;
+                if self.interaction.modal == Some(interactions::Modal::Relation(ht_core::RelationKind::Duplicate)) {
+                    self.close_modal(window, cx);
+                }
+            }
             if self.error.is_none() && self.selected_task() == Some(task) {
                 match change {
                     TaskAction::Relation { relation, .. }
@@ -929,6 +945,40 @@ mod tests {
                 })
                 .unwrap();
             }
+        }
+    }
+    #[gpui::test]
+    fn decline_duplicate_palette_chains_real_picker_and_retains_relation_on_archive_refusal(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        for (relation_status, archive_status) in [(401, 200), (403, 200), (200, 401), (200, 403), (200, 200)] {
+            view.update(&mut cx, |this, _, _| {
+                this.db.apply_task(&json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","relatedFromTasks":[],"relatedToTasks":[]})).unwrap();
+                this.db.apply_task(&json!({"id":2,"projectId":15,"sectionId":10,"title":"Other","ticketNumber":"HT-2","uniqueIndex":2,"status":"Normal"})).unwrap();
+                this.reload();
+            }).unwrap();
+            palette(&mut cx, "Decline as duplicate of");
+            cx.simulate_input("Other");
+            cx.simulate_keystrokes("enter enter");
+            view.update(&mut cx, |this, window, cx| {
+                let row = this.db.mutations().unwrap().into_iter().find(|row| row.status != "failed").unwrap();
+                assert_eq!(row.payload_json["decline_after"], true);
+                let change: TaskAction = serde_json::from_value(row.payload_json["change"].clone()).unwrap();
+                this.db.drain_once(&mut Server(relation_status, change), chrono::Utc::now().timestamp()+1).unwrap();
+                this.poll_task_action(window, cx);
+                if relation_status == 200 {
+                    assert!(this.task_actions.pending.is_some());
+                    this.db.drain_once(&mut Server(archive_status, TaskAction::Decline), chrono::Utc::now().timestamp()+2).unwrap();
+                    this.poll_task_action(window, cx);
+                    assert_eq!(this.db.task(1).unwrap().unwrap().extra["relatedFromTasks"][0]["id"], 88);
+                    assert!(this.interaction.modal.is_none());
+                    assert_eq!(this.error.as_deref(), if archive_status == 200 { None } else { Some("Marked as duplicate, but could not archive the task") });
+                } else {
+                    assert_eq!(this.error.as_deref(), Some("Forbidden"));
+                    assert!(this.interaction.modal.is_some());
+                }
+                assert_eq!(this.db.task(1).unwrap().unwrap().status, if relation_status == 200 && archive_status == 200 { ht_core::generated::Status::Archive } else { ht_core::generated::Status::Normal });
+            }).unwrap();
+            if relation_status != 200 { cx.simulate_keystrokes("escape"); }
         }
     }
     #[gpui::test]

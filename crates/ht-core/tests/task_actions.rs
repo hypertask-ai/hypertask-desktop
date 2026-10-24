@@ -547,3 +547,110 @@ fn triage_and_template_commands_use_independent_exact_web_requests() {
         ("/api/task-templates", json!({"taskId":1}))
     );
 }
+
+#[test]
+fn decline_duplicate_durably_chains_archive_after_relation_and_preserves_partial_success() {
+    for (relation_status, archive_status) in
+        [(401, 200), (403, 200), (200, 401), (200, 403), (200, 200)]
+    {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut db = Db::open(file.path()).unwrap();
+        seed(&mut db);
+        let before = db.task(1).unwrap().unwrap();
+        db.enqueue(
+            Write::DeclineDuplicate {
+                task_id: 1,
+                target: target(),
+            },
+            100,
+        )
+        .unwrap();
+        let first = db.mutations().unwrap().pop().unwrap();
+        assert_eq!(
+            db.task(1).unwrap().unwrap().status,
+            ht_core::generated::Status::Normal
+        );
+        let relation = TaskAction::Relation {
+            target: target(),
+            relation: ht_core::RelationKind::Duplicate,
+        };
+        let mut server = Server {
+            status: relation_status,
+            reply: if relation_status == 200 {
+                ack(&relation)
+            } else {
+                json!({"message":"Forbidden"})
+            },
+            change: relation,
+            user: 42,
+            calls: 0,
+        };
+        db.drain_once(&mut server, 101).unwrap();
+        assert_eq!(server.calls, 1);
+        if relation_status != 200 {
+            assert_eq!(
+                db.task(1).unwrap().unwrap().extra["relatedFromTasks"],
+                before.extra["relatedFromTasks"]
+            );
+            assert!(
+                db.mutations()
+                    .unwrap()
+                    .iter()
+                    .all(|row| row.status == "failed")
+            );
+            continue;
+        }
+        let result: Value = serde_json::from_str(
+            &db.kv_get(&format!("task-action-result:{}", first.client_id))
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        let next = db.mutations().unwrap().pop().unwrap();
+        assert_eq!(result["next"], next.client_id);
+        assert_eq!(next.payload_json["duplicate_archive"], true);
+        assert_eq!(
+            db.task(1).unwrap().unwrap().status,
+            ht_core::generated::Status::Archive
+        );
+        drop(db);
+        let mut db = Db::open(file.path()).unwrap();
+        let mut server = Server {
+            status: archive_status,
+            reply: if archive_status == 200 {
+                ack(&TaskAction::Decline)
+            } else {
+                json!({"message":"Forbidden"})
+            },
+            change: TaskAction::Decline,
+            user: 42,
+            calls: 0,
+        };
+        db.drain_once(&mut server, 102).unwrap();
+        assert_eq!(server.calls, 1);
+        let task = db.task(1).unwrap().unwrap();
+        assert_eq!(task.extra["relatedFromTasks"][1]["id"], 88);
+        assert_eq!(
+            task.status,
+            if archive_status == 200 {
+                ht_core::generated::Status::Archive
+            } else {
+                ht_core::generated::Status::Normal
+            }
+        );
+        let result: Value = serde_json::from_str(
+            &db.kv_get(&format!("task-action-result:{}", next.client_id))
+                .unwrap()
+                .unwrap(),
+        )
+        .unwrap();
+        if archive_status != 200 {
+            assert_eq!(
+                result["error"],
+                "Marked as duplicate, but could not archive the task"
+            );
+        } else {
+            assert_eq!(result["success"], true);
+        }
+    }
+}

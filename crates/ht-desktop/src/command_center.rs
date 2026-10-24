@@ -51,6 +51,7 @@ pub enum ShellCommand {
     AssignMe,
     AcceptTask,
     DeclineTask,
+    DeclineDuplicate,
     SaveTemplate,
     NewFromTemplate,
     Recurrence,
@@ -131,6 +132,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
             ("markDuplicateOf", "Mark duplicate of", "", "mark duplicate of same repeated task relation", ShellCommand::Relation(ht_core::RelationKind::Duplicate)),
             ("acceptTask", "Accept task", "", "accept task triage approve backlog ready next column intake", ShellCommand::AcceptTask),
             ("declineTask", "Decline task", "", "decline task triage reject dismiss archive intake", ShellCommand::DeclineTask),
+            ("declineAsDuplicateOf", "Decline as duplicate of…", "", "decline duplicate task triage reject dismiss archive relation merge repeated", ShellCommand::DeclineDuplicate),
             ("saveTaskTemplate", "Save task as template", "", "template save reuse boilerplate preset shape repeatable", ShellCommand::SaveTemplate),
             ("setRecurrence", "Repeat task", "", "repeat recurring recurrence every daily weekly monthly weekdays cadence schedule routine", ShellCommand::Recurrence),
             ("setStartDate", "Set start date", "", "start begin kickoff scheduled from date when planned", ShellCommand::StartDate),
@@ -212,7 +214,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         _ => 8,
     });
     let task_order: &[&str] = if screen == Screen::Task {
-        &["acceptTask","declineTask","assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","priorityModal","labelmodal","estimateModal","moveToColumn","movetasktodifferentboard","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask","followtask","unfollowtask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId","duplicateTask","duplicateTaskToBoard"]
+        &["acceptTask","declineTask","declineAsDuplicateOf","assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","priorityModal","labelmodal","estimateModal","moveToColumn","movetasktodifferentboard","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask","followtask","unfollowtask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId","duplicateTask","duplicateTaskToBoard"]
     } else {
         &["createTask","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","assignUser","blockedByPerson","assignToMe","addSubTask","viewSubTask","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","labelmodal","estimateModal","priorityModal","moveToColumn","movetasktodifferentboard","followtask","unfollowtask","renameTask","duplicateTask","duplicateTaskToBoard","archiveTask","deleteTask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId"]
     };

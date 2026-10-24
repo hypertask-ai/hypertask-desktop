@@ -12,6 +12,7 @@ pub enum Write {
     View { change: crate::ViewWrite },
     Time { change: crate::TimeWrite },
     TaskAction { task_id: i64, change: crate::TaskAction },
+    DeclineDuplicate { task_id: i64, target: Value },
     Favorites { project_ids: Vec<i64> },
     FavoriteSlot { index: u8, project_id: Option<i64> },
     CreateTask { project_id: i64, section_id: i64, title: String, top: bool },
@@ -104,6 +105,13 @@ impl Db {
                 ("ai-session".into(),"ai_session",json!({"user_id":user,"change":change,"before":db.ai_sessions()?,"attempted":false}))
             }
             Write::TaskAction { task_id, change } => (format!("task:{task_id}"), "web_task_action", db.prepare_task_action(*task_id, change)?),
+            Write::DeclineDuplicate { task_id, target } => {
+                let task = db.task(*task_id)?.context("Task is unavailable")?;
+                ensure!(task.status != crate::generated::Status::Archive, "Task is already archived");
+                let mut payload = db.prepare_task_action(*task_id, &crate::TaskAction::Relation { target: target.clone(), relation: crate::RelationKind::Duplicate })?;
+                payload["decline_after"] = json!(true);
+                (format!("task:{task_id}"), "web_task_action", payload)
+            }
             Write::Time { change } => ("time".into(),"web_time",db.prepare_time(change)?),
             Write::View { change } => {
                 change.validate()?;
@@ -691,7 +699,7 @@ impl Db {
                     Err(_) => (false, "invalid success response".to_owned()),
                 }
             }
-            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_task_action" {{let change=serde_json::from_value::<crate::TaskAction>(row.payload_json["change"].clone())?;if matches!(change,crate::TaskAction::Relation{..}|crate::TaskAction::RemoveRelation(_)|crate::TaskAction::Accept{..}|crate::TaskAction::Decline){body["message"].as_str().unwrap_or(change.failure()).to_owned()}else{change.failure().to_owned()}}} else if row.kind=="web_time" {body["error"].as_str().unwrap_or("Time tracking request failed").to_owned()} else if row.kind=="web_view" {body["message"].as_str().or(body["error"].as_str()).unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
+            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_task_action" {if row.payload_json["duplicate_archive"] == true {"Marked as duplicate, but could not archive the task".to_owned()} else {let change=serde_json::from_value::<crate::TaskAction>(row.payload_json["change"].clone())?;if matches!(change,crate::TaskAction::Relation{..}|crate::TaskAction::RemoveRelation(_)|crate::TaskAction::Accept{..}|crate::TaskAction::Decline){body["message"].as_str().unwrap_or(change.failure()).to_owned()}else{change.failure().to_owned()}}} else if row.kind=="web_time" {body["error"].as_str().unwrap_or("Time tracking request failed").to_owned()} else if row.kind=="web_view" {body["message"].as_str().or(body["error"].as_str()).unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
             Err(error) => (false, error.to_string()),
         };
         self.transaction(|db| {
@@ -912,6 +920,15 @@ impl Db {
                 }
             }
             db.conn.execute("DELETE FROM mutation_queue WHERE id=? AND attempts=?", params![row.id,row.attempts])?;
+            if row.kind == "web_task_action" && row.payload_json["decline_after"] == true {
+                let task_id = row.payload_json["task_id"].as_i64().context("Task is unavailable")?;
+                let id = db.enqueue_in_transaction(Write::TaskAction { task_id, change: crate::TaskAction::Decline }, now)?;
+                let next = db.mutations()?.into_iter().find(|next| next.id == id).context("Archive was not queued")?;
+                let mut payload = next.payload_json;
+                payload["duplicate_archive"] = json!(true);
+                db.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?", params![payload.to_string(), id])?;
+                db.kv_set(&format!("task-action-result:{}", row.client_id), &json!({"success":true,"next":next.client_id}).to_string())?;
+            }
             db.reapply_pending()?;
             Ok(())
         })
