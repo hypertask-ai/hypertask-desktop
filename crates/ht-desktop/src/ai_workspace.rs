@@ -5,6 +5,23 @@ impl Desktop {
     pub(super) fn bind_ai_sessions(&mut self,window:&mut Window,cx:&mut Context<Self>) {
         let Some(sidebar)=self.ai_sidebar.clone() else{return;};
         sidebar.update(cx,|sidebar,cx|sidebar.restore_sessions(&self.db,cx));
+        cx.subscribe_in(&sidebar,window,|this,sidebar,event:&crate::ai_sidebar::PreferenceRequest,window,cx|{
+            use crate::ai_sidebar::PreferenceRequest;
+            match event {
+                PreferenceRequest::Cache{user,settings}=>{let _=this.db.cache_web_preferences(*user,settings);}
+                PreferenceRequest::Save{user,settings,updates}=>{
+                    let result=this.db.cache_web_preferences(*user,settings).and_then(|()|this.db.enqueue(Write::Preferences{updates:updates.clone()},chrono::Utc::now().timestamp()));
+                    match result{
+                        Ok(id)=>{
+                            let key=this.db.mutations().unwrap().into_iter().find(|row|row.id==id).unwrap().client_id;
+                            sidebar.update(cx,|sidebar,cx|sidebar.preference_queued(key,cx));this.request_sync();
+                            cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(100)).await;if !view.update(cx,|this,cx|this.poll_ai_preferences(cx)).unwrap_or(false){break;}}}).detach();
+                        }
+                        Err(error)=>sidebar.update(cx,|sidebar,cx|sidebar.preference_finished(serde_json::json!({"error":error.to_string()}),cx)),
+                    }
+                }
+            }
+        }).detach();
         cx.subscribe_in(&sidebar,window,|this,sidebar,event:&crate::ai_sidebar::SessionRequest,window,cx|{
             let result=this.db.cache_ai_sessions(&event.sessions).and_then(|()|this.db.enqueue(Write::AiSession{change:event.change.clone()},chrono::Utc::now().timestamp()));
             match result {
@@ -22,6 +39,12 @@ impl Desktop {
                 Err(error)=>sidebar.update(cx,|sidebar,cx|sidebar.session_finished(serde_json::json!({"error":error.to_string()}),window,cx)),
             }
         }).detach();
+    }
+    fn poll_ai_preferences(&mut self,cx:&mut Context<Self>)->bool{
+        let Some(sidebar)=self.ai_sidebar.clone() else{return false;};
+        let Some(key)=sidebar.read(cx).preference_key().map(|key|format!("preference-result:{key}")) else{return false;};
+        let Some(result)=self.db.kv_get(&key).ok().flatten().and_then(|s|serde_json::from_str::<serde_json::Value>(&s).ok()) else{return true;};
+        let _=self.db.kv_set(&key,"null");sidebar.update(cx,|sidebar,cx|sidebar.preference_finished(result,cx));false
     }
     pub(super) fn poll_ai_sessions(&mut self,window:&mut Window,cx:&mut Context<Self>)->bool {
         let Some(sidebar)=self.ai_sidebar.clone() else{return false;};

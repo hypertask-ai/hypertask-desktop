@@ -34,6 +34,10 @@ use sessions::SessionPending;
 #[path = "ai_context.rs"]
 mod context_picker;
 
+#[path = "ai_models.rs"]
+mod configured_models;
+pub use configured_models::PreferenceRequest;
+
 #[path = "ai_presentation.rs"]
 mod presentation;
 pub use presentation::DisplayMode;
@@ -168,6 +172,7 @@ pub struct AiSidebar {
     chats: Vec<Chat>,
     selected: usize,
     model: usize,
+    models: configured_models::Models,
     model_menu: bool,
     history_menu: bool,
     history: Vec<Arc<Session>>,
@@ -252,6 +257,7 @@ impl AiSidebar {
             focus: cx.focus_handle(),
             previous_focus: Some(workspace_focus),
             skills: skills::Skills::new(token.clone()),
+            models: configured_models::Models::new(token.clone()),
             context_picker: context_picker::ContextPicker::new(token.clone()),
             client: token.and_then(|t| Client::new(t).ok()),
             scope: None,
@@ -295,6 +301,7 @@ impl AiSidebar {
         self.input
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.skills = skills::Skills::new(token.clone());
+        self.models=configured_models::Models::new(token.clone());
         self.context_picker=context_picker::ContextPicker::new(token.clone());
         self.client = token.and_then(|t| Client::new(t).ok());
         cx.notify();
@@ -308,6 +315,7 @@ impl AiSidebar {
                     || old.context.surface != scope.context.surface
             });
             self.scope = Some(scope);
+            self.load_models(cx);
             if changed_context {
                 self.include_context = true;
             }
@@ -539,6 +547,9 @@ impl AiSidebar {
             self.scope.as_ref().and_then(|s| s.team_id.as_deref()),
             &history,
         );
+        if let (Some(config),Some(id))=(&self.models.configuration,&self.models.selected){
+            if let Err(error)=config.apply(&mut body,id){chat.error=Some(error.to_string());cx.notify();return;}
+        }
         body["context_list"]=serde_json::json!(self.context_picker.selected);
         if self.context_picker.scope=="ticket" && context.task_id.is_some(){body["default_context"]["scope"]=serde_json::json!("ticket");}
         let (send, updates) = mpsc::sync_channel(64);
@@ -619,6 +630,7 @@ impl AiSidebar {
 
     fn poll(&mut self, cx: &mut Context<Self>) {
         self.poll_skills(cx);
+        self.poll_models(cx);
         self.poll_context(cx);
         self.poll_history(cx);
         let follow_latest = !self.away_from_latest();
@@ -1277,39 +1289,7 @@ impl Render for AiSidebar {
                     .child(self.input.clone()),
             );
         if !self.skill_choices(cx).is_empty() { composer = composer.child(self.skill_menu(cx)); }
-        if self.model_menu {
-            let mut menu = div()
-                .id("ai-model-options")
-                .max_h(px(210.))
-                .overflow_y_scroll()
-                .flex()
-                .flex_col();
-            for (index, model) in MODELS.iter().enumerate() {
-                menu = menu.child(
-                    div()
-                        .id(("ai-model", index))
-                        .p(px(6.))
-                        .text_size(px(12.))
-                        .cursor_pointer()
-                        .hover(|d| d.bg(color(t.hover)))
-                        .when(index == self.model, |d| d.bg(color(t.active)))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.model = index;
-                            this.model_menu = false;
-                            cx.notify();
-                        }))
-                        .child(model.label),
-                );
-            }
-            composer = composer.child(
-                menu.child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(color(t.muted))
-                        .child("Availability is server-checked"),
-                ),
-            );
-        }
+        if self.model_menu {composer=composer.child(self.model_options(cx));}
         composer=composer.child(self.context_menu(cx));
         let label=self.context_label();
         let controls = div()
@@ -1326,9 +1306,10 @@ impl Render for AiSidebar {
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.model_menu = !this.model_menu;
+                        if this.model_menu {this.retry_models(cx);}
                         cx.notify();
                     }))
-                    .child(MODELS[self.model].label)
+                    .child(self.model_label())
                     .child(icon("chevron-down", t.muted)),
             )
             .child(

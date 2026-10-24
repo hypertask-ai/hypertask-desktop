@@ -45,3 +45,6 @@ mod ai_sessions;
 pub use ai_sessions::AiSessionWrite;
 
 pub mod ai_context;
+
+pub mod preferences;
+pub mod ai_models;

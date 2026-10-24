@@ -1,0 +1,454 @@
+[
+  {
+    "id": "gpt-6-luna",
+    "source": "openai",
+    "title": "GPT 6 Luna",
+    "model": "gpt-6-luna",
+    "desc": "Cheap and fast",
+    "reasoning": "instant",
+    "effort": "standard",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "medium"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-luna",
+      "label": "6 Luna",
+      "provider": "openai",
+      "priceTier": 2
+    },
+    "family": "gpt-6-luna"
+  },
+  {
+    "id": "gpt-6-luna-light",
+    "source": "openai",
+    "title": "GPT 6 Luna Light",
+    "model": "gpt-6-luna",
+    "desc": "Fastest Luna replies",
+    "reasoning": "instant",
+    "effort": "light",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "low"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-luna",
+      "label": "6 Luna",
+      "provider": "openai",
+      "priceTier": 2
+    },
+    "family": "gpt-6-luna"
+  },
+  {
+    "id": "gpt-6-luna-high",
+    "source": "openai",
+    "title": "GPT 6 Luna High",
+    "model": "gpt-6-luna",
+    "desc": "Deep Luna reasoning",
+    "reasoning": "thinking",
+    "effort": "high",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "high"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-luna",
+      "label": "6 Luna",
+      "provider": "openai",
+      "priceTier": 2
+    },
+    "family": "gpt-6-luna"
+  },
+  {
+    "id": "gpt-5.6-terra",
+    "source": "openai",
+    "title": "GPT 5.6 Terra",
+    "model": "gpt-5.6-terra",
+    "desc": "Balanced mid tier",
+    "reasoning": "instant",
+    "effort": "standard",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "medium"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-terra",
+      "label": "5.6 Terra",
+      "provider": "openai",
+      "priceTier": 2
+    },
+    "family": "gpt-5.6-terra"
+  },
+  {
+    "id": "gpt-5.6-terra-light",
+    "source": "openai",
+    "title": "GPT 5.6 Terra Light",
+    "model": "gpt-5.6-terra",
+    "desc": "Fastest Terra replies",
+    "reasoning": "instant",
+    "effort": "light",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "low"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-terra",
+      "label": "5.6 Terra",
+      "provider": "openai",
+      "priceTier": 2
+    },
+    "family": "gpt-5.6-terra"
+  },
+  {
+    "id": "gpt-5.6-terra-high",
+    "source": "openai",
+    "title": "GPT 5.6 Terra High",
+    "model": "gpt-5.6-terra",
+    "desc": "Deep Terra reasoning",
+    "reasoning": "thinking",
+    "effort": "high",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "high"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-terra",
+      "label": "5.6 Terra",
+      "provider": "openai",
+      "priceTier": 2
+    },
+    "family": "gpt-5.6-terra"
+  },
+  {
+    "id": "gpt-6.1-sol",
+    "source": "openai",
+    "title": "GPT 6.1 Sol",
+    "model": "gpt-6.1-sol",
+    "desc": "OpenAI flagship",
+    "reasoning": "thinking",
+    "effort": "standard",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "medium"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-sol",
+      "label": "6.1 Sol",
+      "provider": "openai",
+      "priceTier": 3,
+      "premium": true
+    },
+    "family": "gpt-6.1-sol"
+  },
+  {
+    "id": "gpt-6.1-sol-light",
+    "source": "openai",
+    "title": "GPT 6.1 Sol Light",
+    "model": "gpt-6.1-sol",
+    "desc": "Fastest Sol replies",
+    "reasoning": "instant",
+    "effort": "light",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "low"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-sol",
+      "label": "6.1 Sol",
+      "provider": "openai",
+      "priceTier": 3,
+      "premium": true
+    },
+    "family": "gpt-6.1-sol"
+  },
+  {
+    "id": "gpt-6.1-sol-high",
+    "source": "openai",
+    "title": "GPT 6.1 Sol High",
+    "model": "gpt-6.1-sol",
+    "desc": "Deep Sol reasoning",
+    "reasoning": "thinking",
+    "effort": "high",
+    "providerOptions": {
+      "openai": {
+        "reasoningEffort": "high"
+      }
+    },
+    "definition": {
+      "modelClass": "gpt-sol",
+      "label": "6.1 Sol",
+      "provider": "openai",
+      "priceTier": 3,
+      "premium": true
+    },
+    "family": "gpt-6.1-sol"
+  },
+  {
+    "id": "claude-opus-5-5-instant",
+    "source": "claude",
+    "title": "Opus 5.5 Instant",
+    "model": "claude-opus-5.5",
+    "directModel": "claude-opus-5-5",
+    "desc": "Fast premium Claude",
+    "reasoning": "instant",
+    "effort": "light",
+    "providerOptions": {
+      "anthropic": {
+        "thinking": {
+          "type": "disabled"
+        },
+        "effort": "low"
+      }
+    },
+    "definition": {
+      "modelClass": "claude-opus",
+      "label": "Opus 5.5",
+      "provider": "anthropic",
+      "priceTier": 3,
+      "premium": true
+    },
+    "family": "claude-opus-5-5"
+  },
+  {
+    "id": "claude-opus-5-5-thinking",
+    "source": "claude",
+    "title": "Opus 5.5 Thinking",
+    "model": "claude-opus-5.5",
+    "directModel": "claude-opus-5-5",
+    "desc": "Deep reasoning",
+    "reasoning": "thinking",
+    "effort": "high",
+    "providerOptions": {
+      "anthropic": {
+        "thinking": {
+          "type": "adaptive"
+        },
+        "effort": "high"
+      }
+    },
+    "definition": {
+      "modelClass": "claude-opus",
+      "label": "Opus 5.5",
+      "provider": "anthropic",
+      "priceTier": 3,
+      "premium": true
+    },
+    "family": "claude-opus-5-5"
+  },
+  {
+    "id": "claude-sonnet-5-5-instant",
+    "source": "claude",
+    "title": "Sonnet 5.5 Instant",
+    "model": "claude-sonnet-5.5",
+    "directModel": "claude-sonnet-5-5",
+    "desc": "Fast Claude replies",
+    "reasoning": "instant",
+    "effort": "light",
+    "providerOptions": {
+      "anthropic": {
+        "thinking": {
+          "type": "disabled"
+        },
+        "effort": "low"
+      }
+    },
+    "definition": {
+      "modelClass": "claude-sonnet",
+      "label": "Sonnet 5.5",
+      "provider": "anthropic",
+      "priceTier": 2
+    },
+    "family": "claude-sonnet-5-5"
+  },
+  {
+    "id": "claude-sonnet-5-5-thinking",
+    "source": "claude",
+    "title": "Sonnet 5.5 Thinking",
+    "model": "claude-sonnet-5.5",
+    "directModel": "claude-sonnet-5-5",
+    "desc": "Adaptive reasoning",
+    "reasoning": "thinking",
+    "effort": "high",
+    "providerOptions": {
+      "anthropic": {
+        "thinking": {
+          "type": "adaptive"
+        },
+        "effort": "high"
+      }
+    },
+    "definition": {
+      "modelClass": "claude-sonnet",
+      "label": "Sonnet 5.5",
+      "provider": "anthropic",
+      "priceTier": 2
+    },
+    "family": "claude-sonnet-5-5"
+  },
+  {
+    "id": "claude-haiku-5-5",
+    "source": "claude",
+    "title": "Haiku 5.5",
+    "model": "claude-haiku-5.5",
+    "directModel": "claude-haiku-5-5",
+    "desc": "Fast and cheap Claude with adaptive thinking",
+    "reasoning": "thinking",
+    "providerOptions": {
+      "anthropic": {
+        "thinking": {
+          "type": "adaptive"
+        },
+        "effort": "medium"
+      }
+    },
+    "definition": {
+      "modelClass": "claude-haiku",
+      "label": "Haiku 5.5",
+      "provider": "anthropic",
+      "priceTier": 1
+    },
+    "family": "claude-haiku-5-5"
+  },
+  {
+    "id": "deepseek-v4.1-flash",
+    "source": "gateway",
+    "title": "DeepSeek V4.1 Flash",
+    "model": "deepseek/deepseek-v4.1-flash",
+    "desc": "Cheapest general model",
+    "reasoning": "instant",
+    "definition": {
+      "modelClass": "deepseek-flash",
+      "label": "DeepSeek V4.1 Flash",
+      "provider": "deepseek",
+      "priceTier": 1
+    },
+    "family": "deepseek-v4.1-flash"
+  },
+  {
+    "id": "deepseek-v4-pro",
+    "source": "gateway",
+    "title": "DeepSeek V4 Pro",
+    "model": "deepseek/deepseek-v4-pro",
+    "desc": "Efficient general model",
+    "reasoning": "instant",
+    "definition": {
+      "modelClass": "deepseek-pro",
+      "label": "DeepSeek V4 Pro",
+      "provider": "deepseek",
+      "priceTier": 1
+    },
+    "family": "deepseek-v4-pro"
+  },
+  {
+    "id": "kimi-k2.5",
+    "source": "gateway",
+    "title": "Kimi K2.5",
+    "model": "moonshotai/kimi-k2.5",
+    "desc": "Cheapest reasoning model",
+    "reasoning": "thinking",
+    "definition": {
+      "modelClass": "kimi-k2.5-free",
+      "label": "Kimi K2.5",
+      "provider": "moonshot",
+      "priceTier": 1
+    },
+    "family": "kimi-k2.5"
+  },
+  {
+    "id": "kimi-k3",
+    "source": "gateway",
+    "title": "Kimi K3",
+    "model": "moonshotai/kimi-k3",
+    "desc": "Flagship, 1M context",
+    "reasoning": "instant",
+    "definition": {
+      "modelClass": "kimi-k3",
+      "label": "Kimi K3",
+      "provider": "moonshot",
+      "priceTier": 3
+    },
+    "family": "kimi-k3"
+  },
+  {
+    "id": "qwen3.7-plus",
+    "source": "gateway",
+    "title": "Qwen3.7 Plus",
+    "model": "alibaba/qwen3.7-plus",
+    "desc": "Strong general model",
+    "reasoning": "instant",
+    "definition": {
+      "modelClass": "qwen-plus",
+      "label": "Qwen3.7 Plus",
+      "provider": "alibaba",
+      "priceTier": 1
+    },
+    "family": "qwen3.7-plus"
+  },
+  {
+    "id": "glm-5.3-flash",
+    "source": "gateway",
+    "title": "GLM-5.3 Flash",
+    "model": "zai/glm-5.3-flash",
+    "desc": "Fast general model",
+    "reasoning": "instant",
+    "definition": {
+      "modelClass": "glm-flash",
+      "label": "GLM-5.3 Flash",
+      "provider": "zhipu",
+      "priceTier": 2
+    },
+    "family": "glm-5.3-flash"
+  },
+  {
+    "id": "gemini-3.5-flash-lite",
+    "source": "gateway",
+    "title": "Gemini 3.5 Flash Lite",
+    "model": "google/gemini-3.5-flash-lite",
+    "desc": "Cheap and quick",
+    "reasoning": "instant",
+    "definition": {
+      "modelClass": "gemini-flash-lite",
+      "label": "Gemini 3.5 Flash Lite",
+      "provider": "google",
+      "priceTier": 1
+    },
+    "family": "gemini-3.5-flash-lite"
+  },
+  {
+    "id": "gemini-3.8-flash",
+    "source": "gateway",
+    "title": "Gemini 3.8 Flash",
+    "model": "google/gemini-3.8-flash",
+    "desc": "Newest fast Gemini",
+    "reasoning": "instant",
+    "definition": {
+      "modelClass": "gemini-flash",
+      "label": "Gemini 3.8 Flash",
+      "provider": "google",
+      "priceTier": 2
+    },
+    "family": "gemini-3.8-flash"
+  },
+  {
+    "id": "custom",
+    "source": "custom",
+    "title": "Custom endpoint",
+    "model": "custom",
+    "desc": "Your OpenAI-compatible endpoint",
+    "reasoning": "instant",
+    "definition": {
+      "modelClass": "custom",
+      "label": "Custom endpoint",
+      "provider": "custom"
+    },
+    "family": "custom"
+  }
+]
