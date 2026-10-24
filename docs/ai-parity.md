@@ -59,3 +59,11 @@ MCP token, and switching token exchange alone does not unlock cookie history.
 The draft PR is <https://github.com/hypertask-ai/hypertask-desktop/pull/9>.
 Final SHA-bound results are recorded in the PR and the local acceptance ledger;
 auth-blocked rows remain blocked even when their pure client-side tests pass.
+
+## p2 audit: stale remaining P1 classifications
+
+Full-row blockers also cover F228 (fullscreen history, A2), F621/F622/F623 and
+F646/F648 (web task-writer/draft refinement, shell B26 and A1/A2), F644 (successful
+edit/retry requests, A1), and F645 (assistant-to-task creation, A7). Existing
+presentation, copy and error behavior is retained, not counted as full-row Done.
+No MCP-audience token is exchanged for a browser/OAuth session.

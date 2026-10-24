@@ -88,3 +88,16 @@ Paths are relative to the web repository. An implemented subset does not remove 
 | Desktop exclusion — F578 | No route/auth helper: mobile-only branch at `src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/NewCommentComponent.tsx:490-527`. | Already audited above. Native desktop keeps auto-growing editor; no mobile resize/collapse widget is added. |
 
 F587 and focused-comment F368/F371/F372 remain the pre-existing auth blockers above / in ai-parity.md, without redoing their work. Final SHA-bound CI receipts and ignored feature dispositions are recorded in `internal/COMPOSER2-GATES.md` and the public worktree's ignored `internal/FEATURES.md`.
+
+## p2 audit: remaining P1 rows
+
+F639 is a stale inventory gap: `comment_actions.rs` already renders individual
+collapsed previews and implements O/Shift+O without closing the latest comment.
+CI test `comment_single_all_expansion_keeps_latest_open_and_does_not_fire_in_editor`
+is retained, not reimplemented. Web: `src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/CollapsedCommentPreview.tsx:1`.
+
+| Ref / rows | Exact route and auth helper | Reason |
+| --- | --- | --- |
+| B14 — F638 | POST `/api/tasks/reactToDescription`: `taskWriteHandler` → `taskWriteRoute` → **getSessionUser**, `src/pages/api/tasks/reactToDescription.ts:1-5`, `src/lib/api/task-writes/description-reaction.ts:10-22`, `src/lib/api/task-writes/route.ts:32-35,89-91`. | Description reactions use a Description ID, not a Comment ID. Bearer `/api/mcp/comments/[comment_id]/reactions` only writes comment reactions; it is not a description writer. No fake chip/toggle. |
+| B15 — F147/F647 | POST `/api/ai/audio-transcript`: **getSessionUser**, `src/app/api/ai/audio-transcript/route.ts:98-101`. | The improved description microphone is clicked by `src/components/Modals/CreateTaskGloballyModal/TaskTitleModal.tsx:63-69`; it shares ordinary dictation's unavailable route, not the bearer text-improvement endpoint. |
+| B16 — F664 | GET/POST `/api/tasks/createGlobally`: `taskWriteHandler` → **getSessionUser**, `src/pages/api/tasks/createGlobally.ts:110-112`, `src/lib/api/task-writes/route.ts:32-35,89-91`. | The row's create/discard-unsaved confirmation consumes the blocked web create-task flow. Existing archive/delete confirmations remain; a standalone pretend create dialog is not parity. |

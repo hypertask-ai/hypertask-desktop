@@ -173,3 +173,24 @@ F112, F401/F403/F404, F432/F435, F463/F470/F475/F479/F482/F487/F643;
 relabeling them does not remove the existing working client behavior.
 Nine newly implemented P1 rows await shell2 CI before inventory promotion:
 F197, F210, F252, F304, F334, F335, F337, F343, F434.
+
+## p2 audit: remaining P1 inventory reconciliation
+
+The ignored inventory still labels these full-row blockers Partial/Missing:
+F240 (B15 profile photo upload/current-photo), F241 (B14 cookie-account switching),
+F305 (B15), F321 (B2/B9/B16), F323 (B2 role/photo contract), F327 (B10),
+F329/F331 (B12), F414 (B2), F416 (B2/B14 and blocked board/team creation),
+F421 (B6), F428 (B13). These are not new implementation candidates.
+Profile PATCH accepting a URL is not the web upload/remove/current-photo flow.
+The exact switch-account routes are Better Auth
+`/api/auth/multi-session/list-device-sessions` and
+`/api/auth/multi-session/set-active`, using the **multiSession** browser-session
+plugin (`src/lib/auth/accounts.ts:17-35`, `src/lib/auth/betterAuthClient.ts`),
+served by `/api/auth/[...all]`; the MCP bearer is not a session token.
+
+F649's supported-command token/typo ranking and limit already exist in
+`command_center.rs`; the web renders an empty list, not an invented "No commands"
+widget (`src/components/Modals/commands/HTC/CommandGroup.tsx:20-40`). F650's focused
+comment commands and persisted frecency also exist on main. Unsupported auth-bound
+commands remain excluded, not inert results. These two rows describe supported
+command behavior, not completion of every command in the corpus.
