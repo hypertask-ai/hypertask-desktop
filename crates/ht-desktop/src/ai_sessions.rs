@@ -123,7 +123,7 @@ impl AiSidebar {
         Chat{id:session.id.clone(),title:session.title.clone().unwrap_or_else(||"AI Chat".into()),messages:session.messages.iter().map(|message|ChatMessage{message:message.clone(),rich:if message.role=="human"{RichText::default()}else{markdown(&message.content,self.colors)}}).collect(),status:String::new(),error:None,persisted:true}
     }
     pub(super) fn create_scope(&self)->AiSessionWrite {
-        AiSessionWrite::Create{task:self.scope.as_ref().and_then(|s|s.context.task_id),project:self.scope.as_ref().and_then(|s|s.context.project_id)}
+        AiSessionWrite::Create{task:if self.mode()==DisplayMode::Fullscreen{None}else{self.scope.as_ref().and_then(|s|s.context.task_id)},project:self.scope.as_ref().and_then(|s|s.context.project_id)}
     }
     pub fn branch_comment(&mut self,quote:String,window:&mut Window,cx:&mut Context<Self>){
         self.set_open(true,cx);
@@ -240,6 +240,20 @@ mod streaming_tests {
                 if status!=200 || matches!(change,AiSessionWrite::Create{..}|AiSessionWrite::Rename{..}){assert_eq!(sidebar.chats.iter().find(|c|c.id=="streaming").unwrap().messages[0].message.content,"Before + newer tokens");}
                 else{assert!(!sidebar.chats.iter().any(|c|c.id=="streaming"));assert!(sidebar.active.is_none());}
             }}
+        }).unwrap();
+    }
+}
+
+#[cfg(test)]
+mod fullscreen_tests {
+    use super::*;
+    #[gpui::test]
+    fn fullscreen_new_chat_does_not_inherit_the_underlying_ticket_scope(cx:&mut gpui::TestAppContext){
+        let view=cx.add_window(|window,cx|{let focus=cx.focus_handle();AiSidebar::new(crate::theme::THEMES[1],None,focus,window,cx)});
+        view.update(cx,|sidebar,_,cx|{
+            sidebar.scope=Some(Scope{context:DefaultContext{project_id:Some(15),task_id:Some(7),..DefaultContext::default()},team_id:Some("team".into()),label:"Ticket".into(),suggestions:vec![],model_default:None});
+            assert_eq!(sidebar.create_scope(),AiSessionWrite::Create{task:Some(7),project:Some(15)});
+            sidebar.set_mode(DisplayMode::Fullscreen,cx);assert_eq!(sidebar.create_scope(),AiSessionWrite::Create{task:None,project:Some(15)});
         }).unwrap();
     }
 }
