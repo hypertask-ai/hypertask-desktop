@@ -1,6 +1,8 @@
 use super::*;
 use gpui::ClipboardItem;
-use std::{collections::BTreeMap, sync::mpsc};
+use std::collections::BTreeMap;
+#[cfg(not(test))]
+use std::sync::mpsc;
 
 #[derive(Clone, Debug)]
 struct Request {
@@ -591,6 +593,7 @@ impl Desktop {
         self.shell.settings_state.message = None;
         #[cfg(test)]
         {
+            let _ = window;
             self.shell.settings_state.requests.push(request);
             cx.notify();
             return;
@@ -1345,22 +1348,21 @@ mod tests {
     use crate::ui::shell::tests::{click, draw, measured, setup};
     use gpui::TestAppContext;
 
+    #[track_caller]
     pub(super) fn reply(
         view: gpui::WindowHandle<Desktop>,
         cx: &mut gpui::VisualTestContext,
         result: Value,
     ) -> Request {
+        let request = view
+            .read_with(cx, |this, _| this.shell.settings_state.pending.clone())
+            .unwrap()
+            .expect("input must issue a request");
         view.update(cx, |this, window, cx| {
-            let request = this
-                .shell
-                .settings_state
-                .pending
-                .clone()
-                .expect("input must issue a request");
-            this.settings_result(request.clone(), Ok(result), window, cx);
-            request
+            this.settings_result(request.clone(), Ok(result), window, cx)
         })
-        .unwrap()
+        .unwrap();
+        request
     }
 
     #[gpui::test]
@@ -2128,5 +2130,23 @@ mod mcp_tests {
             "Please generate a token first"
         );
         measured(view, &mut cx, "settings.title");
+    }
+}
+
+#[cfg(test)]
+impl Desktop {
+    pub(in crate::ui) fn reveal_settings_target(&mut self, measured: &Value) {
+        let y = measured["y"].as_f64().unwrap() as f32;
+        let bottom = y + measured["h"].as_f64().unwrap() as f32;
+        let delta = if y < 60. {
+            y - 60.
+        } else if bottom > 900. {
+            bottom - 900.
+        } else {
+            0.
+        };
+        let mut offset = self.shell.settings_state.scroll.offset();
+        offset.y -= px(delta);
+        self.shell.settings_state.scroll.set_offset(offset);
     }
 }

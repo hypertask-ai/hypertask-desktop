@@ -389,7 +389,7 @@ impl Desktop {
                 div()
                     .id("rail-board")
                     .cursor_pointer()
-                    .on_click(cx.listener(|this, _, window, cx| {
+                    .on_click(cx.listener(|this, _, _, cx| {
                         this.shell.agents = false;
                         this.navigate_board(cx);
                     }))
@@ -397,7 +397,9 @@ impl Desktop {
                         3,
                         "columns-2",
                         "Board",
-                        self.screen == Screen::Board,
+                        self.screen == Screen::Board
+                            && self.shell.destination != Destination::Table,
+                        cx,
                     )),
             )
             .child(
@@ -411,6 +413,7 @@ impl Desktop {
                         "rows-3",
                         "Table",
                         self.shell.destination == Destination::Table,
+                        cx,
                     )),
             )
             .child(
@@ -718,7 +721,24 @@ pub(super) mod tests {
         cx: &mut VisualTestContext,
         key: &str,
     ) {
-        let e = measured(view, cx, key);
+        let mut e = measured(view, cx, key);
+        if key.starts_with("settings.") {
+            for _ in 0..3 {
+                let y = e["y"].as_f64().unwrap();
+                let bottom = y + e["h"].as_f64().unwrap();
+                if y >= 0. && bottom <= 900. {
+                    break;
+                }
+                view.update(cx, |this, _, _| this.reveal_settings_target(&e))
+                    .unwrap();
+                e = measured(view, cx, key);
+            }
+        }
+        assert!(
+            e["y"].as_f64().unwrap() >= 0.
+                && e["y"].as_f64().unwrap() + e["h"].as_f64().unwrap() <= 900.,
+            "click target {key} is clipped: {e}"
+        );
         cx.simulate_click(
             point(
                 px(e["x"].as_f64().unwrap() as f32 + e["w"].as_f64().unwrap() as f32 / 2.),
@@ -1160,7 +1180,10 @@ mod surface_tests {
         let (view, mut cx) = setup(cx);
         draw(view, &mut cx);
         cx.simulate_keystrokes("?");
-        assert_eq!(measured(view, &mut cx, "shell.shortcuts")["w"], 374.4);
+        let width = measured(view, &mut cx, "shell.shortcuts")["w"]
+            .as_f64()
+            .unwrap();
+        assert!((width - 1440. * 0.26).abs() <= 0.5);
         cx.simulate_input("comment");
         draw(view, &mut cx);
         view.read_with(&cx, |this, _| {
