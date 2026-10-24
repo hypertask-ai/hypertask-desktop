@@ -438,3 +438,41 @@ mod advanced_tests {
         filter_sort(&mut tasks,&json!({"board_filters":{"addedFilters":[{"type":"not-a-web-filter"}],"matchFilters":"ALL"}}),&json!({}),&[]);assert!(tasks.is_empty());
     }
 }
+
+pub fn builtin_views(project:&Value,decisions:bool)->Vec<Value>{
+    let(current,next)=cycle_window(project,chrono::Utc::now().timestamp());
+    [("my-tasks","My Tasks"),("overdue","Overdue"),("blocked","Blocked"),("agents","Agents"),("current-cycle","Current cycle"),("next-cycle","Next cycle"),("decisions","Decisions")].into_iter().filter(|(id,_)|match *id{"current-cycle"=>project["cyclesEnabled"]==true && current.is_some(),"next-cycle"=>project["cyclesEnabled"]==true && next.is_some(),"decisions"=>decisions,_=>true}).map(|(id,title)|json!({"id":format!("builtin:{id}"),"title":title,"builtin":true})).collect()
+}
+fn cycle_window(project:&Value,now:i64)->(Option<i64>,Option<i64>){
+    let mut cycles:Vec<_>=project["cycles"].as_array().into_iter().flatten().filter_map(|cycle|Some((timestamp(&cycle["startDate"])?/86400,timestamp(&cycle["endDate"])?/86400,cycle["id"].as_i64()?))).collect();cycles.sort_by_key(|cycle|cycle.0);let today=now.div_euclid(86400);let current=cycles.iter().find(|cycle|cycle.0<=today && today<cycle.1);let next=if let Some(current)=current{cycles.iter().find(|cycle|cycle.0==current.1)}else{cycles.iter().find(|cycle|cycle.0>today)};(current.map(|cycle|cycle.2),next.map(|cycle|cycle.2))
+}
+pub(crate) fn builtin_matches(id:&str,task:&Value,project:&Value,user:Option<i64>,now:i64)->bool{
+    let section=project["section"].as_array().into_iter().flatten().find(|section|section["id"]==task["sectionId"]);
+    let title=section.and_then(|section|section["section_title"].as_str()).or(task["section"].as_str()).unwrap_or("").trim().to_lowercase();
+    match id{
+        "builtin:my-tasks"=>user.is_some_and(|user|task["assignees"].as_array().into_iter().flatten().any(|assignee|assignee["userId"]==user && assignee["agentId"].is_null())),
+        "builtin:overdue"=>task["status"]=="Normal" && timestamp(&task["dueDate"]).is_some_and(|date|date<now) && !section.and_then(|section|section["isDone"].as_bool()).unwrap_or(["done","complete","completed","shipped","closed","finished","live","released"].contains(&title.as_str())),
+        "builtin:blocked"=>!task["waitingOnUserId"].is_null() || task["blockingTasks"].as_array().is_some_and(|tasks|!tasks.is_empty()),
+        "builtin:agents"=>task["assignees"].as_array().into_iter().flatten().any(|assignee|!assignee["agentId"].is_null()),
+        "builtin:current-cycle"|"builtin:next-cycle"=>{let(current,next)=cycle_window(project,now);project["cyclesEnabled"]==true && (if id=="builtin:current-cycle"{current}else{next}).is_some_and(|cycle|task["cycleId"]==cycle)},
+        "builtin:decisions"=>{
+            if title=="ux sign-off"{return true;}
+            let name=project["members"].as_array().into_iter().flatten().find(|member|member["userId"].as_i64()==user && member["agentId"].is_null()).and_then(|member|member["user"]["displayName"].as_str()).or_else(||(project["owner"]["id"].as_i64()==user).then(||project["owner"]["displayName"].as_str()).flatten()).unwrap_or("").trim().to_lowercase();
+            !name.is_empty() && (title==format!("{name} review") || title==format!("{} review",name.split_whitespace().next().unwrap()))
+        }
+        _=>false,
+    }
+}
+
+#[cfg(test)]
+mod builtin_tests{
+    use super::*;
+    #[test]
+    fn builtin_cycle_utc_windows_done_override_and_decisions_names_match_web(){
+        let mut project=json!({"cyclesEnabled":true,"cycles":[{"id":1,"startDate":"2026-10-01","endDate":"2026-10-15"},{"id":2,"startDate":"2026-10-15","endDate":"2026-10-29"}],"section":[{"id":1,"section_title":"Done","isDone":false}],"owner":{"id":42,"displayName":"Owner Name"}});
+        let now=timestamp(&json!("2026-10-14T23:59:59Z")).unwrap();assert_eq!(cycle_window(&project,now),(Some(1),Some(2)));assert_eq!(cycle_window(&project,now+1),(Some(2),None));
+        assert!(builtin_matches("builtin:overdue",&json!({"sectionId":1,"status":"Normal","dueDate":"2026-10-01"}),&project,Some(42),now));
+        assert!(builtin_matches("builtin:decisions",&json!({"section":"Owner review"}),&project,Some(42),now));assert!(!builtin_matches("builtin:decisions",&json!({"section":"Other review"}),&project,Some(42),now));
+        project["cyclesEnabled"]=json!(false);assert!(!builtin_views(&project,false).iter().any(|view|view["id"]=="builtin:decisions" || view["id"]=="builtin:current-cycle"));
+    }
+}

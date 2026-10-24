@@ -36,6 +36,9 @@ pub(super) struct Views {
     editing: Option<String>,
     pending_route: String,
     people: Option<Value>,
+    pub(super) builtin: std::collections::BTreeMap<i64, String>,
+    decisions: bool,
+    previous_builtin: Option<String>,
     support_pending: bool,
     query: Entity<TextInput>,
     query_text: String,
@@ -65,6 +68,9 @@ impl Views {
             editing: None,
             pending_route: String::new(),
             people: None,
+            builtin: Default::default(),
+            decisions: false,
+            previous_builtin: None,
             support_pending: false,
             query,
             query_text: String::new(),
@@ -76,6 +82,9 @@ impl Views {
 }
 impl Desktop {
     pub(super) fn invalidate_board_views(&mut self, cx: &mut Context<Self>) {
+        self.views.builtin.clear();
+        self.views.decisions = false;
+        self.views.previous_builtin = None;
         self.views.people = None;
         self.views.support_pending = false;
         self.views.loaded = 0;
@@ -104,8 +113,16 @@ impl Desktop {
         let expected_token = token.clone();
         let (send, receive) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let result = ht_core::Http::new(token)
-                .and_then(|mut http| ht_core::board_views::load(&mut http, board));
+            let result = ht_core::Http::new(token).and_then(|mut http| {
+                let (user, mut body) = ht_core::board_views::load(&mut http, board)?;
+                body["desktop_decisions"] = json!(
+                    ht_core::Transport::get(&mut http, "/api/flags")
+                        .ok()
+                        .is_some_and(|response| response.status == 200
+                            && response.body["flags"]["htpr-7092-decisions"] == true)
+                );
+                Ok((user, body))
+            });
             let _ = send.send(result);
         });
         cx.spawn(async move |view, cx| {
@@ -128,6 +145,7 @@ impl Desktop {
                             if let Ok((user, body)) = result {
                                 let _ = this.db.kv_set("current-user-id", &user.to_string());
                                 if this.db.apply_web_board(user, &body).is_ok() {
+                                    this.views.decisions = body["desktop_decisions"] == true;
                                     this.views.ready = true;
                                     this.reload();
                                 }
@@ -319,6 +337,7 @@ impl Desktop {
         self.views.pending = None;
         self.reload();
         if result["error"].is_null() {
+            self.views.previous_builtin = None;
             if !matches!(
                 self.views.panel,
                 Some(
@@ -338,6 +357,12 @@ impl Desktop {
                 window.focus(&self.focus, cx);
             }
         } else {
+            if self.views.pending_route == "switch-view" {
+                if let Some(previous) = self.views.previous_builtin.take() {
+                    self.views.builtin.insert(self.options.board, previous);
+                    self.reload();
+                }
+            }
             self.error = Some(match self.views.pending_route.as_str() {
                 "rename-view" => "Error renaming view".into(),
                 "delete-view" => "Error deleting view".into(),
@@ -1199,7 +1224,35 @@ impl Desktop {
         if !project["project_view"].is_object() {
             return div().into_any_element();
         }
-        let views = ht_core::board_views::ordered_views(&project);
+        let mut views = ht_core::board_views::ordered_views(&project);
+        views.extend(
+            ht_core::board_views::builtin_views(&project, self.views.decisions)
+                .into_iter()
+                .filter(|view| {
+                    self.views
+                        .builtin
+                        .get(&self.options.board)
+                        .is_some_and(|id| view["id"] == *id)
+                        || self
+                            .db
+                            .board_in_view(self.options.board, view["id"].as_str())
+                            .is_ok_and(|columns| {
+                                columns.iter().any(|column| !column.cards.is_empty())
+                            })
+                }),
+        );
+        let order = project["project_view"]["user_project_views"][0]["view_order"]
+            .as_array()
+            .or_else(|| project["project_view"]["default_view_order"].as_array());
+        views.sort_by_key(|view| {
+            if view["id"] == project["project_view"]["default_view_id"] {
+                0
+            } else {
+                1 + order
+                    .and_then(|order| order.iter().position(|id| *id == view["id"]))
+                    .unwrap_or(usize::MAX - 1)
+            }
+        });
         div()
             .px(px(24.))
             .flex()
@@ -1212,7 +1265,25 @@ impl Desktop {
                     .cursor_pointer()
                     .child(title)
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        this.queue_view("switch-view", json!({"newViewId":id}), window, cx)
+                        if id.as_str().is_some_and(|id| id.starts_with("builtin:")) {
+                            this.views
+                                .builtin
+                                .insert(this.options.board, id.as_str().unwrap().into());
+                            this.reload();
+                            cx.notify();
+                            return;
+                        }
+                        if this.views.pending.is_some() {
+                            return;
+                        }
+                        this.views.previous_builtin =
+                            this.views.builtin.remove(&this.options.board);
+                        this.queue_view("switch-view", json!({"newViewId":id}), window, cx);
+                        if this.views.pending.is_none() {
+                            if let Some(previous) = this.views.previous_builtin.take() {
+                                this.views.builtin.insert(this.options.board, previous);
+                            }
+                        }
                     }))
             }))
             .child(

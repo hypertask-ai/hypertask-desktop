@@ -415,7 +415,7 @@ impl Desktop {
     }
 
     fn load_columns(&mut self, project: i64) -> anyhow::Result<()> {
-        let mut columns = self.db.board(project)?;
+        let mut columns = self.db.board_in_view(project,self.views.builtin.get(&project).map(String::as_str))?;
         if self.screen == Screen::Board && self.board_actions.project == project {
             for column in &mut columns { column.cards.retain(|task| board::search_matches(task, &self.board_actions.search_text)); }
         }

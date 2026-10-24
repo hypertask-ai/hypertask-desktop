@@ -255,3 +255,16 @@ fn absent_project_metadata_is_not_an_explicit_empty_column_view(){
     let mut db=Db::memory().unwrap();db.apply_response(&json!({"success":true,"sections":[{"id":10,"projectId":15,"section_title":"Todo","visibility":true,"deleted":false,"ranking":"a"}],"tasks":[{"id":1,"projectId":15,"sectionId":10,"title":"Task","status":"Normal"}]})).unwrap();assert_eq!(db.board(15).unwrap().len(),1);assert_eq!(db.board(15).unwrap()[0].cards[0].id,1);
     db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"user_project_views":[{"unsavedView":{"board_columns_view":[]}}]}}]})).unwrap();assert!(db.board(15).unwrap().is_empty());
 }
+
+#[test]
+fn builtin_tabs_use_actual_actor_dependency_agent_cycle_and_done_column_metadata_without_mutations(){
+    let mut db=Db::memory().unwrap();seed(&mut db);let mut project=db.board_project(15).unwrap();project["cyclesEnabled"]=json!(true);project["cycles"]=json!([{"id":10,"startDate":"2000-01-01","endDate":"2999-01-01"},{"id":11,"startDate":"2999-01-01","endDate":"2999-01-15"}]);project["owner"]=json!({"id":42,"displayName":"Valentin Owner"});
+    db.apply_response(&json!({"success":true,"projects":[project],"sections":[{"id":11,"projectId":15,"section_title":"Valentin review","visibility":true,"deleted":false,"ranking":"b"},{"id":12,"projectId":15,"section_title":"Done","isDone":true,"visibility":true,"deleted":false,"ranking":"c"}],"tasks":[
+        {"id":1,"projectId":15,"sectionId":10,"title":"Mine","status":"Normal","assignees":[{"userId":42,"agentId":null}],"dueDate":"2000-01-01","cycleId":10},
+        {"id":2,"projectId":15,"sectionId":11,"title":"Blocked agent","status":"Normal","waitingOnUserId":7,"assignees":[{"agentId":"agent"}],"cycleId":11},
+        {"id":3,"projectId":15,"sectionId":12,"title":"Done overdue","status":"Normal","dueDate":"2000-01-01"}
+    ]})).unwrap();
+    let project=db.board_project(15).unwrap();assert_eq!(board_views::builtin_views(&project,false).len(),6);assert_eq!(board_views::builtin_views(&project,true).len(),7);
+    for(id,expected)in [("my-tasks",1),("overdue",1),("blocked",2),("agents",2),("current-cycle",1),("next-cycle",2),("decisions",2)]{let columns=db.board_in_view(15,Some(&format!("builtin:{id}"))).unwrap();let ids:Vec<_>=columns.iter().flat_map(|column|column.cards.iter().map(|task|task.id)).collect();assert_eq!(ids,vec![expected],"{id}");if id=="decisions"{assert_eq!(columns.len(),1);}}
+    assert!(db.mutations().unwrap().is_empty());assert_eq!(db.board(15).unwrap().iter().map(|column|column.cards.len()).sum::<usize>(),3);
+}
