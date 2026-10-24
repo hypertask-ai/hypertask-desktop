@@ -37,11 +37,11 @@ FIELDS = {
 ENV = {**os.environ, "WAYLAND_DISPLAY": ""}
 
 
-def validate(path, screen, theme):
+def validate(path, screen, theme, width=1440, height=900):
     dump = json.loads(path.read_text())
     assert set(dump) == {"screen", "theme", "width", "height", "elements", "missing"}, dump
     assert dump["screen"] == screen and dump["theme"] == theme, dump
-    assert dump["width"] == 1440 and dump["height"] == 900, dump
+    assert dump["width"] == width and dump["height"] == height, dump
     elements = {e["key"]: e for e in dump["elements"]}
     missing = set(dump["missing"])
     assert len(elements) == len(dump["elements"]), "duplicate elements"
@@ -66,8 +66,8 @@ def validate(path, screen, theme):
         assert elements["board.card.0.meta"]["text"] == "2", elements["board.card.0.meta"]
     assert required <= elements.keys(), f"unmeasured native elements: {required - elements.keys()}"
     assert elements["rail"]["x"] == 0 and elements["rail"]["w"] == 48, elements["rail"]
-    assert elements["main"]["x"] == 0 and elements["main"]["w"] == 1020, elements["main"]
-    assert elements["rightpanel"]["x"] == 1020 and elements["rightpanel"]["w"] == 420, elements["rightpanel"]
+    assert elements["main"]["x"] == 0 and elements["main"]["w"] == width - 420, elements["main"]
+    assert elements["rightpanel"]["x"] == width - 420 and elements["rightpanel"]["w"] == 420, elements["rightpanel"]
     if screen == "board":
         assert elements["board.header"]["h"] == 56, elements["board.header"]
         assert elements["board.column.0"]["y"] == 72, elements["board.column.0"]
@@ -121,6 +121,16 @@ with tempfile.TemporaryDirectory(prefix="ht-layout-") as tmp:
             except AssertionError as error:
                 errors.append(f"{screen}/{theme}: {error}")
                 print(errors[-1], flush=True)
+    for screen in KEYS:
+        path = OUT / f"{screen}.json"
+        args = [str(APP), "--db", db, "--offline", "--screen", screen, "--board", "15", "--task", "58006", "--theme", "graphite", "--window-size", "1920x1009", "--dump-layout", str(path), "--exit-after-ready"]
+        result = subprocess.run(args, env=ENV, capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0 and "READY" in result.stdout, result
+        try:
+            validate(path, screen, "graphite", 1920, 1009)
+        except AssertionError as error:
+            errors.append(f"{screen}/graphite/1920: {error}")
+            print(errors[-1], flush=True)
     path = OUT / "held.json"
     args = [str(APP), "--db", db, "--offline", "--theme", "graphite", "--dump-layout", str(path)]
     with subprocess.Popen(args, env=ENV, stdout=subprocess.PIPE, stderr=subprocess.PIPE) as app:
@@ -137,4 +147,4 @@ with tempfile.TemporaryDirectory(prefix="ht-layout-") as tmp:
     invalid = subprocess.run([*args[:-1], str(Path(tmp) / "absent/layout.json"), "--exit-after-ready"], env=ENV, capture_output=True, text=True, timeout=60)
     assert invalid.returncode != 0 and "layout dump failed" in invalid.stderr, invalid
     assert not errors, "\n".join(errors)
-print("LAYOUT_DUMP_OK: all screens, all themes, hold, exit and write failure", flush=True)
+print("LAYOUT_DUMP_OK: all screens, all themes, Graphite 1920x1009, hold, exit and write failure", flush=True)

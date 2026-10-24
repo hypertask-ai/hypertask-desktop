@@ -47,13 +47,14 @@ jobs:
       - run: cargo build --release -p ht-desktop -p ht-core
       - name: Layout dump contract
         if: runner.os == 'Linux'
-        run: xvfb-run -a -s '-screen 0 1440x900x24' python3 gates/layout-dump.py
+        run: xvfb-run -a -s '-screen 0 1920x1009x24' python3 gates/layout-dump.py
       - name: Upload layout dumps
         if: runner.os == 'Linux' && always()
         uses: actions/upload-artifact@v4
         with:
           name: layout-dumps
           path: evidence/layout/*.json
+          if-no-files-found: error
       - name: Windows memory (three runs per screen)
         if: runner.os == 'Windows'
         shell: pwsh
