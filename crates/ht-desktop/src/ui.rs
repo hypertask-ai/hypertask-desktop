@@ -48,6 +48,9 @@ enum Editing {
     ExistingComment,
 }
 
+#[path = "ai_workspace.rs"]
+mod ai_workspace;
+
 #[path = "comment_actions.rs"]
 mod comment_actions;
 #[path = "shell.rs"]
@@ -141,11 +144,20 @@ impl Desktop {
         let focus = cx.focus_handle();
         let (mut signin, secret) = SignIn::start(options.offline);
         let ai_sidebar = (AI_CHAT_PANEL_SHOWN || options.ai_sidebar).then(|| {
-            cx.new(|cx| AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx))
+            cx.new(|cx| {
+                let mut sidebar = AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx);
+                sidebar.restore_presentation(&db);
+                sidebar
+            })
         });
         let ai_sidebar_subscription = ai_sidebar
             .as_ref()
-            .map(|sidebar| cx.observe(sidebar, |_, _, cx| cx.notify()));
+            .map(|sidebar| cx.observe(sidebar, |this, sidebar, cx| {
+                let sidebar = sidebar.read(cx);
+                this.shell.ai_open = sidebar.is_open();
+                if let Err(error) = sidebar.persist_presentation(&this.db) { this.error = Some(error.to_string()); }
+                cx.notify();
+            }));
         let worker = secret.clone().and_then(|secret| Self::start_worker(&options, &mut signin, secret));
         let auto_board = !options.offline && !options.board_given && signin.is_interactive();
         let mut options = options;
@@ -155,6 +167,7 @@ impl Desktop {
         let detail_scroll = ScrollHandle::new();
         let mut shell = shell::Shell::new(&db, cx);
         shell.set_token(secret.clone());
+        if let Some(sidebar) = &ai_sidebar { shell.ai_open = sidebar.read(cx).is_open(); }
         let mut view = Self {
             shell,
             focus,
@@ -2087,17 +2100,17 @@ impl Render for Desktop {
                     )
                     .layout_key(&self.layout, "main", None),
             )
-            .when_some(self.ai_sidebar.clone().filter(|_| self.shell.ai_open), |d, sidebar| {
-                let width = sidebar.read(cx).width();
-                d.child(
-                    div()
-                        .w(px(width))
-                        .flex_shrink_0()
-                        .h_full()
-                        .child(sidebar)
-                        .layout_key(&self.layout, "rightpanel", None),
-                )
-            })
+            .on_mouse_move(cx.listener(|this, event, window, cx| {
+                if let Some(sidebar) = &this.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.resize_move(event, window, cx));
+                }
+            }))
+            .on_mouse_up(gpui::MouseButton::Left, cx.listener(|this, event, window, cx| {
+                if let Some(sidebar) = &this.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.resize_end(event, window, cx));
+                }
+            }))
+            .child(self.ai_panel(window, cx))
             .child(self.shell_reopen(cx))
             .child(self.shell_overlay(window, cx))
             .child(self.interaction_overlay(window, cx))
