@@ -1349,7 +1349,7 @@ impl Desktop {
                             let playlist=playlist.clone();
                             div().id(("card-subtask", (index*1000+i) as u64)).flex().items_start().gap(px(8.)).text_size(px(11.)).line_height(px(16.5)).text_color(color(t.muted))
                                 .child(icon("check", if task["status"] == "Archive" {0x008000} else {0x696b6e}, 12.))
-                                .child(div().child(text.clone()).cursor_pointer().on_click(cx.listener(move|this,_,_,cx| {
+                                .child(div().id(("card-subtask-link", (index*1000+i) as u64)).child(text.clone()).cursor_pointer().on_click(cx.listener(move|this,_,_,cx| {
                                     cx.stop_propagation();this.column=column;this.selected=row;this.open_task(id,cx);this.interaction.playlist=playlist.clone();
                                 })))
                                 .layout_key(&self.layout, format!("board.card.{index}.subtask.{i}"), Some(text))
