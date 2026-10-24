@@ -12,6 +12,13 @@ pub enum TaskAction {
     StartDate(Option<String>),
     WaitingOn(Option<i64>),
     AssignMe,
+    Accept {
+        project: i64,
+        section: i64,
+        title: String,
+    },
+    Decline,
+    SaveTemplate,
     Recurrence(Option<String>),
     RemoveRelation(i64),
     Relation {
@@ -68,6 +75,25 @@ impl TaskAction {
                     json!({"taskId":task,"recurrence":rule}),
                 )
             }
+            Self::Accept {
+                project,
+                section,
+                title,
+            } => {
+                ensure!(
+                    *project > 0 && *section > 0 && !title.is_empty(),
+                    "Unable to find this task on the board"
+                );
+                (
+                    "/api/tasks/moveTask",
+                    json!({"projectId":project,"taskId":task,"section_title":title,"sectionId":section}),
+                )
+            }
+            Self::Decline => (
+                "/api/tasks/(un)archive",
+                json!({"taskId":task,"status":"Archive"}),
+            ),
+            Self::SaveTemplate => ("/api/task-templates", json!({"taskId":task})),
             Self::AssignMe => (
                 "/api/assignees/assign",
                 json!({"taskId":task,"userId":user,"intent":"assign"}),
@@ -76,6 +102,9 @@ impl TaskAction {
     }
     fn fields(&self) -> &'static [&'static str] {
         match self {
+            Self::Accept { .. } => &["sectionId", "section", "ranking"],
+            Self::Decline => &["status", "archivedAt", "dueDate"],
+            Self::SaveTemplate => &[],
             Self::StartDate(_) => &["startDate"],
             Self::Recurrence(_) => &["recurrence"],
             Self::Relation { .. } => &["relatedFromTasks"],
@@ -86,6 +115,9 @@ impl TaskAction {
     }
     pub fn failure(&self) -> &'static str {
         match self {
+            Self::Accept { .. } => "Unable to accept task",
+            Self::Decline => "Unable to archive task",
+            Self::SaveTemplate => "Could not save the template",
             Self::StartDate(_) => "Could not update the start date. Try again.",
             Self::WaitingOn(_) => "Unable to update blocked by person",
             Self::AssignMe => "Unable to assign this task",
@@ -96,6 +128,51 @@ impl TaskAction {
     }
 }
 impl Db {
+    pub fn accept_task_action(&self, task: i64) -> Result<TaskAction> {
+        let task = self
+            .task(task)?
+            .context("Unable to find this task on the board")?;
+        ensure!(
+            task.status != crate::generated::Status::Archive,
+            "Unable to find this task on the board"
+        );
+        let board = self.board_project(task.project_id)?;
+        let mut sections = board["section"].as_array().cloned().unwrap_or_default();
+        sections.sort_by(|left, right| {
+            match (left["ranking"].as_str(), right["ranking"].as_str()) {
+                (Some(left), Some(right)) => left.cmp(right),
+                (Some(_), None) => std::cmp::Ordering::Less,
+                (None, Some(_)) => std::cmp::Ordering::Greater,
+                _ => std::cmp::Ordering::Equal,
+            }
+        });
+        let current = sections
+            .iter()
+            .position(|row| row["id"].as_i64() == task.section_id)
+            .context("Unable to find this task on the board")?;
+        let intake = |section: &Value| {
+            section["section_title"]
+                .as_str()
+                .unwrap_or("")
+                .to_lowercase()
+                .split(|c: char| !c.is_ascii_alphanumeric())
+                .any(|word| ["triage", "inbox", "intake"].contains(&word))
+        };
+        let destination = sections[current + 1..]
+            .iter()
+            .find(|row| !intake(&sections[current]) || !intake(row))
+            .context("No later column is available for this task")?;
+        Ok(TaskAction::Accept {
+            project: task.project_id,
+            section: destination["id"]
+                .as_i64()
+                .context("No later column is available for this task")?,
+            title: destination["section_title"]
+                .as_str()
+                .context("No later column is available for this task")?
+                .to_owned(),
+        })
+    }
     pub(crate) fn prepare_task_action(&self, task: i64, change: &TaskAction) -> Result<Value> {
         let user = self.current_user_id().context("Unauthorized")?;
         change.request(task, user)?;
@@ -106,6 +183,15 @@ impl Db {
                 && row.payload_json["task_id"] == task),
             "Wait for the previous task update"
         );
+        if let TaskAction::Accept { .. } = change {
+            ensure!(
+                &self.accept_task_action(task)? == change,
+                "No later column is available for this task"
+            );
+        }
+        if matches!(change, TaskAction::Decline) {
+            ensure!(before["status"] != "Archive", "Task is already archived");
+        }
         if let TaskAction::RemoveRelation(id) = change {
             ensure!(
                 ["relatedFromTasks", "relatedToTasks"]
@@ -152,6 +238,20 @@ impl Db {
             .raw("Task", &payload["task_id"])?
             .context("Task is unavailable")?;
         match serde_json::from_value::<TaskAction>(payload["change"].clone())? {
+            TaskAction::Accept { section, title, .. } => {
+                task["sectionId"] = json!(section);
+                task["section"] = json!(title);
+            }
+            TaskAction::Decline => {
+                task["status"] = json!("Archive");
+                task["archivedAt"] = json!(
+                    chrono::DateTime::from_timestamp(now, 0)
+                        .context("Invalid date")?
+                        .to_rfc3339()
+                );
+                task["dueDate"] = Value::Null;
+            }
+            TaskAction::SaveTemplate => (),
             TaskAction::RemoveRelation(id) => {
                 for field in ["relatedFromTasks", "relatedToTasks"] {
                     let rows: Vec<_> = task[field]
@@ -254,29 +354,42 @@ impl Db {
             )
             .map_err(|_| TransportError::InvalidResponse)?;
         // These web routes create activities but do not deduplicate idempotency keys.
-        Ok(match transport.post(path, &body, &row.client_id) {
-            Ok(response) if response.status == 200 && change.valid_ack(payload, &response.body) => {
-                Response {
-                    status: 200,
-                    body: json!({"success":true,"value":response.body}),
+        Ok(
+            match transport.mutate(
+                if matches!(change, TaskAction::Accept { .. }) {
+                    "PUT"
+                } else {
+                    "POST"
+                },
+                path,
+                &body,
+                &row.client_id,
+            ) {
+                Ok(response)
+                    if response.status == 200 && change.valid_ack(payload, &response.body) =>
+                {
+                    Response {
+                        status: 200,
+                        body: json!({"success":true,"value":response.body}),
+                    }
                 }
-            }
-            Ok(response)
-                if response.status == 200
-                    && matches!(change, TaskAction::Relation { .. })
-                    && response.body.as_array().is_some_and(Vec::is_empty) =>
-            {
-                Response {
+                Ok(response)
+                    if response.status == 200
+                        && matches!(change, TaskAction::Relation { .. })
+                        && response.body.as_array().is_some_and(Vec::is_empty) =>
+                {
+                    Response {
+                        status: 409,
+                        body: json!({"message":"Task relation already exists or cannot be added"}),
+                    }
+                }
+                Ok(response) if (400..500).contains(&response.status) => response,
+                _ => Response {
                     status: 409,
-                    body: json!({"message":"Task relation already exists or cannot be added"}),
-                }
-            }
-            Ok(response) if (400..500).contains(&response.status) => response,
-            _ => Response {
-                status: 409,
-                body: json!({"success":false}),
+                    body: json!({"success":false}),
+                },
             },
-        })
+        )
     }
     pub(crate) fn resolve_task_action(&self, payload: &Value, body: &Value) -> Result<()> {
         ensure!(
@@ -324,6 +437,12 @@ impl Db {
             }
         }
         self.upsert_task(&task)?;
+        if matches!(change, TaskAction::Accept { .. } | TaskAction::Decline) {
+            self.request_refetch(
+                "board",
+                task["projectId"].as_i64().context("Board is unavailable")?,
+            )?;
+        }
         self.request_refetch(
             "task",
             payload["task_id"].as_i64().context("Task is unavailable")?,
@@ -349,6 +468,32 @@ impl TaskAction {
             return false;
         }
         match self {
+            Self::Accept {
+                project,
+                section,
+                title,
+            } => {
+                value["id"] == payload["task_id"]
+                    && value["projectId"] == *project
+                    && value["sectionId"] == *section
+                    && value["section"] == *title
+                    && value["ranking"]
+                        .as_str()
+                        .is_some_and(|rank| !rank.is_empty())
+            }
+            Self::Decline => {
+                value["id"] == payload["task_id"]
+                    && value["status"] == "Archive"
+                    && value.get("dueDate") == Some(&Value::Null)
+                    && value["archivedAt"]
+                        .as_str()
+                        .is_some_and(|date| chrono::DateTime::parse_from_rfc3339(date).is_ok())
+            }
+            Self::SaveTemplate => {
+                value["success"] == true
+                    && value["template"]["id"].as_i64().is_some_and(|id| id > 0)
+                    && value["template"]["name"].is_string()
+            }
             Self::RemoveRelation(id) => {
                 value["status"] == 200
                     && value["json"]["id"] == *id

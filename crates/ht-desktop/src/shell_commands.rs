@@ -16,6 +16,19 @@ impl Desktop {
             ShellCommand::AssignMe => {
                 if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::AssignMe, window, cx); }
             }
+            ShellCommand::AcceptTask => {
+                if let Some(task) = self.selected_task() {
+                    match self.db.accept_task_action(task) {
+                        Ok(change) => self.queue_task_action(task, change, window, cx),
+                        Err(error) => { self.error = Some(error.to_string()); cx.notify(); }
+                    }
+                }
+            }
+            ShellCommand::DeclineTask | ShellCommand::SaveTemplate => {
+                if let Some(task) = self.selected_task() {
+                    self.queue_task_action(task, if action == ShellCommand::DeclineTask { ht_core::TaskAction::Decline } else { ht_core::TaskAction::SaveTemplate }, window, cx);
+                }
+            }
             ShellCommand::TaskTimer => self.toggle_task_timer(window,cx),
             ShellCommand::BoardTime => self.toggle_board_time(window,cx),
             ShellCommand::AutoAssignColumn => { self.views.column_auto_select = true; self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx); },

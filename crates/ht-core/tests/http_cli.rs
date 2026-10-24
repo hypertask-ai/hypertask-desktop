@@ -443,3 +443,23 @@ fn relation_picker_reads_and_add_remove_writes_use_web_routes_bearer_and_keep_de
         if method=="POST"{assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);}thread.join().unwrap();
     }}
 }
+
+#[test]
+fn triage_and_template_writes_use_web_methods_routes_and_bearer_without_cookies() {
+    for (method,path,body) in [
+        ("PUT","/api/tasks/moveTask",json!({"projectId":15,"taskId":1,"section_title":"Ready","sectionId":11})),
+        ("POST","/api/tasks/(un)archive",json!({"taskId":1,"status":"Archive"})),
+        ("POST","/api/task-templates",json!({"taskId":1})),
+    ] { for status in [200,401,403] {
+        let (url,thread,receive)=server(status,"{\"message\":\"Forbidden\"}");
+        let mut http=Http::with_base(&url,"desktop-triage-token".into()).unwrap();
+        let response=http.mutate(method,path,&body,"triage-client").unwrap();
+        assert_eq!(response.status,status);assert_eq!(response.body["message"],"Forbidden");
+        let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(wire.starts_with(&format!("{method} {path} HTTP/1.1\r\n")));
+        assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-triage-token\r\n"));
+        assert!(!wire.to_ascii_lowercase().contains("cookie:"));
+        assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);
+        thread.join().unwrap();
+    }}
+}

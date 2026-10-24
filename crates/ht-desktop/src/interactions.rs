@@ -789,6 +789,7 @@ impl Desktop {
                 !matches!(
                     r.action,
                     CommandAction::Shortcut(Action::Assign | Action::MoveColumn)
+                    | CommandAction::Shell(command_center::ShellCommand::AcceptTask | command_center::ShellCommand::DeclineTask)
                 )
             });
             if let Some(row) = rows.iter_mut().find(|r| r.key == "archiveTask") {

@@ -570,6 +570,23 @@ mod tests {
             body: &Value,
             key: &str,
         ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            self.mutate("POST", path, body, key)
+        }
+        fn mutate(
+            &mut self,
+            method: &str,
+            path: &str,
+            body: &Value,
+            key: &str,
+        ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            assert_eq!(
+                method,
+                if matches!(self.1, TaskAction::Accept { .. }) {
+                    "PUT"
+                } else {
+                    "POST"
+                }
+            );
             let (expected, request) = self.1.request(1, 42).unwrap();
             assert_eq!(path, expected);
             assert_eq!(*body, request);
@@ -580,6 +597,19 @@ mod tests {
                 }
                 TaskAction::RemoveRelation(id) => {
                     json!({"status":200,"json":{"id":id,"sourceTaskId":1,"targetTaskId":2}})
+                }
+                TaskAction::Accept {
+                    project,
+                    section,
+                    title,
+                } => {
+                    json!({"id":1,"projectId":project,"sectionId":section,"section":title,"ranking":"z"})
+                }
+                TaskAction::Decline => {
+                    json!({"id":1,"status":"Archive","dueDate":null,"archivedAt":"2026-10-01T09:00:00Z"})
+                }
+                TaskAction::SaveTemplate => {
+                    json!({"success":true,"template":{"id":81,"name":"Task"}})
                 }
                 TaskAction::Recurrence(rule) => json!({"id":1,"recurrence":rule}),
                 TaskAction::StartDate(date) => json!({"id":1,"startDate":date}),
@@ -975,6 +1005,93 @@ mod tests {
                 this.apply_task_action_details(this.task_actions.load_generation,42,1,Ok(json!({"id":1,"relatedFromTasks":[],"relatedToTasks":[],"recurrence":"Daily"})),cx);
                 assert_eq!(this.db.task(1).unwrap().unwrap().extra["recurrence"],"Daily","current-generation read is the positive control");
             }).unwrap();
+        }
+    }
+    #[gpui::test]
+    fn triage_and_template_palette_commands_accept_or_restore_refused_web_writes(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        for (name, change) in [
+            (
+                "Accept task",
+                TaskAction::Accept {
+                    project: 15,
+                    section: 11,
+                    title: "Ready".into(),
+                },
+            ),
+            ("Decline task", TaskAction::Decline),
+            ("Save task as template", TaskAction::SaveTemplate),
+        ] {
+            for status in [401, 403, 200] {
+                view.update(&mut cx, |this, _, _| {
+                    this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board"}],"sections":[
+                        {"id":10,"projectId":15,"section_title":"Triage","visibility":true,"deleted":false,"ranking":"a"},
+                        {"id":11,"projectId":15,"section_title":"Ready","visibility":true,"deleted":false,"ranking":"b"}
+                    ]})).unwrap();
+                    this.db.apply_task(&json!({"id":1,"projectId":15,"title":"Task","sectionId":10,"section":"Triage","ranking":"a","status":"Normal","dueDate":"2030-01-01T09:00:00Z"})).unwrap();
+                    this.reload();
+                }).unwrap();
+                draw(view, &mut cx);
+                palette(&mut cx, name);
+                view.update(&mut cx, |this, window, cx| {
+                    assert_eq!(
+                        this.db
+                            .mutations()
+                            .unwrap()
+                            .iter()
+                            .filter(|row| row.status != "failed")
+                            .count(),
+                        1,
+                        "{name}"
+                    );
+                    let optimistic = this.db.task(1).unwrap().unwrap();
+                    if matches!(change, TaskAction::Accept { .. }) {
+                        assert_eq!(optimistic.section_id, Some(11));
+                    }
+                    if matches!(change, TaskAction::Decline) {
+                        assert_eq!(optimistic.status, Status::Archive);
+                        assert!(optimistic.due_date.is_none());
+                    }
+                    this.db
+                        .drain_once(
+                            &mut Server(status, change.clone()),
+                            chrono::Utc::now().timestamp() + 1,
+                        )
+                        .unwrap();
+                    assert!(!this.poll_task_action(window, cx));
+                    let task = this.db.task(1).unwrap().unwrap();
+                    if status != 200 {
+                        let expected =
+                            if matches!(change, TaskAction::Accept { .. } | TaskAction::Decline) {
+                                "Forbidden"
+                            } else {
+                                change.failure()
+                            };
+                        assert_eq!(this.error.as_deref(), Some(expected));
+                        assert_eq!(task.section_id, Some(10));
+                        assert_eq!(task.status, Status::Normal);
+                        assert!(task.due_date.is_some());
+                    } else {
+                        assert!(this.error.is_none());
+                        if matches!(change, TaskAction::Accept { .. }) {
+                            assert_eq!(task.section_id, Some(11));
+                            assert_eq!(task.extra["ranking"], "z");
+                        }
+                        if matches!(change, TaskAction::Decline) {
+                            assert_eq!(task.status, Status::Archive);
+                            assert!(
+                                !this
+                                    .command_rows()
+                                    .iter()
+                                    .any(|row| row.key == "acceptTask" || row.key == "declineTask")
+                            );
+                        }
+                    }
+                })
+                .unwrap();
+            }
         }
     }
 }
