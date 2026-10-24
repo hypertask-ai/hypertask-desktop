@@ -2283,3 +2283,30 @@ mod result_tests {
         );
     }
 }
+
+#[cfg(test)]
+mod palette_theme_tests {
+    use super::*;
+    use crate::ui::shell::tests::{click, measured, setup};
+    #[gpui::test]
+    fn palette_theme_updates_settings_selection_and_persistence(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.nav.appearance");
+        click(view, &mut cx, "settings.theme.0");
+        click(view, &mut cx, "settings.back");
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Graphite");
+        cx.simulate_keystrokes("enter");
+        cx.simulate_keystrokes("\\");
+        assert!(!measured(view, &mut cx, "settings.theme.2")["bg"].is_null());
+        assert!(measured(view, &mut cx, "settings.theme.0")["bg"].is_null());
+        view.read_with(&cx, |this, _| {
+            assert_eq!(
+                this.db.kv_get("theme").unwrap().as_deref(),
+                Some("graphite")
+            )
+        })
+        .unwrap();
+    }
+}

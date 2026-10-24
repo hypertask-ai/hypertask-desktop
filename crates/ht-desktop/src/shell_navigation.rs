@@ -234,6 +234,8 @@ mod tests {
         let (view, mut cx) = setup(cx);
         click(view, &mut cx, "rail.icon.3");
         click(view, &mut cx, "rail.icon.7");
+        assert!(!measured(view, &mut cx, "rail.icon.7")["bg"].is_null());
+        assert!(measured(view, &mut cx, "rail.icon.3")["bg"].is_null());
         cx.simulate_input("result");
         assert_eq!(
             measured(view, &mut cx, "shell.search.result.0")["text"],

@@ -263,6 +263,7 @@ impl Desktop {
     pub(super) fn rail(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = self.colors;
         let wide = self.shell.expanded;
+        let workspace = self.shell.destination == Destination::Workspace && !self.shell.agents;
         let button = |i: usize,
                       name: &'static str,
                       label: &'static str,
@@ -358,6 +359,11 @@ impl Desktop {
             .child(
                 div()
                     .id("rail-expand")
+                    .relative()
+                    .on_hover(cx.listener(|this, hovered: &bool, _, cx| {
+                        this.shell.hovered = hovered.then_some(0);
+                        cx.notify();
+                    }))
                     .cursor_pointer()
                     .w_full()
                     .h(px(20.))
@@ -375,6 +381,36 @@ impl Desktop {
                         t.muted,
                         16.,
                     ))
+                    .when(self.shell.hovered == Some(0), |d| {
+                        d.child(
+                            div()
+                                .absolute()
+                                .left(px(if wide { 136. } else { 54. }))
+                                .bottom(px(-8.))
+                                .px(px(8.))
+                                .py(px(6.))
+                                .rounded(px(5.))
+                                .bg(color(t.card))
+                                .whitespace_nowrap()
+                                .child(if wide {
+                                    "Collapse sidebar   ["
+                                } else {
+                                    "Expand sidebar   ["
+                                })
+                                .layout_key(
+                                    &self.layout,
+                                    "rail.tooltip",
+                                    Some(
+                                        if wide {
+                                            "Collapse sidebar   ["
+                                        } else {
+                                            "Expand sidebar   ["
+                                        }
+                                        .into(),
+                                    ),
+                                ),
+                        )
+                    })
                     .layout_key(&self.layout, "rail.icon.0", None),
             )
             .child(
@@ -394,7 +430,7 @@ impl Desktop {
                         2,
                         "inbox",
                         "Inbox",
-                        self.screen == Screen::Inbox,
+                        self.screen == Screen::Inbox && workspace,
                         cx,
                     )),
             )
@@ -411,8 +447,7 @@ impl Desktop {
                         3,
                         "columns-2",
                         "Board",
-                        self.screen == Screen::Board
-                            && self.shell.destination != Destination::Table,
+                        self.screen == Screen::Board && workspace,
                         cx,
                     )),
             )
@@ -449,7 +484,13 @@ impl Desktop {
                     .mt(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.navigate_search(window, cx)))
-                    .child(button(7, "search", "Search", false, cx)),
+                    .child(button(
+                        7,
+                        "search",
+                        "Search",
+                        self.shell.destination == Destination::Search,
+                        cx,
+                    )),
             )
             .child(div().flex_1())
             .child(
@@ -1331,5 +1372,16 @@ mod rail_detail_tests {
         );
         assert!(!measured(view, &mut cx, "rail.icon.2")["bg"].is_null());
         draw(view, &mut cx);
+    }
+}
+
+impl Desktop {
+    pub(super) fn apply_named_theme(&mut self, theme: ThemeName, cx: &mut Context<Self>) {
+        let preference = format!("{theme:?}").to_lowercase();
+        self.shell.theme_preference = Some(preference.clone());
+        if let Err(error) = self.db.kv_set("theme", &preference) {
+            self.error = Some(error.to_string());
+        }
+        self.apply_shell_theme(theme, cx);
     }
 }

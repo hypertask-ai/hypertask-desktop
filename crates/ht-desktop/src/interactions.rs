@@ -968,10 +968,7 @@ impl Desktop {
                 window.focus(&self.focus, cx);
             }
             ChoiceAction::Command(CommandAction::Theme(theme)) => {
-                self.options.theme = theme;
-                self.colors = theme.colors();
-                self.reload();
-                cx.notify();
+                self.apply_named_theme(theme, cx);
             }
             _ => {
                 let targets: Vec<_> = if self.screen == Screen::Board
