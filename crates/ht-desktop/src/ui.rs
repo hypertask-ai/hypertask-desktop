@@ -851,7 +851,8 @@ impl Desktop {
                             .children(["filter", "arrow-up-down", "ellipsis"].into_iter().map(
                                 |name| {
                                     div()
-                                        .when(name!="ellipsis", |d|d.id(name).cursor_pointer()
+                                        .id(name)
+                                        .when(name!="ellipsis", |d|d.cursor_pointer()
                                             .on_click(cx.listener(move |this,_,window,cx|this.open_view_panel(if name=="filter"{board_views::Panel::Filters}else{board_views::Panel::Sort},window,cx))))
                                         .size(px(32.))
                                         .flex()
