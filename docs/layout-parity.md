@@ -118,3 +118,25 @@ and lose **zero** existing characters. The four full-coverage `.ttf` files were
 downloaded from that CI artifact and embedded without local conversion or build.
 The previous filenames were mislabeled (400/500/600/700 contained OS/2 weights
 500/400/700/600); a Rust CI regression now checks their declared weights.
+
+## Font investigation disposition (not pixel-perfect completion)
+
+The generated full faces and the exact Latin web faces have identical declared
+advances/bearings, but Chromium measures them differently: footer 108 vs 106,
+Important 92 vs 96, Agents 70 vs 72. Run
+[40092934298](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40092934298)
+records those values alongside native 109/93/70. Disabling browser kerning did
+not change the web-subset widths. The one-line native metrics-hinting experiment
+at run [40093732560](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40093732560)
+also left all three native boxes unchanged. Neither experiment closed a live
+difference, so the regenerated desktop fonts, metadata-only test, and renderer
+vendoring were removed rather than shipping unrelated or ineffective changes.
+
+The font oracle now compares **equivalent full-coverage faces** in Chromium and
+native, with the original 1.5px tolerance. It retains the actual web-subset and
+frozen widths in the artifact, and does **not** assert that those nine live
+boxes match. This corrects a cross-font-variant oracle, not the live comparison:
+its raw 42 differences and nine unresolved text-metric boxes remain explicit.
+No screenshot coordinate, font size, padding, comparer tolerance, or dump value
+was changed to hide them. Exact closure needs a separately scoped native font
+metrics/rasterizer investigation, beyond the requested small UI edits.

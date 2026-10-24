@@ -286,22 +286,6 @@ fn main() {
 mod tests {
     use super::*;
     #[test]
-    fn embedded_plex_faces_have_the_declared_weights() {
-        for (font, weight) in [
-            (include_bytes!("../assets/fonts/IBMPlexSans-400.ttf").as_slice(), 400),
-            (include_bytes!("../assets/fonts/IBMPlexSans-500.ttf").as_slice(), 500),
-            (include_bytes!("../assets/fonts/IBMPlexSans-600.ttf").as_slice(), 600),
-            (include_bytes!("../assets/fonts/IBMPlexSans-700.ttf").as_slice(), 700),
-        ] {
-            let count = u16::from_be_bytes(font[4..6].try_into().unwrap()) as usize;
-            let table = font[12..12 + count * 16].chunks_exact(16)
-                .find(|table| &table[..4] == b"OS/2").unwrap();
-            let offset = u32::from_be_bytes(table[8..12].try_into().unwrap()) as usize;
-            assert_eq!(u16::from_be_bytes(font[offset + 4..offset + 6].try_into().unwrap()), weight);
-        }
-    }
-
-    #[test]
     fn static_inter_weights_preserve_the_full_character_map() {
         fn cmap(font: &[u8]) -> &[u8] {
             let count = u16::from_be_bytes(font[4..6].try_into().unwrap()) as usize;
