@@ -34,6 +34,7 @@ pub(super) struct Settings {
     lifecycle: Option<&'static str>,
     integration: usize,
     bearer_config: bool,
+    copied: Option<&'static str>,
     preview: Vec<Value>,
     selected_slugs: std::collections::BTreeSet<String>,
     #[cfg(test)]
@@ -74,6 +75,7 @@ impl Settings {
             lifecycle: None,
             integration: 0,
             bearer_config: false,
+            copied: None,
             preview: vec![],
             selected_slugs: Default::default(),
             #[cfg(test)]
@@ -411,24 +413,55 @@ impl Desktop {
     fn code_row(
         &self,
         id: &'static str,
-        value: &'static str,
+        value: impl Into<SharedString>,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let value = value.into();
+        let copied = self.shell.settings_state.copied == Some(id);
         div()
-            .id(id)
-            .p(px(8.))
+            .px(px(12.))
+            .py(px(8.))
             .rounded(px(5.))
             .bg(color(self.colors.card))
-            .cursor_pointer()
-            .on_click(cx.listener(move |_, _, _, cx| {
-                cx.write_to_clipboard(ClipboardItem::new_string(value.to_owned()))
-            }))
-            .child(value)
-            .layout_key(
-                &self.layout,
-                format!("settings.copy.{id}"),
-                Some(value.into()),
+            .flex()
+            .items_start()
+            .gap(px(12.))
+            .child(
+                div()
+                    .flex_1()
+                    .min_w_0()
+                    .text_size(px(12.))
+                    .child(value.clone()),
             )
+            .child(
+                div()
+                    .id(id)
+                    .px(px(8.))
+                    .py(px(4.))
+                    .cursor_pointer()
+                    .on_click(cx.listener(move |this, _, window, cx| {
+                        cx.write_to_clipboard(ClipboardItem::new_string(value.to_string()));
+                        this.shell.settings_state.copied = Some(id);
+                        cx.spawn_in(window, async move |view, cx| {
+                            cx.background_executor().timer(Duration::from_secs(2)).await;
+                            let _ = view.update(cx, |this, cx| {
+                                if this.shell.settings_state.copied == Some(id) {
+                                    this.shell.settings_state.copied = None;
+                                    cx.notify();
+                                }
+                            });
+                        })
+                        .detach();
+                        cx.notify();
+                    }))
+                    .child(if copied { "Copied" } else { "Copy" })
+                    .layout_key(
+                        &self.layout,
+                        format!("settings.copy.{id}"),
+                        Some(if copied { "Copied" } else { "Copy" }.into()),
+                    ),
+            )
+            .into_any_element()
     }
 
     fn settings_content(&self, cx: &mut Context<Self>) -> AnyElement {
@@ -570,7 +603,9 @@ impl Desktop {
     ) {
         self.shell.settings_state.serial += 1;
         let request = Request {
-            invite: self.shell.invite && method == "POST" && path.ends_with("/members"),
+            invite: (self.shell.invite || !self.shell.invite_emails.is_empty())
+                && method == "POST"
+                && path.ends_with("/members"),
             serial: self.shell.settings_state.serial,
             method,
             path,
@@ -658,7 +693,7 @@ impl Desktop {
                 s.error = Some(error);
             }
             Ok(value) if request.method == "GET" => {
-                if request.section == "general" {
+                if request.section == "general" && !s.draft.focus_handle(cx).is_focused(window) {
                     s.draft.update(cx, |input, cx| {
                         input.set_content(
                             value["user"]["displayName"]
@@ -668,7 +703,9 @@ impl Desktop {
                             cx,
                         )
                     });
-                } else if request.section == "board-ai" {
+                } else if request.section == "board-ai"
+                    && !s.draft.focus_handle(cx).is_focused(window)
+                {
                     s.draft.update(cx, |input, cx| {
                         input.set_content(
                             value["instruction"]["customInstruction"]
@@ -726,7 +763,24 @@ impl Desktop {
                 s.preview.clear();
                 s.draft
                     .update(cx, |input, cx| input.set_content(String::new(), cx));
+                let message = if request.section == "webhooks" {
+                    if request.path.ends_with("/test") {
+                        Some("Signed test queued")
+                    } else if request.method == "DELETE" {
+                        self.shell.settings_state.webhooks.secret = None;
+                        Some("Webhook endpoint deleted")
+                    } else if request.path == "/webhooks" {
+                        Some("Webhook endpoint added")
+                    } else {
+                        None
+                    }
+                } else if request.section == "board-ai" {
+                    Some("Custom instructions updated")
+                } else {
+                    None
+                };
                 self.load_settings(window, cx);
+                self.shell.settings_state.message = message.map(str::to_owned);
             }
         }
         cx.notify();
@@ -867,7 +921,10 @@ impl Desktop {
         let members = self.settings_value()["members"]
             .as_array()
             .cloned()
-            .unwrap_or_default();
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|member| member["id"].is_i64() || !member["user"].is_null())
+            .collect::<Vec<_>>();
         div()
             .flex()
             .flex_col()
@@ -887,7 +944,20 @@ impl Desktop {
                     .or(member["user"]["displayName"].as_str())
                     .or(member["email"].as_str())
                     .unwrap_or("");
-                let role = member["role"].as_str().unwrap_or("Member");
+                let owner_id = self
+                    .db
+                    .projects()
+                    .unwrap_or_default()
+                    .into_iter()
+                    .find(|p| p["id"] == self.shell.settings_state.board)
+                    .and_then(|p| p["ownerId"].as_i64());
+                let role = member["role"]
+                    .as_str()
+                    .or_else(|| {
+                        (member["id"].as_i64().is_some() && member["id"].as_i64() == owner_id)
+                            .then_some("Admin")
+                    })
+                    .unwrap_or("");
                 div()
                     .p(px(8.))
                     .child(format!("{name}    {role}"))
@@ -1413,7 +1483,7 @@ mod tests {
         reply(
             view,
             &mut cx,
-            serde_json::json!({"members": [{"displayName": "Alice", "role": "Admin"}]}),
+            serde_json::json!({"members": [{"id": 1, "displayName": "Alice", "role": "Admin"}]}),
         );
         assert_eq!(
             measured(view, &mut cx, "settings.member.0")["text"],
@@ -1914,7 +1984,7 @@ mod mutation_tests {
                 .set_offset(point(px(0.), px(0.)))
         })
         .unwrap();
-        click(view, &mut cx, "settings.webhook.secret");
+        click(view, &mut cx, "settings.copy.webhook-secret");
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().unwrap(),
             "whsec_fixture"
@@ -2050,21 +2120,7 @@ impl Desktop {
                             .unwrap()
                             .to_owned(),
                     )
-                    .child(
-                        div()
-                            .id("mcp-config")
-                            .p(px(8.))
-                            .cursor_pointer()
-                            .child(if bearer && self.shell.token.is_some() {
-                                "••••••••".to_owned()
-                            } else {
-                                config.clone()
-                            })
-                            .on_click(move |_, _, cx| {
-                                cx.write_to_clipboard(ClipboardItem::new_string(config.clone()))
-                            })
-                            .layout_key(&self.layout, "settings.mcp.config", None),
-                    )
+                    .child(self.code_row("mcp-config", config, cx))
                     .child(
                         self.settings_action(
                             "mcp-auth-mode",
@@ -2118,13 +2174,13 @@ mod mcp_tests {
         click(view, &mut cx, "rail.icon.12");
         click(view, &mut cx, "settings.tab.connect");
         click(view, &mut cx, "settings.mcp.integration.2");
-        click(view, &mut cx, "settings.mcp.config");
+        click(view, &mut cx, "settings.copy.mcp-config");
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().unwrap(),
             "codex mcp add hypertask --url https://mcp.hypertask.ai/mcp"
         );
         click(view, &mut cx, "settings.mcp.auth-mode");
-        click(view, &mut cx, "settings.mcp.config");
+        click(view, &mut cx, "settings.copy.mcp-config");
         assert_eq!(
             cx.read_from_clipboard().unwrap().text().unwrap(),
             "Please generate a token first"
@@ -2148,5 +2204,30 @@ impl Desktop {
         let mut offset = self.shell.settings_state.scroll.offset();
         offset.y -= px(delta);
         self.shell.settings_state.scroll.set_offset(offset);
+    }
+}
+
+#[cfg(test)]
+mod result_tests {
+    use super::*;
+    use crate::ui::shell::tests::{click, measured, setup};
+    #[gpui::test]
+    fn settings_copy_button_shows_copied_then_resets_without_dumping_content(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "rail.icon.12");
+        click(view, &mut cx, "settings.tab.connect");
+        click(view, &mut cx, "settings.copy.mcp-server");
+        assert_eq!(
+            measured(view, &mut cx, "settings.copy.mcp-server")["text"],
+            "Copied"
+        );
+        cx.executor().advance_clock(Duration::from_secs(2));
+        cx.run_until_parked();
+        assert_eq!(
+            measured(view, &mut cx, "settings.copy.mcp-server")["text"],
+            "Copy"
+        );
     }
 }

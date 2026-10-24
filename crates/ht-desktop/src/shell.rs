@@ -1240,6 +1240,17 @@ impl Desktop {
         self.shell.set_token(token);
         self.shell.settings = false;
         self.shell.boards = false;
+        self.shell.invite = false;
+        self.shell.invite_emails.clear();
+        self.shell.shortcuts = false;
+        self.shell.reset_destination();
+        self.shell.search_board = None;
+        self.shell
+            .invite_input
+            .update(cx, |input, cx| input.set_content(String::new(), cx));
+        self.shell
+            .search_input
+            .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.shell.feedback = false;
         self.shell
             .feedback_input
