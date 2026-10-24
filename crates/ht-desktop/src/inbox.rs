@@ -521,6 +521,7 @@ impl Desktop {
                                         .flex_shrink_0()
                                         .max_w(px(180.))
                                         .overflow_hidden()
+                                        .whitespace_nowrap()
                                         .text_size(px(11.))
                                         .text_color(color(t.muted))
                                         .child(metadata.clone())
@@ -596,7 +597,8 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         cx.update(crate::input::init);
-        for has_metadata in [false, true] {
+        for priority in [String::new(), "High".to_owned(), "High priority ".repeat(30)] {
+            let has_metadata = !priority.is_empty();
             let view: WindowHandle<Desktop> = cx.add_window(|window, cx| {
                 let mut v = desktop(window, cx);
                 seed(&mut v);
@@ -604,7 +606,7 @@ mod tests {
                     "id":102,"taskId":2,"projectId":15,"status":"Normal","seen":true,
                     "createdAt":"2026-01-02T00:00:00Z","type":"TaskReminder",
                     "task":{"title":"Other","ticketNumber":"HT-2","priority":
-                        if has_metadata { json!({"Priority_Value":"High"}) } else { json!(null) }
+                        if has_metadata { json!({"Priority_Value":priority}) } else { json!(null) }
                     }
                 }]})).unwrap();
                 v.reload();
@@ -622,7 +624,12 @@ mod tests {
                 let kind_right = kind["x"].as_f64().unwrap() + kind["w"].as_f64().unwrap();
                 let content_right = if has_metadata {
                     let meta = meta.expect("nonempty metadata must be rendered");
-                    assert_eq!(meta["text"], "High");
+                    assert_eq!(meta["text"], priority.chars().take(40).collect::<String>());
+                    assert!(meta["w"].as_f64().unwrap() <= 180.);
+                    assert!(meta["h"].as_f64().unwrap() <= 18., "metadata must stay on one line");
+                    if priority.len() > 40 {
+                        assert_eq!(meta["w"], 180.);
+                    }
                     assert!((meta["x"].as_f64().unwrap() - kind_right - 8.).abs() <= 1.);
                     meta["x"].as_f64().unwrap() + meta["w"].as_f64().unwrap()
                 } else {

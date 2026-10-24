@@ -397,3 +397,10 @@ shows content right edge **1308 → 1340**, actions x **1372** unchanged, and ou
 gap **64 → 32px**. Totals remain **68 raw / 34 matched**, honestly: no synthetic
 text or badge is changed to force a full-box pass. Final board-placement proof
 will be attached to PR 18 with its exact final SHA and CI artifact identity.
+
+Final review also preserves the source's nonwrapping metadata clipping
+(`TaskRowComponents/TaskTitle.tsx:36-45`): the 180px native container now explicitly
+uses nowrap rather than wrapping long metadata into the fixed-height inbox row.
+The same CI regression adds a long-priority case, requiring width <=180px,
+single-line height, and both unchanged source gaps. This is additive coverage,
+not a relaxation of the existing layout contract.
