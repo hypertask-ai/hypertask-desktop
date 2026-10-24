@@ -171,7 +171,7 @@ impl Db {
     }
     pub fn board_project(&self, project: i64) -> Result<Value> {
         let mut value=self.raw("Project", &json!(project))?.context("Board is unavailable")?;
-        if !value["section"].is_array(){value["section"]=json!(self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 ORDER BY ranking,id",[project])?);}
+        value["section"]=json!(self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 ORDER BY ranking,id",[project])?);
         Ok(value)
     }
 }

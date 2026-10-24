@@ -249,3 +249,9 @@ fn view_columns_subtask_modes_and_personal_empty_columns_change_rendering_and_ro
         db.drain_once(&mut Server{status,path:"/api/projects/views/update-view".into(),body,reply:json!({"viewId":"default","board_empty_sections":"Hidden"})},101).unwrap();assert_eq!(db.board(15).unwrap().len(),if status==200{1}else{2});if status!=200{assert_eq!(db.board_project(15).unwrap(),before);}
     }
 }
+
+#[test]
+fn absent_project_metadata_is_not_an_explicit_empty_column_view(){
+    let mut db=Db::memory().unwrap();db.apply_response(&json!({"success":true,"sections":[{"id":10,"projectId":15,"section_title":"Todo","visibility":true,"deleted":false,"ranking":"a"}],"tasks":[{"id":1,"projectId":15,"sectionId":10,"title":"Task","status":"Normal"}]})).unwrap();assert_eq!(db.board(15).unwrap().len(),1);assert_eq!(db.board(15).unwrap()[0].cards[0].id,1);
+    db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"user_project_views":[{"unsavedView":{"board_columns_view":[]}}]}}]})).unwrap();assert!(db.board(15).unwrap().is_empty());
+}

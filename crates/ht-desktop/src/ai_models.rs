@@ -73,7 +73,7 @@ impl AiSidebar {
     }
     pub(super) fn model_label(&self)->String {
         if let (Some(config),Some(model))=(&self.models.configuration,self.models.selected.as_deref().and_then(ht_core::ai_models::option)) {
-            let effort=ht_core::ai_models::effort_label(model);
+            let effort=if self.mode()==DisplayMode::Fullscreen{ht_core::ai_models::effort_label(model)}else{""};
             return format!("{}{}{}",config.label(model),if effort.is_empty(){""}else{" · "},effort);
         }
         MODELS[self.model].label.into()
@@ -127,11 +127,11 @@ mod tests {
             sidebar.models.configuration=Some(Configuration{user:42,team:"team".into(),options:ht_core::ai_models::catalog().to_vec(),selected:"gpt-6-luna-high".into(),settings:json!({}),byok:json!([]),plan:Some("Pro".into()),default:"gpt-6-luna".into(),custom_label:Some("Endpoint".into())});
             for status in [401,403,200]{
                 sidebar.models.selected=Some("gpt-6-luna-high".into());sidebar.model_menu=true;sidebar.models.submenu=Some(false);
-                sidebar.choose_family("claude-opus-5-5",cx);assert_eq!(sidebar.models.selected.as_deref(),Some("claude-opus-5-5-thinking"));assert!(sidebar.model_menu);assert!(sidebar.models.submenu.is_none());assert!(sidebar.model_label().ends_with("Thinking"));
+                sidebar.choose_family("claude-opus-5-5",cx);assert_eq!(sidebar.models.selected.as_deref(),Some("claude-opus-5-5-thinking"));assert!(sidebar.model_menu);assert!(sidebar.models.submenu.is_none());assert_eq!(sidebar.model_label(),"Opus 5.5");sidebar.set_mode(DisplayMode::Fullscreen,cx);assert!(sidebar.model_label().ends_with("Thinking"));sidebar.set_mode(DisplayMode::Sidebar,cx);
                 sidebar.preference_finished(if status==200{json!({"success":true})}else{json!({"error":format!("HTTP {status}")})},cx);
                 assert_eq!(sidebar.models.selected.as_deref(),Some(if status==200{"claude-opus-5-5-thinking"}else{"gpt-6-luna-high"}));
             }
-            sidebar.choose_model("gpt-6-luna",cx);assert_eq!(sidebar.model_label(),"6 Luna · Standard");sidebar.preference_finished(json!({"success":true}),cx);
+            sidebar.choose_model("gpt-6-luna",cx);assert_eq!(sidebar.model_label(),"6 Luna");sidebar.preference_finished(json!({"success":true}),cx);
             sidebar.choose_family("custom",cx);assert_eq!(sidebar.model_label(),"Endpoint");
         }).unwrap();
     }

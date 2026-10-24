@@ -290,9 +290,8 @@ impl Db {
         let mut sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
         let project=self.board_project(project_id).unwrap_or(Value::Null);
         let settings=crate::board_views::settings(&project);
-        if let Some(columns)=settings["board_columns_view"].as_array(){
+        if let Some(columns)=settings["board_columns_view"].as_array().filter(|_|project.is_object()){
             sections.retain(|section|columns.iter().any(|column|column.get("id").or_else(||column.get("sectionId"))==section.get("id") && column["visibility"]==true));
-
         }
         let mut tasks = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Normal' ORDER BY ranking ASC,updatedAt DESC,id ASC", [project_id])?;
         let running=self.kv_get(&format!("web-running-timers:{}",self.current_user_id().unwrap_or(0)))?.and_then(|value|serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();

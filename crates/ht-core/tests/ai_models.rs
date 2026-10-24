@@ -80,3 +80,24 @@ fn every_catalog_effort_and_reset_id_uses_the_team_queue_and_restores_both_refus
         db.drain_once(&mut Picker{status,id:id.into()},101).unwrap();assert_eq!(db.web_preferences().unwrap()["aiModelPreferences"]["teams"]["team"]["aiChat"],if status==200{id}else{"gpt-6-luna"});
     }}
 }
+
+#[test]
+fn model_defaults_provider_order_custom_gdpr_and_real_billing_are_server_derived(){
+    struct Models{status:u16,team:Value,keys:Value,flags:Value,context:Value,preferences:Value,feature:Value}
+    impl Transport for Models{
+        fn get(&mut self,path:&str)->Result<Response,TransportError>{
+            let body=if self.status!=200{json!({"error":"Unauthorized"})}else if path=="/user/context"{json!({"success":true,"user":{"id":42}})}else if path.starts_with("/api/teams/getTeam?"){self.team.clone()}else if path.starts_with("/api/teams/aiFeatureModels?"){json!({"aiChat":{"model":self.feature,"effectiveModel":"claude-haiku-5-5"}})}else if path.starts_with("/api/teams/aiProviderSettings?"){json!({"providers":[{"key":"openai","enabled":true},{"key":"anthropic","enabled":true},{"key":"google","enabled":true},{"key":"deepseek","enabled":true}],"defaultModelContext":self.context})}else if path.starts_with("/api/teams/byokKeys?"){self.keys.clone()}else if path=="/api/users/preferences"{json!({"settings":self.preferences})}else{assert_eq!(path,"/api/flags");json!({"flags":self.flags})};Ok(Response{status:self.status,body})
+        }
+        fn post(&mut self,_:&str,_:&Value,_:&str)->Result<Response,TransportError>{panic!("model configuration is read only")}
+    }
+    for price in ["price_1OSg0zIhmcH60VccTpAFDv32","price_1TMlqCIhmcH60Vccgq4fpSWu","price_1QjJeDIhmcH60VcciHzZ3mTJ","unknown"]{for status in [200,401,403]{
+        let mut server=Models{status,team:json!({"id":"team","subscriptionPlan":[{"subscriptionStatus":"active","priceId":price}],"byokApiKeys":[{"provider":"openai","enabled":true}]}),keys:json!({"gdprSafeMode":true,"keys":[{"provider":"custom","enabled":true,"hasSecret":true,"baseUrl":" https://example.test ","modelId":" My model ","gdprCompliant":false}]}),flags:json!({}),context:json!({}),preferences:json!({}),feature:Value::Null};
+        let result=ai_models::load(&mut server,"team",None);if status!=200{assert!(result.is_err());continue;}let config=result.unwrap();assert_eq!(config.plan.as_deref(),Some(match price{"price_1OSg0zIhmcH60VccTpAFDv32"=>"AI","price_1TMlqCIhmcH60Vccgq4fpSWu"=>"BYOK","unknown"=>"Free",_=>"Pro"}));assert_eq!(config.default,if price=="unknown"{"gpt-6-luna"}else{"claude-haiku-5-5"});assert!(!config.options.iter().any(|model|model["source"]=="custom"));
+        assert_eq!(config.families().iter().take(7).map(|model|model["definition"]["provider"].as_str().unwrap()).collect::<Vec<_>>(),vec!["openai","openai","openai","anthropic","anthropic","anthropic","google"]);
+        server.keys["keys"][0]["gdprCompliant"]=json!(true);let config=ai_models::load(&mut server,"team",None).unwrap();assert!(config.options.iter().any(|model|model["source"]=="custom"));assert_eq!(config.label(ai_models::option("custom").unwrap()),"My model");
+        if price=="price_1TMlqCIhmcH60Vccgq4fpSWu"{assert!(!config.locked(ai_models::option("gpt-6.1-sol-high").unwrap()));assert!(config.locked(ai_models::option("claude-opus-5-5-thinking").unwrap()));assert!(config.disabled(ai_models::option("custom").unwrap()));}
+        if price=="price_1QjJeDIhmcH60VcciHzZ3mTJ"{server.flags=json!({"htpr-7634-openai-only-default":true});server.context=json!({"hasClaudeRoute":false,"hasDirectOpenAiKey":true});assert_eq!(ai_models::load(&mut server,"team",None).unwrap().default,"gpt-6-luna");}
+        server.feature=json!("gpt-6-luna-high");assert_eq!(ai_models::load(&mut server,"team",Some("gpt-6.1-sol-light")).unwrap().selected,"gpt-6-luna-high");
+        server.preferences=json!({"aiModelPreferences":{"aiChat":"gpt-6.1-sol-light","teams":{"team":{"aiChat":"gpt-6-luna-light"}}}});assert_eq!(ai_models::load(&mut server,"team",None).unwrap().selected,"gpt-6-luna-light");
+    }}
+}

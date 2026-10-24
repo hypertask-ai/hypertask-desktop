@@ -90,6 +90,7 @@ impl Db {
         for key in ["assignees","tags"]{ensure!(body[key].is_null() || body[key].is_array(),"Invalid {key}");}
         for key in ["dueDate","startDate"]{ensure!(body[key].is_null() || body[key].as_str().is_some_and(|date|chrono::DateTime::parse_from_rfc3339(date).is_ok()),"Invalid {key}");}
         ensure!(body["description"].is_null() || body["description"].is_string(),"Invalid description");
+        for key in ["priority","estimate","dueDate","startDate","tags"]{if body[key].is_null(){body.as_object_mut().unwrap().remove(key);}}
         body.as_object_mut().unwrap().remove("section");body.as_object_mut().unwrap().remove("index");
         body["section_title"]=column["section_title"].clone();body["projectIdentifier"]=project_row["uniqueIdentifier"].as_str().map(|id|json!(id)).unwrap_or(json!("TASK"));body["fullScreenTask"]=json!(true);
         payload["global"]=json!(true);payload["attempted"]=json!(false);Ok(payload)

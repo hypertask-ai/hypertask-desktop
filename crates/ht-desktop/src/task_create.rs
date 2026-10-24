@@ -288,8 +288,20 @@ impl Desktop {
             Some(Field::DueDate) => self.create_task.fields["dueDate"] = value,
             Some(Field::StartDate) => self.create_task.fields["startDate"] = value,
             Some(Field::Column) => self.create_task.section = value.as_i64().unwrap(),
-            Some(Field::Priority) => self.create_task.fields["priority"] = value,
-            Some(Field::Size) => self.create_task.fields["estimate"] = value,
+            Some(Field::Priority) => {
+                self.create_task.fields["priority"] = if value["priority_index"] == 0 {
+                    Value::Null
+                } else {
+                    value
+                }
+            }
+            Some(Field::Size) => {
+                self.create_task.fields["estimate"] = if value["estimate_index"] == 0 {
+                    Value::Null
+                } else {
+                    value
+                }
+            }
             Some(field @ (Field::Tags | Field::Assignees)) => {
                 let key = if field == Field::Tags {
                     "tags"

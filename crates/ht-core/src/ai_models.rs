@@ -97,7 +97,8 @@ pub fn effort_label(model:&Value)->&str {
 impl Configuration {
     pub fn families(&self)->Vec<&Value> {
         let mut seen=std::collections::HashSet::new();
-        self.options.iter().filter(|model|seen.insert(model["family"].as_str().unwrap_or(""))).collect()
+        let mut rows:Vec<_>=self.options.iter().filter(|model|seen.insert(model["family"].as_str().unwrap_or(""))).collect();
+        rows.sort_by_key(|model|["openai","anthropic","google","xai","deepseek","moonshot","alibaba","zhipu","openrouter","custom"].iter().position(|provider|model["definition"]["provider"]==*provider).unwrap_or(usize::MAX));rows
     }
     pub fn efforts(&self,family:&str)->Vec<&Value> {
         ["light","standard","high"].into_iter().filter_map(|effort|self.options.iter().find(|model|model["family"]==family && model["effort"]==effort)).collect()

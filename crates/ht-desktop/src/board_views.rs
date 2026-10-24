@@ -1,4 +1,5 @@
 use super::*;
+use chrono::{Datelike, NaiveDate, TimeZone};
 use serde_json::{Value, json};
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(super) enum Panel {
@@ -12,6 +13,7 @@ pub(super) enum Panel {
     UpdatedBy,
     BlockedByPerson,
     Date(&'static str),
+    DateRange(&'static str),
     ValueMatch,
     Columns,
     Subtasks,
@@ -33,12 +35,24 @@ pub(super) struct Views {
     choice: usize,
     editing: Option<String>,
     pending_route: String,
-    people:Option<Value>,
-    support_pending:bool,
+    people: Option<Value>,
+    support_pending: bool,
+    query: Entity<TextInput>,
+    query_text: String,
+    month: NaiveDate,
+    from: Option<NaiveDate>,
+    to: Option<NaiveDate>,
 }
 impl Views {
     pub fn new(cx: &mut Context<Desktop>) -> Self {
         let input = cx.new(|cx| TextInput::new(String::new(), "View name", color(0x8e9093), cx));
+        let query = cx.new(|cx| TextInput::new(String::new(), "Search…", color(0x8e9093), cx));
+        cx.observe(&query, |this, query, cx| {
+            this.views.query_text = query.read(cx).content.to_string();
+            this.views.choice = 0;
+            cx.notify();
+        })
+        .detach();
         Self {
             loaded: 0,
             loading: false,
@@ -49,13 +63,21 @@ impl Views {
             pending: None,
             choice: 0,
             editing: None,
-            pending_route: String::new(),people:None,support_pending:false,
+            pending_route: String::new(),
+            people: None,
+            support_pending: false,
+            query,
+            query_text: String::new(),
+            month: chrono::Local::now().date_naive().with_day(1).unwrap(),
+            from: None,
+            to: None,
         }
     }
 }
 impl Desktop {
     pub(super) fn invalidate_board_views(&mut self, cx: &mut Context<Self>) {
-        self.views.people=None;self.views.support_pending=false;
+        self.views.people = None;
+        self.views.support_pending = false;
         self.views.loaded = 0;
         self.views.loading = false;
         self.views.ready = false;
@@ -146,18 +168,75 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if matches!(panel,Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson|Panel::Assignees) && !self.options.offline{self.load_view_support(false,window,cx);}
+        if matches!(
+            panel,
+            Panel::CreatedBy | Panel::UpdatedBy | Panel::BlockedByPerson | Panel::Assignees
+        ) && !self.options.offline
+        {
+            self.load_view_support(false, window, cx);
+        }
         self.views.panel = Some(panel);
         self.views.choice = 0;
-        if matches!(panel,Panel::SavePrivate|Panel::SaveTeam|Panel::RenameView) {
+        self.views
+            .query
+            .update(cx, |input, cx| input.set_content(String::new(), cx));
+        if let Panel::DateRange(kind) = panel {
+            let settings = self.view_settings();
+            let payload = settings["board_filters"]["addedFilters"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .find(|filter| filter["type"] == kind)
+                .map(|filter| filter["searchPayload"][0].clone())
+                .unwrap_or(Value::Null);
+            let parse = |value: &Value| {
+                value
+                    .as_str()
+                    .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+                    .map(|date| date.with_timezone(&chrono::Local).date_naive())
+            };
+            let today = chrono::Local::now().date_naive();
+            let mut from = today;
+            let mut days = 0;
+            while days < 3 {
+                from -= chrono::Duration::days(1);
+                if from.weekday().number_from_monday() <= 5 {
+                    days += 1;
+                }
+            }
+            self.views.from = Some(parse(&payload["fromDate"]).unwrap_or(from));
+            self.views.to = Some(parse(&payload["toDate"]).unwrap_or(today));
+            self.views.month = self.views.from.unwrap().with_day(1).unwrap();
+        }
+        if matches!(
+            panel,
+            Panel::SavePrivate | Panel::SaveTeam | Panel::RenameView
+        ) {
             self.views
                 .input
                 .update(cx, |input, cx| input.set_content(String::new(), cx));
             window.focus(&self.views.input.focus_handle(cx), cx);
+        } else if Self::view_searchable(panel) {
+            window.focus(&self.views.query.focus_handle(cx), cx);
         } else {
             window.focus(&self.focus, cx);
         }
         cx.notify();
+    }
+    fn view_searchable(panel: Panel) -> bool {
+        matches!(
+            panel,
+            Panel::Sort
+                | Panel::Filters
+                | Panel::Priority
+                | Panel::Size
+                | Panel::Labels
+                | Panel::Assignees
+                | Panel::CreatedBy
+                | Panel::UpdatedBy
+                | Panel::BlockedByPerson
+                | Panel::Date(_)
+        )
     }
     fn queue_view(
         &mut self,
@@ -189,7 +268,7 @@ impl Desktop {
             chrono::Utc::now().timestamp(),
         ) {
             Ok(id) => {
-                self.views.pending_route=route.into();
+                self.views.pending_route = route.into();
                 self.views.pending = self
                     .db
                     .mutations()
@@ -240,36 +319,205 @@ impl Desktop {
         self.views.pending = None;
         self.reload();
         if result["error"].is_null() {
-            if !matches!(self.views.panel,Some(Panel::Sort|Panel::Priority|Panel::Size|Panel::Labels|Panel::Assignees|Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson|Panel::ValueMatch|Panel::Columns)) {self.views.panel=None;window.focus(&self.focus,cx);}
-        }else{
-            self.error=Some(match self.views.pending_route.as_str(){
-                "rename-view"=>"Error renaming view".into(),"delete-view"=>"Error deleting view".into(),"update-order"=>"Unable to save view order".into(),"reset-order"=>"Unable to reset view order".into(),"set-default-order"=>"Unable to set the default view order".into(),_=>result["error"].as_str().unwrap_or("Could not save the view").into()
+            if !matches!(
+                self.views.panel,
+                Some(
+                    Panel::Sort
+                        | Panel::Priority
+                        | Panel::Size
+                        | Panel::Labels
+                        | Panel::Assignees
+                        | Panel::CreatedBy
+                        | Panel::UpdatedBy
+                        | Panel::BlockedByPerson
+                        | Panel::ValueMatch
+                        | Panel::Columns
+                )
+            ) {
+                self.views.panel = None;
+                window.focus(&self.focus, cx);
+            }
+        } else {
+            self.error = Some(match self.views.pending_route.as_str() {
+                "rename-view" => "Error renaming view".into(),
+                "delete-view" => "Error deleting view".into(),
+                "update-order" => "Unable to save view order".into(),
+                "reset-order" => "Unable to reset view order".into(),
+                "set-default-order" => "Unable to set the default view order".into(),
+                _ => result["error"]
+                    .as_str()
+                    .unwrap_or("Could not save the view")
+                    .into(),
             });
         }
         cx.notify();
         false
     }
     fn view_choices(&self) -> Vec<(String, Value)> {
-        match self.views.panel {
-            Some(Panel::Save)=>["Save as current view","Set as default board for everyone","Save as additional view for team","Save as view for me only","Reset View"].into_iter().enumerate().map(|(i,name)|(name.into(),json!(i))).collect(),
-            Some(Panel::SavePrivate|Panel::SaveTeam)=>vec![("Save view".into(),Value::Null)],
-            Some(Panel::RenameView)=>vec![("Save".into(),json!("rename")),("DELETE VIEW".into(),json!("delete"))],
-            Some(Panel::DeleteView)=>vec![("Delete view".into(),json!("confirm")),("Cancel".into(),json!("cancel"))],
-            Some(Panel::Manage)=>{
-                let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
-                let mut choices=vec![("Sort alphabetically".into(),json!({"action":"alphabetical"})),("Reset to default order".into(),json!({"action":"reset"}))];
-                if self.can_set_view_default(&project){choices.push(("Set as default order for everyone".into(),json!({"action":"default"})));}
-                choices.extend(ht_core::board_views::ordered_views(&project).into_iter().map(|view|(view["title"].as_str().unwrap_or("Untitled view").into(),view)));
+        let choices: Vec<(String, Value)> = match self.views.panel {
+            Some(Panel::Save) => [
+                "Save as current view",
+                "Set as default board for everyone",
+                "Save as additional view for team",
+                "Save as view for me only",
+                "Reset View",
+            ]
+            .into_iter()
+            .enumerate()
+            .map(|(i, name)| (name.into(), json!(i)))
+            .collect(),
+            Some(Panel::SavePrivate | Panel::SaveTeam) => vec![("Save view".into(), Value::Null)],
+            Some(Panel::RenameView) => vec![
+                ("Save".into(), json!("rename")),
+                ("DELETE VIEW".into(), json!("delete")),
+            ],
+            Some(Panel::DeleteView) => vec![
+                ("Delete view".into(), json!("confirm")),
+                ("Cancel".into(), json!("cancel")),
+            ],
+            Some(Panel::Manage) => {
+                let project = self
+                    .db
+                    .board_project(self.options.board)
+                    .unwrap_or(Value::Null);
+                let mut choices = vec![
+                    (
+                        "Sort alphabetically".into(),
+                        json!({"action":"alphabetical"}),
+                    ),
+                    ("Reset to default order".into(), json!({"action":"reset"})),
+                ];
+                if self.can_set_view_default(&project) {
+                    choices.push((
+                        "Set as default order for everyone".into(),
+                        json!({"action":"default"}),
+                    ));
+                }
+                choices.extend(
+                    ht_core::board_views::ordered_views(&project)
+                        .into_iter()
+                        .map(|view| {
+                            (
+                                view["title"].as_str().unwrap_or("Untitled view").into(),
+                                view,
+                            )
+                        }),
+                );
                 choices
             }
-            Some(Panel::Subtasks)=>[("Hide on board, show on task page","None"),("Show as card property and flattened list combined","Flattened_Card"),("Show as flattened list","Flattened"),("Show only parents","Parent"),("Show as card property","Card")].into_iter().map(|(name,value)|(name.into(),json!(value))).collect(),
-            Some(Panel::Columns)=>self.db.board_project(self.options.board).ok().into_iter().flat_map(|project|project["section"].as_array().cloned().unwrap_or_default()).filter(|section|section["deleted"]!=true).map(|section|(section["section_title"].as_str().unwrap_or("").into(),section)).collect(),
-            Some(Panel::Sort) => ht_core::board_views::SORT_MODES.iter().map(|(name,value)|((*name).into(),json!(value))).collect(),
+            Some(Panel::Subtasks) => [
+                ("Hide on board, show on task page", "None"),
+                (
+                    "Show as card property and flattened list combined",
+                    "Flattened_Card",
+                ),
+                ("Show as flattened list", "Flattened"),
+                ("Show only parents", "Parent"),
+                ("Show as card property", "Card"),
+            ]
+            .into_iter()
+            .map(|(name, value)| (name.into(), json!(value)))
+            .collect(),
+            Some(Panel::Columns) => self
+                .db
+                .board_project(self.options.board)
+                .ok()
+                .into_iter()
+                .flat_map(|project| project["section"].as_array().cloned().unwrap_or_default())
+                .filter(|section| section["deleted"] != true)
+                .map(|section| {
+                    (
+                        section["section_title"].as_str().unwrap_or("").into(),
+                        section,
+                    )
+                })
+                .collect(),
+            Some(Panel::Sort) => ht_core::board_views::SORT_MODES
+                .iter()
+                .filter(|(_, mode)| {
+                    *mode == "Manual"
+                        || (self.sort_levels().len() < 3
+                            && !self
+                                .sort_levels()
+                                .iter()
+                                .any(|level| level["mode"] == *mode))
+                })
+                .map(|(name, value)| ((*name).into(), json!(value)))
+                .collect(),
             Some(Panel::Filters) => [
-                ("Clear all filters","Clear"),("Toggle Match Criteria","Match"),("Updated by","UpdatedBy"),("Created by","CreatedBy"),("Has unread notifications","Unread"),("Tasks assigned to me","AssignedToMe"),("Due date","DueDate"),("Priority","Priority"),("Assignees","Assignees"),("Blocked by person","BlockedByPerson"),("Tags","Labels"),("Task Size","Size"),("Date updated at","UpdatedRange"),("Date created at","CreatedAt"),("Present in inbox","Inbox"),("Stale without comment","NoRecentComment"),("Stale in column","StuckInColumn"),("Has a running timer","RunningTimer"),("Stale on board","StaleOnBoard"),("Not stale","NotStale")
-            ].into_iter().filter(|(_,kind)|!matches!(*kind,"Clear"|"Match") || self.view_settings()["board_filters"]["addedFilters"].as_array().is_some_and(|filters|!filters.is_empty())).map(|(name,kind)|(name.into(),json!(kind))).collect(),
-            Some(Panel::ValueMatch)=>[("Tags","Labels"),("Assignees","Assignees")].into_iter().filter(|(_,kind)|self.view_settings()["board_filters"]["addedFilters"].as_array().into_iter().flatten().any(|filter|filter["type"]==*kind && filter["searchPayload"].as_array().is_some_and(|values|!values.is_empty()))).map(|(name,kind)|(name.into(),json!(kind))).collect(),
-            Some(Panel::Date(kind))=>[("Reset","RESET"),("Any","ANY"),("Today","TODAY"),("Yesterday","YESTERDAY"),("Last 7 days","LAST_7_DAYS"),("Last 30 days","LAST_30_DAYS"),("This week","THIS_WEEK"),("This month","THIS_MONTH")].into_iter().filter(|(_,value)|*value!="ANY" || kind=="DueDate").map(|(name,value)|(name.into(),json!(value))).collect(),
+                ("Clear all filters", "Clear"),
+                ("Toggle Match Criteria", "Match"),
+                ("Updated by", "UpdatedBy"),
+                ("Created by", "CreatedBy"),
+                ("Has unread notifications", "Unread"),
+                ("Tasks assigned to me", "AssignedToMe"),
+                ("Due date", "DueDate"),
+                ("Priority", "Priority"),
+                ("Assignees", "Assignees"),
+                ("Blocked by person", "BlockedByPerson"),
+                ("Tags", "Labels"),
+                ("Task Size", "Size"),
+                ("Date updated at", "UpdatedRange"),
+                ("Date created at", "CreatedAt"),
+                ("Present in inbox", "Inbox"),
+                ("Stale without comment", "NoRecentComment"),
+                ("Stale in column", "StuckInColumn"),
+                ("Has a running timer", "RunningTimer"),
+                ("Stale on board", "StaleOnBoard"),
+                ("Not stale", "NotStale"),
+            ]
+            .into_iter()
+            .filter(|(_, kind)| {
+                !matches!(*kind, "Clear" | "Match")
+                    || self.view_settings()["board_filters"]["addedFilters"]
+                        .as_array()
+                        .is_some_and(|filters| !filters.is_empty())
+            })
+            .map(|(name, kind)| (name.into(), json!(kind)))
+            .collect(),
+            Some(Panel::ValueMatch) => [("Tags", "Labels"), ("Assignees", "Assignees")]
+                .into_iter()
+                .filter(|(_, kind)| {
+                    self.view_settings()["board_filters"]["addedFilters"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .any(|filter| {
+                            filter["type"] == *kind
+                                && filter["searchPayload"]
+                                    .as_array()
+                                    .is_some_and(|values| !values.is_empty())
+                        })
+                })
+                .map(|(name, kind)| (name.into(), json!(kind)))
+                .collect(),
+            Some(Panel::DateRange(_)) => vec![
+                ("Back".into(), json!("BACK")),
+                ("Confirm".into(), json!("CONFIRM")),
+            ],
+            Some(Panel::Date(kind)) => [
+                ("Reset", "RESET"),
+                ("Any", "ANY"),
+                ("Today", "TODAY"),
+                ("Yesterday", "YESTERDAY"),
+                ("Last 7 days", "LAST_7_DAYS"),
+                ("Last 30 days", "LAST_30_DAYS"),
+                ("This week", "THIS_WEEK"),
+                ("This month", "THIS_MONTH"),
+                ("Pick a custom date range", "CUSTOM"),
+            ]
+            .into_iter()
+            .filter(|(_, value)| {
+                (*value != "ANY" || kind == "DueDate")
+                    && (*value != "RESET"
+                        || self.view_settings()["board_filters"]["addedFilters"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .any(|filter| filter["type"] == kind))
+            })
+            .map(|(name, value)| (name.into(), json!(value)))
+            .collect(),
             Some(Panel::Priority) => (0..5)
                 .filter_map(ht_core::task_create::priority)
                 .map(|v| (v["Priority_Value"].as_str().unwrap().into(), v))
@@ -295,18 +543,70 @@ impl Desktop {
                     )
                 })
                 .collect(),
-            Some(panel @ (Panel::Assignees|Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson)) => {
-                let mut people=vec![];
-                if let Some(data)=&self.views.people{
-                    for person in std::iter::once(&data["owner"]).chain(data["members"].as_array().into_iter().flatten().map(|member|&member["user"])){
-                        if !person.is_null() && !people.iter().any(|old:&Value|old["id"]==person["id"]){people.push(person.clone());}
+            Some(
+                panel @ (Panel::Assignees
+                | Panel::CreatedBy
+                | Panel::UpdatedBy
+                | Panel::BlockedByPerson),
+            ) => {
+                let mut people = vec![];
+                if let Some(data) = &self.views.people {
+                    for person in std::iter::once(&data["owner"]).chain(
+                        data["members"]
+                            .as_array()
+                            .into_iter()
+                            .flatten()
+                            .map(|member| &member["user"]),
+                    ) {
+                        if !person.is_null()
+                            && !people.iter().any(|old: &Value| old["id"] == person["id"])
+                        {
+                            people.push(person.clone());
+                        }
                     }
-                    if matches!(panel,Panel::Assignees|Panel::UpdatedBy){people.extend(data["boardAgents"].as_array().into_iter().flatten().cloned());}
-                }else if self.options.offline {people=self.db.project_members(self.options.board).unwrap_or_default();}
-                if panel==Panel::BlockedByPerson{people.insert(0,json!({"id":0,"displayName":"Anyone"}));}
-                people.into_iter().map(|person|(person["displayName"].as_str().unwrap_or("").into(),person)).collect()
+                    if matches!(panel, Panel::Assignees | Panel::UpdatedBy) {
+                        people.extend(
+                            data["boardAgents"]
+                                .as_array()
+                                .into_iter()
+                                .flatten()
+                                .cloned(),
+                        );
+                    }
+                } else if self.options.offline {
+                    people = self
+                        .db
+                        .project_members(self.options.board)
+                        .unwrap_or_default();
+                }
+                if panel == Panel::BlockedByPerson {
+                    people.insert(0, json!({"id":0,"displayName":"Anyone"}));
+                }
+                people
+                    .into_iter()
+                    .map(|person| (person["displayName"].as_str().unwrap_or("").into(), person))
+                    .collect()
             }
             _ => vec![],
+        };
+        if self.views.panel.is_some_and(Self::view_searchable) && !self.views.query_text.is_empty()
+        {
+            let query = self.views.query_text.to_lowercase();
+            let mut choices: Vec<_> = choices
+                .into_iter()
+                .filter(|(name, _)| name.to_lowercase().contains(&query))
+                .collect();
+            if matches!(self.views.panel, Some(Panel::Date(_))) {
+                if let Some(date) = super::task_fields::parse_due(
+                    &self.views.query_text,
+                    chrono::Local::now().date_naive(),
+                ) {
+                    choices.push((self.views.query_text.clone(),json!({"selectedDate":date,"fromDate":date,"toDate":null,"condition":"AFTER","dynamicRange":null})));
+                }
+            }
+            choices
+        } else {
+            choices
         }
     }
     fn choose_view_option(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
@@ -314,94 +614,289 @@ impl Desktop {
             return;
         }
         match self.views.panel {
-            Some(Panel::SavePrivate|Panel::SaveTeam)=>{
-                let title=self.views.input.read(cx).content.trim().to_owned();if title.is_empty(){self.error=Some("Give your view a name first".into());cx.notify();return;}
-                let public=self.views.panel==Some(Panel::SaveTeam);
-                self.queue_view("create-view",json!({"userId":self.db.current_user_id(),"viewTitle":title,"visibility":if public{"Public"}else{"Private"},"setAsDefault":false,"view_settings":self.view_settings()}),window,cx);return;
+            Some(Panel::SavePrivate | Panel::SaveTeam) => {
+                let title = self.views.input.read(cx).content.trim().to_owned();
+                if title.is_empty() {
+                    self.error = Some("Give your view a name first".into());
+                    cx.notify();
+                    return;
+                }
+                let public = self.views.panel == Some(Panel::SaveTeam);
+                self.queue_view("create-view",json!({"userId":self.db.current_user_id(),"viewTitle":title,"visibility":if public{"Public"}else{"Private"},"setAsDefault":false,"view_settings":self.view_settings()}),window,cx);
+                return;
             }
-            Some(Panel::Save)=>{
+            Some(Panel::Save) => {
                 match index {
-                    2=>self.open_view_panel(Panel::SaveTeam,window,cx),3=>self.open_view_panel(Panel::SavePrivate,window,cx),
-                    4=>self.queue_view("reset-to-default",json!({"mode":"ResetCurrent"}),window,cx),
-                    0|1=>{
-                        let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
-                        let applied=project["project_view"]["user_project_views"][0]["appliedView"]["id"].clone();
-                        if index==0 && applied.is_string(){self.queue_view("update-view",json!({"viewId":applied,"view_settings":self.view_settings()}),window,cx);}
-                        else{self.queue_view("create-view",json!({"userId":self.db.current_user_id(),"viewTitle":format!("default-view-id-{}",self.options.board),"visibility":"Public","setAsDefault":true,"view_settings":self.view_settings()}),window,cx);}
+                    2 => self.open_view_panel(Panel::SaveTeam, window, cx),
+                    3 => self.open_view_panel(Panel::SavePrivate, window, cx),
+                    4 => self.queue_view(
+                        "reset-to-default",
+                        json!({"mode":"ResetCurrent"}),
+                        window,
+                        cx,
+                    ),
+                    0 | 1 => {
+                        let project = self
+                            .db
+                            .board_project(self.options.board)
+                            .unwrap_or(Value::Null);
+                        let applied =
+                            project["project_view"]["user_project_views"][0]["appliedView"]["id"]
+                                .clone();
+                        if index == 0 && applied.is_string() {
+                            self.queue_view(
+                                "update-view",
+                                json!({"viewId":applied,"view_settings":self.view_settings()}),
+                                window,
+                                cx,
+                            );
+                        } else {
+                            self.queue_view("create-view",json!({"userId":self.db.current_user_id(),"viewTitle":format!("default-view-id-{}",self.options.board),"visibility":"Public","setAsDefault":true,"view_settings":self.view_settings()}),window,cx);
+                        }
                     }
-                    _=>(),
+                    _ => (),
                 }
                 return;
             }
-            _=>(),
+            _ => (),
         }
         let Some((_, value)) = self.view_choices().get(index).cloned() else {
             return;
         };
         let mut settings = self.view_settings();
         match self.views.panel {
-            Some(Panel::Manage)=>{
-                if let Some(action)=value["action"].as_str(){
-                    if action=="reset"{self.queue_view("reset-order",json!({}),window,cx);return;}
-                    let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
-                    let mut views=ht_core::board_views::ordered_views(&project);
-                    if action=="alphabetical"{views.sort_by_key(|v|(v["id"]!=project["project_view"]["default_view_id"],v["title"].as_str().unwrap_or("").to_lowercase()));}
-                    self.queue_view(if action=="default"{"set-default-order"}else{"update-order"},json!({"viewOrder":views.iter().map(|v|v["id"].clone()).collect::<Vec<_>>()}),window,cx);return;
+            Some(Panel::Manage) => {
+                if let Some(action) = value["action"].as_str() {
+                    if action == "reset" {
+                        self.queue_view("reset-order", json!({}), window, cx);
+                        return;
+                    }
+                    let project = self
+                        .db
+                        .board_project(self.options.board)
+                        .unwrap_or(Value::Null);
+                    let mut views = ht_core::board_views::ordered_views(&project);
+                    if action == "alphabetical" {
+                        views.sort_by_key(|v| {
+                            (
+                                v["id"] != project["project_view"]["default_view_id"],
+                                v["title"].as_str().unwrap_or("").to_lowercase(),
+                            )
+                        });
+                    }
+                    self.queue_view(if action=="default"{"set-default-order"}else{"update-order"},json!({"viewOrder":views.iter().map(|v|v["id"].clone()).collect::<Vec<_>>()}),window,cx);
+                    return;
                 }
-                self.views.editing=value["id"].as_str().map(str::to_owned);
-                self.open_view_panel(Panel::RenameView,window,cx);
-                self.views.input.update(cx,|input,cx|input.set_content(value["title"].as_str().unwrap_or("").into(),cx));return;
+                self.views.editing = value["id"].as_str().map(str::to_owned);
+                self.open_view_panel(Panel::RenameView, window, cx);
+                self.views.input.update(cx, |input, cx| {
+                    input.set_content(value["title"].as_str().unwrap_or("").into(), cx)
+                });
+                return;
             }
-            Some(Panel::RenameView)=>{
-                if value=="delete"{self.views.panel=Some(Panel::DeleteView);self.views.choice=0;cx.notify();return;}
-                let title=self.views.input.read(cx).content.to_string();if title.chars().count()<2{self.error=Some("View name must be at least 2 characters".into());cx.notify();return;}
-                self.queue_view("rename-view",json!({"viewId":self.views.editing,"title":title}),window,cx);return;
+            Some(Panel::RenameView) => {
+                if value == "delete" {
+                    self.views.panel = Some(Panel::DeleteView);
+                    self.views.choice = 0;
+                    cx.notify();
+                    return;
+                }
+                let title = self.views.input.read(cx).content.to_string();
+                if title.chars().count() < 2 {
+                    self.error = Some("View name must be at least 2 characters".into());
+                    cx.notify();
+                    return;
+                }
+                self.queue_view(
+                    "rename-view",
+                    json!({"viewId":self.views.editing,"title":title}),
+                    window,
+                    cx,
+                );
+                return;
             }
-            Some(Panel::DeleteView)=>{
-                if value=="cancel"{self.views.panel=Some(Panel::Manage);cx.notify();return;}
-                let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
-                if project["project_view"]["default_view_id"]==json!(self.views.editing){return;}
-                self.queue_view("delete-view",json!({"viewId":self.views.editing}),window,cx);return;
+            Some(Panel::DeleteView) => {
+                if value == "cancel" {
+                    self.views.panel = Some(Panel::Manage);
+                    cx.notify();
+                    return;
+                }
+                let project = self
+                    .db
+                    .board_project(self.options.board)
+                    .unwrap_or(Value::Null);
+                if project["project_view"]["default_view_id"] == json!(self.views.editing) {
+                    return;
+                }
+                self.queue_view(
+                    "delete-view",
+                    json!({"viewId":self.views.editing}),
+                    window,
+                    cx,
+                );
+                return;
             }
-            Some(Panel::Subtasks)=>settings["board_subtask_setting"]=value,
-            Some(Panel::Columns)=>{let mut columns=settings["board_columns_view"].as_array().cloned().unwrap_or_default();if let Some(column)=columns.iter_mut().find(|column|column.get("id").or_else(||column.get("sectionId"))==value.get("id")){column["visibility"]=json!(column["visibility"]!=true);}else{let mut column=value;column["visibility"]=json!(true);columns.push(column);}settings["board_columns_view"]=json!(columns);},
+            Some(Panel::Subtasks) => settings["board_subtask_setting"] = value,
+            Some(Panel::Columns) => {
+                let mut columns = settings["board_columns_view"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                if let Some(column) = columns.iter_mut().find(|column| {
+                    column.get("id").or_else(|| column.get("sectionId")) == value.get("id")
+                }) {
+                    column["visibility"] = json!(column["visibility"] != true);
+                } else {
+                    let mut column = value;
+                    column["visibility"] = json!(true);
+                    columns.push(column);
+                }
+                settings["board_columns_view"] = json!(columns);
+            }
             Some(Panel::Sort) => {
-                let mode=value.as_str().unwrap();
-                let mut levels=self.sort_levels();
-                if mode=="Manual"{levels.clear();}else{
-                    if levels.len()>=3 || levels.iter().any(|level|level["mode"]==mode){return;}
+                let mode = value.as_str().unwrap();
+                let mut levels = self.sort_levels();
+                if mode == "Manual" {
+                    levels.clear();
+                } else {
+                    if levels.len() >= 3 || levels.iter().any(|level| level["mode"] == mode) {
+                        return;
+                    }
                     levels.push(json!({"mode":mode,"order":if matches!(mode,"DueDate"|"CreatedAt"|"Assignee"|"Title"|"TicketNumber"){"Ascending"}else{"Descending"}}));
                 }
-                self.save_sort_levels(levels,window,cx);return;
+                self.views
+                    .query
+                    .update(cx, |input, cx| input.set_content(String::new(), cx));
+                self.save_sort_levels(levels, window, cx);
+                return;
             }
             Some(Panel::Filters) => {
-                let kind=value.as_str().unwrap_or("");
-                let panel=match kind{"Priority"=>Some(Panel::Priority),"Size"=>Some(Panel::Size),"Labels"=>Some(Panel::Labels),"Assignees"=>Some(Panel::Assignees),"CreatedBy"=>Some(Panel::CreatedBy),"UpdatedBy"=>Some(Panel::UpdatedBy),"BlockedByPerson"=>Some(Panel::BlockedByPerson),"DueDate"=>Some(Panel::Date("DueDate")),"UpdatedRange"=>Some(Panel::Date("UpdatedRange")),"CreatedAt"=>Some(Panel::Date("CreatedAt")),_=>None};
-                if let Some(panel)=panel{self.open_view_panel(panel,window,cx);return;}
-                if kind=="Clear"{settings["board_filters"]=json!({"addedFilters":[],"matchFilters":"ANY"});}
-                else if kind=="Match"{settings["board_filters"]["matchFilters"]=json!(if settings["board_filters"]["matchFilters"]=="ALL"{"ANY"}else{"ALL"});}
-                else{
-                    if kind=="RunningTimer" && !self.options.offline{self.load_view_support(true,window,cx);return;}
-                    let mut filters=settings["board_filters"]["addedFilters"].as_array().cloned().unwrap_or_default();
-                    if filters.iter().any(|filter|filter["type"]==kind){filters.retain(|filter|filter["type"]!=kind);}else if kind=="AssignedToMe"{
-                        let Some(user)=self.db.current_user_id()else{return;};filters.retain(|filter|filter["type"]!="Assignees");filters.push(json!({"type":"Assignees","searchPayload":[{"id":user,"uid":"current-user"}],"match":"ANY"}));
-                    }else{filters.push(json!({"type":kind,"searchPayload":[]}));}
-                    settings["board_filters"]["addedFilters"]=json!(filters);
+                let kind = value.as_str().unwrap_or("");
+                let panel = match kind {
+                    "Priority" => Some(Panel::Priority),
+                    "Size" => Some(Panel::Size),
+                    "Labels" => Some(Panel::Labels),
+                    "Assignees" => Some(Panel::Assignees),
+                    "CreatedBy" => Some(Panel::CreatedBy),
+                    "UpdatedBy" => Some(Panel::UpdatedBy),
+                    "BlockedByPerson" => Some(Panel::BlockedByPerson),
+                    "DueDate" => Some(Panel::Date("DueDate")),
+                    "UpdatedRange" => Some(Panel::Date("UpdatedRange")),
+                    "CreatedAt" => Some(Panel::Date("CreatedAt")),
+                    _ => None,
+                };
+                if let Some(panel) = panel {
+                    self.open_view_panel(panel, window, cx);
+                    return;
+                }
+                if kind == "Clear" {
+                    settings["board_filters"] = json!({"addedFilters":[],"matchFilters":"ANY"});
+                } else if kind == "Match" {
+                    settings["board_filters"]["matchFilters"] =
+                        json!(if settings["board_filters"]["matchFilters"] == "ALL" {
+                            "ANY"
+                        } else {
+                            "ALL"
+                        });
+                } else {
+                    if kind == "RunningTimer" && !self.options.offline {
+                        self.load_view_support(true, window, cx);
+                        return;
+                    }
+                    let mut filters = settings["board_filters"]["addedFilters"]
+                        .as_array()
+                        .cloned()
+                        .unwrap_or_default();
+                    if filters.iter().any(|filter| filter["type"] == kind) {
+                        filters.retain(|filter| filter["type"] != kind);
+                    } else if kind == "AssignedToMe" {
+                        let Some(user) = self.db.current_user_id() else {
+                            return;
+                        };
+                        filters.retain(|filter| filter["type"] != "Assignees");
+                        filters.push(json!({"type":"Assignees","searchPayload":[{"id":user,"uid":"current-user"}],"match":"ANY"}));
+                    } else {
+                        filters.push(json!({"type":kind,"searchPayload":[]}));
+                    }
+                    settings["board_filters"]["addedFilters"] = json!(filters);
                 }
             }
-            Some(Panel::ValueMatch)=>{
-                for filter in settings["board_filters"]["addedFilters"].as_array_mut().into_iter().flatten(){if filter["type"]==value{filter["match"]=json!(if filter["match"]=="ALL"{"ANY"}else{"ALL"});}}
+            Some(Panel::ValueMatch) => {
+                for filter in settings["board_filters"]["addedFilters"]
+                    .as_array_mut()
+                    .into_iter()
+                    .flatten()
+                {
+                    if filter["type"] == value {
+                        filter["match"] = json!(if filter["match"] == "ALL" {
+                            "ANY"
+                        } else {
+                            "ALL"
+                        });
+                    }
+                }
             }
-            Some(Panel::Date(kind))=>{
-                let mut filters=settings["board_filters"]["addedFilters"].as_array().cloned().unwrap_or_default();filters.retain(|filter|filter["type"]!=kind);
-                if value!="RESET"{filters.push(json!({"type":kind,"searchPayload":[{"selectedDate":null,"fromDate":null,"toDate":null,"condition":null,"dynamicRange":value}]}));}settings["board_filters"]["addedFilters"]=json!(filters);
+            Some(Panel::DateRange(kind)) => {
+                if value == "BACK" {
+                    self.open_view_panel(Panel::Date(kind), window, cx);
+                    return;
+                }
+                let Some(from) = self.views.from else {
+                    self.error = Some("Please select a date first!".into());
+                    cx.notify();
+                    return;
+                };
+                let iso = |date: NaiveDate| {
+                    chrono::Local
+                        .from_local_datetime(&date.and_hms_opt(0, 0, 0).unwrap())
+                        .earliest()
+                        .map(|date| date.to_rfc3339())
+                };
+                let mut filters = settings["board_filters"]["addedFilters"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                filters.retain(|filter| filter["type"] != kind);
+                filters.push(json!({"type":kind,"searchPayload":[{"fromDate":iso(from),"toDate":self.views.to.and_then(iso),"selectedDate":iso(from),"condition":null,"dynamicRange":null}]}));
+                settings["board_filters"]["addedFilters"] = json!(filters);
             }
-            Some(panel @ (Panel::Priority | Panel::Size | Panel::Labels | Panel::Assignees|Panel::CreatedBy|Panel::UpdatedBy|Panel::BlockedByPerson)) => {
+            Some(Panel::Date(kind)) => {
+                if value == "CUSTOM" {
+                    self.open_view_panel(Panel::DateRange(kind), window, cx);
+                    return;
+                }
+                let mut filters = settings["board_filters"]["addedFilters"]
+                    .as_array()
+                    .cloned()
+                    .unwrap_or_default();
+                filters.retain(|filter| filter["type"] != kind);
+                if value != "RESET" {
+                    let payload = if value.is_object() {
+                        value
+                    } else {
+                        json!({"selectedDate":null,"fromDate":null,"toDate":null,"condition":if value=="ANY"{json!("ANY")}else{Value::Null},"dynamicRange":value})
+                    };
+                    filters.push(json!({"type":kind,"searchPayload":[payload]}));
+                }
+                settings["board_filters"]["addedFilters"] = json!(filters);
+            }
+            Some(
+                panel @ (Panel::Priority
+                | Panel::Size
+                | Panel::Labels
+                | Panel::Assignees
+                | Panel::CreatedBy
+                | Panel::UpdatedBy
+                | Panel::BlockedByPerson),
+            ) => {
                 let kind = match panel {
                     Panel::Priority => "Priority",
                     Panel::Size => "Size",
                     Panel::Labels => "Labels",
-                    Panel::CreatedBy=>"CreatedBy",Panel::UpdatedBy=>"UpdatedBy",Panel::BlockedByPerson=>"BlockedByPerson",_ => "Assignees",
+                    Panel::CreatedBy => "CreatedBy",
+                    Panel::UpdatedBy => "UpdatedBy",
+                    Panel::BlockedByPerson => "BlockedByPerson",
+                    _ => "Assignees",
                 };
                 let mut filters = settings["board_filters"]["addedFilters"]
                     .as_array()
@@ -423,7 +918,12 @@ impl Desktop {
                 } else {
                     selected.push(value);
                 }
-                let previous_match=filters.iter().find(|filter|filter["type"]==kind).and_then(|filter|filter["match"].as_str()).unwrap_or("ANY").to_owned();
+                let previous_match = filters
+                    .iter()
+                    .find(|filter| filter["type"] == kind)
+                    .and_then(|filter| filter["match"].as_str())
+                    .unwrap_or("ANY")
+                    .to_owned();
                 filters.retain(|f| f["type"] != kind);
                 if !selected.is_empty() {
                     let mut filter = json!({"type":kind,"searchPayload":selected});
@@ -438,23 +938,201 @@ impl Desktop {
         }
         self.queue_view("unsaved-view", settings, window, cx);
     }
-    pub(super) fn toggle_empty_columns(&mut self,window:&mut Window,cx:&mut Context<Self>){
-        let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);let setting=if self.view_settings()["board_empty_sections"]=="Hidden"{"Show"}else{"Hidden"};
-        let target=project["project_view"]["user_project_views"][0]["appliedView"]["id"].as_str().or_else(||project["project_view"]["default_view"]["id"].as_str());
-        if let Some(id)=target{self.queue_view("update-view",json!({"viewId":id,"updateMode":"personal-empty-sections","view_settings":{"board_empty_sections":setting}}),window,cx);}else{let mut settings=self.view_settings();settings["board_empty_sections"]=json!(setting);self.queue_view("unsaved-view",settings,window,cx);}
+    pub(super) fn toggle_empty_columns(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let project = self
+            .db
+            .board_project(self.options.board)
+            .unwrap_or(Value::Null);
+        let setting = if self.view_settings()["board_empty_sections"] == "Hidden" {
+            "Show"
+        } else {
+            "Hidden"
+        };
+        let target = project["project_view"]["user_project_views"][0]["appliedView"]["id"]
+            .as_str()
+            .or_else(|| project["project_view"]["default_view"]["id"].as_str());
+        if let Some(id) = target {
+            self.queue_view("update-view",json!({"viewId":id,"updateMode":"personal-empty-sections","view_settings":{"board_empty_sections":setting}}),window,cx);
+        } else {
+            let mut settings = self.view_settings();
+            settings["board_empty_sections"] = json!(setting);
+            self.queue_view("unsaved-view", settings, window, cx);
+        }
     }
-    pub(super) fn hide_current_column(&mut self,window:&mut Window,cx:&mut Context<Self>){let Some(id)=self.columns.get(self.column).map(|column|column.id)else{return;};let mut settings=self.view_settings();for column in settings["board_columns_view"].as_array_mut().into_iter().flatten(){if column.get("id").or_else(||column.get("sectionId"))==Some(&json!(id)){column["visibility"]=json!(false);}}self.queue_view("unsaved-view",settings,window,cx);}
-    pub(super) fn command_sort(&mut self,mode:&str,window:&mut Window,cx:&mut Context<Self>){self.save_sort_levels(vec![json!({"mode":mode,"order":"Descending"})],window,cx);}
-    fn sort_levels(&self)->Vec<Value>{let settings=self.view_settings();if settings["board_sorting_mode"]=="Manual"{return vec![];}let mut levels=vec![json!({"mode":settings["board_sorting_mode"],"order":settings["board_sorting_order"]})];levels.extend(settings["board_sorting_stack"].as_array().into_iter().flatten().cloned());levels}
-    fn save_sort_levels(&mut self,levels:Vec<Value>,window:&mut Window,cx:&mut Context<Self>){let mut settings=self.view_settings();settings["board_sorting_mode"]=levels.first().map(|level|level["mode"].clone()).unwrap_or(json!("Manual"));if let Some(level)=levels.first(){settings["board_sorting_order"]=level["order"].clone();}settings["board_sorting_stack"]=json!(levels.into_iter().skip(1).collect::<Vec<_>>());self.queue_view("unsaved-view",settings,window,cx);}
-    fn toggle_value_match(&mut self,window:&mut Window,cx:&mut Context<Self>){let kind=if self.views.panel==Some(Panel::Labels){"Labels"}else{"Assignees"};let mut settings=self.view_settings();let Some(filter)=settings["board_filters"]["addedFilters"].as_array_mut().and_then(|filters|filters.iter_mut().find(|filter|filter["type"]==kind))else{return;};filter["match"]=json!(if filter["match"]=="ALL"{"ANY"}else{"ALL"});self.queue_view("unsaved-view",settings,window,cx);}
-    fn load_view_support(&mut self,timers:bool,window:&mut Window,cx:&mut Context<Self>){
-        if self.views.support_pending{return;}let Some(token)=self.cli_token()else{return;};let board=self.options.board;let generation=self.views.generation;self.views.support_pending=true;if !timers{self.views.people=None;}
-        let(send,receive)=std::sync::mpsc::channel();let expected_token=token.clone();
-        std::thread::spawn(move||{let result=ht_core::Http::new(token).and_then(|mut http|if timers{ht_core::board_views::running_timers(&mut http)}else{ht_core::board_views::filter_people(&mut http,board)}).map_err(|error|error.to_string());let _=send.send(result);});
-        cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(50)).await;match receive.try_recv(){Ok(result)=>{let _=view.update_in(cx,|this,window,cx|{
-            if this.views.generation!=generation{return;}this.views.support_pending=false;if this.options.board!=board || this.cli_token().as_deref()!=Some(expected_token.as_str()){return;}
-            match result{Ok(data)=>{if timers{let _=this.db.kv_set(&format!("web-running-timers:{}",this.db.current_user_id().unwrap_or(0)),&data.to_string());let mut settings=this.view_settings();let mut filters=settings["board_filters"]["addedFilters"].as_array().cloned().unwrap_or_default();if filters.iter().any(|filter|filter["type"]=="RunningTimer"){filters.retain(|filter|filter["type"]!="RunningTimer");}else{filters.push(json!({"type":"RunningTimer","searchPayload":[]}));}settings["board_filters"]["addedFilters"]=json!(filters);this.queue_view("unsaved-view",settings,window,cx);}else{this.views.people=Some(data);}},Err(error)=>{this.error=Some(error);this.views.people=None;}}cx.notify();});break;},Err(std::sync::mpsc::TryRecvError::Empty)=>(),_=>break}}}).detach();
+    pub(super) fn hide_current_column(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(id) = self.columns.get(self.column).map(|column| column.id) else {
+            return;
+        };
+        let mut settings = self.view_settings();
+        for column in settings["board_columns_view"]
+            .as_array_mut()
+            .into_iter()
+            .flatten()
+        {
+            if column.get("id").or_else(|| column.get("sectionId")) == Some(&json!(id)) {
+                column["visibility"] = json!(false);
+            }
+        }
+        self.queue_view("unsaved-view", settings, window, cx);
+    }
+    pub(super) fn command_sort(&mut self, mode: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let mut levels = vec![json!({"mode":mode,"order":"Descending"})];
+        levels.extend(
+            self.view_settings()["board_sorting_stack"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .filter(|level| level["mode"] != mode)
+                .take(2)
+                .cloned(),
+        );
+        self.save_sort_levels(levels, window, cx);
+    }
+    fn sort_levels(&self) -> Vec<Value> {
+        let settings = self.view_settings();
+        if settings["board_sorting_mode"] == "Manual" {
+            return vec![];
+        }
+        let mut levels = vec![
+            json!({"mode":settings["board_sorting_mode"],"order":settings["board_sorting_order"]}),
+        ];
+        levels.extend(
+            settings["board_sorting_stack"]
+                .as_array()
+                .into_iter()
+                .flatten()
+                .cloned(),
+        );
+        levels
+    }
+    fn save_sort_levels(
+        &mut self,
+        levels: Vec<Value>,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) {
+        let mut settings = self.view_settings();
+        settings["board_sorting_mode"] = levels
+            .first()
+            .map(|level| level["mode"].clone())
+            .unwrap_or(json!("Manual"));
+        if let Some(level) = levels.first() {
+            settings["board_sorting_order"] = level["order"].clone();
+        }
+        settings["board_sorting_stack"] = json!(levels.into_iter().skip(1).collect::<Vec<_>>());
+        self.queue_view("unsaved-view", settings, window, cx);
+    }
+    fn toggle_value_match(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        let kind = if self.views.panel == Some(Panel::Labels) {
+            "Labels"
+        } else {
+            "Assignees"
+        };
+        let mut settings = self.view_settings();
+        let Some(filter) = settings["board_filters"]["addedFilters"]
+            .as_array_mut()
+            .and_then(|filters| filters.iter_mut().find(|filter| filter["type"] == kind))
+        else {
+            return;
+        };
+        filter["match"] = json!(if filter["match"] == "ALL" {
+            "ANY"
+        } else {
+            "ALL"
+        });
+        self.queue_view("unsaved-view", settings, window, cx);
+    }
+    fn load_view_support(&mut self, timers: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.views.support_pending {
+            return;
+        }
+        let Some(token) = self.cli_token() else {
+            return;
+        };
+        let board = self.options.board;
+        let generation = self.views.generation;
+        self.views.support_pending = true;
+        if !timers {
+            self.views.people = None;
+        }
+        let (send, receive) = std::sync::mpsc::channel();
+        let expected_token = token.clone();
+        std::thread::spawn(move || {
+            let result = ht_core::Http::new(token)
+                .and_then(|mut http| {
+                    if timers {
+                        ht_core::board_views::running_timers(&mut http)
+                    } else {
+                        ht_core::board_views::filter_people(&mut http, board)
+                    }
+                })
+                .map_err(|error| error.to_string());
+            let _ = send.send(result);
+        });
+        cx.spawn_in(window, async move |view, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_millis(50))
+                    .await;
+                match receive.try_recv() {
+                    Ok(result) => {
+                        let _ = view.update_in(cx, |this, window, cx| {
+                            if this.views.generation != generation {
+                                return;
+                            }
+                            this.views.support_pending = false;
+                            if this.options.board != board
+                                || this.cli_token().as_deref() != Some(expected_token.as_str())
+                            {
+                                return;
+                            }
+                            match result {
+                                Ok(data) => {
+                                    if timers {
+                                        let _ = this.db.kv_set(
+                                            &format!(
+                                                "web-running-timers:{}",
+                                                this.db.current_user_id().unwrap_or(0)
+                                            ),
+                                            &data.to_string(),
+                                        );
+                                        let mut settings = this.view_settings();
+                                        let mut filters = settings["board_filters"]["addedFilters"]
+                                            .as_array()
+                                            .cloned()
+                                            .unwrap_or_default();
+                                        if filters
+                                            .iter()
+                                            .any(|filter| filter["type"] == "RunningTimer")
+                                        {
+                                            filters
+                                                .retain(|filter| filter["type"] != "RunningTimer");
+                                        } else {
+                                            filters.push(
+                                                json!({"type":"RunningTimer","searchPayload":[]}),
+                                            );
+                                        }
+                                        settings["board_filters"]["addedFilters"] = json!(filters);
+                                        this.queue_view("unsaved-view", settings, window, cx);
+                                    } else {
+                                        this.views.people = Some(data);
+                                    }
+                                }
+                                Err(error) => {
+                                    this.error = Some(error);
+                                    this.views.people = None;
+                                }
+                            }
+                            cx.notify();
+                        });
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => (),
+                    _ => break,
+                }
+            }
+        })
+        .detach();
     }
     pub(super) fn view_key(
         &mut self,
@@ -466,19 +1144,48 @@ impl Desktop {
             return false;
         }
         match event.keystroke.key.as_str() {
+            "escape" if event.keystroke.modifiers.shift => {
+                let next = match self.views.panel {
+                    Some(Panel::DateRange(kind)) => Panel::Date(kind),
+                    _ => Panel::Filters,
+                };
+                self.open_view_panel(next, window, cx);
+            }
             "escape" => {
                 self.views.panel = None;
                 window.focus(&self.focus, cx);
             }
-            "left"|"right" if matches!(self.views.panel,Some(Panel::Labels|Panel::Assignees))=>self.toggle_value_match(window,cx),
-            "tab"|"left"|"right" if self.views.panel==Some(Panel::Sort)=>{let mut levels=self.sort_levels();if let Some(level)=levels.last_mut(){level["order"]=json!(if level["order"]=="Ascending"{"Descending"}else{"Ascending"});self.save_sort_levels(levels,window,cx);}},
+            "left" | "right"
+                if matches!(self.views.panel, Some(Panel::Labels | Panel::Assignees)) =>
+            {
+                self.toggle_value_match(window, cx)
+            }
+            "tab" | "left" | "right" if self.views.panel == Some(Panel::Sort) => {
+                let mut levels = self.sort_levels();
+                if let Some(level) = levels.last_mut() {
+                    level["order"] = json!(if level["order"] == "Ascending" {
+                        "Descending"
+                    } else {
+                        "Ascending"
+                    });
+                    self.save_sort_levels(levels, window, cx);
+                }
+            }
             "enter" => self.choose_view_option(self.views.choice, window, cx),
             "down" => {
                 self.views.choice =
                     (self.views.choice + 1).min(self.view_choices().len().saturating_sub(1))
             }
             "up" => self.views.choice = self.views.choice.saturating_sub(1),
-            _ => return !matches!(self.views.panel,Some(Panel::SavePrivate|Panel::SaveTeam|Panel::RenameView)),
+            _ => {
+                return !self.views.panel.is_some_and(|panel| {
+                    Self::view_searchable(panel)
+                        || matches!(
+                            panel,
+                            Panel::SavePrivate | Panel::SaveTeam | Panel::RenameView
+                        )
+                });
+            }
         }
         cx.stop_propagation();
         cx.notify();
@@ -517,11 +1224,111 @@ impl Desktop {
                         this.open_view_panel(Panel::Save, window, cx)
                     })),
             )
-            .child(div().id("manage-board-views").cursor_pointer().child("Manage views").on_click(cx.listener(|this,_,window,cx|this.open_view_panel(Panel::Manage,window,cx))))
+            .child(
+                div()
+                    .id("manage-board-views")
+                    .cursor_pointer()
+                    .child("Manage views")
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.open_view_panel(Panel::Manage, window, cx)
+                    })),
+            )
             .into_any_element()
     }
-    fn can_set_view_default(&self,project:&Value)->bool{
-        self.db.current_user_id().is_some_and(|user|project["ownerId"]==user || project["members"].as_array().into_iter().flatten().any(|m|m["userId"]==user && m["status"]=="Accepted" && m["role"]=="Admin"))
+    fn can_set_view_default(&self, project: &Value) -> bool {
+        self.db.current_user_id().is_some_and(|user| {
+            project["ownerId"] == user
+                || project["members"]
+                    .as_array()
+                    .into_iter()
+                    .flatten()
+                    .any(|m| {
+                        m["userId"] == user && m["status"] == "Accepted" && m["role"] == "Admin"
+                    })
+        })
+    }
+    fn view_date_calendar(&self, cx: &mut Context<Self>) -> AnyElement {
+        let mut months = div().flex().gap(px(16.));
+        for index in 0..2 {
+            let month = self
+                .views
+                .month
+                .checked_add_months(chrono::Months::new(index))
+                .unwrap_or(self.views.month);
+            let first =
+                month - chrono::Duration::days(month.weekday().num_days_from_sunday() as i64);
+            let mut calendar = div().flex().flex_col().child(
+                div()
+                    .flex()
+                    .justify_between()
+                    .child(
+                        div()
+                            .id(("filter-month-prev", index))
+                            .cursor_pointer()
+                            .child("‹")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.views.month = this
+                                    .views
+                                    .month
+                                    .checked_sub_months(chrono::Months::new(1))
+                                    .unwrap_or(this.views.month);
+                                cx.notify();
+                            })),
+                    )
+                    .child(month.format("%B %Y").to_string())
+                    .child(
+                        div()
+                            .id(("filter-month-next", index))
+                            .cursor_pointer()
+                            .child("›")
+                            .on_click(cx.listener(|this, _, _, cx| {
+                                this.views.month = this
+                                    .views
+                                    .month
+                                    .checked_add_months(chrono::Months::new(1))
+                                    .unwrap_or(this.views.month);
+                                cx.notify();
+                            })),
+                    ),
+            );
+            for week in 0..6 {
+                let mut row = div().flex();
+                for day in 0..7 {
+                    let date = first + chrono::Duration::days(week * 7 + day);
+                    let selected = self
+                        .views
+                        .from
+                        .is_some_and(|from| date >= from && date <= self.views.to.unwrap_or(from));
+                    row = row.child(
+                        div()
+                            .id((
+                                "filter-range-day",
+                                (index as usize) * 42 + (week * 7 + day) as usize,
+                            ))
+                            .w(px(28.))
+                            .h(px(28.))
+                            .cursor_pointer()
+                            .when(selected, |d| d.bg(color(self.colors.active)))
+                            .child(date.day().to_string())
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                if let Some(from) =
+                                    this.views.from.filter(|_| this.views.to.is_none())
+                                {
+                                    this.views.from = Some(from.min(date));
+                                    this.views.to = Some(from.max(date));
+                                } else {
+                                    this.views.from = Some(date);
+                                    this.views.to = None;
+                                }
+                                cx.notify();
+                            })),
+                    );
+                }
+                calendar = calendar.child(row);
+            }
+            months = months.child(calendar);
+        }
+        months.into_any_element()
     }
     pub(super) fn view_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(panel) = self.views.panel else {
@@ -530,9 +1337,17 @@ impl Desktop {
         let t = self.colors;
         let title = match panel {
             Panel::Sort => "Sort",
+            Panel::Columns => "Manage board columns",
+            Panel::Subtasks => "Sub-task Settings",
+            Panel::Date("DueDate") | Panel::DateRange("DueDate") => "Filter by due date",
+            Panel::Date("CreatedAt") | Panel::DateRange("CreatedAt") => "Filter by created date",
+            Panel::Date(_) | Panel::DateRange(_) => "Filter by last updated date",
             Panel::Save => "Save this view",
-            Panel::SaveTeam=>"Save as new view for team",Panel::SavePrivate=>"Save as view for me only",
-            Panel::Manage=>"Manage views",Panel::RenameView=>"View settings",Panel::DeleteView=>"Delete this view? That cannot be undone.",
+            Panel::SaveTeam => "Save as new view for team",
+            Panel::SavePrivate => "Save as view for me only",
+            Panel::Manage => "Manage views",
+            Panel::RenameView => "View settings",
+            Panel::DeleteView => "Delete this view? That cannot be undone.",
             _ => "Filter",
         };
         div()
@@ -542,9 +1357,21 @@ impl Desktop {
             .flex()
             .items_center()
             .justify_center()
+            .on_mouse_down(
+                gpui::MouseButton::Left,
+                cx.listener(|this, _, window, cx| {
+                    this.views.panel = None;
+                    window.focus(&this.focus, cx);
+                    cx.notify();
+                }),
+            )
             .child(
                 div()
                     .id("board-view-dialog")
+                    .on_mouse_down(
+                        gpui::MouseButton::Left,
+                        cx.listener(|_, _, _, cx| cx.stop_propagation()),
+                    )
                     .w(px(480.))
                     .max_h(px(600.))
                     .overflow_y_scroll()
@@ -552,9 +1379,90 @@ impl Desktop {
                     .bg(color(t.comment))
                     .rounded(px(6.))
                     .child(title)
-                    .when(matches!(panel,Panel::SavePrivate|Panel::SaveTeam|Panel::RenameView),|d|d.child(self.views.input.clone()))
-                    .when(panel==Panel::Sort,|d|d.children(self.sort_levels().into_iter().enumerate().map(|(i,level)|div().flex().child(format!("{} · {}",level["mode"].as_str().unwrap_or(""),level["order"].as_str().unwrap_or(""))).child(div().id(("sort-level-order",i)).p(px(8.)).cursor_pointer().child("↕").on_click(cx.listener(move|this,_,window,cx|{let mut levels=this.sort_levels();if let Some(level)=levels.get_mut(i){level["order"]=json!(if level["order"]=="Ascending"{"Descending"}else{"Ascending"});this.save_sort_levels(levels,window,cx);}}))).child(div().id(("sort-level-remove",i)).p(px(8.)).cursor_pointer().child("×").on_click(cx.listener(move|this,_,window,cx|{let mut levels=this.sort_levels();if i<levels.len(){levels.remove(i);this.save_sort_levels(levels,window,cx);}}))))))
-                    .when(matches!(panel,Panel::Labels|Panel::Assignees),|d|d.child(div().id("filter-value-match").p(px(8.)).cursor_pointer().child("Match any / all").on_click(cx.listener(|this,_,window,cx|this.toggle_value_match(window,cx)))))
+                    .when(Self::view_searchable(panel), |d| {
+                        d.child(self.views.query.clone())
+                    })
+                    .when(matches!(panel, Panel::DateRange(_)), |d| {
+                        d.child(self.view_date_calendar(cx))
+                    })
+                    .when(
+                        matches!(
+                            panel,
+                            Panel::SavePrivate | Panel::SaveTeam | Panel::RenameView
+                        ),
+                        |d| d.child(self.views.input.clone()),
+                    )
+                    .when(panel == Panel::Sort, |d| {
+                        d.children(
+                            self.sort_levels()
+                                .into_iter()
+                                .enumerate()
+                                .map(|(i, level)| {
+                                    div()
+                                        .flex()
+                                        .child(format!(
+                                            "{} · {}",
+                                            level["mode"].as_str().unwrap_or(""),
+                                            level["order"].as_str().unwrap_or("")
+                                        ))
+                                        .child(
+                                            div()
+                                                .id(("sort-level-order", i))
+                                                .p(px(8.))
+                                                .cursor_pointer()
+                                                .child("↕")
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        let mut levels = this.sort_levels();
+                                                        if let Some(level) = levels.get_mut(i) {
+                                                            level["order"] =
+                                                                json!(if level["order"]
+                                                                    == "Ascending"
+                                                                {
+                                                                    "Descending"
+                                                                } else {
+                                                                    "Ascending"
+                                                                });
+                                                            this.save_sort_levels(
+                                                                levels, window, cx,
+                                                            );
+                                                        }
+                                                    },
+                                                )),
+                                        )
+                                        .child(
+                                            div()
+                                                .id(("sort-level-remove", i))
+                                                .p(px(8.))
+                                                .cursor_pointer()
+                                                .child("×")
+                                                .on_click(cx.listener(
+                                                    move |this, _, window, cx| {
+                                                        let mut levels = this.sort_levels();
+                                                        if i < levels.len() {
+                                                            levels.remove(i);
+                                                            this.save_sort_levels(
+                                                                levels, window, cx,
+                                                            );
+                                                        }
+                                                    },
+                                                )),
+                                        )
+                                }),
+                        )
+                    })
+                    .when(matches!(panel, Panel::Labels | Panel::Assignees), |d| {
+                        d.child(
+                            div()
+                                .id("filter-value-match")
+                                .p(px(8.))
+                                .cursor_pointer()
+                                .child("Match any / all")
+                                .on_click(cx.listener(|this, _, window, cx| {
+                                    this.toggle_value_match(window, cx)
+                                })),
+                        )
+                    })
                     .children(
                         self.view_choices()
                             .into_iter()
@@ -645,7 +1553,7 @@ mod tests {
                     )
                     .unwrap();
                 assert!(!this.poll_view(window, cx));
-                assert_eq!(this.views.panel,Some(Panel::Sort));
+                assert_eq!(this.views.panel, Some(Panel::Sort));
                 assert_eq!(
                     this.view_settings()["board_sorting_mode"],
                     if status == 200 { "Priority" } else { "Manual" }
@@ -659,17 +1567,63 @@ mod tests {
 mod management_tests {
     use super::*;
     use crate::ui::task_fields::tests::desktop;
-    struct Web{status:u16,expected:ht_core::ViewWrite,reply:Value}
+    struct Web {
+        status: u16,
+        expected: ht_core::ViewWrite,
+        reply: Value,
+    }
     impl ht_core::Transport for Web {
-        fn get(&mut self,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{Ok(ht_core::http::Response{status:200,body:json!({"success":true,"user":{"id":42}})})}
-        fn post(&mut self,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{self.mutate("POST",path,body,key)}
-        fn mutate(&mut self,method:&str,path:&str,body:&Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{let(m,p,b)=self.expected.request().unwrap();assert_eq!(method,m);assert_eq!(path,p);assert_eq!(body,&b);Ok(ht_core::http::Response{status:self.status,body:if self.status==200{self.reply.clone()}else{json!({"message":"Board access denied"})}})}
+        fn get(
+            &mut self,
+            _: &str,
+        ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            Ok(ht_core::http::Response {
+                status: 200,
+                body: json!({"success":true,"user":{"id":42}}),
+            })
+        }
+        fn post(
+            &mut self,
+            path: &str,
+            body: &Value,
+            key: &str,
+        ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            self.mutate("POST", path, body, key)
+        }
+        fn mutate(
+            &mut self,
+            method: &str,
+            path: &str,
+            body: &Value,
+            _: &str,
+        ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            let (m, p, b) = self.expected.request().unwrap();
+            assert_eq!(method, m);
+            assert_eq!(path, p);
+            assert_eq!(body, &b);
+            Ok(ht_core::http::Response {
+                status: self.status,
+                body: if self.status == 200 {
+                    self.reply.clone()
+                } else {
+                    json!({"message":"Board access denied"})
+                },
+            })
+        }
     }
     #[gpui::test]
-    fn save_view_menu_uses_all_five_web_flows_and_keeps_name_on_both_refusals(cx:&mut gpui::TestAppContext){
+    fn save_view_menu_uses_all_five_web_flows_and_keeps_name_on_both_refusals(
+        cx: &mut gpui::TestAppContext,
+    ) {
         cx.update(crate::input::init);
-        let(view,cx)=cx.add_window_view(|window,cx|{let mut this=desktop(window,cx);this.screen=Screen::Board;this});
-        for option in 0..5{for status in [401,403,200]{view.update_in(cx,|this,window,cx|{
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let mut this = desktop(window, cx);
+            this.screen = Screen::Board;
+            this
+        });
+        for option in 0..5 {
+            for status in [401, 403, 200] {
+                view.update_in(cx,|this,window,cx|{
             this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{"appliedView":{"id":"v1","title":"Daily"}}],"allViews":[{"id":"v1","title":"Daily"}]}}]})).unwrap();this.reload();
             this.open_view_panel(Panel::Save,window,cx);assert_eq!(this.view_choices().len(),5);this.choose_view_option(option,window,cx);
             if matches!(option,2|3){this.views.input.update(cx,|input,cx|input.set_content("Named view".into(),cx));this.choose_view_option(0,window,cx);}
@@ -679,7 +1633,9 @@ mod management_tests {
             let pv=this.db.board_project(15).unwrap()["project_view"].clone();let reply=if change.route=="create-view"{json!({"project_view_updated":pv})}else{pv};
             this.db.drain_once(&mut Web{status,expected:change,reply},chrono::Utc::now().timestamp()+1).unwrap();assert!(!this.poll_view(window,cx));assert_eq!(this.views.panel.is_none(),status==200);
             if status!=200{assert_eq!(this.error.as_deref(),Some("Board access denied"));if option==2||option==3{assert_eq!(this.views.input.read(cx).content.as_ref(),"Named view");}}
-        });}}
+        });
+            }
+        }
     }
 }
 
@@ -687,21 +1643,119 @@ mod management_tests {
 mod advanced_control_tests {
     use super::*;
     use crate::ui::task_fields::tests::desktop;
-    struct Server{status:u16,body:Value,reply:Value}
-    impl ht_core::Transport for Server{
-        fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{assert_eq!(path,"/user/context");Ok(ht_core::http::Response{status:200,body:json!({"success":true,"user":{"id":42}})})}
-        fn post(&mut self,path:&str,body:&Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{assert_eq!(path,"/api/projects/views/unsaved-view");assert_eq!(body,&self.body);Ok(ht_core::http::Response{status:self.status,body:if self.status==200{self.reply.clone()}else{json!({"message":"Board access denied"})}})}
+    struct Server {
+        status: u16,
+        body: Value,
+        reply: Value,
     }
-    fn settle(this:&mut Desktop,status:u16,window:&mut Window,cx:&mut Context<Desktop>){
-        let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();let body=row.payload_json["change"]["body"].clone();let mut reply=this.db.board_project(15).unwrap()["project_view"].clone();reply["user_project_views"][0]["unsavedView"]=body.clone();
-        this.db.drain_once(&mut Server{status,body,reply},chrono::Utc::now().timestamp()+1).unwrap();assert!(!this.poll_view(window,cx));
-        if status!=200{assert_eq!(this.error.as_deref(),Some("Board access denied"));}
+    impl ht_core::Transport for Server {
+        fn get(
+            &mut self,
+            path: &str,
+        ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            assert_eq!(path, "/user/context");
+            Ok(ht_core::http::Response {
+                status: 200,
+                body: json!({"success":true,"user":{"id":42}}),
+            })
+        }
+        fn post(
+            &mut self,
+            path: &str,
+            body: &Value,
+            _: &str,
+        ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            assert_eq!(path, "/api/projects/views/unsaved-view");
+            assert_eq!(body, &self.body);
+            Ok(ht_core::http::Response {
+                status: self.status,
+                body: if self.status == 200 {
+                    self.reply.clone()
+                } else {
+                    json!({"message":"Board access denied"})
+                },
+            })
+        }
+    }
+    fn settle(this: &mut Desktop, status: u16, window: &mut Window, cx: &mut Context<Desktop>) {
+        let row = this
+            .db
+            .mutations()
+            .unwrap()
+            .into_iter()
+            .find(|row| row.status != "failed")
+            .unwrap();
+        let body = row.payload_json["change"]["body"].clone();
+        let mut reply = this.db.board_project(15).unwrap()["project_view"].clone();
+        reply["user_project_views"][0]["unsavedView"] = body.clone();
+        this.db
+            .drain_once(
+                &mut Server {
+                    status,
+                    body,
+                    reply,
+                },
+                chrono::Utc::now().timestamp() + 1,
+            )
+            .unwrap();
+        assert!(!this.poll_view(window, cx));
+        if status != 200 {
+            assert_eq!(this.error.as_deref(), Some("Board access denied"));
+        }
     }
     #[gpui::test]
-    fn actor_date_match_and_sort_stack_controls_queue_web_settings_and_rollback_both_refusals(cx:&mut gpui::TestAppContext){
+    fn custom_calendar_range_and_typed_date_search_queue_exact_web_payload_and_restore_refusals(
+        cx: &mut gpui::TestAppContext,
+    ) {
         cx.update(crate::input::init);
-        let(view,cx)=cx.add_window_view(|window,cx|desktop(window,cx));
-        for status in [401,403,200]{for panel in [Panel::CreatedBy,Panel::UpdatedBy,Panel::BlockedByPerson,Panel::Date("DueDate"),Panel::Date("CreatedAt"),Panel::Date("UpdatedRange"),Panel::ValueMatch,Panel::Sort,Panel::Columns,Panel::Subtasks]{view.update_in(cx,|this,window,cx|{
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        for kind in ["DueDate", "CreatedAt", "UpdatedRange"] {
+            for status in [401, 403, 200] {
+                view.update_in(cx,|this,window,cx|{
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}}]})).unwrap();this.open_view_panel(Panel::Date(kind),window,cx);
+            let custom=this.view_choices().iter().position(|(_,value)|*value=="CUSTOM").unwrap();this.choose_view_option(custom,window,cx);assert_eq!(this.views.panel,Some(Panel::DateRange(kind)));
+            this.views.from=Some(NaiveDate::from_ymd_opt(2026,10,1).unwrap());this.views.to=Some(NaiveDate::from_ymd_opt(2026,10,15).unwrap());let before=this.view_settings();this.choose_view_option(1,window,cx);
+            let payload=this.view_settings()["board_filters"]["addedFilters"][0]["searchPayload"][0].clone();assert!(payload["fromDate"].as_str().unwrap().starts_with("2026-10-01T00:00:00"));assert!(payload["toDate"].as_str().unwrap().starts_with("2026-10-15T00:00:00"));assert!(payload["dynamicRange"].is_null());settle(this,status,window,cx);if status!=200{assert_eq!(this.view_settings(),before);assert_eq!(this.views.panel,Some(Panel::DateRange(kind)));}
+        });
+            }
+        }
+        view.update_in(cx, |this, window, cx| {
+            this.open_view_panel(Panel::Date("DueDate"), window, cx);
+            this.views.query_text = "2026-12-01".into();
+            let choices = this.view_choices();
+            assert_eq!(choices.len(), 1);
+            assert_eq!(choices[0].1["condition"], "AFTER");
+            this.choose_view_option(0, window, cx);
+            settle(this, 200, window, cx);
+            this.open_view_panel(Panel::Filters, window, cx);
+            this.views.query_text = "stale".into();
+            assert!(
+                this.view_choices()
+                    .iter()
+                    .all(|(name, _)| name.to_lowercase().contains("stale"))
+            );
+        });
+    }
+    #[gpui::test]
+    fn actor_date_match_and_sort_stack_controls_queue_web_settings_and_rollback_both_refusals(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        for status in [401, 403, 200] {
+            for panel in [
+                Panel::CreatedBy,
+                Panel::UpdatedBy,
+                Panel::BlockedByPerson,
+                Panel::Date("DueDate"),
+                Panel::Date("CreatedAt"),
+                Panel::Date("UpdatedRange"),
+                Panel::ValueMatch,
+                Panel::Sort,
+                Panel::Columns,
+                Panel::Subtasks,
+            ] {
+                view.update_in(cx,|this,window,cx|{
             this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}}]})).unwrap();this.reload();
             this.views.people=Some(json!({"owner":{"id":42,"uid":"u42","displayName":"Owner"},"members":[],"boardAgents":[{"id":"agent","displayName":"Helper"}]}));
             this.open_view_panel(panel,window,cx);
@@ -709,7 +1763,9 @@ mod advanced_control_tests {
             let before=this.view_settings();this.choose_view_option(if matches!(panel,Panel::Date(_)){2}else{0},window,cx);
             assert_ne!(this.view_settings(),before,"{panel:?}");settle(this,status,window,cx);
             if status!=200{assert_eq!(this.view_settings(),before);}
-        });}}
+        });
+            }
+        }
         view.update_in(cx,|this,window,cx|{
             this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}}]})).unwrap();this.open_view_panel(Panel::Sort,window,cx);
             for index in [1,5,2]{this.choose_view_option(index,window,cx);settle(this,200,window,cx);assert_eq!(this.views.panel,Some(Panel::Sort));}
