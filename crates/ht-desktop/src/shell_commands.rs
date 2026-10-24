@@ -90,7 +90,10 @@ mod tests {
         let rows = crate::command_center::commands(Screen::Inbox, false);
         let name = &rows.iter().find(|row| row.key == key).expect(key).name;
         cx.simulate_input(name);
-        let index = view.read_with(cx, |this, _| {
+        let index = view.read_with(cx, |this, cx| {
+            assert_eq!(this.interaction.modal, Some(crate::ui::interactions::Modal::Commands), "{key}: Ctrl+K must open the palette");
+            assert_eq!(this.interaction.query.read(cx).content.as_ref(), name, "{key}: query must reach the palette input");
+            let rows = this.command_rows();
             let usage = this.db.kv_get("command-usage").unwrap().and_then(|value| serde_json::from_str::<Value>(&value).ok()).unwrap_or(Value::Null);
             crate::command_center::ranked(&rows, name, &usage, chrono::Utc::now().timestamp_millis()).iter().position(|row| row.key == key).expect("command must match its web name")
         }).unwrap();
@@ -141,8 +144,8 @@ mod tests {
         ] {
             command(view, &mut cx, key);
             view.read_with(&cx, |this, _| {
-                assert!(this.shell.settings);
-                assert_eq!(this.shell.settings_state.section, section);
+                assert!(this.shell.settings, "{key} must open native settings");
+                assert_eq!(this.shell.settings_state.section, section, "{key}");
                 assert_eq!(this.shell.settings_state.board, 15);
                 assert!(!this.shell.settings_state.calendar_weekends);
                 assert!(this.footer);

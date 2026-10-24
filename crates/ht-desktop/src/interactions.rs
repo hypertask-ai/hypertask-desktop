@@ -753,7 +753,7 @@ impl Desktop {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_else(|| serde_json::json!({}))
     }
-    fn command_rows(&self) -> Vec<command_center::Command> {
+    pub(super) fn command_rows(&self) -> Vec<command_center::Command> {
         let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
         self.add_comment_commands(&mut rows);
         self.add_board_commands(&mut rows);

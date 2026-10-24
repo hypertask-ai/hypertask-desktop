@@ -187,7 +187,7 @@ mod popup_tests {
         });
         for mode in [DisplayMode::Sidebar,DisplayMode::Floating,DisplayMode::Fullscreen]{
             view.update_in(cx,|sidebar,_,cx|{sidebar.set_mode(mode,cx);sidebar.model_menu=false;});
-            let draw=|cx:&mut gpui::VisualTestContext|cx.draw(gpui::point(px(0.),px(0.)),gpui::size(px(1440.),px(900.)),|_,_|view.clone().into_element());
+            let draw=|cx:&mut gpui::VisualTestContext| { cx.update(|window,cx| { window.refresh();window.draw(cx).clear(cx); }); };
             draw(cx);
             let measured=|cx:&gpui::VisualTestContext,key:&str|view.read_with(cx,|sidebar,_|sidebar.capture.as_ref().unwrap().borrow().interaction_elements().into_iter().find(|element|element["key"]==key).unwrap());
             let input=measured(cx,"ai.models.composer");let toggle=measured(cx,"ai.models.toggle");
