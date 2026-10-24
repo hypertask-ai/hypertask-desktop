@@ -749,7 +749,7 @@ mod tests {
         view.update(&mut cx,|this,_,_|{this.db.apply_task(&json!({"id":1,"title":"Needle","projectId":15,"status":"Normal","recurrence":"Monthly"})).unwrap();}).unwrap();
         for (rule, label) in [
             (Some("Daily"), "Every day"),
-            (Some("Weekdays"), "Every weekday"),
+            (Some("Weekdays"), "Every weekday (Mon–Fri)"),
             (Some("Weekly"), "Every week"),
             (Some("Biweekly"), "Every 2 weeks"),
             (Some("Monthly"), "Every month"),
@@ -763,6 +763,21 @@ mod tests {
                     .unwrap();
                 palette(&mut cx, "Repeat task");
                 cx.simulate_input(label);
+                let index = view
+                    .read_with(&cx, |this, cx| {
+                        let rows = this.choices(cx);
+                        if rule == Some("Weekly") {
+                            assert_eq!(rows[0].name, "Every weekday (Mon–Fri)");
+                            assert_eq!(rows[1].name, "Every week");
+                        }
+                        rows.iter()
+                            .position(|row| row.name == label)
+                            .expect("exact web recurrence label must be selectable")
+                    })
+                    .unwrap();
+                for _ in 0..index {
+                    cx.simulate_keystrokes("down");
+                }
                 cx.simulate_keystrokes("enter");
                 view.update(&mut cx, |this, window, cx| {
                     let change = TaskAction::Recurrence(rule.map(str::to_owned));
