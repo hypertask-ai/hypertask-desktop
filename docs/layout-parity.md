@@ -322,3 +322,36 @@ the VPS). The new lock contract failed on that real drift while all 28 text
 tests passed. Linux CI requires `git diff --exit-code -- Cargo.lock` after
 workspace/backend tests, so green checks cannot silently use an uncommitted
 regenerated lock.
+
+## Remaining-box audit after the main reset
+
+Acceptance recorded before implementation: `internal/LOOK-REMAINING-GATES.md`.
+Baseline SHA `4ed0152857d7a23bd63551f188dc53d5125a5d8b`, CI
+[40104519238](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40104519238).
+The downloaded `layout-dumps` artifact independently reproduces **68 raw / 34
+matched** with the unchanged comparer at logical width 1920. Outputs are
+`evidence/look-remaining-before{,-parity}.txt`.
+
+A residual inbox geometry defect was obscured by the different synthetic title:
+notification content ended at **x=1308**, while the live content ends at
+**x=1340**. Native code rendered an empty metadata item as a fourth outer flex
+column, consuming an unnecessary 32px gap. The web has only three outer columns,
+and mounts metadata inside the title/content column instead:
+
+- `src/components/notifications/NotificationRow.tsx:58-81`: outer `space-x-8`,
+  inner `gap-2`, metadata inside the inner content column, actions outside it.
+- `src/components/Common/TaskRowComponents/TaskTitle.tsx:41-45`: no metadata DOM
+  when empty; populated metadata is `shrink-0`, clipped at desktop max-width 180px.
+- `TaskTitle.tsx:56-59`: existing priority label uses 11px typography.
+
+All citations refer to web revision `6f9901764d355aba7bfc76e4e62ff255e0b68b31`.
+The native correction follows that hierarchy and existing metadata text, without
+adding UI or fitting coordinates to the reference. A hosted-CI visual regression
+covers both empty and populated metadata, asserting the source's 8px inner and
+32px outer gaps and no queued writes. No existing gate or fixture is changed.
+
+This corrects a component of an already-counted box difference; the count cannot
+be claimed reduced unless the entire content-dependent box falls within the
+original comparer tolerance. Collector-only rail keys remain present, and
+synthetic names/tickets/dates/card badges remain unchanged rather than being
+replaced with live content to improve a number. Final CI measurement follows.
