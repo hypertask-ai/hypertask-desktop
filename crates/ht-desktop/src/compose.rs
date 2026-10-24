@@ -319,14 +319,13 @@ impl Desktop {
         }
         let text = self.compose.input.read(cx).content.to_string();
         self.compose.project = self.compose_project(cx);
-        match self.db.enqueue(
-            Write::ComposeTask {
-                project_id: self.compose.project,
-                text,
-                time_zone: iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".into()),
-            },
-            chrono::Utc::now().timestamp(),
-        ) {
+        let time_zone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".into());
+        let write = if let Some(task) = self.detail.as_ref().filter(|detail| self.screen == Screen::Task && detail.task.project_id == self.compose.project) {
+            Write::ComposeTaskInTask { project_id: self.compose.project, task_id: task.task.id, text, time_zone }
+        } else {
+            Write::ComposeTask { project_id: self.compose.project, text, time_zone }
+        };
+        match self.db.enqueue(write, chrono::Utc::now().timestamp()) {
             Ok(id) => {
                 self.compose.pending = self
                     .db
@@ -589,6 +588,50 @@ mod tests {
         let view = Desktop::new(db, options, window, cx);
         window.focus(&view.focus, cx);
         view
+    }
+    #[gpui::test]
+    fn task_writer_palette_and_ctrlj_fill_empty_task_with_mocked_acceptance_and_refusals(cx: &mut gpui::TestAppContext) {
+        struct FillServer(u16);
+        impl ht_core::Transport for FillServer {
+            fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                Ok(ht_core::http::Response { status:200, body:match path {
+                    "/user/context" => json!({"success":true,"user":{"id":985}}),
+                    "/api/flags" => json!({"flags":{"htpr-6929-compose-task-writer":true,"htpr-6937-new-task-window":true}}),
+                    "/api/tasks/single?id=1" => json!({"id":1,"projectId":7283,"title":"New task","description":"<p></p>","status":"Normal"}),
+                    _ => panic!("unexpected {path}"),
+                } })
+            }
+            fn post(&mut self,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
+                assert!(!key.is_empty());assert_eq!(body["existingTaskId"],1);
+                Ok(ht_core::http::Response { status:if path=="/api/ai/task-writer" {200}else{self.0}, body:match path {
+                    "/api/ai/task-writer" => json!({"tasks":[{"title":"Written","description":"<p>Body</p>"}]}),
+                    "/api/tasks/createGlobally" => if self.0==200 {json!({"newTask":{"id":1,"projectId":7283,"title":"Written","description":"<p>Body</p>","status":"Normal"}})}else{json!({"message":"Forbidden"})},
+                    _ => panic!("unexpected {path}"),
+                } })
+            }
+        }
+        cx.update(crate::input::init);
+        let (view,cx)=cx.add_window_view(desktop);
+        for status in [401,403,200] {
+            view.update_in(cx,|this,_,cx| {
+                this.db.apply_task(&json!({"id":1,"projectId":7283,"title":"New task","description":"<p></p>","status":"Normal"})).unwrap();
+                this.open_task(1,cx);
+            });
+            if status==401 {
+                cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Open AI task writer");cx.simulate_keystrokes("enter");
+            } else { cx.simulate_keystrokes("ctrl-j"); }
+            view.read_with(cx,|this,_|assert!(this.compose.open));
+            cx.simulate_input("Original note");cx.simulate_keystrokes("enter enter");
+            view.update_in(cx,|this,window,cx| {
+                assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);
+                this.db.drain_once(&mut FillServer(status),chrono::Utc::now().timestamp()+1).unwrap();
+                this.poll_compose(window,cx);
+                assert_eq!(this.db.task(1).unwrap().unwrap().title,if status==200 {"Written"}else{"New task"});
+                if status==200 {assert!(!this.compose.open);assert_eq!(this.selected_task(),Some(1));}
+                else {assert!(this.compose.open);assert_eq!(this.compose.input.read(cx).content.as_ref(),"Original note");assert!(this.compose.error.is_some());}
+            });
+            if status!=200 {cx.simulate_keystrokes("escape");view.update_in(cx,|this,_,cx|this.compose.input.update(cx,|input,cx|input.set_content(String::new(),cx)));}
+        }
     }
     #[gpui::test]
     fn ctrlj_tabs_prompt_board_chip_picker_and_send_newline_are_real_keys(

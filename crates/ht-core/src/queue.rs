@@ -18,6 +18,7 @@ pub enum Write {
     CreateTask { project_id: i64, section_id: i64, title: String, top: bool },
     CreateTaskForm { project_id:i64, section_id:i64, title:String, fields:Value },
     ComposeTask { project_id: i64, text: String, time_zone: String },
+    ComposeTaskInTask { project_id: i64, task_id: i64, text: String, time_zone: String },
     Shell { request: crate::ShellWrite },
     Board { change: crate::BoardWrite },
     EditorImprove { task_id:i64, command:crate::ImproveCommand, text:String },
@@ -152,11 +153,15 @@ impl Db {
                 let payload=db.prepare_create_form(*project_id,*section_id,title,fields)?;
                 (format!("create:{project_id}"),"web_create",payload)
             }
-            Write::ComposeTask { project_id, text, time_zone } => {
+            Write::ComposeTask { project_id, text, time_zone } | Write::ComposeTaskInTask { project_id, text, time_zone, .. } => {
                 ensure!(*project_id > 0 && !text.trim().is_empty(), "choose a board and describe the task");
                 let user = db.current_user_id().context("sign in before composing a task")?;
                 let project = db.raw("Project", &json!(project_id))?.context("board is unavailable")?;
-                (format!("compose:{project_id}"), "compose_task", json!({"project":project,"text":text,"time_zone":time_zone,"user_id":user}))
+                let target = if let Write::ComposeTaskInTask { task_id, .. } = &write {
+                    ensure!(db.task(*task_id)?.is_some_and(|task| task.project_id == *project_id), "Task is unavailable");
+                    Some(*task_id)
+                } else { None };
+                (format!("compose:{project_id}"), "compose_task", json!({"project":project,"text":text,"time_zone":time_zone,"user_id":user,"target_task_id":target}))
             }
             Write::Board { change } => {
                 change.request()?;
@@ -746,7 +751,7 @@ impl Db {
                     db.conn.execute("DELETE FROM Task WHERE id=?", [-row.id])?;
                     db.kv_set(&format!("create-result:{}",row.client_id), &json!({"error":result.1}).to_string())?;
                 }
-                if row.kind == "compose_task" { db.kv_set(&format!("compose-result:{}",row.client_id), &json!({"error":result.1}).to_string())?; }
+                if row.kind == "compose_task" { db.rollback_compose(&row.client_id, &row.payload_json)?; db.kv_set(&format!("compose-result:{}",row.client_id), &json!({"error":result.1}).to_string())?; }
                 if row.kind == "board_write" {
                     if !row.payload_json["before"].is_null() {
                         if let Some(task)=row.payload_json["change"]["PositionTask"]["task"].as_i64(){

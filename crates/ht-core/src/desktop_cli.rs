@@ -187,6 +187,31 @@ pub fn writer_drafts(body: &Value) -> Result<Vec<Draft>> {
     Ok(drafts)
 }
 
+pub fn empty_compose_target(task: &Value) -> bool {
+    let title = task["title"].as_str().unwrap_or("").trim().to_lowercase();
+    let html = task["description_"]["content"].as_str().or_else(|| task["description"].as_str()).unwrap_or("");
+    let doc = scraper::Html::parse_fragment(html);
+    let media = scraper::Selector::parse("img, video, audio, iframe, embed, hr").unwrap();
+    ["", "enter task title here", "new task"].contains(&title.as_str())
+        && doc.select(&media).next().is_none()
+        && plain(html).replace('\u{a0}', " ").trim().is_empty()
+}
+
+impl Db {
+    pub(crate) fn rollback_compose(&self, key: &str, payload: &Value) -> Result<()> {
+        if self.current_user_id() != payload["user_id"].as_i64() { return Ok(()); }
+        let Some(snapshot) = self.kv_get(&format!("compose-fill:{key}"))? else { return Ok(()); };
+        let snapshot: Value = serde_json::from_str(&snapshot)?;
+        let mut task = self.raw("Task", &snapshot["before"]["id"])?.context("Task is unavailable")?;
+        for field in ["title", "description", "description_"] {
+            if task[field] == snapshot["optimistic"][field] {
+                task[field] = snapshot["before"][field].clone();
+            }
+        }
+        self.upsert_task(&task)
+    }
+}
+
 pub(crate) fn compose(
     db: &Db,
     transport: &mut impl Transport,
@@ -219,21 +244,28 @@ pub(crate) fn compose(
     let prepared = if let Some(value) = prepared {
         value
     } else {
-        let defaults = defaults_request(project["id"].as_i64().unwrap_or(0));
-        let response = transport.get(&defaults.path)?;
-        if !(200..300).contains(&response.status) {
-            return Ok(response);
+        let mut existing = None;
+        if let Some(target) = payload["target_task_id"].as_i64() {
+            let flags = transport.get("/api/flags")?;
+            if matches!(flags.status, 401 | 403) { return Ok(flags); }
+            if flags.status == 200 && flags.body["flags"]["htpr-6929-compose-task-writer"] == true
+                && flags.body["flags"]["htpr-6937-new-task-window"] == true {
+                let response = transport.get(&format!("/api/tasks/single?id={target}"))?;
+                if response.status != 200 { return Ok(response); }
+                if response.body["id"] != target || response.body["projectId"] != project["id"] { return refused(403); }
+                if empty_compose_target(&response.body) { existing = Some(response.body); }
+            }
         }
-        if response.body["sectionId"].as_i64().is_none_or(|id| id <= 0) {
-            return refused(422);
-        }
-        let placement = response.body;
+        let placement = if existing.is_some() { Value::Null } else {
+            let defaults = defaults_request(project["id"].as_i64().unwrap_or(0));
+            let response = transport.get(&defaults.path)?;
+            if !(200..300).contains(&response.status) { return Ok(response); }
+            if response.body["sectionId"].as_i64().is_none_or(|id| id <= 0) { return refused(422); }
+            response.body
+        };
         let text = payload["text"].as_str().unwrap_or("");
-        let req = writer_request(
-            project,
-            text,
-            payload["time_zone"].as_str().unwrap_or("UTC"),
-        );
+        let mut req = writer_request(project, text, payload["time_zone"].as_str().unwrap_or("UTC"));
+        if let Some(task) = &existing { req.body["existingTaskId"] = task["id"].clone(); }
         let response = transport.mutate(&req.method, &req.path, &req.body, key);
         let (drafts, failed) = match response {
             Ok(Response { status: 402, body }) if body["code"] == "PLAN_LIMIT_REACHED" => {
@@ -263,7 +295,13 @@ pub(crate) fn compose(
         } else {
             drafts
         };
-        let value = json!({"placement":placement,"drafts":drafts,"writerFailed":failed});
+        let placement = if existing.is_some() && drafts.len() > 1 {
+            let response = transport.get(&defaults_request(project["id"].as_i64().unwrap_or(0)).path)?;
+            if response.status != 200 { return Ok(response); }
+            if response.body["sectionId"].as_i64().is_none_or(|id| id <= 0) { return refused(422); }
+            response.body
+        } else { placement };
+        let value = json!({"placement":placement,"drafts":drafts,"writerFailed":failed,"existing":existing});
         db.kv_set(&cache_key, &value.to_string())
             .map_err(|_| TransportError::InvalidResponse)?;
         value
@@ -283,19 +321,33 @@ pub(crate) fn compose(
             tasks.push(task);
             continue;
         }
-        let mut body = crate::task_create::view_defaults(project);
+        let fills_existing = index == 0 && prepared["existing"].is_object();
+        let mut body = if prepared["existing"].is_object() { json!({"assignees":[]}) } else { crate::task_create::view_defaults(project) };
         body["userId"] = payload["user_id"].clone(); body["projectId"] = project["id"].clone();
         body["projectIdentifier"] = project.get("uniqueIdentifier").filter(|v|!v.is_null()).cloned().unwrap_or(json!("TASK"));
         body["sectionId"] = prepared["placement"]["sectionId"].clone(); body["section_title"] = prepared["placement"]["section"].clone();
         body["ranking"] = prepared["placement"]["ranking"].clone(); body["title"] = json!(draft.title); body["description"] = json!(draft.description);
         body["fullScreenTask"] = json!(true); body["requestKind"] = json!("compose-task");
-        if body["priority"].is_null() { if let Some(value) = draft.priority.and_then(crate::task_create::priority) {body["priority"]=value;} }
-        if body["estimate"].is_null() { if let Some(value) = draft.estimate.and_then(crate::task_create::estimate) {body["estimate"]=value;} }
+        if fills_existing {
+            body["existingTaskId"] = prepared["existing"]["id"].clone();
+            for field in ["sectionId", "section_title", "ranking"] { body.as_object_mut().unwrap().remove(field); }
+        }
+        if !fills_existing && body["priority"].is_null() { if let Some(value) = draft.priority.and_then(crate::task_create::priority) {body["priority"]=value;} }
+        if !fills_existing && body["estimate"].is_null() { if let Some(value) = draft.estimate.and_then(crate::task_create::estimate) {body["estimate"]=value;} }
         if let Some(date) = &draft.due_date { body["writerDueDate"] = json!(date); body["writerTimeZone"] = payload["time_zone"].clone(); }
         if !draft.labels.is_empty() && body["tags"].as_array().is_none_or(|tags|tags.is_empty()) { body["writerLabelIds"] = json!(draft.labels); }
         if !draft.custom_fields.is_empty() {body["customFields"]=json!(draft.custom_fields);}
         let sent_key = format!("compose-sent:{key}:{index}");
         if db.kv_get(&sent_key).ok().flatten().is_some() { return refused(409); }
+        if fills_existing {
+            let before = &prepared["existing"];
+            let mut optimistic = db.raw("Task", &before["id"]).map_err(|_| TransportError::InvalidResponse)?.unwrap_or_else(|| before.clone());
+            optimistic["title"] = json!(draft.title);
+            optimistic["description"] = json!(draft.description);
+            if optimistic["description_"].is_object() { optimistic["description_"]["content"] = json!(draft.description); }
+            db.kv_set(&format!("compose-fill:{key}"), &json!({"before":before,"optimistic":optimistic}).to_string()).map_err(|_| TransportError::InvalidResponse)?;
+            db.upsert_task(&optimistic).map_err(|_| TransportError::InvalidResponse)?;
+        }
         db.kv_set(&sent_key, "true").map_err(|_|TransportError::InvalidResponse)?;
         let response = match transport.post("/api/tasks/createGlobally", &body, &format!("{key}-{index}")) {
             Ok(response) => response,
@@ -313,8 +365,9 @@ pub(crate) fn compose(
             return Ok(response);
         }
         let task = &response.body["newTask"];
-        if task["id"].as_i64().is_none_or(|id| id <= 0) {
-            return Err(TransportError::InvalidResponse);
+        if task["id"].as_i64().is_none_or(|id| id <= 0) || task["projectId"] != project["id"]
+            || (fills_existing && task["id"] != prepared["existing"]["id"]) {
+            return refused(409);
         }
         db.kv_set(&receipt_key, &task.to_string())
             .map_err(|_| TransportError::InvalidResponse)?;
@@ -324,7 +377,7 @@ pub(crate) fn compose(
     }
     Ok(Response {
         status: 200,
-        body: json!({"success":true,"tasks":tasks,"writerFailed":prepared["writerFailed"],"failedTitles":failed_titles}),
+        body: json!({"success":true,"tasks":tasks,"writerFailed":prepared["writerFailed"],"failedTitles":failed_titles,"filledExistingTask":prepared["existing"].is_object()}),
     })
 }
 

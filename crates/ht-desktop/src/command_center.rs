@@ -52,6 +52,7 @@ pub enum ShellCommand {
     AcceptTask,
     DeclineTask,
     DeclineDuplicate,
+    TaskWriter,
     SaveTemplate,
     NewFromTemplate,
     Recurrence,
@@ -139,6 +140,9 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
             ("blockedByPerson", "Blocked by person…", "SHIFT B", "blocked waiting blocker block person stuck", ShellCommand::WaitingOn),
             ("assignToMe", "Assign to me", "", "assign me self take claim mine my task i'll do it", ShellCommand::AssignMe),
         ] { rows.push(Command { key:key.into(), name:name.into(), group:"Task", keys:keys.into(), keywords, action:CommandAction::Shell(action) }); }
+    }
+    if task && screen == Screen::Task {
+        rows.push(Command { key: "openAiTaskWriter".into(), name: "Open AI task writer".into(), group: "Task", keys: String::new(), keywords: "open ai task writer write generate draft create improve description", action: CommandAction::Shell(ShellCommand::TaskWriter) });
     }
     if task {
         for (key, name, pick_board) in [("duplicateTask", "Duplicate task", false), ("duplicateTaskToBoard", "Duplicate task to board", true)] {

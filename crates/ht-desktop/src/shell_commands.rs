@@ -9,6 +9,7 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::TaskWriter => self.open_compose(window, cx),
             ShellCommand::DeclineDuplicate => {
                 self.show_modal(crate::ui::interactions::Modal::Relation(ht_core::RelationKind::Duplicate), window, cx);
                 self.task_actions.decline_duplicate = true;
