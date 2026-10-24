@@ -1,0 +1,390 @@
+{
+  "sha": "5016a9ebe48b03dbac2f2312c170878166586c59",
+  "url": "https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40055627175",
+  "workflow_result": "success",
+  "final_job_state": "all four jobs success",
+  "named_tests": 23,
+  "named_platform_receipts": 69,
+  "layout_receipts": 13,
+  "log_sha256": "42273e593cb6b14a4bec9c233e26d6981c264d06537f2dce30171c335ea7fbee",
+  "receipts": [
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_seen_and_remind_survive_restart_and_send_exact_bearer_contracts",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:28.1912599Z test inbox_seen_and_remind_survive_restart_and_send_exact_bearer_contracts ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_seen_and_remind_denials_restore_rows_and_invalid_success_retries",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:28.1755389Z test inbox_seen_and_remind_denials_restore_rows_and_invalid_success_retries ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_reminders_validate_selection_and_time_before_any_optimistic_write",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:28.1719331Z test inbox_reminders_validate_selection_and_time_before_any_optimistic_write ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_server_split_memberships_are_durable_account_scoped_and_never_guessed_from_titles",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:28.1818564Z test inbox_server_split_memberships_are_durable_account_scoped_and_never_guessed_from_titles ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "all_web_ai_dropdown_commands_use_same_prompt_contract_through_durable_bearer_queue",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:28.1501073Z test all_web_ai_dropdown_commands_use_same_prompt_contract_through_durable_bearer_queue ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "drag_paragraph_after_nested_checklist_preserves_marks_and_item_state",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.2960086Z test editor_document::drag_tests::drag_paragraph_after_nested_checklist_preserves_marks_and_item_state ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "drag_nested_sibling_items_keeps_their_complete_subtrees_and_rejects_noop",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.2959267Z test editor_document::drag_tests::drag_nested_sibling_items_keeps_their_complete_subtrees_and_rejects_noop ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "quote_html_crops_unicode_marks_and_nested_blocks_without_quoting_whole_comment",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.2960982Z test editor_document::selection_tests::quote_html_crops_unicode_marks_and_nested_blocks_without_quoting_whole_comment ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "real_drag_handle_moves_paragraph_below_checklist_and_undo_restores_html",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.3217288Z test input::editor_drag::tests::real_drag_handle_moves_paragraph_below_checklist_and_undo_restores_html ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "ai_dropdown_click_preserves_selection_and_emits_each_exact_whole_document_command",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.3045583Z test input::editor::tests::ai_dropdown_click_preserves_selection_and_emits_each_exact_whole_document_command ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "selected_comment_quote_preserves_only_selected_html_and_readonly_input_cannot_mutate",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7065985Z test ui::comment_selection::tests::selected_comment_quote_preserves_only_selected_html_and_readonly_input_cannot_mutate ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_real_search_filters_title_ticket_and_escape_restores_split_without_navigation",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7463989Z test ui::inbox::tests::inbox_real_search_filters_title_ticket_and_escape_restores_split_without_navigation ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_open_marks_only_target_seen_and_j_k_e_and_tabs_keep_keyboard_flow",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7236082Z test ui::inbox::tests::inbox_open_marks_only_target_seen_and_j_k_e_and_tabs_keep_keyboard_flow ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_row_reminder_targets_clicked_row_cancel_is_not_a_write_and_bulk_is_captured",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7759401Z test ui::inbox::tests::inbox_row_reminder_targets_clicked_row_cancel_is_not_a_write_and_bulk_is_captured ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_row_archive_targets_clicked_row_and_reply_shortcut_uses_remaining_focused_task",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7525825Z test ui::inbox::tests::inbox_row_archive_targets_clicked_row_and_reply_shortcut_uses_remaining_focused_task ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "bulk_remind_over_one_hundred_rows_queues_bounded_requests_without_dropping_selection",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7183337Z test ui::inbox::tests::bulk_remind_over_one_hundred_rows_queues_bounded_requests_without_dropping_selection ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "reminder_presets_match_web_local_hours_week_boundary_and_two_week_nine_am",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7495179Z test ui::inbox::tests::reminder_presets_match_web_local_hours_week_boundary_and_two_week_nine_am ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "composer_snooze_and_remove_notification_are_real_buttons_without_comment_writes",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7571775Z test ui::inbox::composer_tests::composer_snooze_and_remove_notification_are_real_buttons_without_comment_writes ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "inbox_tabs_use_server_memberships_counts_and_same_name_project_identity",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.6946053Z test ui::inbox::split_tests::inbox_tabs_use_server_memberships_counts_and_same_name_project_identity ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "unread_review_keeps_archives_undoes_and_flushes_only_decisions_on_escape",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.7645945Z test ui::inbox_review::tests::unread_review_keeps_archives_undoes_and_flushes_only_decisions_on_escape ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.2949873Z test command_center::composer2_contract_tests::auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "comment_reaction_picker_search_and_fast_like_toggle_the_focused_comment",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.5736895Z test ui::comment_actions::tests::comment_reaction_picker_search_and_fast_like_toggle_the_focused_comment ... ok"
+    },
+    {
+      "os": "ubuntu-24.04",
+      "test": "web_emoji_catalog_and_plain_html_are_not_a_made_up_reaction_subset",
+      "receipt": "ubuntu-24.04\tRun cargo test --workspace --release\t2026-10-24T02:50:31.6085699Z test ui::comment_actions::tests::web_emoji_catalog_and_plain_html_are_not_a_made_up_reaction_subset ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_seen_and_remind_survive_restart_and_send_exact_bearer_contracts",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:50.8904155Z test inbox_seen_and_remind_survive_restart_and_send_exact_bearer_contracts ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_seen_and_remind_denials_restore_rows_and_invalid_success_retries",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:50.3891927Z test inbox_seen_and_remind_denials_restore_rows_and_invalid_success_retries ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_reminders_validate_selection_and_time_before_any_optimistic_write",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:50.3820371Z test inbox_reminders_validate_selection_and_time_before_any_optimistic_write ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_server_split_memberships_are_durable_account_scoped_and_never_guessed_from_titles",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:50.7677776Z test inbox_server_split_memberships_are_durable_account_scoped_and_never_guessed_from_titles ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "all_web_ai_dropdown_commands_use_same_prompt_contract_through_durable_bearer_queue",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:49.9519764Z test all_web_ai_dropdown_commands_use_same_prompt_contract_through_durable_bearer_queue ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "drag_paragraph_after_nested_checklist_preserves_marks_and_item_state",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:57.7719513Z test editor_document::drag_tests::drag_paragraph_after_nested_checklist_preserves_marks_and_item_state ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "drag_nested_sibling_items_keeps_their_complete_subtrees_and_rejects_noop",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:57.7717699Z test editor_document::drag_tests::drag_nested_sibling_items_keeps_their_complete_subtrees_and_rejects_noop ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "quote_html_crops_unicode_marks_and_nested_blocks_without_quoting_whole_comment",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:57.7729880Z test editor_document::selection_tests::quote_html_crops_unicode_marks_and_nested_blocks_without_quoting_whole_comment ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "real_drag_handle_moves_paragraph_below_checklist_and_undo_restores_html",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:57.8158559Z test input::editor_drag::tests::real_drag_handle_moves_paragraph_below_checklist_and_undo_restores_html ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "ai_dropdown_click_preserves_selection_and_emits_each_exact_whole_document_command",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:57.8091001Z test input::editor::tests::ai_dropdown_click_preserves_selection_and_emits_each_exact_whole_document_command ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "selected_comment_quote_preserves_only_selected_html_and_readonly_input_cannot_mutate",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.5276520Z test ui::comment_selection::tests::selected_comment_quote_preserves_only_selected_html_and_readonly_input_cannot_mutate ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_real_search_filters_title_ticket_and_escape_restores_split_without_navigation",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.6396344Z test ui::inbox::tests::inbox_real_search_filters_title_ticket_and_escape_restores_split_without_navigation ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_open_marks_only_target_seen_and_j_k_e_and_tabs_keep_keyboard_flow",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.5889114Z test ui::inbox::tests::inbox_open_marks_only_target_seen_and_j_k_e_and_tabs_keep_keyboard_flow ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_row_reminder_targets_clicked_row_cancel_is_not_a_write_and_bulk_is_captured",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.6982997Z test ui::inbox::tests::inbox_row_reminder_targets_clicked_row_cancel_is_not_a_write_and_bulk_is_captured ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_row_archive_targets_clicked_row_and_reply_shortcut_uses_remaining_focused_task",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.6452166Z test ui::inbox::tests::inbox_row_archive_targets_clicked_row_and_reply_shortcut_uses_remaining_focused_task ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "bulk_remind_over_one_hundred_rows_queues_bounded_requests_without_dropping_selection",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.5903338Z test ui::inbox::tests::bulk_remind_over_one_hundred_rows_queues_bounded_requests_without_dropping_selection ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "reminder_presets_match_web_local_hours_week_boundary_and_two_week_nine_am",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.6402893Z test ui::inbox::tests::reminder_presets_match_web_local_hours_week_boundary_and_two_week_nine_am ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "composer_snooze_and_remove_notification_are_real_buttons_without_comment_writes",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.6804362Z test ui::inbox::composer_tests::composer_snooze_and_remove_notification_are_real_buttons_without_comment_writes ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "inbox_tabs_use_server_memberships_counts_and_same_name_project_identity",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.5521246Z test ui::inbox::split_tests::inbox_tabs_use_server_memberships_counts_and_same_name_project_identity ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "unread_review_keeps_archives_undoes_and_flushes_only_decisions_on_escape",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.6703207Z test ui::inbox_review::tests::unread_review_keeps_archives_undoes_and_flushes_only_decisions_on_escape ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:57.7695443Z test command_center::composer2_contract_tests::auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "comment_reaction_picker_search_and_fast_like_toggle_the_focused_comment",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.2179998Z test ui::comment_actions::tests::comment_reaction_picker_search_and_fast_like_toggle_the_focused_comment ... ok"
+    },
+    {
+      "os": "windows-2025",
+      "test": "web_emoji_catalog_and_plain_html_are_not_a_made_up_reaction_subset",
+      "receipt": "windows-2025\tRun cargo test --workspace --release\t2026-10-24T02:52:58.3994122Z test ui::comment_actions::tests::web_emoji_catalog_and_plain_html_are_not_a_made_up_reaction_subset ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_seen_and_remind_survive_restart_and_send_exact_bearer_contracts",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:50:56.9574940Z test inbox_seen_and_remind_survive_restart_and_send_exact_bearer_contracts ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_seen_and_remind_denials_restore_rows_and_invalid_success_retries",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:50:56.9508350Z test inbox_seen_and_remind_denials_restore_rows_and_invalid_success_retries ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_reminders_validate_selection_and_time_before_any_optimistic_write",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:50:56.9460360Z test inbox_reminders_validate_selection_and_time_before_any_optimistic_write ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_server_split_memberships_are_durable_account_scoped_and_never_guessed_from_titles",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:50:56.9539460Z test inbox_server_split_memberships_are_durable_account_scoped_and_never_guessed_from_titles ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "all_web_ai_dropdown_commands_use_same_prompt_contract_through_durable_bearer_queue",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:50:56.8534090Z test all_web_ai_dropdown_commands_use_same_prompt_contract_through_durable_bearer_queue ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "drag_paragraph_after_nested_checklist_preserves_marks_and_item_state",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:00.4904660Z test editor_document::drag_tests::drag_paragraph_after_nested_checklist_preserves_marks_and_item_state ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "drag_nested_sibling_items_keeps_their_complete_subtrees_and_rejects_noop",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:00.4900270Z test editor_document::drag_tests::drag_nested_sibling_items_keeps_their_complete_subtrees_and_rejects_noop ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "quote_html_crops_unicode_marks_and_nested_blocks_without_quoting_whole_comment",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:00.4906610Z test editor_document::selection_tests::quote_html_crops_unicode_marks_and_nested_blocks_without_quoting_whole_comment ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "real_drag_handle_moves_paragraph_below_checklist_and_undo_restores_html",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:00.4982400Z test input::editor_drag::tests::real_drag_handle_moves_paragraph_below_checklist_and_undo_restores_html ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "ai_dropdown_click_preserves_selection_and_emits_each_exact_whole_document_command",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:00.4923370Z test input::editor::tests::ai_dropdown_click_preserves_selection_and_emits_each_exact_whole_document_command ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "selected_comment_quote_preserves_only_selected_html_and_readonly_input_cannot_mutate",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.0568950Z test ui::comment_selection::tests::selected_comment_quote_preserves_only_selected_html_and_readonly_input_cannot_mutate ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_real_search_filters_title_ticket_and_escape_restores_split_without_navigation",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.1210330Z test ui::inbox::tests::inbox_real_search_filters_title_ticket_and_escape_restores_split_without_navigation ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_open_marks_only_target_seen_and_j_k_e_and_tabs_keep_keyboard_flow",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.0971940Z test ui::inbox::tests::inbox_open_marks_only_target_seen_and_j_k_e_and_tabs_keep_keyboard_flow ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_row_reminder_targets_clicked_row_cancel_is_not_a_write_and_bulk_is_captured",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.1640970Z test ui::inbox::tests::inbox_row_reminder_targets_clicked_row_cancel_is_not_a_write_and_bulk_is_captured ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_row_archive_targets_clicked_row_and_reply_shortcut_uses_remaining_focused_task",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.1431010Z test ui::inbox::tests::inbox_row_archive_targets_clicked_row_and_reply_shortcut_uses_remaining_focused_task ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "bulk_remind_over_one_hundred_rows_queues_bounded_requests_without_dropping_selection",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.0770980Z test ui::inbox::tests::bulk_remind_over_one_hundred_rows_queues_bounded_requests_without_dropping_selection ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "reminder_presets_match_web_local_hours_week_boundary_and_two_week_nine_am",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.1329530Z test ui::inbox::tests::reminder_presets_match_web_local_hours_week_boundary_and_two_week_nine_am ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "composer_snooze_and_remove_notification_are_real_buttons_without_comment_writes",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.1076160Z test ui::inbox::composer_tests::composer_snooze_and_remove_notification_are_real_buttons_without_comment_writes ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "inbox_tabs_use_server_memberships_counts_and_same_name_project_identity",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.0621760Z test ui::inbox::split_tests::inbox_tabs_use_server_memberships_counts_and_same_name_project_identity ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "unread_review_keeps_archives_undoes_and_flushes_only_decisions_on_escape",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:01.1537830Z test ui::inbox_review::tests::unread_review_keeps_archives_undoes_and_flushes_only_decisions_on_escape ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:00.4873960Z test command_center::composer2_contract_tests::auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "comment_reaction_picker_search_and_fast_like_toggle_the_focused_comment",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:00.8291320Z test ui::comment_actions::tests::comment_reaction_picker_search_and_fast_like_toggle_the_focused_comment ... ok"
+    },
+    {
+      "os": "macos-15",
+      "test": "web_emoji_catalog_and_plain_html_are_not_a_made_up_reaction_subset",
+      "receipt": "macos-15\tRun cargo test --workspace --release\t2026-10-24T02:51:00.9290570Z test ui::comment_actions::tests::web_emoji_catalog_and_plain_html_are_not_a_made_up_reaction_subset ... ok"
+    }
+  ],
+  "layout": [
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:26.9173660Z LAYOUT inbox/porcelain: covered=37 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:27.0906984Z LAYOUT board/porcelain: covered=39 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:27.3802321Z LAYOUT task/porcelain: covered=32 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:27.5277108Z LAYOUT inbox/graphite: covered=37 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:27.6998101Z LAYOUT board/graphite: covered=39 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:27.9428610Z LAYOUT task/graphite: covered=32 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:28.0801653Z LAYOUT inbox/amoled: covered=37 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:28.2554995Z LAYOUT board/amoled: covered=39 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:28.5169781Z LAYOUT task/amoled: covered=32 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:28.6649596Z LAYOUT inbox/dia: covered=37 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:28.8408404Z LAYOUT board/dia: covered=39 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:29.1052037Z LAYOUT task/dia: covered=32 missing=[]",
+    "ubuntu-24.04\tLayout dump contract\t2026-10-24T02:52:29.2398111Z LAYOUT inbox/graphite: covered=37 missing=[]"
+  ],
+  "jobs": [
+    {
+      "name": "windows-arm64",
+      "conclusion": "success"
+    },
+    {
+      "name": "macos-15",
+      "conclusion": "success"
+    },
+    {
+      "name": "windows-2025",
+      "conclusion": "success"
+    },
+    {
+      "name": "ubuntu-24.04",
+      "conclusion": "success"
+    }
+  ]
+}

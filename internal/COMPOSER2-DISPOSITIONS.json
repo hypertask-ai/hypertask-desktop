@@ -1,0 +1,408 @@
+[
+  {
+    "id": "F048",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F049",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F050",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F051",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F052",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F053",
+    "area": "Inbox",
+    "before": "partial",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F054",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F055",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F056",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B2"
+  },
+  {
+    "id": "F057",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B5"
+  },
+  {
+    "id": "F058",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B1"
+  },
+  {
+    "id": "F059",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B6"
+  },
+  {
+    "id": "F060",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F061",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F062",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B7"
+  },
+  {
+    "id": "F063",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F064",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F065",
+    "area": "Inbox",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F184",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F185",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B4"
+  },
+  {
+    "id": "F186",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B4"
+  },
+  {
+    "id": "F187",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B4"
+  },
+  {
+    "id": "F367",
+    "area": "Task / focused comment",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F368",
+    "area": "Task / focused comment",
+    "before": "blocked",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F369",
+    "area": "Task / focused comment",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F370",
+    "area": "Task / focused comment",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F371",
+    "area": "Task / focused comment",
+    "before": "blocked",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F372",
+    "area": "Task / focused comment",
+    "before": "blocked",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F373",
+    "area": "Task / focused comment",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F497",
+    "area": "Inbox",
+    "before": "partial",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F498",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B3"
+  },
+  {
+    "id": "F499",
+    "area": "Inbox",
+    "before": "partial",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B8"
+  },
+  {
+    "id": "F500",
+    "area": "Inbox",
+    "before": "partial",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F501",
+    "area": "Inbox",
+    "before": "partial",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F502",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B4"
+  },
+  {
+    "id": "F503",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B4"
+  },
+  {
+    "id": "F504",
+    "area": "Inbox",
+    "before": "missing",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F505",
+    "area": "Inbox",
+    "before": "partial",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F578",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md Desktop exclusion"
+  },
+  {
+    "id": "F579",
+    "area": "Task / comments & composer",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F580",
+    "area": "Task / comments & composer",
+    "before": "done",
+    "status": "done",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F581",
+    "area": "Task / comments & composer",
+    "before": "partial",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B9"
+  },
+  {
+    "id": "F582",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F583",
+    "area": "Task / comments & composer",
+    "before": "partial",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B9"
+  },
+  {
+    "id": "F584",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F585",
+    "area": "Task / comments & composer",
+    "before": "partial",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B8"
+  },
+  {
+    "id": "F586",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F587",
+    "area": "Task / comments & composer",
+    "before": "blocked",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md retained baseline"
+  },
+  {
+    "id": "F588",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B10"
+  },
+  {
+    "id": "F589",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B11"
+  },
+  {
+    "id": "F590",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B10"
+  },
+  {
+    "id": "F591",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F592",
+    "area": "Task / comments & composer",
+    "before": "missing",
+    "status": "done",
+    "evidence": "docs/compose-comments.md follow-up contract table"
+  },
+  {
+    "id": "F651",
+    "area": "AI / agent sidebar",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B13"
+  },
+  {
+    "id": "F652",
+    "area": "AI / agent sidebar",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B13"
+  },
+  {
+    "id": "F653",
+    "area": "AI / agent sidebar",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B13"
+  },
+  {
+    "id": "F654",
+    "area": "AI / agent sidebar",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B13"
+  },
+  {
+    "id": "F655",
+    "area": "AI / agent sidebar",
+    "before": "missing",
+    "status": "blocked",
+    "evidence": "docs/compose-comments.md B13"
+  }
+]

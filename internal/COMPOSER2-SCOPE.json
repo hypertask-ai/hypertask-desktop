@@ -1,0 +1,524 @@
+[
+  [
+    "F048",
+    "Inbox",
+    "Inbox select across splits: Select ALL. Keys: Ctrl+SHIFT+A.",
+    "`src/lib/constants/shortcuts.ts:249`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: Ctrl+SHIFT+A in Inbox; expected: Select ALL."
+  ],
+  [
+    "F049",
+    "Inbox",
+    "Inbox select current split: Select all from current split. Keys: Ctrl+A.",
+    "`src/lib/constants/shortcuts.ts:250`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: Ctrl+A in Inbox; expected: Select all from current split."
+  ],
+  [
+    "F050",
+    "Inbox",
+    "Inbox individual selection: Select message. Keys: X.",
+    "`src/lib/constants/shortcuts.ts:251`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: X in Inbox; expected: Select message."
+  ],
+  [
+    "F051",
+    "Inbox",
+    "Inbox bulk archive: Bulk Archive. Keys: SHIFT+E.",
+    "`src/lib/constants/shortcuts.ts:252`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: SHIFT+E in Inbox; expected: Bulk Archive."
+  ],
+  [
+    "F052",
+    "Inbox",
+    "Inbox bulk reminder: Bulk Reminder. Keys: SHIFT+H.",
+    "`src/lib/constants/shortcuts.ts:253`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P2",
+    "Input: SHIFT+H in Inbox; expected: Bulk Reminder."
+  ],
+  [
+    "F053",
+    "Inbox",
+    "Inbox local search: Focus local inbox search. Keys: Ctrl+F.",
+    "`src/app/inbox/Inbox.tsx:317`",
+    "partial \u2014 keys:crates/ht-desktop/src/interactions.rs:702 \u2014 searches cached SQLite tasks only; no server-wide result coverage or web search surface.",
+    "P2",
+    "Input: Ctrl+F in Inbox; expected: Focus local inbox search."
+  ],
+  [
+    "F054",
+    "Inbox",
+    "Inbox range selection: Extend bulk selection while moving. Keys: Shift+J / Down; Shift+K / Up.",
+    "`src/hooks/MultiPages/useBulkActions.ts:132`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: Shift+J / Down; Shift+K / Up in Inbox; expected: Extend bulk selection while moving."
+  ],
+  [
+    "F055",
+    "Inbox",
+    "Open task in reply mode: Open task in reply mode / Open task and start reply. Keys: Ctrl+R; Ctrl+M.",
+    "`src/components/notifications/inboxSplit/index.tsx:729`; `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:635`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P1",
+    "Input: Ctrl+R; Ctrl+M in Inbox; expected: Open task in reply mode / Open task and start reply."
+  ],
+  [
+    "F056",
+    "Inbox",
+    "Open task in dictation mode: Open task with dictation / Open task and dictate. Keys: Alt+V.",
+    "`src/components/notifications/inboxSplit/index.tsx:738`; `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:753`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P2",
+    "Input: Alt+V in Inbox; expected: Open task with dictation / Open task and dictate."
+  ],
+  [
+    "F057",
+    "Inbox",
+    "Link/create subtask: Link subtask on selected notification / Add sub-task / Create subtask, additional actual binding. Keys: Ctrl+Shift+O; Ctrl+SHIFT++.",
+    "`src/components/notifications/inboxSplit/index.tsx:771`; `src/lib/constants/shortcuts.ts:119`; `src/components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:724`; `src/components/Modals/commands/HTC/taskCommands.ts:64`; `src/components/Modals/SubtaskLinkingModal/SubtaskLinking.tsx:151`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P2",
+    "Input: Ctrl+Shift+O; Ctrl+SHIFT++ in Inbox; expected: Link subtask on selected notification / Add sub-task / Create subtask, additional actual binding."
+  ],
+  [
+    "F058",
+    "Inbox",
+    "Toggle notification unread: Toggle notification seen/unseen. Keys: U.",
+    "`src/components/notifications/inboxSplit/index.tsx:777`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P2",
+    "Input: U in Inbox; expected: Toggle notification seen/unseen."
+  ],
+  [
+    "F059",
+    "Inbox",
+    "Star/unstar task: Star/unstar selected task / Star/unstar task / Star task. Keys: Alt+S; ALT+S.",
+    "`src/components/notifications/inboxSplit/index.tsx:798`; `src/lib/keyboard/taskShortcuts.ts:145`; `src/lib/constants/shortcuts.ts:181`; `src/components/Modals/commands/HTC/taskCommands.ts:417`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P2",
+    "Input: Alt+S; ALT+S in Inbox; expected: Star/unstar selected task / Star/unstar task / Star task."
+  ],
+  [
+    "F060",
+    "Inbox",
+    "Inbox first/last item: Jump to first/last notification boundary. Keys: G \u2192 G / Shift+G \u2192 Shift+G.",
+    "`src/components/notifications/inboxSplit/index.tsx:648`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: G \u2192 G / Shift+G \u2192 Shift+G in Inbox; expected: Jump to first/last notification boundary."
+  ],
+  [
+    "F061",
+    "Inbox",
+    "Inbox local G T task board: Focused task board (local handler; global G\u2192T timers can win). Keys: G \u2192 T.",
+    "`src/components/notifications/inboxSplit/index.tsx:674`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: G \u2192 T in Inbox; expected: Focused task board (local handler; global G\u2192T timers can win)."
+  ],
+  [
+    "F062",
+    "Inbox",
+    "Create task modal: Create task / Add task / Create task at top of current section. Keys: C.",
+    "`src/app/inbox/Inbox.tsx:395`; `src/lib/constants/shortcuts.ts:117`; `src/app/detail/[...slug]/taskDetailEditingKeymap.ts:196`; `src/components/Modals/commands/HTC/AllCommands.ts:146`; `src/components/Modals/commands/HTC/taskCommands.ts:8`; `src/components/Modals/CreateTaskGloballyModal/index.tsx:18`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P2",
+    "Input: C in Inbox; expected: Create task / Add task / Create task at top of current section."
+  ],
+  [
+    "F063",
+    "Inbox",
+    "Inbox archive notification: Archive / Remove notification / advance inbox flow. Keys: E.",
+    "`src/lib/constants/shortcuts.ts:254`; `src/app/detail/[...slug]/taskDetailNavigationKeymap.ts:106`; `src/components/Modals/commands/HTC/taskCommands.ts:485`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: E in Inbox; expected: Archive / Remove notification / advance inbox flow."
+  ],
+  [
+    "F064",
+    "Inbox",
+    "Open focused task: Open task. Keys: ENTER.",
+    "`src/lib/constants/shortcuts.ts:255`; `src/lib/constants/shortcuts.ts:122`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: ENTER in Inbox; expected: Open task."
+  ],
+  [
+    "F065",
+    "Inbox",
+    "Cycle inbox splits: Cycle inbox splits. Keys: Tab / Shift+Tab.",
+    "`src/app/inbox/Inbox.tsx:400`",
+    "done \u2014 keys:crates/ht-desktop/src/shortcuts.rs:51 \u2192 keys:crates/ht-desktop/src/interactions.rs:213; writes use keys:crates/ht-desktop/src/ui.rs:403 \u2192 keys:crates/ht-core/src/queue.rs:63,253. Implemented on keys, not present in pre-merge main interaction dispatcher.",
+    "P2",
+    "Input: Tab / Shift+Tab in Inbox; expected: Cycle inbox splits."
+  ],
+  [
+    "F184",
+    "Inbox",
+    "Swipe through unread (command `swipeThroughUnread`).",
+    "`src/components/Modals/commands/HTC/AllCommands.ts:57`",
+    "missing \u2014 No native handler or surface in either ref; unsupported palette command omitted by keys:crates/ht-desktop/src/command_center.rs:19.",
+    "P2",
+    "Input: Ctrl+K, search \u201cSwipe through unread\u201d, Enter; expected: swipe through unread is performed for the current scope, with a visible result."
+  ],
+  [
+    "F185",
+    "Inbox",
+    "Clear inbox to zero (command `clearInboxToZero`).",
+    "`src/components/Modals/commands/HTC/AllCommands.ts:63`",
+    "missing \u2014 No native handler or surface in either ref; unsupported palette command omitted by keys:crates/ht-desktop/src/command_center.rs:19.",
+    "P2",
+    "Input: Ctrl+K, search \u201cClear inbox to zero\u201d, Enter; expected: clear inbox to zero is performed for the current scope, with a visible result."
+  ],
+  [
+    "F186",
+    "Inbox",
+    "Archive all read (command `archiveAllReadNotifications`).",
+    "`src/components/Modals/commands/HTC/AllCommands.ts:69`",
+    "missing \u2014 No native handler or surface in either ref; unsupported palette command omitted by keys:crates/ht-desktop/src/command_center.rs:19.",
+    "P2",
+    "Input: Ctrl+K, search \u201cArchive all read\u201d, Enter; expected: archive all read is performed for the current scope, with a visible result."
+  ],
+  [
+    "F187",
+    "Inbox",
+    "Archive reactions (command `archiveReactionNotifications`).",
+    "`src/components/Modals/commands/HTC/AllCommands.ts:75`",
+    "missing \u2014 No native handler or surface in either ref; unsupported palette command omitted by keys:crates/ht-desktop/src/command_center.rs:19.",
+    "P2",
+    "Input: Ctrl+K, search \u201cArchive reactions\u201d, Enter; expected: archive reactions is performed for the current scope, with a visible result."
+  ],
+  [
+    "F367",
+    "Task / focused comment",
+    "Edit comment (command `editcomment`). Edit own existing comment then save/cancel; cannot edit another user\u2019s comment.",
+    "`src/components/Modals/commands/HTC/taskCommands.ts:186`; `src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/CommentOptions/EditCommentButton.tsx:1`",
+    "done \u2014 compose@b460e37:crates/ht-desktop/src/comment_actions.rs:241,302; own-comment inline Save/Cancel, Ctrl+Enter, rich marks/media retained; queued bearer PATCH. CI 40043399779 green (GPUI + queue/request tests); compose@b460e37.",
+    "P1",
+    "Input: Edit own comment, save \u2192 same comment updated; cancel \u2192 original text."
+  ],
+  [
+    "F368",
+    "Task / focused comment",
+    "Summarize comment (command `summarizeComment`).",
+    "`src/components/Modals/commands/HTC/taskCommands.ts:193`",
+    "blocked \u2014 reconciled main cf763ef; docs/ai-parity.md A1: exact route/auth boundary; implemented client subset retained, full row not Done",
+    "P1",
+    "Input: Ctrl+K, search \u201cSummarize comment\u201d, Enter; expected: summarize comment is performed for the current scope, with a visible result."
+  ],
+  [
+    "F369",
+    "Task / focused comment",
+    "Copy comment content (command `copyCommentContent`).",
+    "`src/components/Modals/commands/HTC/taskCommands.ts:227`",
+    "done \u2014 reconciled main cf763ef; docs/ai-parity.md Implemented behavior; ai_workspace.rs, ai_presentation.rs, ai_sidebar.rs, comment_actions.rs; main includes PR #9",
+    "P1",
+    "Input: Ctrl+K, search \u201cCopy comment content\u201d, Enter; expected: copy comment content is performed for the current scope, with a visible result."
+  ],
+  [
+    "F370",
+    "Task / focused comment",
+    "Copy comment URL (command `copyCommentLink`).",
+    "`src/components/Modals/commands/HTC/taskCommands.ts:233`",
+    "done \u2014 reconciled main cf763ef; docs/ai-parity.md Implemented behavior; ai_workspace.rs, ai_presentation.rs, ai_sidebar.rs, comment_actions.rs; main includes PR #9",
+    "P1",
+    "Input: Ctrl+K, search \u201cCopy comment URL\u201d, Enter; expected: copy comment url is performed for the current scope, with a visible result."
+  ],
+  [
+    "F371",
+    "Task / focused comment",
+    "Create task from comment (command `createTaskFromComment`).",
+    "`src/components/Modals/commands/HTC/taskCommands.ts:246`",
+    "blocked \u2014 reconciled main cf763ef; docs/ai-parity.md A7: exact route/auth boundary; implemented client subset retained, full row not Done",
+    "P1",
+    "Input: Ctrl+K, search \u201cCreate task from comment\u201d, Enter; expected: create task from comment is performed for the current scope, with a visible result."
+  ],
+  [
+    "F372",
+    "Task / focused comment",
+    "Branch in new chat (command `branchInNewChat`).",
+    "`src/components/Modals/commands/HTC/taskCommands.ts:252`",
+    "blocked \u2014 reconciled main cf763ef; docs/ai-parity.md A2: exact route/auth boundary; implemented client subset retained, full row not Done",
+    "P1",
+    "Input: Ctrl+K, search \u201cBranch in new chat\u201d, Enter; expected: branch in new chat is performed for the current scope, with a visible result."
+  ],
+  [
+    "F373",
+    "Task / focused comment",
+    "Copy comment to AI chat (command `copyCommentToAiChat`).",
+    "`src/components/Modals/commands/HTC/taskCommands.ts:259`",
+    "done \u2014 reconciled main cf763ef; docs/ai-parity.md Implemented behavior; ai_workspace.rs, ai_presentation.rs, ai_sidebar.rs, comment_actions.rs; main includes PR #9",
+    "P1",
+    "Input: Ctrl+K, search \u201cCopy comment to AI chat\u201d, Enter; expected: copy comment to ai chat is performed for the current scope, with a visible result."
+  ],
+  [
+    "F497",
+    "Inbox",
+    "Inbox split tabs show per-split counts and select the corresponding notifications.",
+    "`src/app/inbox/Inbox.tsx:81`",
+    "partial \u2014 keys:crates/ht-desktop/src/ui.rs:775,368 \u2014 cached derived splits/counts only; no web split preference model.",
+    "P2",
+    "Input: Click a split \u2192 only its notifications and matching count are shown."
+  ],
+  [
+    "F498",
+    "Inbox",
+    "Manage inbox splits modal controls whether eligible messages from each split also appear in Important; other splits retain their own messages.",
+    "`src/components/notifications/ManageSplitsModal.tsx:157`; `src/components/notifications/ManageSplitsModal.tsx:117`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P2",
+    "Input: Disable Also in Important for one split, reopen \u2192 preference retained and Important excludes those eligible messages."
+  ],
+  [
+    "F499",
+    "Inbox",
+    "Inbox row shows actor/avatar, event type, title, metadata, unread count, summary and draft indicator.",
+    "`src/components/notifications/NotificationRow.tsx:1`",
+    "partial \u2014 keys:crates/ht-desktop/src/ui.rs:966 \u2014 cached row metadata rendered; unread/seen transitions not implemented.",
+    "P2",
+    "Input: Load notification with actor and draft \u2192 corresponding actor/event/unread/draft badges appear."
+  ],
+  [
+    "F500",
+    "Inbox",
+    "Row click opens task and marks its notification read, maintaining inbox flow.",
+    "`src/components/notifications/inboxSplit/index.tsx:344`",
+    "partial \u2014 keys:crates/ht-desktop/src/ui.rs:1016 \u2192 keys:crates/ht-desktop/src/ui.rs:444 \u2014 task opens, no notification-seen write exists.",
+    "P2",
+    "Input: Click unread notification \u2192 task opens, notification becomes read."
+  ],
+  [
+    "F501",
+    "Inbox",
+    "Inbox selection bar displays selected count and bulk archive/remind actions.",
+    "`src/components/notifications/inboxSplit/bulk-actions-inbox.tsx:1`",
+    "partial \u2014 keys:crates/ht-desktop/src/interactions.rs:336,1240 \u2014 keyboard selection/archive; complete web bulk toolbar/reminder missing.",
+    "P2",
+    "Input: Select two notifications \u2192 count 2; bulk action affects only those two."
+  ],
+  [
+    "F502",
+    "Inbox",
+    "Inbox zero sheet previews candidate cleanup with date cutoff, excluded unread/mentions/assignments and chosen reaction/own/superseded/past-reminder classes.",
+    "`src/components/notifications/InboxZeroSheet.tsx:58`; `src/components/notifications/InboxZeroSheet.tsx:168`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P2",
+    "Input: Choose cutoff and keep mentions, preview \u2192 count reflects rules and mentions stay protected."
+  ],
+  [
+    "F503",
+    "Inbox",
+    "Inbox zero sheet applies previewed cleanup and offers undo using the server operation.",
+    "`src/components/notifications/InboxZeroSheet.tsx:280`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P2",
+    "Input: Preview then archive \u2192 candidates removed; undo \u2192 exact batch restored."
+  ],
+  [
+    "F504",
+    "Inbox",
+    "Inbox row hover/context actions expose archive, reminder, reply and task commands.",
+    "`src/components/notifications/inboxSplit/index.tsx:42`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P2",
+    "Input: Open row action/menu \u2192 actions target that notification, not another selected row."
+  ],
+  [
+    "F505",
+    "Inbox",
+    "Inbox search clears via Escape without leaving inbox; empty/zero state guides next action.",
+    "`src/app/inbox/Inbox.tsx:132`",
+    "partial \u2014 keys:crates/ht-desktop/src/interactions.rs:702 \u2014 modal cached search, not web inline inbox filter.",
+    "P2",
+    "Input: Type query then Escape \u2192 unfiltered current split returns, no navigation."
+  ],
+  [
+    "F578",
+    "Task / comments & composer",
+    "Comment composer expands/collapses on focus and can be resized with its drag handle.",
+    "`src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/NewCommentComponent.tsx:514`",
+    "missing \u2014 desktop has no web expand/collapse/drag widget: separator is mobile-only in web src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/NewCommentComponent.tsx:490-527. compose@b460e37:crates/ht-desktop/src/comments.rs:10,65 now auto-grows like web desktop (:444-485, src/styles/tiptap.module.scss:61-64), proven by CI 40043399779; mobile affordance not claimed done or invented on desktop.",
+    "P1",
+    "Input: Drag resize grip then collapse/reopen \u2192 composer dimensions/state update."
+  ],
+  [
+    "F579",
+    "Task / comments & composer",
+    "Comment draft saves/restores automatically per task; draft marker clears after successful send or discard.",
+    "`src/components/RTE/useTaskDetailEditorDrafts.tsx:1`",
+    "done \u2014 reconciled main cf763ef; comment_drafts.rs:99 durable discard with queued bearer draft delete; docs/ai-parity.md F579; GPUI comment_drafts_restore_per_task_and_do_not_leak_between_users and core draft tests",
+    "P1",
+    "Input: Type unsent text, navigate away/back \u2192 same draft; send \u2192 draft cleared."
+  ],
+  [
+    "F580",
+    "Task / comments & composer",
+    "Reply-to-comment inserts quoted/reference reply and focuses composer; sending keeps parent reference.",
+    "`src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/CommentOptions/ReplyToComment.tsx:1`",
+    "done \u2014 compose@b460e37:crates/ht-desktop/src/comment_actions.rs:213; specific author/HTML quote enters focused composer, retained in queued HTML POST; no agent-only reply_to_comment_id. CI 40043399779 green (GPUI + queue/request tests); compose@b460e37.",
+    "P1",
+    "Input: Click Reply on comment, type/send \u2192 reply references that comment."
+  ],
+  [
+    "F581",
+    "Task / comments & composer",
+    "Comment timestamp tooltip shows exact date; author identity/agent badge links to profile.",
+    "`src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/CommentOptions.tsx:138`",
+    "partial \u2014 reconciled main cf763ef; timestamp/focused actions work; remaining author navigation A9 and pin/star/AI A1/A2/A7/A8 blocked, docs/ai-parity.md",
+    "P1",
+    "Input: Hover timestamp \u2192 exact date; author click \u2192 correct identity details."
+  ],
+  [
+    "F582",
+    "Task / comments & composer",
+    "Reaction chip toggles current user\u2019s emoji, shows count and opens reactors tooltip/list.",
+    "`src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/CommentReactions.tsx:1`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P1",
+    "Input: Click emoji chip twice \u2192 add/remove own reaction; hover \u2192 reacting people visible."
+  ],
+  [
+    "F583",
+    "Task / comments & composer",
+    "Comment overflow menu opens focused-comment commands (edit, copy, pin/star, summarize, task-from-comment, delete).",
+    "`src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/CommentOptions.tsx:125`",
+    "partial \u2014 reconciled main cf763ef; timestamp/focused actions work; remaining author navigation A9 and pin/star/AI A1/A2/A7/A8 blocked, docs/ai-parity.md",
+    "P1",
+    "Input: Click comment ellipsis \u2192 commands target exactly that comment."
+  ],
+  [
+    "F584",
+    "Task / comments & composer",
+    "Text-selection context menu offers quote/highlight/AI actions without losing selected text.",
+    "`src/components/PageComponents/TaskDetail/CommentAndDescription/ContextMenu/HighlightMenu.tsx:1`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P1",
+    "Input: Select comment text, Quote \u2192 selected text inserted in composer, not entire comment."
+  ],
+  [
+    "F585",
+    "Task / comments & composer",
+    "Comment composer send menu selects Send, Send+archive/advance, Send+complete and keyboard hints according to inbox preference.",
+    "`src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/NewCommentComponent.tsx:677`",
+    "partial \u2014 keys:crates/ht-desktop/src/comments.rs:80,103; keys:crates/ht-desktop/src/interactions.rs:237 \u2014 Send/Send+advance and keyboard complete; full menu/preference integration missing.",
+    "P1",
+    "Input: Open send actions, choose complete \u2192 comment saved, task completed, inbox advances."
+  ],
+  [
+    "F586",
+    "Task / comments & composer",
+    "Composer snooze/remind and archive-without-comment actions keep inbox playlist flow.",
+    "`src/components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/NewCommentComponent.tsx:647`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P1",
+    "Input: Choose reminder without typing \u2192 reminder set and correct next task displayed."
+  ],
+  [
+    "F587",
+    "Task / comments & composer",
+    "Comment @mentions search people/agents/tasks and insert linkable mention with notification semantics.",
+    "`src/components/RTE/MentionList.jsx:1`",
+    "blocked \u2014 blocked: web mixed people/agents/tasks search GET /api/tasks/searchByParam uses taskWriteHandler/taskWriteRoute -> getSessionUser (web src/pages/api/tasks/searchByParam.ts:3; src/lib/api/task-writes/route.ts:33,89). MCP comment mentions input does not authenticate that search route. No fake cached-only picker. docs/compose-comments.md.",
+    "P1",
+    "Input: Type @, select teammate, send \u2192 linked mention and recipient notification."
+  ],
+  [
+    "F588",
+    "Task / comments & composer",
+    "Composer emoji/GIF picker searches and inserts emoji/media at caret.",
+    "`src/components/RTE/Components/EmojiGifPicker.tsx:1`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P1",
+    "Input: Choose emoji then GIF \u2192 inserted at caret and retained after send."
+  ],
+  [
+    "F589",
+    "Task / comments & composer",
+    "Editor formatting toolbar and bubble menu apply marks, link URL editing/removal, lists/headings and selected-text actions.",
+    "`src/components/RTE/Components/TiptapBubbleMenu.tsx:1`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P1",
+    "Input: Select text, bold and link it \u2192 formatting/link retained on send/reopen."
+  ],
+  [
+    "F590",
+    "Task / comments & composer",
+    "Editor attachments upload by picker/paste/drop, show progress/failure, insert preview and allow removal.",
+    "`src/components/RTE/TaskDetailEditorPanels.tsx:20`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P1",
+    "Input: Drop file into editor then remove preview \u2192 correct upload/insert/remove state."
+  ],
+  [
+    "F591",
+    "Task / comments & composer",
+    "Editor drag handle reorders document blocks and supports nested lists/checklist items.",
+    "`src/components/RTE/Components/DragHandleTiptap.tsx:1`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P1",
+    "Input: Drag a paragraph below a checklist \u2192 block order retained after save."
+  ],
+  [
+    "F592",
+    "Task / comments & composer",
+    "Composer AI dropdown offers improve/fix/shorten/summarize/translate and custom prompts with accept/discard/regenerate.",
+    "`src/components/RTE/Components/AIDropdown.tsx:1`",
+    "missing \u2014 No native UI/handler/write path for this affordance in main or keys (keys UI and Modal/Action enums inspected).",
+    "P1",
+    "Input: Select draft text, Improve, accept response \u2192 only intended draft replaced; discard preserves original."
+  ],
+  [
+    "F651",
+    "AI / agent sidebar",
+    "Agent chat next agent via Alt+Down (Option+Down on macOS).",
+    "`src/lib/constants/shortcuts.ts:211`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P1",
+    "Input: Alt+Down (Option+Down on macOS) in active agent sidebar; expected: next available agent conversation focused."
+  ],
+  [
+    "F652",
+    "AI / agent sidebar",
+    "Agent chat previous agent via Alt+Up (Option+Up on macOS).",
+    "`src/lib/constants/shortcuts.ts:212`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P1",
+    "Input: Alt+Up (Option+Up on macOS) in active agent sidebar; expected: previous available agent conversation focused."
+  ],
+  [
+    "F653",
+    "AI / agent sidebar",
+    "Agent chat send message via Ctrl+Enter in agent chat.",
+    "`src/lib/constants/shortcuts.ts:213`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P1",
+    "Input: Ctrl+Enter in agent chat in active agent sidebar; expected: agent message sent once, composer cleared."
+  ],
+  [
+    "F654",
+    "AI / agent sidebar",
+    "Agent chat open all links in latest reply via literal Ctrl+O in agent chat.",
+    "`src/lib/constants/shortcuts.ts:214`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P1",
+    "Input: literal Ctrl+O in agent chat in active agent sidebar; expected: all links in latest agent reply opened."
+  ],
+  [
+    "F655",
+    "AI / agent sidebar",
+    "Agent chat search tasks to reference via @ in agent chat.",
+    "`src/lib/constants/shortcuts.ts:215`",
+    "missing \u2014 No corresponding native surface, handler or write type in either pinned ref.",
+    "P1",
+    "Input: @ in agent chat in active agent sidebar; expected: task-reference search popup opens and selected task becomes context."
+  ]
+]

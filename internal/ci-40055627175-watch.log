@@ -1,0 +1,1154 @@
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request less than a minute ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  * Run Swatinem/rust-cache@v2
+  * Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  * Run actions/upload-artifact@v4
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  * Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  * Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  * Run dtolnay/rust-toolchain@stable
+  * Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request less than a minute ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  * Run Swatinem/rust-cache@v2
+  * Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  * Run actions/upload-artifact@v4
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  * Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 1 minute ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  * Run actions/upload-artifact@v4
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 2 minutes ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  * Run actions/upload-artifact@v4
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 2 minutes ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  * Run actions/upload-artifact@v4
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 3 minutes ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  * Run actions/upload-artifact@v4
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 3 minutes ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  * Run actions/upload-artifact@v4
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 4 minutes ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  * Run actions/upload-artifact@v4
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 4 minutes ago
+
+JOBS
+* windows-arm64 (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 5 minutes ago
+
+JOBS
+✓ windows-arm64 in 4m36s (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  - Upload Windows app
+  - Upload Linux app
+  ✓ Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+* ubuntu-24.04 (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  ✓ Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+windows-arm64: .github#3
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 5 minutes ago
+
+JOBS
+✓ windows-arm64 in 4m36s (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  - Upload Windows app
+  - Upload Linux app
+  ✓ Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  * Run cargo test --workspace --release
+  * Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+✓ ubuntu-24.04 in 5m11s (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  ✓ Layout dump contract
+  ✓ Upload layout dumps
+  - Upload Windows app
+  ✓ Upload Linux app
+  - Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+windows-arm64: .github#3
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+ubuntu-24.04: .github#2
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 6 minutes ago
+
+JOBS
+✓ windows-arm64 in 4m36s (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  - Upload Windows app
+  - Upload Linux app
+  ✓ Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+✓ ubuntu-24.04 in 5m11s (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  ✓ Layout dump contract
+  ✓ Upload layout dumps
+  - Upload Windows app
+  ✓ Upload Linux app
+  - Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+windows-arm64: .github#3
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+ubuntu-24.04: .github#2
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 6 minutes ago
+
+JOBS
+✓ windows-arm64 in 4m36s (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  - Upload Windows app
+  - Upload Linux app
+  ✓ Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+✓ ubuntu-24.04 in 5m11s (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  ✓ Layout dump contract
+  ✓ Upload layout dumps
+  - Upload Windows app
+  ✓ Upload Linux app
+  - Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+windows-arm64: .github#3
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+ubuntu-24.04: .github#2
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 7 minutes ago
+
+JOBS
+✓ windows-arm64 in 4m36s (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  - Upload Windows app
+  - Upload Linux app
+  ✓ Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+✓ ubuntu-24.04 in 5m11s (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  ✓ Layout dump contract
+  ✓ Upload layout dumps
+  - Upload Windows app
+  ✓ Upload Linux app
+  - Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+windows-arm64: .github#3
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+ubuntu-24.04: .github#2
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 7 minutes ago
+
+JOBS
+✓ windows-arm64 in 4m36s (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  - Upload Windows app
+  - Upload Linux app
+  ✓ Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  * Run cargo build --release -p ht-desktop -p ht-core
+  * Layout dump contract
+  * Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+✓ ubuntu-24.04 in 5m11s (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  ✓ Layout dump contract
+  ✓ Upload layout dumps
+  - Upload Windows app
+  ✓ Upload Linux app
+  - Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+windows-arm64: .github#3
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+ubuntu-24.04: .github#2
+
+Refreshing run status every 30 seconds. Press Ctrl+C to quit.
+
+* composer2 CI #11 · 40055627175
+Triggered via pull_request about 8 minutes ago
+
+JOBS
+✓ windows-arm64 in 4m36s (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  - Upload Windows app
+  - Upload Linux app
+  ✓ Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* windows-2025 (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  * Upload Windows app
+  * Upload Linux app
+  * Upload Mac app (Apple Silicon)
+  * Post Run Swatinem/rust-cache@v2
+  * Post Run actions/checkout@v4
+✓ ubuntu-24.04 in 5m11s (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  ✓ Layout dump contract
+  ✓ Upload layout dumps
+  - Upload Windows app
+  ✓ Upload Linux app
+  - Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+windows-arm64: .github#3
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+ubuntu-24.04: .github#2
+
+✓ composer2 CI #11 · 40055627175
+Triggered via pull_request about 8 minutes ago
+
+JOBS
+✓ windows-arm64 in 4m36s (ID 120757856806)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo build --release -p ht-desktop --target aarch64-pc-windows-msvc
+  ✓ Run actions/upload-artifact@v4
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+* macos-15 (ID 120757856978)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  - Upload Windows app
+  - Upload Linux app
+  ✓ Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ windows-2025 in 8m19s (ID 120757857038)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  - Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  - Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  - Layout dump contract
+  - Upload layout dumps
+  ✓ Upload Windows app
+  - Upload Linux app
+  - Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+✓ ubuntu-24.04 in 5m11s (ID 120757857051)
+  ✓ Set up job
+  ✓ Run actions/checkout@v4
+  ✓ Linux packages
+  ✓ Run dtolnay/rust-toolchain@stable
+  ✓ Run Swatinem/rust-cache@v2
+  ✓ Run cargo test --workspace --release
+  ✓ Upload Rust AI request fixture
+  ✓ Run cargo build --release -p ht-desktop -p ht-core
+  ✓ Layout dump contract
+  ✓ Upload layout dumps
+  - Upload Windows app
+  ✓ Upload Linux app
+  - Upload Mac app (Apple Silicon)
+  ✓ Post Run Swatinem/rust-cache@v2
+  ✓ Post Run actions/checkout@v4
+  ✓ Complete job
+
+ANNOTATIONS
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+windows-arm64: .github#3
+
+! Node.js 20 is deprecated. The following actions target Node.js 20 but are being forced to run on Node.js 24: actions/checkout@v4, actions/upload-artifact@v4. For more information see: https://github.blog/changelog/2025-09-19-deprecation-of-node-20-on-github-actions-runners/
+ubuntu-24.04: .github#2
+
