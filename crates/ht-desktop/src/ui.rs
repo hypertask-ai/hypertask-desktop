@@ -1736,7 +1736,13 @@ impl Render for Desktop {
             sidebar.update(cx, |sidebar, cx| { sidebar.capture = self.layout.clone(); sidebar.fit_viewport(f32::from(window.viewport_size().width), cx); sidebar.set_scope(scope, cx); });
         }
         if self.shell.settings {
-            return self.settings_screen(window, cx).into_any_element();
+            return div().size_full().relative()
+                .capture_key_down(cx.listener(|this,event,window,cx| {
+                    if this.compose_open() {this.key_down(event,window,cx);}
+                }))
+                .child(self.settings_screen(window,cx))
+                .when(self.compose_open(),|d|d.child(self.interaction_overlay(window,cx)).child(self.compose_overlay(window,cx)))
+                .into_any_element();
         }
         let body = match self.screen {
             Screen::Inbox => self.inbox_screen(cx).into_any_element(),

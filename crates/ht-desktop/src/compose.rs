@@ -57,7 +57,8 @@ impl Desktop {
         self.compose.open && !self.compose.writing
     }
     pub(super) fn dismiss_compose_search(&mut self) {
-        if !self.compose.writing {
+        if self.compose.open && !self.compose.writing {
+            self.shell.settings = false;
             self.compose.open = false;
         }
     }
@@ -358,6 +359,7 @@ impl Desktop {
                 .input
                 .update(cx, |input, cx| input.reset(window, cx));
             self.compose.open = false;
+            self.shell.settings = false;
             self.interaction.modal = None;
             self.open_task(id, cx);
             window.focus(&self.focus, cx);
@@ -687,5 +689,34 @@ mod tests {
             this.apply_compose_identity(2, Some(4036), cx);
             assert_eq!(this.db.current_user_id(), Some(985));
         });
+    }
+    #[gpui::test]
+    fn global_ctrlj_paints_above_settings_and_escape_restores_the_same_settings_surface(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::super::shell::tests::{measured, setup};
+        let (view, mut visual) = setup(cx);
+        view.update(&mut visual, |this, window, cx| {
+            this.open_settings(window, cx)
+        })
+        .unwrap();
+        visual.simulate_keystrokes("ctrl-j");
+        assert!(
+            measured(view, &mut visual, "compose.prompt")["w"]
+                .as_f64()
+                .unwrap()
+                > 0.
+        );
+        visual.simulate_input("Settings note");
+        visual.simulate_keystrokes("escape");
+        view.read_with(&visual, |this, cx| {
+            assert!(this.shell.settings);
+            assert!(!this.compose.open);
+            assert_eq!(
+                this.compose.input.read(cx).content.as_ref(),
+                "Settings note"
+            );
+        })
+        .unwrap();
     }
 }
