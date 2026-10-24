@@ -246,6 +246,7 @@ impl Desktop {
             SortView=>self.open_view_panel(super::board_views::Panel::Sort,window,cx),
             ArchivedOnBoard=>self.toggle_archived_on_board(window,cx),
             FilterView=>self.open_view_panel(super::board_views::Panel::Filters,window,cx),
+            TimeLog => self.open_time_log(window,cx),
             ToggleTimer => self.toggle_task_timer(window,cx),
             ExpandSummary => {
                 if !self.summary.is_empty() { self.task_fields.summary_open = !self.task_fields.summary_open; }

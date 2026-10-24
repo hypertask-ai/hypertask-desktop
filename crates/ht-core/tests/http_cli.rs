@@ -463,3 +463,18 @@ fn triage_and_template_writes_use_web_methods_routes_and_bearer_without_cookies(
         thread.join().unwrap();
     }}
 }
+
+#[test]
+fn time_log_reads_and_crud_send_desktop_bearer_with_web_routes_methods_and_refusals() {
+    for (method,path,body) in [
+        ("GET","/api/time/entries?taskId=1",Value::Null),
+        ("POST","/api/time/entries",json!({"taskId":1,"date":"2026-10-01","minutes":30,"timezoneOffsetMinutes":120,"note":"New"})),
+        ("PATCH","/api/time/entries",json!({"entryId":5,"minutes":90,"note":"Edited"})),
+        ("DELETE","/api/time/entries",json!({"entryId":5})),
+    ] {for status in [200,401,403] {
+        let (url,thread,receive)=server(status,"{\"error\":\"Forbidden\"}");let mut http=Http::with_base(&url,"desktop-time-log-token".into()).unwrap();
+        let response=if method=="GET"{http.get(path)}else{http.mutate(method,path,&body,"time-log-client")}.unwrap();assert_eq!(response.status,status);assert_eq!(response.body["error"],"Forbidden");
+        let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("{method} {path} HTTP/1.1\r\n")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-time-log-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));
+        if method!="GET"{assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);}thread.join().unwrap();
+    }}
+}

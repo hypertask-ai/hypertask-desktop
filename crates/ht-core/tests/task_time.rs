@@ -16,10 +16,10 @@ fn timer_start_stop_and_board_setting_are_queued_optimistically_with_restart_ref
         for status in [200,401,403] {
             let file=tempfile::NamedTempFile::new().unwrap();let mut db=Db::open(file.path()).unwrap();seed(&mut db,matches!(change,TimeWrite::Stop{..}));let before=db.task_time(1).unwrap().unwrap();
             let id=db.enqueue(Write::Time{change:change.clone()},100).unwrap();let key=db.mutations().unwrap()[0].client_id.clone();
-            match change{TimeWrite::Start{..}=>assert_eq!(db.task_time(1).unwrap().unwrap()["runningEntry"]["id"],-id),TimeWrite::Stop{..}=>assert!(db.task_time(1).unwrap().unwrap()["runningEntry"].is_null()),TimeWrite::Board{..}=>{let project=db.board_project(15).unwrap();assert_eq!(project["timeTrackingEnabled"],false);assert_eq!(project["showTimeTotals"],false);}}
+            match change{TimeWrite::Entry{..}=>unreachable!(),TimeWrite::Start{..}=>assert_eq!(db.task_time(1).unwrap().unwrap()["runningEntry"]["id"],-id),TimeWrite::Stop{..}=>assert!(db.task_time(1).unwrap().unwrap()["runningEntry"].is_null()),TimeWrite::Board{..}=>{let project=db.board_project(15).unwrap();assert_eq!(project["timeTrackingEnabled"],false);assert_eq!(project["showTimeTotals"],false);}}
             drop(db);let mut db=Db::open(file.path()).unwrap();
             let mut stopped=entry();stopped["endedAt"]=json!("2026-10-01T09:01:00Z");
-            let reply=match change{TimeWrite::Start{..}=>json!({"success":true,"entry":entry()}),TimeWrite::Stop{..}=>json!({"success":true,"entry":stopped}),TimeWrite::Board{..}=>json!({"success":true,"enabled":false,"timeTrackingEnabled":false,"showTimeTotals":false})};
+            let reply=match change{TimeWrite::Entry{..}=>unreachable!(),TimeWrite::Start{..}=>json!({"success":true,"entry":entry()}),TimeWrite::Stop{..}=>json!({"success":true,"entry":stopped}),TimeWrite::Board{..}=>json!({"success":true,"enabled":false,"timeTrackingEnabled":false,"showTimeTotals":false})};
             assert_eq!(db.drain_once(&mut Server{status,path,body:body.clone(),reply,user:42,calls:0},100).unwrap(),if status==200{Drain::Applied(id)}else{Drain::Failed(id)});
             let result:Value=serde_json::from_str(&db.kv_get(&format!("time-result:{key}")).unwrap().unwrap()).unwrap();
             if status!=200 {assert_eq!(db.task_time(1).unwrap().unwrap(),before);assert_eq!(db.board_project(15).unwrap()["timeTrackingEnabled"],true);assert_eq!(db.board_project(15).unwrap()["showTimeTotals"],true);assert_eq!(result["error"],"Time tracking is disabled for this board");}

@@ -1306,7 +1306,7 @@ impl Desktop {
         self.shell.set_token(token);
         self.shell.metadata_generation+=1;self.shell.metadata_loading=false;
         self.shell.favorites_manager=false;self.shell.favorite_slot=None;
-        self.invalidate_board_views(cx);self.invalidate_board_create(cx);self.invalidate_task_create(cx);
+        self.invalidate_board_views(cx);self.invalidate_board_create(cx);self.invalidate_task_create(cx);self.invalidate_time_log(cx);
         self.shell.settings = false;
         self.shell.boards = false;
         self.shell.invite = false;

@@ -518,7 +518,8 @@ impl Db {
                 Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"]=>{
                     let (path,body)=change.request()?;
                     if timer {let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;}
-                    match transport.post(&path,&body,&row.client_id) {
+                    match transport.mutate(change.method()?,&path,&body,&row.client_id) {
+                        Ok(response) if response.status==200 && matches!(&change,crate::TimeWrite::Entry{task,change} if self.validate_time_entry_ack(&row.payload_json,*task,change,&response.body).is_err()) => Ok(Response{status:409,body:json!({"error":"Time entry was not acknowledged; refresh before trying again"})}),
                         Ok(response) if response.status<500=>Ok(response),
                         _ if timer=>Ok(Response{status:409,body:json!({"error":"Timer result uncertain; refresh before trying again"})}),
                         other=>other,

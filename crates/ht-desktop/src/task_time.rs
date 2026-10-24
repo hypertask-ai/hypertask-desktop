@@ -8,7 +8,7 @@ pub(super) struct TaskTime {
     generation:u64,
     loading:bool,
     ticking:bool,
-    pending:Option<(String,i64)>,
+    pub(super) pending:Option<(String,i64)>,
 }
 impl Desktop {
     pub(super) fn load_task_time(&mut self,cx:&mut Context<Self>) {
@@ -56,7 +56,7 @@ impl Desktop {
         if self.screen==Screen::Inbox || self.task_time.pending.is_some(){return;}
         if let Ok(project)=self.db.board_project(self.options.board){self.queue_time(TimeWrite::Board{project:self.options.board,enabled:project["timeTrackingEnabled"]!=true},window,cx);}
     }
-    fn queue_time(&mut self,change:TimeWrite,window:&mut Window,cx:&mut Context<Self>) {
+    pub(super) fn queue_time(&mut self,change:TimeWrite,window:&mut Window,cx:&mut Context<Self>) {
         match self.db.enqueue(Write::Time{change},chrono::Utc::now().timestamp()) {
             Ok(id)=>{
                 let row=self.db.mutations().unwrap().into_iter().find(|row|row.id==id).unwrap();
@@ -72,6 +72,7 @@ impl Desktop {
         let Some(result)=self.db.kv_get(&format!("time-result:{key}")).ok().flatten().and_then(|value|serde_json::from_str::<Value>(&value).ok()) else{return true;};
         self.task_time.pending=None;
         if self.db.current_user_id()==Some(user){
+            self.finish_time_log(&result,cx);
             self.error=result["error"].as_str().map(str::to_owned);self.reload();self.task_time.loaded=None;self.load_task_time(cx);
         }
         cx.notify();false
@@ -95,7 +96,7 @@ impl Desktop {
             .child(div().w(px(260./3.)).flex_shrink_0().child("Time"))
             .child(div().flex().gap(px(8.))
                 .when(!running.is_null(),|d|d.child(div().text_color(color(0x52a869)).child(ht_core::task_time::format_elapsed(ht_core::task_time::elapsed(running,now)))))
-                .when(summary["otherEntriesSeconds"].as_i64().unwrap_or(0)>0,|d|d.child(format!("{}{}",ht_core::task_time::format_elapsed(total),if running.is_null(){""}else{" total"})))
+                .when(summary["otherEntriesSeconds"].as_i64().unwrap_or(0)>0,|d|d.child(div().id("task-time-log-open").cursor_pointer().child(format!("{}{}",ht_core::task_time::format_elapsed(total),if running.is_null(){""}else{" total"})).on_click(cx.listener(|this,_,window,cx|this.open_time_log(window,cx))).layout_key(&self.layout,"task.time.log",None)))
                 .when(enabled || !running.is_null(),|d|d.child(div().id("task-timer-toggle").cursor_pointer().when(self.task_time.pending.is_some(),|d|d.opacity(0.5)).child(if running.is_null(){"Start"}else{"Stop"}).on_click(cx.listener(|this,_,window,cx|this.toggle_task_timer(window,cx))).layout_key(&self.layout,"task.time.toggle",None))))
             .layout_key(&self.layout,"task.time",None).into_any_element()
     }

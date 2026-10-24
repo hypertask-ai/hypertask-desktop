@@ -98,6 +98,8 @@ mod board_views;
 mod task_actions;
 #[path = "task_time.rs"]
 mod task_time;
+#[path = "task_time_log.rs"]
+mod task_time_log;
 
 #[path = "interactions.rs"]
 mod interactions;
@@ -141,6 +143,7 @@ pub struct Desktop {
     task_fields: task_fields::TaskFields,
     views: board_views::Views,
     task_time: task_time::TaskTime,
+    time_log: task_time_log::TimeLog,
     task_actions: task_actions::TaskActions,
     board_actions: board::BoardActions,
     board_forms: board_mutations::Forms,
@@ -264,6 +267,7 @@ impl Desktop {
             task_fields: task_fields::TaskFields::new(cx),
             views: board_views::Views::new(cx),
             task_time: task_time::TaskTime::default(),
+            time_log: task_time_log::TimeLog::new(cx),
             task_actions: task_actions::TaskActions::default(),
             board_actions: board::BoardActions::new(cx),
             board_forms: board_mutations::Forms::new(cx),
@@ -633,6 +637,7 @@ impl Desktop {
     }
 
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
+        if self.time_log_key(event, window, cx) { return; }
         if self.compose_key(event, window, cx) { return; }
         if self.compose_open() { if self.compose_search_active() {self.interaction_key(event, window, cx);} return; }
         if self.mention_key(event, window, cx) { return; }
@@ -1908,6 +1913,7 @@ impl Render for Desktop {
             .child(self.board_form_overlay(cx))
             .child(self.view_overlay(cx))
             .child(self.create_task_overlay(cx))
+            .child(self.time_log_overlay(cx))
             .into_any_element()
     }
 }
