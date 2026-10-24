@@ -738,11 +738,7 @@ impl Element for TextElement {
     ) -> (LayoutId, ()) {
         let input = self.input.read(cx);
         let multiline = input.multiline;
-        let document = if input.content.is_empty() {
-            None
-        } else {
-            input.editor.as_ref().map(|e| e.document.clone())
-        };
+        let entity = self.input.clone();
         let text = if input.content.is_empty() {
             input.placeholder.clone()
         } else {
@@ -758,14 +754,20 @@ impl Element for TextElement {
         let font = text_style.font();
         let font_size = text_style.font_size.to_pixels(window.rem_size());
         let line_height = window.line_height();
-        let id = window.request_measured_layout(style, move |known, available, window, _cx| {
+        let id = window.request_measured_layout(style, move |known, available, window, cx| {
+            let input = entity.read(cx);
+            let document = if input.content.is_empty() {
+                None
+            } else {
+                input.editor.as_ref().map(|e| &e.document)
+            };
             let width = known.width.unwrap_or_else(|| match available.width {
                 AvailableSpace::Definite(width) => width,
                 _ => px(380.),
             });
             let rows = editor_rows(
                 &text,
-                document.as_ref(),
+                document,
                 width,
                 font.clone(),
                 font_size,

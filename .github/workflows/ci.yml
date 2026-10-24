@@ -134,3 +134,19 @@ jobs:
           name: windows-memory-${{ matrix.revision }}
           path: evidence/windows-memory/
           if-no-files-found: error
+  windows-memory-proof:
+    name: Windows memory receipt and visual proof
+    if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
+    needs: [build, windows-memory-baselines]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: windows-memory*
+          path: evidence/memory-proof
+      - run: python3 -m pip install Pillow
+      - name: Validate historical and fixed receipts; compare PR 11 pixels
+        run: |
+          python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory-3d002231efdbc5ea4b823e5a1af430e912a168d9
+          python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --compare evidence/memory-proof/windows-memory-5016a9ebe48b03dbac2f2312c170878166586c59
