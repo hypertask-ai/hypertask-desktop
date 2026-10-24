@@ -88,6 +88,8 @@ mod board_mutations;
 mod board;
 #[path = "board_views.rs"]
 mod board_views;
+#[path = "task_actions.rs"]
+mod task_actions;
 #[path = "task_time.rs"]
 mod task_time;
 
@@ -133,6 +135,7 @@ pub struct Desktop {
     task_fields: task_fields::TaskFields,
     views: board_views::Views,
     task_time: task_time::TaskTime,
+    task_actions: task_actions::TaskActions,
     board_actions: board::BoardActions,
     board_forms: board_mutations::Forms,
     comment_actions: comment_actions::CommentActions,
@@ -255,6 +258,7 @@ impl Desktop {
             task_fields: task_fields::TaskFields::new(cx),
             views: board_views::Views::new(cx),
             task_time: task_time::TaskTime::default(),
+            task_actions: task_actions::TaskActions::default(),
             board_actions: board::BoardActions::new(cx),
             board_forms: board_mutations::Forms::new(cx),
             create_task:task_create::Create::new(cx),
@@ -1454,7 +1458,7 @@ impl Desktop {
             })
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "No assignees".into());
-        let rows = [
+        let mut rows = vec![
             ("Assignees", assignees),
             (
                 "Agents",
@@ -1512,6 +1516,7 @@ impl Desktop {
                     .unwrap_or_else(|| "No tags".into()),
             ),
         ];
+        if let Some(date) = task.extra["startDate"].as_str() { rows.push(("Start date", short_date(date))); }
         let row_count = rows.len();
         div()
             .w(px(312.))

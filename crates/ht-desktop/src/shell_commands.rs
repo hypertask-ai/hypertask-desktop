@@ -9,6 +9,11 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::StartDate => self.show_start_date(window, cx),
+            ShellCommand::WaitingOn => self.show_modal(crate::ui::interactions::Modal::WaitingOn, window, cx),
+            ShellCommand::AssignMe => {
+                if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::AssignMe, window, cx); }
+            }
             ShellCommand::TaskTimer => self.toggle_task_timer(window,cx),
             ShellCommand::BoardTime => self.toggle_board_time(window,cx),
             ShellCommand::AutoAssignColumn => { self.views.column_auto_select = true; self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx); },

@@ -407,3 +407,20 @@ fn task_timer_routes_send_the_desktop_bearer_and_preserve_start_stop_setting_ref
         }
     }
 }
+
+#[test]
+fn daily_task_action_routes_send_desktop_bearer_without_cookies_and_preserve_refusals() {
+    for (change,path,body) in [
+        (ht_core::TaskAction::StartDate(Some("2026-10-01T09:00:00+02:00".into())),"/api/tasks/setStartDate",json!({"taskId":1,"startDate":"2026-10-01T09:00:00+02:00"})),
+        (ht_core::TaskAction::StartDate(None),"/api/tasks/setStartDate",json!({"taskId":1,"startDate":null})),
+        (ht_core::TaskAction::WaitingOn(Some(7)),"/api/tasks/waiting-on",json!({"taskId":1,"userId":7})),
+        (ht_core::TaskAction::WaitingOn(None),"/api/tasks/waiting-on",json!({"taskId":1,"userId":null})),
+        (ht_core::TaskAction::AssignMe,"/api/assignees/assign",json!({"taskId":1,"userId":42,"intent":"assign"})),
+    ] { for status in [200,401,403] {
+        let (actual_path,actual_body)=change.request(1,42).unwrap();assert_eq!(actual_path,path);assert_eq!(actual_body,body);
+        let (url,thread,receive)=server(status,"{\"message\":\"Unauthorized\"}");let mut http=Http::with_base(&url,"desktop-task-token".into()).unwrap();
+        let response=http.post(actual_path,&actual_body,"task-action-client").unwrap();assert_eq!(response.status,status);assert_eq!(response.body["message"],"Unauthorized");
+        let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("POST {path} HTTP/1.1\r\n")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-task-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));
+        assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
+    }}
+}

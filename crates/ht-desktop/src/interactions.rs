@@ -19,6 +19,7 @@ pub(super) enum Modal {
     Tags,
     Size,
     DueDate,
+    WaitingOn,
     Delete,
 }
 #[derive(Clone)]
@@ -36,6 +37,7 @@ enum ChoiceAction {
     Label(usize),
     Size(u8),
     DueDate(i64),
+    WaitingOn(Option<i64>),
     Task(i64),
     Board(i64),
     Delete,
@@ -452,6 +454,7 @@ impl Desktop {
             Priority => self.show_modal(Modal::Priority, window, cx),
             Size => self.show_modal(Modal::Size, window, cx),
             DueDate => self.show_due_date(window, cx),
+            WaitingOn => self.show_modal(Modal::WaitingOn, window, cx),
             Delete => self.show_modal(Modal::Delete, window, cx),
             CopyId | CopyTitleId | CopyUrl | CopyTitleUrl => self.copy_task(action, cx),
             Search | LocalSearch | Boards => self.show_modal(
@@ -714,7 +717,7 @@ impl Desktop {
             cx.notify();
             return;
         }
-        if matches!(modal, Modal::Assign | Modal::Tags) {
+        if matches!(modal, Modal::Assign | Modal::Tags | Modal::WaitingOn) {
             if let Some(worker) = &self.worker {
                 let project = self
                     .selected_task()
@@ -734,7 +737,7 @@ impl Desktop {
         window.focus(&self.interaction.query.focus_handle(cx), cx);
         cx.notify();
     }
-    fn close_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn close_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.dismiss_compose_search();
         self.interaction.modal = None;
         let focus = match self.editing {
@@ -889,6 +892,12 @@ impl Desktop {
                     action: ChoiceAction::Column(c.id),
                 })
                 .collect(),
+            Some(Modal::WaitingOn) => {
+                let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return vec![]; };
+                let mut rows = vec![Choice { name:"Nobody (clear)".into(), action:ChoiceAction::WaitingOn(None) }];
+                rows.extend(self.db.project_members(task.project_id).unwrap_or_default().into_iter().filter_map(|member| Some(Choice { name:member["displayName"].as_str().or(member["email"].as_str())?.into(), action:ChoiceAction::WaitingOn(Some(member["id"].as_i64()?)) })));
+                rows
+            }
             Some(Modal::Assign | Modal::Tags) => {
                 let Some(task) = self
                     .selected_task()
@@ -1001,11 +1010,14 @@ impl Desktop {
             }
         }
         let query = self.interaction.query.read(cx).content.trim().to_owned();
-        let keep_open = matches!(self.interaction.modal,Some(Modal::Assign|Modal::Tags))
+        let keep_open = matches!(choice.action, ChoiceAction::WaitingOn(_)) || matches!(self.interaction.modal,Some(Modal::Assign|Modal::Tags))
             && matches!(choice.action,ChoiceAction::Assignee(_)|ChoiceAction::Agent(_)|ChoiceAction::Label(_))
             && !(self.screen == Screen::Board && !self.interaction.bulk.is_empty());
         if !keep_open { self.close_modal(window, cx); }
         match choice.action {
+            ChoiceAction::WaitingOn(user) => {
+                if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::WaitingOn(user), window, cx); }
+            }
             ChoiceAction::Command(CommandAction::Shortcut(action)) => {
                 self.run_shortcut(action, window, cx)
             }
@@ -1142,7 +1154,7 @@ impl Desktop {
                             task_id,
                             patch: TaskPatch::Status(Status::Deleted),
                         },
-                        ChoiceAction::Command(_) | ChoiceAction::CreateLabel
+                        ChoiceAction::WaitingOn(_) | ChoiceAction::Command(_) | ChoiceAction::CreateLabel
                         | ChoiceAction::Task(_)
                         | ChoiceAction::Board(_) => {
                             unreachable!()
@@ -1228,6 +1240,7 @@ impl Desktop {
                     Modal::Priority => "Set priority",
                     Modal::Size => "Set task size",
                     Modal::DueDate => "Set due date",
+                    Modal::WaitingOn => "Blocked by person",
                     Modal::Delete => "Delete task?",
                     Modal::Commands => unreachable!(),
                 }

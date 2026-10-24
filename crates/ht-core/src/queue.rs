@@ -11,6 +11,7 @@ pub enum Write {
     AiSession { change: crate::AiSessionWrite },
     View { change: crate::ViewWrite },
     Time { change: crate::TimeWrite },
+    TaskAction { task_id: i64, change: crate::TaskAction },
     Favorites { project_ids: Vec<i64> },
     FavoriteSlot { index: u8, project_id: Option<i64> },
     CreateTask { project_id: i64, section_id: i64, title: String, top: bool },
@@ -102,6 +103,7 @@ impl Db {
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="ai_session"),"Wait for the previous chat update");
                 ("ai-session".into(),"ai_session",json!({"user_id":user,"change":change,"before":db.ai_sessions()?,"attempted":false}))
             }
+            Write::TaskAction { task_id, change } => (format!("task:{task_id}"), "web_task_action", db.prepare_task_action(*task_id, change)?),
             Write::Time { change } => ("time".into(),"web_time",db.prepare_time(change)?),
             Write::View { change } => {
                 change.validate()?;
@@ -310,6 +312,7 @@ impl Db {
                 }
                 self.upsert_task(&task)?;
             }
+            "web_task_action" => self.optimistic_task_action(payload, now)?,
             "task_patch" => {
                 let mut task = self
                     .raw("Task", &payload["task_id"])?
@@ -498,10 +501,12 @@ impl Db {
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
             "inbox_seen" => ("/inbox/seen", json!({"notification_ids":row.payload_json["notification_ids"]})),
             "inbox_remind" => ("/inbox/archive", json!({"notification_ids":row.payload_json["notification_ids"],"remind_at":row.payload_json["remind_at"]})),
-            "web_time" | "web_preferences" | "ai_session" | "web_view" | "web_favorites" | "web_favorite_slot" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
+            "web_task_action" | "web_time" | "web_preferences" | "ai_session" | "web_view" | "web_favorites" | "web_favorite_slot" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
-        let response = if row.kind == "web_preferences" {
+        let response = if row.kind == "web_task_action" {
+            self.send_task_action(transport, &row)
+        } else if row.kind == "web_preferences" {
             self.send_preferences(transport,&row.payload_json,&row.client_id)
         } else if row.kind == "ai_session" {
             self.send_ai_session(transport,&row)
@@ -685,7 +690,7 @@ impl Db {
                     Err(_) => (false, "invalid success response".to_owned()),
                 }
             }
-            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_time" {body["error"].as_str().unwrap_or("Time tracking request failed").to_owned()} else if row.kind=="web_view" {body["message"].as_str().or(body["error"].as_str()).unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
+            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_task_action" {serde_json::from_value::<crate::TaskAction>(row.payload_json["change"].clone())?.failure().to_owned()} else if row.kind=="web_time" {body["error"].as_str().unwrap_or("Time tracking request failed").to_owned()} else if row.kind=="web_view" {body["message"].as_str().or(body["error"].as_str()).unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
             Err(error) => (false, error.to_string()),
         };
         self.transaction(|db| {
@@ -701,6 +706,11 @@ impl Db {
                 if row.kind == "ai_session" {
                     db.rollback_ai_session(&row.payload_json)?;
                     db.kv_set(&format!("ai-session-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
+                }
+                if row.kind == "web_task_action" {
+                    db.rollback_task_action(&row.payload_json)?;
+                    db.reapply_pending()?;
+                    db.kv_set(&format!("task-action-result:{}",row.client_id), &json!({"error":result.1}).to_string())?;
                 }
                 if row.kind == "web_time" {
                     db.rollback_time(&row.payload_json)?;
@@ -793,6 +803,10 @@ impl Db {
                 "ai_session" => {
                     db.resolve_ai_session(&row.payload_json,body)?;
                     db.kv_set(&format!("ai-session-result:{}",row.client_id),&body.to_string())?;
+                }
+                "web_task_action" => {
+                    db.resolve_task_action(&row.payload_json, body)?;
+                    db.kv_set(&format!("task-action-result:{}",row.client_id), &body.to_string())?;
                 }
                 "web_time" => {
                     db.resolve_time(&row.payload_json,body,now)?;

@@ -48,6 +48,7 @@ pub enum Action {
     Tags,
     Size,
     DueDate,
+    WaitingOn,
     Delete,
     CopyId,
     CopyTitleId,
@@ -111,6 +112,7 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         };
     }
     match (k, ctrl, shift, m.alt) {
+        ("b", false, true, false) => Some(Action::WaitingOn),
         ("w", false, false, false) if screen==Screen::Task=>Some(Action::ToggleTimer),
         ("s", false, true, false) if screen!=Screen::Inbox=>Some(Action::SortView),
         ("f", false, true, false) if screen!=Screen::Inbox=>Some(Action::FilterView),

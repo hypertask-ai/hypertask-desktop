@@ -46,6 +46,9 @@ pub enum ShellCommand {
     SmartSplit,
     AutoAssignColumn,
     TaskTimer,
+    StartDate,
+    WaitingOn,
+    AssignMe,
     BoardTime,
     DuplicateTask(bool),
 }
@@ -113,6 +116,13 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     );
     if task && screen != Screen::Task {
         task_commands(&mut add);
+    }
+    if task {
+        for (key, name, keys, keywords, action) in [
+            ("setStartDate", "Set start date", "", "start begin kickoff scheduled from date when planned", ShellCommand::StartDate),
+            ("blockedByPerson", "Blocked by person…", "SHIFT B", "blocked waiting blocker block person stuck", ShellCommand::WaitingOn),
+            ("assignToMe", "Assign to me", "", "assign me self take claim mine my task i'll do it", ShellCommand::AssignMe),
+        ] { rows.push(Command { key:key.into(), name:name.into(), group:"Task", keys:keys.into(), keywords, action:CommandAction::Shell(action) }); }
     }
     if task {
         for (key, name, pick_board) in [("duplicateTask", "Duplicate task", false), ("duplicateTaskToBoard", "Duplicate task to board", true)] {
