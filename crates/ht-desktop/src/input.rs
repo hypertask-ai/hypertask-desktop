@@ -31,6 +31,10 @@ impl gpui::EventEmitter<EditorRequest> for TextInput {}
 #[derive(Clone)]
 pub struct QuoteSelection { pub html: String }
 impl gpui::EventEmitter<QuoteSelection> for TextInput {}
+// Equal UTF-8 widths preserve the source byte offsets used by selection and IME.
+fn concealed(text: &str) -> SharedString {
+    text.chars().map(|ch| match ch.len_utf8() { 1 => '*', 2 => '×', 3 => '•', _ => '🔒' }).collect::<String>().into()
+}
 impl TextInput {
     pub fn read_only_comment(mut self, html: &str, cx: &mut Context<Self>) -> Self {
         self=self.multiline_editor();self.set_html(html,cx);self.read_only=true;self
@@ -132,9 +136,12 @@ pub struct TextInput {
     redo: Vec<EditSnapshot>,
     editor: Option<EditorState>,
     read_only: bool,
+    secret: bool,
 }
 
 impl TextInput {
+    pub fn secret(mut self) -> Self { self.secret = true; self }
+    pub fn set_read_only(&mut self, read_only: bool, cx: &mut Context<Self>) { self.read_only = read_only; cx.notify(); }
     fn snapshot(&self) -> EditSnapshot {
         EditSnapshot {
             content: self.content.clone(),
@@ -787,7 +794,7 @@ impl Element for TextElement {
         let text = if input.content.is_empty() {
             input.placeholder.clone()
         } else {
-            input.content.clone()
+            if input.secret { concealed(&input.content) } else { input.content.clone() }
         };
         let mut style = Style::default();
         style.size.width = relative(1.).into();
@@ -842,7 +849,7 @@ impl Element for TextElement {
         let (display, text_color) = if input.content.is_empty() {
             (input.placeholder.clone(), input.muted)
         } else {
-            (input.content.clone(), style.color)
+            (if input.secret { concealed(&input.content) } else { input.content.clone() }, style.color)
         };
         let line_height = window.line_height();
         let font_size = style.font_size.to_pixels(window.rem_size());
@@ -1176,6 +1183,7 @@ impl TextInput {
             redo: vec![],
             editor: None,
             read_only: false,
+            secret: false,
         }
     }
 
@@ -1335,5 +1343,18 @@ mod tests {
             input.vertical(1, window, cx);
             assert_eq!(input.cursor_offset(), 0, "an empty draft has no next row");
         });
+    }
+}
+
+#[cfg(test)]
+mod secret_tests {
+    use super::*;
+    #[test]
+    fn api_keys_are_concealed_without_changing_utf8_selection_boundaries() {
+        for text in ["sk-live-fixture", "aé漢🙂z"] {
+            let masked=concealed(text);assert_ne!(masked.as_ref(),text);assert_eq!(masked.len(),text.len());
+            assert_eq!(masked.char_indices().map(|(i,_)|i).collect::<Vec<_>>(),text.char_indices().map(|(i,_)|i).collect::<Vec<_>>());
+            assert!(!masked.contains("sk-live-fixture"));
+        }
     }
 }

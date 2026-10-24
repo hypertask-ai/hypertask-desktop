@@ -159,13 +159,13 @@ impl Http {
         match response {
             Ok(r) | Err(ureq::Error::Status(_, r)) => {
                 let status = r.status();
-                if status == 401 {
+                if status == 401 && !path.starts_with("/api/") {
                     self.unauthorized.store(true, Ordering::SeqCst);
                 }
                 let writer_text = path == "/api/ai/task-writer" && !r.header("Content-Type").unwrap_or("").contains("application/json");
                 let body = if writer_text { r.into_string().map(Value::String).unwrap_or(Value::Null) }
                     else { r.into_json().unwrap_or(Value::Null) };
-                if (200..300).contains(&status) && body.is_null() {
+                if (200..300).contains(&status) && body.is_null() && !(status == 204 && path == "/api/section/update") {
                     return Err(TransportError::InvalidResponse);
                 }
                 Ok(Response { status, body })
@@ -198,7 +198,7 @@ impl Transport for Http {
         body: &Value,
         client_id: &str,
     ) -> std::result::Result<Response, TransportError> {
-        self.request(method, path, Some(body), Some(client_id))
+        self.request(method, path, if body.is_null() {None}else{Some(body)}, Some(client_id))
     }
     fn get(&mut self, path: &str) -> std::result::Result<Response, TransportError> {
         self.request("GET", path, None, None)

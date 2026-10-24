@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BoardWrite {
+    PositionTask { task: i64, project: i64, section: i64, title: String, ranking: String },
     ArchiveBoard {
         project: i64,
     },
@@ -55,6 +56,12 @@ impl BoardWrite {
             Ok::<(), anyhow::Error>(())
         };
         let request = match self {
+            Self::PositionTask { task, project, section, title: name, ranking } => {
+                positive(*task)?; positive(*project)?; positive(*section)?;
+                title(name, 200)?;
+                ensure!(!ranking.is_empty() && ranking.len() <= 128, "invalid task ranking");
+                ("PUT", "/api/tasks/moveTask".into(), json!({"section_title":name,"sectionId":section,"taskId":task,"ranking":ranking,"projectId":project}))
+            }
             Self::ArchiveBoard { project } => {
                 positive(*project)?;
                 (
@@ -162,6 +169,12 @@ impl BoardWrite {
     }
     pub(crate) fn resolve(&self, db: &mut Db, body: &Value, now: i64) -> Result<()> {
         match self {
+            Self::PositionTask { task, project, section, ranking, .. } => {
+                let value = body.get("task").context("missing moved task acknowledgement")?;
+                ensure!(value["id"] == *task && value["projectId"] == *project && value["sectionId"] == *section && value["ranking"] == *ranking, "wrong move acknowledgement");
+                db.upsert_task(value)?;
+                db.request_refetch("board", *project)?;
+            }
             Self::AssignAgent {
                 task,
                 agent,

@@ -3,7 +3,7 @@ use anyhow::ensure;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-/// Only the shell's existing personal-bearer MCP contracts may enter the queue.
+/// Allow only the shell's explicit MCP and web settings contracts.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct ShellWrite {
     pub(crate) user_id: i64,
@@ -25,6 +25,18 @@ impl ShellWrite {
         let opaque = |id: &str| !id.is_empty() && id.bytes().all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_'));
         let parts: Vec<_> = self.path.split('/').collect();
         let allowed = match (self.method.as_str(), parts.as_slice()) {
+            ("POST", ["", "api", "teams", "byokKeys"]) | ("POST", ["", "api", "settings", "byok-test"]) => {
+                self.body["teamId"].as_str().is_some_and(opaque)
+                    && self.body["provider"].as_str().is_some_and(|provider| ["gateway","custom","openai","claude","google","xai","deepseek","moonshot","zhipu","alibaba","openrouter"].contains(&provider))
+                    && self.body.as_object().is_some_and(|body| body.iter().all(|(key, value)| match key.as_str() {
+                        "teamId" | "provider" | "apiKey" | "baseUrl" | "modelId" => value.is_string(),
+                        "enabled" | "clearSecret" | "gdprCompliant" => value.is_boolean(),
+                        _ => false,
+                    }))
+            }
+            ("POST", ["", "api", "stripe", "ensure-customer"]) => self.body["teamId"].as_str().is_some_and(opaque),
+            ("POST", ["", "api", "stripe", "session", "checkout"]) => self.body["teamId"].as_str().is_some_and(opaque) && self.body["priceId"].is_string() && self.body["mode"] == "Normal",
+            ("POST", ["", "api", "stripe", "cancelSubscription"]) => self.body["stripe_customer_id"].as_str().is_some_and(opaque),
             ("PATCH", ["", "user", "profile"]) => true,
             ("POST", ["", "projects", "archive"]) => true,
             ("PUT", ["", "projects", id, "instructions"]) => positive(id),

@@ -290,79 +290,62 @@ impl Db {
         Ok(Some(TaskDetail { task, comments }))
     }
 
-    pub fn board(&self, project_id: i64) -> Result<Vec<BoardColumn>> {
-        let sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
-        let tasks = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Normal' ORDER BY updatedAt DESC,id ASC", [project_id])?;
+    pub fn board(&self, project_id: i64) -> Result<Vec<BoardColumn>> {self.board_in_view(project_id,None)}
+    pub fn board_in_view(&self,project_id:i64,builtin:Option<&str>)->Result<Vec<BoardColumn>>{
+        self.board_view_rows(project_id,builtin,false)
+    }
+    pub fn board_cards_in_view(&self,project_id:i64,builtin:Option<&str>)->Result<Vec<BoardColumn>>{
+        self.board_view_rows(project_id,builtin,cfg!(feature="compact-task-reads"))
+    }
+    fn board_view_rows(&self,project_id:i64,builtin:Option<&str>,compact:bool)->Result<Vec<BoardColumn>>{
+        let mut sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
+        let project=self.board_project(project_id).unwrap_or(Value::Null);
+        let mut settings=crate::board_views::settings(&project);
+        if builtin.is_some(){settings["board_filters"]=json!({"addedFilters":[],"matchFilters":"ANY"});}
+        if let Some(columns)=settings["board_columns_view"].as_array().filter(|_|project.is_object()){
+            sections.retain(|section|columns.iter().any(|column|column.get("id").or_else(||column.get("sectionId"))==section.get("id") && column["visibility"]==true));
+        }
+        let projection=if !compact {"raw_json"} else if settings["board_filters"]["addedFilters"].as_array().is_some_and(|filters|filters.iter().any(|filter|filter["type"]=="Starred")) {
+            // Starred filters need the saved rows until matching, not in display cards.
+            "json_remove(raw_json, '$.description', '$.attachments', '$.pullRequests', '$.customFieldValues', '$.followers', '$.sub_tasks')"
+        } else {"json_remove(raw_json, '$.description', '$.attachments', '$.pullRequests', '$.savedContent', '$.customFieldValues', '$.followers', '$.sub_tasks')"};
+        let mut tasks = self.json_rows(&format!("SELECT {projection} FROM Task WHERE projectId=? AND status='Normal' ORDER BY ranking ASC,updatedAt DESC,id ASC"), [project_id])?;
+        let running=self.kv_get(&format!("web-running-timers:{}:{project_id}",self.current_user_id().unwrap_or(0)))?.and_then(|value|serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();
+        if let Some(builtin)=builtin{tasks.retain(|task|crate::board_views::builtin_matches(builtin,task,&project,self.current_user_id(),chrono::Utc::now().timestamp()));}
+        crate::board_views::filter_sort(&mut tasks,&settings,&project,&running);
+        tasks.retain(|task|match settings["board_subtask_setting"].as_str(){Some("None"|"Parent")=>task["parentTask"].is_null(),Some("Card")=>task["parentTask"].is_null() || task["subTasks"].as_array().is_some_and(|subtasks|!subtasks.is_empty()),_=>true});
+        let show_archived = settings["board_show_archived"].as_bool().unwrap_or(self.kv_get("showArchivedOnBoard")?.as_deref() == Some("true"));
+        if show_archived {
+            let mut archived = self.json_rows(&format!("SELECT {projection} FROM Task WHERE projectId=? AND status='Archive'"), [project_id])?;
+            if let Some(ids) = self.kv_get(&format!("web-archived-tasks:{}:{project_id}", self.current_user_id().unwrap_or(0)))?.and_then(|value| serde_json::from_str::<Vec<Value>>(&value).ok()) {
+                archived.retain(|task| ids.contains(&task["id"]));
+            }
+            crate::board_views::sort_archived(&mut archived, &settings, &project);
+            tasks.extend(archived);
+        }
+        if compact { for task in &mut tasks { for field in ["description","attachments","pullRequests","savedContent","customFieldValues","followers","sub_tasks"] { task.as_object_mut().context("Invalid task")?.remove(field); } } }
         let cards = tasks
             .into_iter()
             .map(task_view)
             .collect::<Result<Vec<_>>>()?;
-        sections
+        let mut columns=sections
             .into_iter()
-            .map(|s| {
-                let id = integer(&s, "id")?;
-                let title = s["section_title"]
-                    .as_str()
-                    .context("section title missing")?
-                    .to_owned();
-                Ok(BoardColumn {
-                    id,
-                    ranking: s["ranking"]
-                        .as_str()
-                        .context("section ranking missing")?
-                        .to_owned(),
-                    cards: cards
-                        .iter()
-                        .filter(|t| {
-                            t.section_id == Some(id)
-                                || (t.section_id.is_none() && t.section == title)
-                        })
-                        .cloned()
-                        .collect(),
-                    title,
-                })
-            })
-            .collect()
-    }
-
-
-    /// Cards omit detail-only bodies; detail/editor/search still read the complete task.
-    pub fn board_cards(&self, project_id: i64) -> Result<Vec<BoardColumn>> {
-        if !cfg!(feature = "compact-task-reads") { return self.board(project_id); }
-        self.board_rows(project_id, "SELECT json_remove(raw_json, '$.description', '$.attachments', '$.pullRequests', '$.savedContent', '$.customFieldValues', '$.followers', '$.sub_tasks') FROM Task WHERE projectId=? AND status='Normal' ORDER BY updatedAt DESC,id ASC")
-    }
-
-    fn board_rows(&self, project_id: i64, sql: &str) -> Result<Vec<BoardColumn>> {
-        let sections = self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY ranking,id", [project_id])?;
-        let mut columns = sections.into_iter().map(|s| {
-            Ok(BoardColumn {
-                id: integer(&s, "id")?,
-                title: s["section_title"].as_str().context("section title missing")?.to_owned(),
-                ranking: s["ranking"].as_str().context("section ranking missing")?.to_owned(),
-                cards: vec![],
-            })
-        }).collect::<Result<Vec<_>>>()?;
-        let mut statement = self.conn.prepare(sql)?;
-        let rows = statement.query_map([project_id], |row| row.get::<_, String>(0))?;
-        for row in rows {
-            let task = task_view(serde_json::from_str(&row?)?)?;
-            let section_id = task.section_id;
-            let section = task.section.clone();
-            let mut matches = columns.iter_mut().filter(|column| {
-                section_id == Some(column.id)
-                    || (section_id.is_none() && section == column.title)
-            }).peekable();
-            while let Some(column) = matches.next() {
-                if matches.peek().is_none() {
-                    column.cards.push(task);
-                    break;
-                }
-                // Legacy tasks can match multiple identically named sections.
+            .filter(|section|(settings["board_empty_sections"]!="Hidden" && builtin!=Some("builtin:decisions")) || cards.iter().any(|task|task.section_id==section["id"].as_i64() || (task.section_id.is_none() && task.section==section["section_title"].as_str().unwrap_or(""))))
+            .map(|section|Ok(BoardColumn {id:integer(&section,"id")?,title:section["section_title"].as_str().context("section title missing")?.to_owned(),ranking:section["ranking"].as_str().context("section ranking missing")?.to_owned(),cards:vec![]}))
+            .collect::<Result<Vec<_>>>()?;
+        for task in cards {
+            let section_id=task.section_id;let section=task.section.clone();
+            let mut matches=columns.iter_mut().filter(|column|section_id==Some(column.id) || (section_id.is_none() && section==column.title)).peekable();
+            while let Some(column)=matches.next() {
+                if matches.peek().is_none() {column.cards.push(task);break;}
                 column.cards.push(task.clone());
             }
         }
         Ok(columns)
     }
+
+    /// Cards omit detail-only bodies; detail/editor/search still read the complete task.
+    pub fn board_cards(&self, project_id:i64)->Result<Vec<BoardColumn>> {self.board_cards_in_view(project_id,None)}
 
     /// Row metadata only; the complete notification and task stay in the sync store.
     pub fn inbox_rows(&self) -> Result<Vec<InboxItem>> {

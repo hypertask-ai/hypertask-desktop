@@ -30,4 +30,39 @@ pub use worker::Worker;
 pub type Result<T> = anyhow::Result<T>;
 
 mod inbox;
+
+mod ranking;
+pub use ranking::task_rank;
+
+pub mod task_create;
+
+pub mod board_sidebar;
+
+pub mod board_views;
+pub use board_views::ViewWrite;
+
+mod ai_sessions;
+pub use ai_sessions::AiSessionWrite;
+
+pub mod ai_context;
+
+pub mod preferences;
+pub mod ai_models;
+
+pub mod team_settings;
+
+pub mod smart_splits;
+
+pub mod board_columns;
+
+pub mod task_time;
+pub use task_time::TimeWrite;
+
+pub mod task_actions;
+pub use task_actions::TaskAction;
 mod memory;
+
+pub mod task_relations;
+pub use task_relations::RelationKind;
+
+pub mod compose_routing;

@@ -1,3 +1,4 @@
+use ht_core::generated::Status;
 use crate::{
     Options,
     ai_sidebar::{AiSidebar, Scope},
@@ -57,6 +58,8 @@ mod memory_owners;
 #[path = "ai_workspace.rs"]
 mod ai_workspace;
 
+#[path = "task_create.rs"]
+mod task_create;
 #[path = "compose.rs"]
 mod compose;
 #[path = "mentions.rs"]
@@ -89,6 +92,12 @@ mod task_fields;
 mod board_mutations;
 #[path = "board.rs"]
 mod board;
+#[path = "board_views.rs"]
+mod board_views;
+#[path = "task_actions.rs"]
+mod task_actions;
+#[path = "task_time.rs"]
+mod task_time;
 
 #[path = "interactions.rs"]
 mod interactions;
@@ -97,6 +106,7 @@ pub struct Desktop {
     pub focus: FocusHandle,
     shell: shell::Shell,
     compose: compose::Compose,
+    create_task:task_create::Create,
     mentions: mentions::Mentions,
     db: Db,
     options: Options,
@@ -129,6 +139,9 @@ pub struct Desktop {
     comment_input: Entity<TextInput>,
     interaction: interactions::Interaction,
     task_fields: task_fields::TaskFields,
+    views: board_views::Views,
+    task_time: task_time::TaskTime,
+    task_actions: task_actions::TaskActions,
     board_actions: board::BoardActions,
     board_forms: board_mutations::Forms,
     comment_actions: comment_actions::CommentActions,
@@ -186,6 +199,7 @@ impl Desktop {
             cx.new(|cx| {
                 let mut sidebar = AiSidebar::new(colors, secret.clone(), focus.clone(), window, cx);
                 sidebar.restore_presentation(&db);
+                sidebar.restore_context(&db);
                 sidebar
             })
         });
@@ -194,6 +208,7 @@ impl Desktop {
             .map(|sidebar| cx.observe(sidebar, |this, sidebar, cx| {
                 let sidebar = sidebar.read(cx);
                 this.shell.ai_open = sidebar.is_open();
+                if let Err(error)=sidebar.persist_context(&this.db){this.error=Some(error.to_string());}
                 if let Err(error) = sidebar.persist_presentation(&this.db) { this.error = Some(error.to_string()); }
                 cx.notify();
             }));
@@ -247,8 +262,12 @@ impl Desktop {
             comment_input,
             interaction: interactions::Interaction::new(cx),
             task_fields: task_fields::TaskFields::new(cx),
+            views: board_views::Views::new(cx),
+            task_time: task_time::TaskTime::default(),
+            task_actions: task_actions::TaskActions::default(),
             board_actions: board::BoardActions::new(cx),
             board_forms: board_mutations::Forms::new(cx),
+            create_task:task_create::Create::new(cx),
             comment_actions: comment_actions::CommentActions::new(cx),
             comment_drafts: comment_drafts::CommentDrafts::default(),
             moving: false,
@@ -261,6 +280,7 @@ impl Desktop {
             ai_sidebar,
             _ai_sidebar_subscription: ai_sidebar_subscription,
         };
+        view.bind_ai_sessions(window,cx);
         view.bind_editors(cx);
         view.bind_mentions(cx);
         view.reload();
@@ -410,7 +430,7 @@ impl Desktop {
     }
 
     fn load_columns(&mut self, project: i64) -> anyhow::Result<()> {
-        let mut columns = crate::memory::measure_read(1, || self.db.board_cards(project))?;
+        let mut columns = crate::memory::measure_read(1, || self.db.board_cards_in_view(project,(self.screen==Screen::Board).then(||self.views.builtin.get(&project).map(String::as_str)).flatten()))?;
         if self.screen == Screen::Board && self.board_actions.project == project {
             for column in &mut columns { column.cards.retain(|task| board::search_matches(task, &self.board_actions.search_text)); }
         }
@@ -618,7 +638,7 @@ impl Desktop {
         if self.mention_key(event, window, cx) { return; }
         if self.unread_review_key(event,window,cx) {return;}
         if self.comment_reader_key(event, window, cx) { return; }
-        if self.board_form_key(event, window, cx) || self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
+        if self.create_task_key(event,window,cx) || self.view_key(event, window, cx) || self.board_form_key(event, window, cx) || self.task_fields_key(event, window, cx) || self.board_key(event, window, cx) { return; }
         if self.inbox_key(event, window, cx) { return; }
         if self.shell_key(event, window, cx) {
             return;
@@ -843,6 +863,9 @@ impl Desktop {
                             .children(["filter", "arrow-up-down", "ellipsis"].into_iter().map(
                                 |name| {
                                     div()
+                                        .id(name)
+                                        .when(name!="ellipsis", |d|d.cursor_pointer()
+                                            .on_click(cx.listener(move |this,_,window,cx|this.open_view_panel(if name=="filter"{board_views::Panel::Filters}else{board_views::Panel::Sort},window,cx))))
                                         .size(px(32.))
                                         .flex()
                                         .items_center()
@@ -854,6 +877,7 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, "board.header", None),
             )
+            .child(self.board_view_tabs(cx))
             .when(self.board_actions.searching, |d| d.child(self.board_search(cx)))
             .when(!self.interaction.bulk.is_empty(), |d| d.child(self.board_selection_bar(cx)))
             .child(
@@ -871,6 +895,10 @@ impl Desktop {
                     .pb(px(35.))
                     .children(self.columns.iter().enumerate().map(|(i, c)| {
                         div()
+                            .id(("board-drop-column", c.id as u64))
+                            .on_drop(cx.listener(move |this, drag: &board::CardDrag, _, cx| {
+                                this.drop_card(drag.task, i, None, cx);
+                            }))
                             .w(px(column_width))
                             .h_full()
                             .flex_shrink_0()
@@ -955,6 +983,9 @@ impl Desktop {
                                     .child(div().flex_1())
                                     .child(
                                         div()
+                                            .id(("board-add-task", c.id as u64))
+                                            .cursor_pointer()
+                                            .on_click(cx.listener({ let section = c.id; move |this, _, window, cx| this.start_board_create(section, window, cx) }))
                                             .text_size(px(16.))
                                             .line_height(px(24.))
                                             .size(px(10.))
@@ -985,6 +1016,7 @@ impl Desktop {
                                             ),
                                     ),
                             )
+                            .when_some(self.board_create_input(c.id), |d,input|d.child(input))
                             .when(self.board_column_visible(i, column_width, board_width, window, cx), |d| d.child(
                                 list(
                                     self.column_lists[i].clone(),
@@ -1012,6 +1044,11 @@ impl Desktop {
             || self.interaction.bulk.contains(&task.id);
         let title = task.title.clone();
         let id = task.id;
+        let archived = task.status == Status::Archive;
+        let settings = self.view_settings();
+        let subtask_mode = settings["board_subtask_setting"].as_str().unwrap_or("Flattened_Card");
+        let subtasks = task.extra.get("subTasks").and_then(|value| value.as_array()).filter(|tasks| !tasks.is_empty());
+        let parent = task.extra.get("parentTask").filter(|task| task.is_object() && matches!(subtask_mode, "Flattened" | "Flattened_Card"));
         let labels = task
             .extra
             .get("labels")
@@ -1019,8 +1056,14 @@ impl Desktop {
             .filter(|v| !v.is_empty());
         div()
             .id(("task-card", id as u64))
+            .when(id>0 && task.status != Status::Archive, |d|d.on_drag(board::CardDrag { task: id, title: title.clone() }, |drag, _, _, cx| cx.new(|_| drag.clone())))
+            .on_drop(cx.listener(move |this, drag: &board::CardDrag, _, cx| {
+                cx.stop_propagation();
+                if !archived && drag.task != id { this.drop_card(drag.task, column, Some(id), cx); }
+            }))
             .px(px(8.))
             .pb(px(16.))
+            .when(task.status == Status::Archive, |d| d.opacity(0.5))
             .child(
                 div()
                     .id("card")
@@ -1080,6 +1123,13 @@ impl Desktop {
                     .flex()
                     .flex_col()
                     .gap(px(6.))
+                    .when_some(parent, |d, parent| {
+                        let text = format!("{}: {}", parent["ticketNumber"].as_str().unwrap_or(""), parent["title"].as_str().unwrap_or(""));
+                        d.child(div().id(("card-parent", id as u64)).flex().gap(px(8.)).p(px(4.)).text_size(px(11.)).text_color(color(t.muted))
+                            .child(icon("corner-left-up", t.muted, 12.)).child(text.clone())
+                            .on_click(cx.listener(move |this, _, _, cx| { cx.stop_propagation(); this.column=column; this.selected=row; this.open_task(id,cx); }))
+                            .layout_key(&self.layout, format!("board.card.{index}.parent"), Some(text)))
+                    })
                     .cursor_pointer()
                     .hover(|d| {
                         d.bg(color(if active {
@@ -1094,6 +1144,7 @@ impl Desktop {
                         }))
                     })
                     .on_click(cx.listener(move |this, _, _, cx| {
+                        if id<=0 {return;}
                         this.column = column;
                         this.selected = row;
                         this.open_task(id, cx);
@@ -1133,8 +1184,9 @@ impl Desktop {
                                         task.ticket_number.clone(),
                                     ),
                             )
+                            .when(subtask_mode != "None", |d| d.when_some(subtasks, |d, tasks| d.child(div().flex().gap(px(4.)).child(icon("corner-left-up", t.muted, 14.)).child(tasks.len().to_string()).layout_key(&self.layout, format!("board.card.{index}.subtask-count"), Some(tasks.len().to_string())))))
                             .child(div().flex_1())
-                            .child(self.card_controls(id, column, row, cx))
+                            .when(id>0,|d|d.child(self.card_controls(id, column, row, cx)))
                             .when(self.inbox.iter().any(|n| n.task_id == Some(id)), |d| {
                                 d.child(
                                     div()
@@ -1310,6 +1362,19 @@ impl Desktop {
                             ),
                         )
                     })
+                    .when(matches!(subtask_mode, "Flattened_Card" | "Card"), |d| d.when_some(subtasks, |d, tasks| {
+                        let playlist: Vec<_> = std::iter::once(id).chain(tasks.iter().filter_map(|task| task["id"].as_i64())).collect();
+                        d.child(div().flex().flex_col().children(tasks.iter().enumerate().map(|(i, task)| {
+                            let text = format!("{} {}", task["ticketNumber"].as_str().unwrap_or(""), task["title"].as_str().unwrap_or(""));
+                            let playlist=playlist.clone();
+                            div().id(("card-subtask", (index*1000+i) as u64)).flex().items_start().gap(px(8.)).text_size(px(11.)).line_height(px(16.5)).text_color(color(t.muted))
+                                .child(icon("check", if task["status"] == "Archive" {0x008000} else {0x696b6e}, 12.))
+                                .child(div().id(("card-subtask-link", (index*1000+i) as u64)).child(text.clone()).cursor_pointer().on_click(cx.listener(move|this,_,_,cx| {
+                                    cx.stop_propagation();this.column=column;this.selected=row;this.open_task(id,cx);this.interaction.playlist=playlist.clone();
+                                })))
+                                .layout_key(&self.layout, format!("board.card.{index}.subtask.{i}"), Some(text))
+                        })))
+                    }))
                     .layout_key(&self.layout, format!("board.card.{index}"), None),
             )
             .into_any_element()
@@ -1403,7 +1468,7 @@ impl Desktop {
             })
             .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "No assignees".into());
-        let rows = [
+        let mut rows = vec![
             ("Assignees", assignees),
             (
                 "Agents",
@@ -1461,6 +1526,7 @@ impl Desktop {
                     .unwrap_or_else(|| "No tags".into()),
             ),
         ];
+        if let Some(date) = task.extra.get("startDate").and_then(|value| value.as_str()) { rows.push(("Start date", short_date(date))); }
         let row_count = rows.len();
         div()
             .w(px(312.))
@@ -1508,7 +1574,7 @@ impl Desktop {
                     .flex()
                     .items_start()
                     .gap(px(20.))
-                    .when(matches!(label, "Assignees" | "Agents" | "Priority" | "Due date" | "Tags" | "Task size" | "ID"), |d| {
+                    .when(matches!(label, "Assignees" | "Agents" | "Priority" | "Due date" | "Start date" | "Tags" | "Task size" | "ID"), |d| {
                         d.cursor_pointer().on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.open_task_field(label, window, cx);
@@ -1560,6 +1626,9 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, format!("task.meta.{i}"), None)
             }))
+            .child(self.waiting_on_row(task, cx))
+            .child(self.task_time_row(cx))
+            .child(self.task_relations_rows(task, cx))
             .when(self.moving, |d| {
                 d.child(
                     div()
@@ -1733,6 +1802,11 @@ impl Render for Desktop {
         if self.signin.phase != Phase::Ready {
             return self.sign_in_panel(cx).into_any_element();
         }
+        if self.screen==Screen::Board {self.load_board_views(cx);self.load_archived_on_board(cx);}
+        self.load_task_time(cx);
+        self.load_task_relations(cx);
+        self.tick_waiting_on(cx);
+        self.tick_task_time(cx);
         self.prepare_comment_readers(window,cx);
         self.restore_comment_draft(cx);
         if self.inbox_actions.review.is_some() {return self.unread_review_screen(cx).into_any_element();}
@@ -1832,6 +1906,8 @@ impl Render for Desktop {
             .child(self.inbox_reminder_overlay(cx))
             .child(self.due_date_overlay(cx))
             .child(self.board_form_overlay(cx))
+            .child(self.view_overlay(cx))
+            .child(self.create_task_overlay(cx))
             .into_any_element()
     }
 }

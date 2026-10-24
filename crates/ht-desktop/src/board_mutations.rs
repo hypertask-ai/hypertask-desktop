@@ -37,6 +37,11 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        if matches!(action, BoardAction::AddColumn | BoardAction::RenameColumn | BoardAction::DeleteColumn) {
+            self.views.column_auto_select = false;
+            self.open_view_panel(if action == BoardAction::AddColumn { super::board_views::Panel::AddColumn } else { super::board_views::Panel::Columns }, window, cx);
+            return;
+        }
         self.task_fields.summary_open = false;
         if action == BoardAction::ArchiveBoard
             && !self
@@ -471,40 +476,23 @@ mod tests {
         cx.simulate_input("Review");
         cx.simulate_keystrokes("enter enter");
         view.update(&mut cx,|this,window,cx|{
-            assert_eq!(this.db.mutations().unwrap().len(),1);assert_eq!(this.columns.len(),2);
-            let mut server=Server(json!({"success":true,"section":{"id":12,"projectId":15,"section_title":"Review","visibility":true,"deleted":false,"ranking":"c"}}));
+            assert_eq!(this.db.mutations().unwrap().len(),1);assert_eq!(this.columns.len(),3);
+            let mut server=Server(json!({"success":true,"section":{"id":12,"projectId":15,"section_title":"Review","visibility":true,"deleted":false,"ranking":"c"},"project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}}));
             assert!(matches!(this.db.drain_once(&mut server,chrono::Utc::now().timestamp()+1).unwrap(),ht_core::Drain::Applied(_)));
-            assert!(!this.poll_board_form(window,cx));assert_eq!(this.columns[2].title,"Review");
+            assert!(!this.poll_view(window,cx));assert_eq!(this.columns[2].title,"Review");
         }).unwrap();
     }
     #[gpui::test]
-    fn rename_column_and_board_wait_for_server_and_delete_requires_confirmation(
+    fn rename_and_delete_commands_open_the_web_column_manager_without_writing(
         cx: &mut gpui::TestAppContext,
     ) {
         let (view, mut cx) = setup(cx);
-        palette(&mut cx, "Rename board column");
-        cx.simulate_input("Backlog");
-        cx.simulate_keystrokes("enter");
-        view.update(&mut cx,|this,window,cx|{
-            assert_eq!(this.columns[0].title,"Todo");
-            this.db.drain_once(&mut Server(json!({"success":true,"section":{"id":10,"projectId":15,"section_title":"Backlog","visibility":true,"deleted":false,"ranking":"a"}})),chrono::Utc::now().timestamp()+1).unwrap();
-            this.poll_board_form(window,cx);assert_eq!(this.columns[0].title,"Backlog");
-        }).unwrap();
-        palette(&mut cx, "Delete board column");
-        cx.simulate_keystrokes("escape");
-        view.read_with(&mut cx, |this, _| {
-            assert!(this.db.mutations().unwrap().is_empty())
-        })
-        .unwrap();
-        palette(&mut cx, "Delete board column");
-        click(view, &mut cx, "board.form.submit");
-        view.read_with(&mut cx, |this, _| {
-            assert_eq!(
-                this.db.mutations().unwrap()[0].payload_json["change"]["DeleteColumn"]["section"],
-                10
-            )
-        })
-        .unwrap();
+        for name in ["Rename board column", "Delete board column"] {
+            palette(&mut cx, name);
+            crate::ui::shell::tests::measured(view, &mut cx, "board.columns.dialog");
+            view.read_with(&cx, |this, _| assert!(this.db.mutations().unwrap().is_empty())).unwrap();
+            cx.simulate_keystrokes("escape");
+        }
     }
     #[gpui::test]
     fn move_board_shortcut_uses_search_then_destination_column_and_never_guesses(

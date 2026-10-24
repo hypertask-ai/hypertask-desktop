@@ -4,6 +4,11 @@ use navigation::Destination;
 use serde_json::Value;
 
 pub(super) struct Shell {
+    metadata_loading: bool,
+    metadata_generation:u64,
+    favorites_manager: bool,
+    favorite_slot: Option<u8>,
+    favorites_expanded: bool,
     expanded: bool,
     hovered: Option<usize>,
     pub ai_open: bool,
@@ -61,6 +66,11 @@ impl Shell {
         });
         cx.observe(&feedback_input, |_, _, cx| cx.notify()).detach();
         Self {
+            metadata_loading: false,
+            metadata_generation:0,
+            favorites_manager: false,
+            favorite_slot: None,
+            favorites_expanded: db.kv_get("isFavoritesExpanded").ok().flatten().as_deref() != Some("false"),
             agents: false,
             destination: Destination::Workspace,
             search_input,
@@ -118,6 +128,7 @@ impl Desktop {
 
     fn toggle_boards(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shell.boards = !self.shell.boards;
+        if self.shell.boards { self.load_switcher_metadata(window,cx); }
         self.shell
             .query
             .update(cx, |input, cx| input.set_content(String::new(), cx));
@@ -140,6 +151,14 @@ impl Desktop {
         let key = &event.keystroke;
         let m = key.modifiers;
         let ctrl = m.control || m.platform;
+        if self.shell.favorites_manager {
+            if key.key == "escape" {
+                if self.shell.favorite_slot.take().is_none() { self.close_favorites(window, cx); }
+                cx.notify();
+                cx.stop_propagation();
+            }
+            return true;
+        }
         if self.shell.cli {
             if key.key == "escape" {
                 self.close_cli(window, cx);
@@ -184,6 +203,12 @@ impl Desktop {
         }
         if self.shell.settings {
             return self.settings_key(event, window, cx);
+        }
+        let favorite_modifier = if cfg!(target_os = "macos") {m.control && !m.alt} else {m.alt && !m.control};
+        let favorite_index = (favorite_modifier && !m.platform && !m.shift && key.key.len()==1)
+            .then(||key.key.parse::<u8>().ok()).flatten().filter(|i|*i<=9);
+        if self.shell.boards {
+            if let Some(index)=favorite_index {self.open_favorite(index,window,cx);cx.stop_propagation();return true;}
         }
         if self.shell.boards {
             match key.key.as_str() {
@@ -249,6 +274,7 @@ impl Desktop {
         {
             return false;
         }
+        if let Some(index)=favorite_index {self.open_favorite(index,window,cx);cx.stop_propagation();return true;}
         match (key.key.as_str(), ctrl, m.shift, m.alt) {
             ("[", false, false, false) => self.toggle_rail(cx),
             ("5" | "]", false, false, false)
@@ -550,33 +576,8 @@ impl Desktop {
 
     fn shell_boards(&self, cx: &App) -> Vec<Value> {
         let query = self.shell.query.read(cx).content.to_lowercase();
-        let mut boards: Vec<_> = self
-            .db
-            .projects()
-            .unwrap_or_default()
-            .into_iter()
-            .filter(|b| b["status"].as_str().is_none_or(|status| status == "Normal"))
-            .filter(|b| {
-                b["title"]
-                    .as_str()
-                    .or(b["name"].as_str())
-                    .unwrap_or("")
-                    .to_lowercase()
-                    .contains(&query)
-            })
-            .collect();
-        if self.shell.recent {
-            boards.sort_by_cached_key(|b| {
-                std::cmp::Reverse(
-                    self.db
-                        .kv_get(&format!("boardUsed:{}", b["id"]))
-                        .ok()
-                        .flatten()
-                        .and_then(|s| s.parse::<u128>().ok())
-                        .unwrap_or(0),
-                )
-            });
-        }
+        let mut boards = self.switcher_boards();
+        boards.retain(|b| b["title"].as_str().or(b["name"].as_str()).unwrap_or("").to_lowercase().contains(&query));
         boards
     }
 
@@ -596,6 +597,7 @@ impl Desktop {
     }
 
     pub(super) fn shell_overlay(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.shell.favorites_manager { return self.favorites_overlay(cx); }
         if self.shell.cli { return self.cli_overlay(cx); }
         if self.shell.invite {
             return self.invite_overlay(cx);
@@ -673,37 +675,26 @@ impl Desktop {
                                 },
                             )),
                     )
+                    .when(self.db.sidebar_data("favorites").as_array().is_some_and(|favorites|!favorites.is_empty()), |d|d.child(
+                        div().id("favorites-drop-target").px(px(16.)).py(px(8.)).flex().items_center().gap(px(8.))
+                            .child(div().id("favorites-collapse").cursor_pointer().child(format!("Favorite Boards {} {}",self.db.sidebar_data("favorites").as_array().map_or(0,Vec::len),if self.shell.favorites_expanded {"⌄"}else{"›"}))
+                                .on_click(cx.listener(|this,_,_,cx|{this.shell.favorites_expanded=!this.shell.favorites_expanded;let _=this.db.kv_set("isFavoritesExpanded",if this.shell.favorites_expanded {"true"}else{"false"});cx.notify();}))
+                                .layout_key(&self.layout,"shell.favorites.collapse",None))
+                            .child(div().id("favorites-manage").cursor_pointer().child(icon("settings",t.muted,14.))
+                                .on_click(cx.listener(|this,_,window,cx|this.open_favorites(window,cx)))
+                                .layout_key(&self.layout,"shell.favorites.manage",None))
+                            .on_drop(cx.listener(|this, drag:&sidebar::BoardDrag, _, cx| {
+                                if !drag.favorite && this.db.sidebar_data("favorites").as_array().into_iter().flatten().any(|f|f["projectId"]==drag.project) {return;}
+                                this.drop_favorite(drag.project,None,true,cx)
+                            }))
+                            .layout_key(&self.layout,"shell.boards.favorites",None)))
                     .child(
                         div()
                             .id("boards-list")
                             .flex_1()
                             .overflow_y_scroll()
                             .track_scroll(&self.shell.scroll)
-                            .children(self.shell_boards(cx).into_iter().enumerate().map(
-                                |(i, board)| {
-                                    let id = board["id"].as_i64().unwrap_or(0);
-                                    let title = board["title"]
-                                        .as_str()
-                                        .or(board["name"].as_str())
-                                        .unwrap_or("")
-                                        .to_owned();
-                                    div()
-                                        .id(("shell-board", id as u64))
-                                        .px(px(16.))
-                                        .py(px(8.))
-                                        .cursor_pointer()
-                                        .when(i == self.shell.choice, |d| d.bg(color(t.active)))
-                                        .on_click(cx.listener(move |this, _, window, cx| {
-                                            this.choose_board(id, window, cx)
-                                        }))
-                                        .child(title.clone())
-                                        .layout_key(
-                                            &self.layout,
-                                            format!("shell.board.{i}"),
-                                            Some(title),
-                                        )
-                                },
-                            )),
+                            .children(self.switcher_rows(cx)),
                     )
                     .child(
                         div()
@@ -1313,6 +1304,9 @@ impl Desktop {
         self.mentions.invalidate();
         self.invalidate_compose_identity();
         self.shell.set_token(token);
+        self.shell.metadata_generation+=1;self.shell.metadata_loading=false;
+        self.shell.favorites_manager=false;self.shell.favorite_slot=None;
+        self.invalidate_board_views(cx);self.invalidate_board_create(cx);self.invalidate_task_create(cx);
         self.shell.settings = false;
         self.shell.boards = false;
         self.shell.invite = false;
@@ -1416,3 +1410,6 @@ impl Desktop {
         self.apply_shell_theme(theme, cx);
     }
 }
+
+#[path = "shell_sidebar.rs"]
+mod sidebar;

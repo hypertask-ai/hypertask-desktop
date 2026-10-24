@@ -7,6 +7,15 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Write {
+    Preferences { updates: Value },
+    AiSession { change: crate::AiSessionWrite },
+    View { change: crate::ViewWrite },
+    Time { change: crate::TimeWrite },
+    TaskAction { task_id: i64, change: crate::TaskAction },
+    Favorites { project_ids: Vec<i64> },
+    FavoriteSlot { index: u8, project_id: Option<i64> },
+    CreateTask { project_id: i64, section_id: i64, title: String, top: bool },
+    CreateTaskForm { project_id:i64, section_id:i64, title:String, fields:Value },
     ComposeTask { project_id: i64, text: String, time_zone: String },
     Shell { request: crate::ShellWrite },
     Board { change: crate::BoardWrite },
@@ -82,6 +91,59 @@ impl Db {
     pub(crate) fn enqueue_in_transaction(&mut self,write:Write,now:i64)->Result<i64> {
         let db=self;
         let (entity, kind, payload) = match &write {
+            Write::Preferences { updates } => {
+                crate::preferences::validate(updates)?;
+                let user=db.current_user_id().context("Unauthorized")?;
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_preferences"),"Wait for the previous preference update");
+                ("preferences".into(),"web_preferences",json!({"user_id":user,"updates":updates,"before":db.web_preferences()?}))
+            }
+            Write::AiSession { change } => {
+                change.request()?;
+                let user=db.current_user_id().context("Sign in before changing chats")?;
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="ai_session"),"Wait for the previous chat update");
+                ("ai-session".into(),"ai_session",json!({"user_id":user,"change":change,"before":db.ai_sessions()?,"attempted":false}))
+            }
+            Write::TaskAction { task_id, change } => (format!("task:{task_id}"), "web_task_action", db.prepare_task_action(*task_id, change)?),
+            Write::Time { change } => ("time".into(),"web_time",db.prepare_time(change)?),
+            Write::View { change } => {
+                change.validate()?;
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_view" && row.payload_json["change"]["project"]==change.project), "wait for the previous view update to finish");
+                let user=db.current_user_id().context("Unauthorized")?;
+                if change.smart_split() {
+                    let project = db.board_project(change.project)?;
+                    if change.route == "smart-split-create" {
+                        ensure!(project["project_view"]["default_view"].is_object(), "This board does not have a default view");
+                    } else {
+                        let views = project["project_view"]["allViews"].as_array().context("Smart split details are still loading")?;
+                        let labels = project["desktop_smart_labels"].as_array().context("Smart split details are still loading")?;
+                        let view = views.iter().find(|view| view["id"] == change.body["viewId"]).context("Smart split not found")?;
+                        ensure!(crate::smart_splits::label(view, labels, views).is_some(), "This smart tag is linked to multiple views and cannot be edited safely");
+                        ensure!(change.route != "smart-split-delete" || project["project_view"]["default_view_id"] != change.body["viewId"], "Choose another default view before deleting this smart split");
+                    }
+                }
+                let column_before = if change.column() {
+                    ensure!(change.route != "column-update" || change.body["userId"] == user, "Unauthorized");
+                    db.column_snapshot(change)?
+                } else { Value::Null };
+                (format!("view:{}",change.project),"web_view",json!({"user_id":user,"change":change,"before":db.board_project(change.project)?,"column_before":column_before,"attempted":false}))
+            }
+            Write::FavoriteSlot { index, project_id } => {
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && matches!(row.kind.as_str(),"web_favorites"|"web_favorite_slot")), "wait for the previous favorite update to finish");
+                ("favorites".into(),"web_favorite_slot",db.prepare_favorite_slot(*index,*project_id)?)
+            }
+            Write::Favorites { project_ids } => {
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && matches!(row.kind.as_str(),"web_favorites"|"web_favorite_slot")), "wait for the previous favorite update to finish");
+                ("favorites".into(),"web_favorites",db.prepare_favorites(project_ids)?)
+            },
+            Write::CreateTask { project_id, section_id, title, top } => {
+                let mut payload=db.prepare_create(*project_id,*section_id,title,*top)?;
+                payload["attempted"]=json!(false);
+                (format!("create:{project_id}"), "web_create", payload)
+            },
+            Write::CreateTaskForm {project_id,section_id,title,fields}=>{
+                let payload=db.prepare_create_form(*project_id,*section_id,title,fields)?;
+                (format!("create:{project_id}"),"web_create",payload)
+            }
             Write::ComposeTask { project_id, text, time_zone } => {
                 ensure!(*project_id > 0 && !text.trim().is_empty(), "choose a board and describe the task");
                 let user = db.current_user_id().context("sign in before composing a task")?;
@@ -94,7 +156,13 @@ impl Db {
                 if let crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
                     ensure!(db.task(*task)?.is_some_and(|task| task.project_id == *project), "task is not cached in this board");
                 }
-                let before = if let crate::BoardWrite::AssignAgent { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
+                if let crate::BoardWrite::PositionTask { task, project, section, .. } = change {
+                    ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.payload_json["change"]["PositionTask"]["task"]==*task), "wait for the previous move to finish");
+                    ensure!(db.task(*task)?.is_some_and(|t| t.project_id == *project), "task must belong to the board");
+                    let column = db.raw("Section", &json!(section))?.context("column is not cached")?;
+                    ensure!(column["projectId"] == *project && column["deleted"] == false && column["visibility"] == true, "column is not visible in this board");
+                }
+                let before = if let crate::BoardWrite::AssignAgent { task, .. } | crate::BoardWrite::PositionTask { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
                 ("board".into(), "board_write", json!({"user_id":user,"change":change,"before":before}))
             }
             Write::Shell { request } => {
@@ -197,7 +265,30 @@ impl Db {
     fn apply_optimistic(&self, id: i64, kind: &str, payload: &Value, now: i64) -> Result<()> {
         match kind {
             "shell_write" | "compose_task" => (),
+            "web_time" => self.optimistic_time(payload,id,now)?,
+            "ai_session" => self.optimistic_ai_session(payload)?,
+            "web_preferences" => self.optimistic_preferences(payload)?,
+            "web_view" => {
+                if self.current_user_id()!=payload["user_id"].as_i64(){return Ok(());}
+                let change:crate::ViewWrite=serde_json::from_value(payload["change"].clone())?;
+                if change.column() { self.optimistic_column(&change,id,now)?; } else { let mut project=self.board_project(change.project)?;change.optimistic(&mut project);self.upsert("Project",&project)?; }
+            }
+            "web_favorites" | "web_favorite_slot" => {
+                let user=payload["user_id"].as_i64().context("missing account")?;
+                if self.current_user_id()==Some(user) {self.kv_set(&crate::board_sidebar::cache_key(user,"favorites"),&payload["favorites"].to_string())?;}
+            }
+            "web_create" => {
+                let body = &payload["body"];
+                let labels=body["tags"].as_array().cloned().unwrap_or_default();
+                let assignees:Vec<_>=body["assignees"].as_array().into_iter().flatten().map(|person|if person.get("uid").is_some(){json!({"userId":person["id"],"user":person})}else{json!({"userId":person["userId"],"agentId":person["id"],"agent":person})}).collect();
+                self.upsert_task(&json!({"id":-id,"projectId":body["projectId"],"sectionId":body["sectionId"],"section":body.get("section").or_else(||body.get("section_title")),"title":body["title"],"ranking":body["ranking"],"status":"Normal","pending":true,"createdBy":null,"priority":body["priority"],"estimate":body["estimate"],"labels":labels,"assignees":assignees,"description":body["description"].as_str().unwrap_or(""),"description_":{"content":body["description"]},"dueDate":body["dueDate"],"startDate":body["startDate"]}))?;
+            }
             "board_write" => {
+                if let crate::BoardWrite::PositionTask { task, section, title, ranking, .. } = serde_json::from_value(payload["change"].clone())? {
+                    let mut value = self.raw("Task", &json!(task))?.context("task is not cached")?;
+                    value["sectionId"] = json!(section); value["section"] = json!(title); value["ranking"] = json!(ranking);
+                    self.upsert_task(&value)?;
+                }
                 if let crate::BoardWrite::AssignAgent { task, agent, active } = serde_json::from_value(payload["change"].clone())? {
                     let mut task_row = self.raw("Task",&json!(task))?.context("task is not cached")?;
                     let project = task_row["projectId"].as_i64().context("missing task board")?;
@@ -221,6 +312,7 @@ impl Db {
                 }
                 self.upsert_task(&task)?;
             }
+            "web_task_action" => self.optimistic_task_action(payload, now)?,
             "task_patch" => {
                 let mut task = self
                     .raw("Task", &payload["task_id"])?
@@ -409,10 +501,85 @@ impl Db {
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
             "inbox_seen" => ("/inbox/seen", json!({"notification_ids":row.payload_json["notification_ids"]})),
             "inbox_remind" => ("/inbox/archive", json!({"notification_ids":row.payload_json["notification_ids"],"remind_at":row.payload_json["remind_at"]})),
-            "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
+            "web_task_action" | "web_time" | "web_preferences" | "ai_session" | "web_view" | "web_favorites" | "web_favorite_slot" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
-        let response = if row.kind == "compose_task" {
+        let response = if row.kind == "web_task_action" {
+            self.send_task_action(transport, &row)
+        } else if row.kind == "web_preferences" {
+            self.send_preferences(transport,&row.payload_json,&row.client_id)
+        } else if row.kind == "ai_session" {
+            self.send_ai_session(transport,&row)
+        } else if row.kind == "web_time" {
+            let change:crate::TimeWrite=serde_json::from_value(row.payload_json["change"].clone())?;
+            let timer=!matches!(change,crate::TimeWrite::Board{..});
+            if timer && row.payload_json["attempted"]==true {Ok(Response{status:409,body:json!({"error":"Timer result uncertain; refresh before trying again"})})}
+            else {match transport.get("/user/context") {
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"]=>{
+                    let (path,body)=change.request()?;
+                    if timer {let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;}
+                    match transport.post(&path,&body,&row.client_id) {
+                        Ok(response) if response.status<500=>Ok(response),
+                        _ if timer=>Ok(Response{status:409,body:json!({"error":"Timer result uncertain; refresh before trying again"})}),
+                        other=>other,
+                    }
+                }
+                Err(error)=>Err(error),
+                Ok(identity) if !(200..300).contains(&identity.status)=>Ok(identity),
+                _=>Ok(Response{status:403,body:json!({"error":"Unauthorized"})}),
+            }}
+        } else if row.kind == "web_view" {
+            let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
+            change.validate()?;
+            if matches!(change.route.as_str(),"create-view"|"smart-split-create"|"column-create") && (row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1)) {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => {
+                    if matches!(change.route.as_str(),"create-view"|"smart-split-create"|"column-create") {
+                        let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);
+                        self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;
+                    }
+                    {
+                        let(method,path,body)=change.request()?;
+                        if method=="POST"{transport.post(&path,&body,&row.client_id)}else{transport.mutate(method,&path,&body,&row.client_id)}
+                    }
+                },
+                Err(error) => Err(error),
+                Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
+                _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
+            }}.map(|r|if (200..300).contains(&r.status) && r.body["success"] != false {Response{status:r.status,body:json!({"success":true,"view":r.body})}}else{r})
+        } else if row.kind == "web_favorite_slot" {
+            match transport.get("/user/context") {
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate(row.payload_json["method"].as_str().context("Missing favorite method")?,"/api/favorites/addEditFavorites",&row.payload_json["body"],&row.client_id),
+                Err(error) => Err(error),
+                Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
+                _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
+            }.map(|r|if r.status==200 && (r.body["count"].is_number() || r.body["projectId"]==row.payload_json["body"]["projectId"]) {Response{status:200,body:json!({"success":true})}}else{r})
+        } else if row.kind == "web_favorites" {
+            match transport.get("/user/context") {
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate("PUT","/api/favorites/reorderFavorites",&row.payload_json["body"],&row.client_id),
+                Err(error) => Err(error),
+                Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
+                _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
+            }.map(|r|if r.status==200 && r.body["ok"]==true {Response{status:200,body:json!({"success":true})}}else{r})
+        } else if row.kind == "web_create" {
+            // Web creation has no idempotency contract: a lost acknowledgement must not create twice.
+            if row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1) { Ok(Response {status:409,body:json!({"message":"Creation result uncertain; refresh before trying again"})}) }
+            else {
+                match transport.get("/user/context") {
+                    Ok(identity) if identity.status == 200 && identity.body["success"] == true && self.current_user_id() == row.payload_json["user_id"].as_i64() && identity.body["user"]["id"] == row.payload_json["user_id"] => {
+                        let path = if row.payload_json["global"] == true {"/api/tasks/createGlobally"}else{"/api/tasks/create"};
+                        let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);
+                        self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;
+                        match transport.post(path, &row.payload_json["body"], &row.client_id) {
+                            Ok(response) if response.status < 500 => Ok(response),
+                            _ => Ok(Response {status:409,body:json!({"message":"Creation result uncertain; refresh before trying again"})}),
+                        }
+                    },
+                    Err(error) => Err(error),
+                    Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
+                    _ => Ok(Response {status:403,body:json!({"message":"Forbidden"})}),
+                }
+            }
+        } else if row.kind == "compose_task" {
             crate::desktop_cli::compose(self, transport, &row.payload_json, &row.client_id)
         } else if row.kind == "board_write" {
             let change: crate::BoardWrite = serde_json::from_value(row.payload_json["change"].clone())?;
@@ -431,8 +598,15 @@ impl Db {
             let (method, path, body) = request.request();
             match transport.get("/user/context") {
                 Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true => {
-                    if response.body["user"]["id"] == request.user_id {
-                        transport.mutate(method, path, body, &row.client_id)
+                    if response.body["user"]["id"] == request.user_id && (!path.starts_with("/api/") || self.current_user_id() == Some(request.user_id)) {
+                        if path == "/api/stripe/session/checkout" {
+                            if row.payload_json["attempted"] == true { Ok(Response { status:409, body:json!({"message":"Checkout result uncertain; try again."}) }) }
+                            else {
+                                let mut payload = row.payload_json.clone(); payload["attempted"] = json!(true);
+                                self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?", params![payload.to_string(), row.id])?;
+                                transport.mutate(method, path, body, &row.client_id)
+                            }
+                        } else { transport.mutate(method, path, body, &row.client_id) }
                     } else {
                         Ok(Response { status:403, body:json!({"success":false,"error":"Settings write belongs to another account"}) })
                     }
@@ -483,6 +657,30 @@ impl Db {
         } else {
             transport.post(path, &body, &row.client_id)
         };
+        let response = if row.kind == "web_create" {
+            response.map(|r| if (200..300).contains(&r.status) {
+                let task = if row.payload_json["global"] == true {r.body["newTask"].clone()}else{r.body};
+                Response { status:r.status,body:json!({"success":true,"task":task}) }
+            } else {r})
+        } else if row.kind == "shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {
+            response.map(|mut response| {
+                let valid = match row.payload_json["path"].as_str() {
+                    Some("/api/teams/byokKeys") => response.body["ok"] == true,
+                    Some("/api/settings/byok-test") => matches!(response.body["result"].as_str(), Some("works" | "invalid" | "no_credit" | "error")) && response.body["elapsedMs"].is_number() && response.body["model"].is_string(),
+                    Some("/api/stripe/ensure-customer") => response.body["stripe_customer_id"].is_string(),
+                    Some("/api/stripe/session/checkout") => response.body["url"].as_str().is_some_and(|url| url::Url::parse(url).is_ok_and(|url| url.scheme() == "https")),
+                    Some("/api/stripe/cancelSubscription") => response.body["message"] == "Success",
+                    _ => false,
+                };
+                if (200..300).contains(&response.status) { let success = valid && response.body["success"] != false; if response.body.is_object() { response.body["success"] = json!(success); } }
+                response
+            })
+        } else if row.kind == "board_write" && row.payload_json["change"]["PositionTask"].is_object() {
+            response.map(|response| if (200..300).contains(&response.status) {
+                Response { status: response.status, body: json!({"success":true,"task":response.body}) }
+            } else { response })
+        } else { response };
+        let response_status = response.as_ref().ok().map(|response| response.status);
         let result = match response {
             Ok(Response { status, body }) if (200..300).contains(&status) => {
                 match ensure_success(&body)
@@ -492,7 +690,7 @@ impl Db {
                     Err(_) => (false, "invalid success response".to_owned()),
                 }
             }
-            Ok(Response { status, .. }) => (permanent(status), format!("HTTP {status}")),
+            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_task_action" {{let change=serde_json::from_value::<crate::TaskAction>(row.payload_json["change"].clone())?;if matches!(change,crate::TaskAction::Relation{..}|crate::TaskAction::RemoveRelation(_)){body["message"].as_str().unwrap_or(change.failure()).to_owned()}else{change.failure().to_owned()}}} else if row.kind=="web_time" {body["error"].as_str().unwrap_or("Time tracking request failed").to_owned()} else if row.kind=="web_view" {body["message"].as_str().or(body["error"].as_str()).unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
             Err(error) => (false, error.to_string()),
         };
         self.transaction(|db| {
@@ -501,13 +699,63 @@ impl Db {
             db.conn.execute("UPDATE mutation_queue SET status=?,last_error=?,next_attempt_at=?,lease_until=NULL WHERE id=? AND attempts=?",
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
+                if row.kind == "web_preferences" {
+                    db.rollback_preferences(&row.payload_json)?;
+                    db.kv_set(&format!("preference-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
+                }
+                if row.kind == "ai_session" {
+                    db.rollback_ai_session(&row.payload_json)?;
+                    db.kv_set(&format!("ai-session-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
+                }
+                if row.kind == "web_task_action" {
+                    db.rollback_task_action(&row.payload_json)?;
+                    db.reapply_pending()?;
+                    db.kv_set(&format!("task-action-result:{}",row.client_id), &json!({"error":result.1}).to_string())?;
+                }
+                if row.kind == "web_time" {
+                    db.rollback_time(&row.payload_json)?;
+                    db.kv_set(&format!("time-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
+                }
+                if row.kind == "web_view" {
+                    let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
+                    if db.current_user_id()==row.payload_json["user_id"].as_i64(){
+                        if change.column() { db.rollback_column(&change,row.id,&row.payload_json["column_before"])?; }
+                        let before=&row.payload_json["before"];
+                        let mut current=db.board_project(before["id"].as_i64().context("missing board")?)?;
+                        current["project_view"]=before["project_view"].clone();
+                        if row.payload_json["change"]["route"].as_str().is_some_and(|route| route.starts_with("smart-split-")) { current["desktop_smart_labels"] = before["desktop_smart_labels"].clone(); }
+                        db.upsert("Project",&current)?;db.reapply_pending()?;
+                    }
+                    db.kv_set(&format!("view-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
+                }
+                if matches!(row.kind.as_str(), "web_favorites" | "web_favorite_slot") {
+                    let user=row.payload_json["user_id"].as_i64().context("missing account")?;
+                    db.kv_set(&crate::board_sidebar::cache_key(user,"favorites"),&row.payload_json["before"].to_string())?;
+                    db.reapply_pending()?;
+                }
+                if row.kind == "web_create" {
+                    db.conn.execute("DELETE FROM Task WHERE id=?", [-row.id])?;
+                    db.kv_set(&format!("create-result:{}",row.client_id), &json!({"error":result.1}).to_string())?;
+                }
                 if row.kind == "compose_task" { db.kv_set(&format!("compose-result:{}",row.client_id), &json!({"error":result.1}).to_string())?; }
                 if row.kind == "board_write" {
-                    if !row.payload_json["before"].is_null() { db.upsert_task(&row.payload_json["before"])?; db.reapply_pending()?; }
+                    if !row.payload_json["before"].is_null() {
+                        if let Some(task)=row.payload_json["change"]["PositionTask"]["task"].as_i64(){
+                            let mut current=db.raw("Task",&json!(task))?.context("task is not cached")?;
+                            for field in ["sectionId","ranking"]{current[field]=row.payload_json["before"][field].clone();}
+                            current["section"]=json!(row.payload_json["before"]["section"].as_str().unwrap_or(""));
+                            db.upsert_task(&current)?;
+                        }else{db.upsert_task(&row.payload_json["before"])?;}
+                        db.reapply_pending()?;
+                    }
                     db.kv_set(&format!("board-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
                 }
                 if row.kind == "shell_write" {
-                    db.kv_set(&format!("shell-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
+                    if row.payload_json["body"]["apiKey"].is_string() {
+                        let mut payload = row.payload_json.clone(); payload["body"].as_object_mut().unwrap().remove("apiKey");
+                        db.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?", params![payload.to_string(), row.id])?;
+                    }
+                    db.kv_set(&format!("shell-result:{}", row.client_id), &json!({"error":result.1,"status":response_status}).to_string())?;
                 }
                 db.fail_editor(row.id,&row.kind,&row.payload_json,&result.1)?;
                 if matches!(row.kind.as_str(), "inbox_seen" | "inbox_remind") {
@@ -548,6 +796,57 @@ impl Db {
             let active: bool = db.conn.query_row("SELECT EXISTS(SELECT 1 FROM mutation_queue WHERE id=? AND attempts=? AND status='inflight')", params![row.id,row.attempts], |r| r.get(0))?;
             if !active { return Ok(()); }
             match row.kind.as_str() {
+                "web_preferences" => {
+                    db.cache_web_preferences(row.payload_json["user_id"].as_i64().context("Missing preference account")?,&body["settings"])?;
+                    db.kv_set(&format!("preference-result:{}",row.client_id),&body.to_string())?;
+                }
+                "ai_session" => {
+                    db.resolve_ai_session(&row.payload_json,body)?;
+                    db.kv_set(&format!("ai-session-result:{}",row.client_id),&body.to_string())?;
+                }
+                "web_task_action" => {
+                    db.resolve_task_action(&row.payload_json, body)?;
+                    db.kv_set(&format!("task-action-result:{}",row.client_id), &body.to_string())?;
+                }
+                "web_time" => {
+                    db.resolve_time(&row.payload_json,body,now)?;
+                    db.kv_set(&format!("time-result:{}",row.client_id),&body.to_string())?;
+                }
+                "web_view" => {
+                    let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
+                    let view=&body["view"];
+                    if change.column() {
+                        db.resolve_column(&change,row.id,view)?;
+                    }else if change.smart_split() {
+                        let mut project = db.board_project(change.project)?;
+                        change.resolve_smart_split(&mut project, view)?;
+                        db.upsert("Project", &project)?;
+                        db.request_refetch("board", change.project)?;
+                    }else if change.route=="update-view" && change.body["updateMode"]=="personal-empty-sections"{
+                        ensure!(view["viewId"]==change.body["viewId"] && matches!(view["board_empty_sections"].as_str(),Some("Show"|"Hidden")),"Wrong empty-column acknowledgement");
+                        let mut project=db.board_project(change.project)?;let mut authoritative=change.clone();authoritative.body["view_settings"]["board_empty_sections"]=view["board_empty_sections"].clone();authoritative.optimistic(&mut project);db.upsert("Project",&project)?;
+                    }else if matches!(change.route.as_str(),"update-order"|"reset-order"|"set-default-order") {
+                        let mut project=db.board_project(change.project)?;
+                        match change.route.as_str(){
+                            "set-default-order"=>{ensure!(view["defaultViewOrder"].is_array(),"Missing default order acknowledgement");project["project_view"]["default_view_order"]=view["defaultViewOrder"].clone();}
+                            _=>{ensure!(view.get("viewOrder").is_some(),"Missing view order acknowledgement");project["project_view"]["user_project_views"][0]["view_order"]=view["viewOrder"].clone();}
+                        }
+                        db.upsert("Project",&project)?;
+                    } else {
+                        let view=if matches!(change.route.as_str(),"create-view"|"rename-view"){view.get("project_view_updated").unwrap_or(view)}else{view};
+                        ensure!(view["projectId"]==change.project && view["id"].is_string(),"Wrong view acknowledgement");
+                        let mut project=db.board_project(change.project)?;project["project_view"]=view.clone();db.upsert("Project",&project)?;
+                    }
+                    db.kv_set(&format!("view-result:{}",row.client_id),&body.to_string())?;
+                }
+                "web_favorites" | "web_favorite_slot" => (),
+                "web_create" => {
+                    let task = &body["task"];
+                    ensure!(task["id"].as_i64().is_some_and(|id|id>0) && task["projectId"] == row.payload_json["body"]["projectId"], "invalid created task");
+                    db.upsert_task(task)?;
+                    db.conn.execute("DELETE FROM Task WHERE id=?",[-row.id])?;
+                    db.kv_set(&format!("create-result:{}",row.client_id), &body.to_string())?;
+                }
                 "compose_task" => {
                     let tasks = body["tasks"].as_array().context("missing composed tasks")?;
                     ensure!(!tasks.is_empty(), "no tasks created");

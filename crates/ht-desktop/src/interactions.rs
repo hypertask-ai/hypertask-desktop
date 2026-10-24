@@ -19,6 +19,9 @@ pub(super) enum Modal {
     Tags,
     Size,
     DueDate,
+    WaitingOn,
+    Recurrence,
+    Relation(ht_core::RelationKind),
     Delete,
 }
 #[derive(Clone)]
@@ -36,6 +39,9 @@ enum ChoiceAction {
     Label(usize),
     Size(u8),
     DueDate(i64),
+    WaitingOn(Option<i64>),
+    Recurrence(Option<&'static str>),
+    Relation(usize),
     Task(i64),
     Board(i64),
     Delete,
@@ -70,6 +76,7 @@ impl Interaction {
         });
         cx.observe(&query, |this, _, cx| {
             this.interaction.choice = 0;
+            if matches!(this.interaction.modal, Some(Modal::Relation(_))) { this.search_relation_tasks(cx); }
             cx.notify();
         })
         .detach();
@@ -126,6 +133,7 @@ impl Desktop {
             let count = self.choices(cx).len();
             match key.key.as_str() {
                 "escape" => self.close_modal(window, cx),
+                "j" | "k" if !ctrl && !key.modifiers.alt && self.interaction.query.focus_handle(cx).is_focused(window) => return,
                 "down" | "j" if !ctrl && !key.modifiers.alt => {
                     self.interaction.choice =
                         (self.interaction.choice + 1).min(count.saturating_sub(1));
@@ -234,11 +242,16 @@ impl Desktop {
         use Action::*;
         match action {
             Compose => self.open_compose(window, cx),
+            CreateTask=>self.open_create_task(window,cx),
+            SortView=>self.open_view_panel(super::board_views::Panel::Sort,window,cx),
+            ArchivedOnBoard=>self.toggle_archived_on_board(window,cx),
+            FilterView=>self.open_view_panel(super::board_views::Panel::Filters,window,cx),
+            ToggleTimer => self.toggle_task_timer(window,cx),
             ExpandSummary => {
                 if !self.summary.is_empty() { self.task_fields.summary_open = !self.task_fields.summary_open; }
             }
-            PinAiChat | FullscreenAiChat => self.ai_command(action, cx),
-            StarComment | PinComment | CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
+            PinAiChat | FullscreenAiChat | DeleteAllAiChats => self.ai_command(action, cx),
+            StarComment | PinComment | CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | BranchCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
             | ExpandComment | ExpandComments => self.run_comment_action(action, window, cx),
             Commands => self.show_modal(Modal::Commands, window, cx),
             Inbox | Board => {
@@ -446,6 +459,7 @@ impl Desktop {
             Priority => self.show_modal(Modal::Priority, window, cx),
             Size => self.show_modal(Modal::Size, window, cx),
             DueDate => self.show_due_date(window, cx),
+            WaitingOn => self.show_modal(Modal::WaitingOn, window, cx),
             Delete => self.show_modal(Modal::Delete, window, cx),
             CopyId | CopyTitleId | CopyUrl | CopyTitleUrl => self.copy_task(action, cx),
             Search | LocalSearch | Boards => self.show_modal(
@@ -708,7 +722,7 @@ impl Desktop {
             cx.notify();
             return;
         }
-        if matches!(modal, Modal::Assign | Modal::Tags) {
+        if matches!(modal, Modal::Assign | Modal::Tags | Modal::WaitingOn) {
             if let Some(worker) = &self.worker {
                 let project = self
                     .selected_task()
@@ -721,6 +735,7 @@ impl Desktop {
             .query
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.interaction.modal = Some(modal);
+        if matches!(modal, Modal::Relation(_)) { self.search_relation_tasks(cx); }
         self.interaction.choice = 0;
         self.interaction
             .modal_scroll
@@ -728,7 +743,7 @@ impl Desktop {
         window.focus(&self.interaction.query.focus_handle(cx), cx);
         cx.notify();
     }
-    fn close_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn close_modal(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.dismiss_compose_search();
         self.interaction.modal = None;
         let focus = match self.editing {
@@ -749,14 +764,18 @@ impl Desktop {
             .and_then(|s| serde_json::from_str(&s).ok())
             .unwrap_or_else(|| serde_json::json!({}))
     }
-    fn command_rows(&self) -> Vec<command_center::Command> {
+    pub(super) fn command_rows(&self) -> Vec<command_center::Command> {
         let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
         self.add_comment_commands(&mut rows);
         self.add_board_commands(&mut rows);
+        self.add_time_commands(&mut rows);
+        if let Some(row) = rows.iter_mut().find(|row| row.key == "toggleArchivedOnBoard") { row.name = if self.show_archived_on_board() { "Hide archived tasks on board" } else { "Show archived tasks on board" }.into(); }
+        if let Some(row)=rows.iter_mut().find(|row|row.key=="toggleEmptyColumns"){row.name=if self.view_settings()["board_empty_sections"]=="Hidden"{"Show empty board columns"}else{"Hide empty board columns"}.into();}
         if self.ai_sidebar.is_some() {
             for (key, name, action) in [
                 ("pinAiChatOpen", "Pin AI chat open", Action::PinAiChat),
                 ("fullScreenAiChat", "Open AI chat full screen", Action::FullscreenAiChat),
+                ("deleteAllChats", "Delete all chat sessions", Action::DeleteAllAiChats),
             ] {
                 rows.push(command_center::Command { key: key.into(), name: name.into(), group: "AI", keys: String::new(), keywords: "ai chat", action: CommandAction::Shortcut(action) });
             }
@@ -879,6 +898,20 @@ impl Desktop {
                     action: ChoiceAction::Column(c.id),
                 })
                 .collect(),
+            Some(Modal::Relation(_)) => self.task_actions.relations.iter().enumerate().map(|(index,task)| Choice { name:format!("{} {}",task["ticketNumber"].as_str().unwrap_or(""),task["title"].as_str().unwrap_or("")),action:ChoiceAction::Relation(index) }).collect(),
+            Some(Modal::Recurrence) => {
+                let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return vec![]; };
+                let mut rows = vec![];
+                if task.extra.get("recurrence").is_some_and(|value| value.is_string()) { rows.push(Choice { name:"Don't repeat".into(), action:ChoiceAction::Recurrence(None) }); }
+                rows.extend([("Daily","Every day"),("Weekdays","Every weekday (Mon–Fri)"),("Weekly","Every week"),("Biweekly","Every 2 weeks"),("Monthly","Every month")].into_iter().map(|(id,name)|Choice {name:name.into(),action:ChoiceAction::Recurrence(Some(id))}));
+                rows
+            }
+            Some(Modal::WaitingOn) => {
+                let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return vec![]; };
+                let mut rows = vec![Choice { name:"Nobody (clear)".into(), action:ChoiceAction::WaitingOn(None) }];
+                rows.extend(self.db.project_members(task.project_id).unwrap_or_default().into_iter().filter_map(|member| Some(Choice { name:member["displayName"].as_str().or(member["email"].as_str())?.into(), action:ChoiceAction::WaitingOn(Some(member["id"].as_i64()?)) })));
+                rows
+            }
             Some(Modal::Assign | Modal::Tags) => {
                 let Some(task) = self
                     .selected_task()
@@ -967,7 +1000,7 @@ impl Desktop {
         .filter(|c| {
             matches!(
                 self.interaction.modal,
-                Some(Modal::Commands | Modal::Search | Modal::LocalSearch)
+                Some(Modal::Commands | Modal::Search | Modal::LocalSearch | Modal::Relation(_))
             ) || c.name.to_lowercase().contains(&query.to_lowercase())
         })
         .collect()
@@ -983,7 +1016,7 @@ impl Desktop {
             let mut usage = self.command_usage();
             let now = chrono::Utc::now().timestamp_millis();
             if let Some(command) =
-                command_center::ranked(&rows, query, &usage, now).get(self.interaction.choice)
+                command_center::ranked(&rows, query, &usage, now).get(self.interaction.choice).filter(|command| command.key != "toggleArchivedOnBoard")
             {
                 let frequency = usage[&command.key]["frequency"].as_u64().unwrap_or(0) + 1;
                 usage[&command.key] = serde_json::json!({"frequency":frequency,"lastUsedAt":now});
@@ -991,11 +1024,20 @@ impl Desktop {
             }
         }
         let query = self.interaction.query.read(cx).content.trim().to_owned();
-        let keep_open = matches!(self.interaction.modal,Some(Modal::Assign|Modal::Tags))
+        let keep_open = matches!(choice.action, ChoiceAction::WaitingOn(_) | ChoiceAction::Relation(_)) || matches!(self.interaction.modal,Some(Modal::Assign|Modal::Tags))
             && matches!(choice.action,ChoiceAction::Assignee(_)|ChoiceAction::Agent(_)|ChoiceAction::Label(_))
             && !(self.screen == Screen::Board && !self.interaction.bulk.is_empty());
         if !keep_open { self.close_modal(window, cx); }
         match choice.action {
+            ChoiceAction::Relation(index) => {
+                if let (Some(task), Some(Modal::Relation(relation)), Some(target)) = (self.selected_task(), self.interaction.modal, self.task_actions.relations.get(index).cloned()) { self.queue_task_action(task, ht_core::TaskAction::Relation { target, relation }, window, cx); }
+            }
+            ChoiceAction::Recurrence(rule) => {
+                if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::Recurrence(rule.map(str::to_owned)), window, cx); }
+            }
+            ChoiceAction::WaitingOn(user) => {
+                if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::WaitingOn(user), window, cx); }
+            }
             ChoiceAction::Command(CommandAction::Shortcut(action)) => {
                 self.run_shortcut(action, window, cx)
             }
@@ -1132,7 +1174,7 @@ impl Desktop {
                             task_id,
                             patch: TaskPatch::Status(Status::Deleted),
                         },
-                        ChoiceAction::Command(_) | ChoiceAction::CreateLabel
+                        ChoiceAction::Relation(_) | ChoiceAction::Recurrence(_) | ChoiceAction::WaitingOn(_) | ChoiceAction::Command(_) | ChoiceAction::CreateLabel
                         | ChoiceAction::Task(_)
                         | ChoiceAction::Board(_) => {
                             unreachable!()
@@ -1218,6 +1260,9 @@ impl Desktop {
                     Modal::Priority => "Set priority",
                     Modal::Size => "Set task size",
                     Modal::DueDate => "Set due date",
+                    Modal::WaitingOn => "Blocked by person",
+                    Modal::Recurrence => "Repeat task",
+                    Modal::Relation(kind) => kind.title(),
                     Modal::Delete => "Delete task?",
                     Modal::Commands => unreachable!(),
                 }
@@ -1241,6 +1286,8 @@ impl Desktop {
                 ""
             };
             let checked = self.selected_task().and_then(|id|self.db.task(id).ok().flatten()).is_some_and(|task| match choice.action {
+                ChoiceAction::WaitingOn(user) => task.extra.get("waitingOnUserId").and_then(|value|value.as_i64()) == user,
+                ChoiceAction::Recurrence(rule) => task.extra.get("recurrence").and_then(|value|value.as_str()) == rule,
                 ChoiceAction::Column(id) => task.section_id == Some(id),
                 ChoiceAction::Priority(index) => task.extra.get("priority").is_some_and(|p|p["priority_index"] == index),
                 ChoiceAction::Size(index) => task.extra.get("estimate").is_some_and(|p|p["estimate_index"] == index),
@@ -1313,6 +1360,10 @@ impl Desktop {
                         Some(choice.name),
                     ),
             );
+        }
+        if matches!(modal, Modal::Relation(_)) {
+            let message = if self.task_actions.search_loading { Some("Loading tasks…") } else if self.task_actions.search_failed { Some("Couldn't load tasks. Try searching again.") } else if self.task_actions.relations.is_empty() { Some(if query.trim().is_empty() { "No recently worked tasks yet" } else { "No matching tasks" }) } else { None };
+            if let Some(message) = message { list = list.child(div().p(px(16.)).text_color(color(t.muted)).child(message).layout_key(&self.layout,"task.relations.search-status",Some(message.into()))); }
         }
         div()
             .id("interaction-backdrop")

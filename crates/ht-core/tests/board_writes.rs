@@ -364,3 +364,53 @@ fn archive_board_uses_existing_bearer_archive_contract_and_real_status_ack() {
     assert_eq!(db.drain_once(&mut s, 101).unwrap(), Drain::Applied(id));
     assert_eq!(db.projects().unwrap()[0]["status"], "Archive");
 }
+
+#[test]
+fn ranked_web_drop_is_optimistic_durable_and_rolls_back_both_denials() {
+    for status in [200, 401, 403] {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut db = Db::open(file.path()).unwrap();
+        seed(&mut db);
+        db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"title":"Task","status":"Normal","labels":[],"ranking":"A0100"})).unwrap();
+        let rank = ht_core::task_rank(None, Some("A0100")).unwrap();
+        let id = db.enqueue(Write::Board { change: BoardWrite::PositionTask {
+            task:1, project:15, section:11, title:"Doing".into(), ranking:rank.clone(),
+        }},100).unwrap();
+        assert_eq!(db.task(1).unwrap().unwrap().section_id, Some(11));
+        drop(db);
+        let mut db = Db::open(file.path()).unwrap();
+        let mut server = server("PUT", "/api/tasks/moveTask",
+            json!({"section_title":"Doing","sectionId":11,"taskId":1,"ranking":rank,"projectId":15}),
+            json!({"id":1,"projectId":15,"sectionId":11,"section":"Doing","ranking":rank,"title":"Task","status":"Normal"}));
+        server.status = status;
+        assert_eq!(db.drain_once(&mut server,100).unwrap(), if status == 200 { Drain::Applied(id) } else { Drain::Failed(id) });
+        let task = db.task(1).unwrap().unwrap();
+        assert_eq!(task.section_id, Some(if status == 200 {11} else {10}));
+        assert_eq!(task.extra["ranking"], if status == 200 {json!(rank)} else {json!("A0100")});
+        assert_eq!(server.calls, 1);
+    }
+}
+
+#[test]
+fn web_numeric_ranks_fit_before_between_and_after_without_changing_format() {
+    assert_eq!(ht_core::task_rank(None,None).unwrap(), "A0100");
+    let a = "A0100.000000000000000";
+    let b = "A0190.000000000000000";
+    assert!(ht_core::task_rank(None,Some(a)).unwrap().as_str() < a);
+    let middle = ht_core::task_rank(Some(a),Some(b)).unwrap();
+    assert!(a < middle.as_str() && middle.as_str() < b);
+    assert!(ht_core::task_rank(Some(b),None).unwrap().as_str() > b);
+    assert!(ht_core::task_rank(Some(a),Some(a)).is_err());
+}
+
+#[test]
+fn denied_ranked_move_does_not_revert_newer_title_and_cannot_stack_stale_rollbacks(){
+    let mut db=Db::memory().unwrap();seed(&mut db);
+    let change=BoardWrite::PositionTask{task:1,project:15,section:11,title:"Doing".into(),ranking:"A0100".into()};
+    db.enqueue(Write::Board{change:change.clone()},100).unwrap();
+    assert!(db.enqueue(Write::Board{change},100).is_err());
+    db.enqueue(Write::TaskTitle{task_id:1,title:"Newer title".into()},100).unwrap();
+    let mut response=server("PUT","/api/tasks/moveTask",json!({"section_title":"Doing","sectionId":11,"taskId":1,"ranking":"A0100","projectId":15}),json!({"message":"Forbidden"}));response.status=403;
+    assert!(matches!(db.drain_once(&mut response,100).unwrap(),Drain::Failed(_)));
+    let task=db.task(1).unwrap().unwrap();assert_eq!(task.section_id,Some(10));assert_eq!(task.title,"Newer title");
+}

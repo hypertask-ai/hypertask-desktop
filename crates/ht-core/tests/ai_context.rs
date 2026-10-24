@@ -1,0 +1,13 @@
+use ht_core::{Transport,ai_context,http::{Response,TransportError}};
+use serde_json::{Value,json};
+struct Server{status:u16,flags:u16,calls:Vec<String>}
+impl Transport for Server{
+    fn get(&mut self,path:&str)->Result<Response,TransportError>{self.calls.push(path.into());Ok(if path=="/user/context"{Response{status:200,body:json!({"success":true,"user":{"id":42}})}}else if path=="/api/flags"{Response{status:self.flags,body:json!({"flags":{"htpr-7316-chat-scope-ticket":true}})}}else{assert_eq!(path,ai_context::mention_path("é &",Some(15)));Response{status:self.status,body:json!([{"type":"projectHeading","name":"Boards"},{"type":"project","id":15,"name":"Board"},{"type":"taskHeading","name":"Tasks"},{"type":"task","id":7,"project_id":15,"index":2,"ticketNumber":"A-2","name":"Ticket"},{"type":"agent","id":"agent-uuid","name":"Helper"},{"type":"name","id":6,"name":"Human"}])}})}
+    fn post(&mut self,path:&str,body:&Value,_:&str)->Result<Response,TransportError>{self.calls.push(path.into());assert_eq!(path,"/api/teams/getAllSidebar");assert_eq!(body,&json!({"userId":42}));Ok(Response{status:self.status,body:json!([{"id":"team-id","title":"Team","projects":[{"id":15,"title":"Board"}]}])})}
+}
+#[test]
+fn scope_uses_real_teams_and_never_enables_ticket_on_flag_denial(){for status in [200,401,403]{for flags in [200,401,403]{let mut server=Server{status,flags,calls:vec![]};let result=ai_context::scopes(&mut server);if status==200{let(user,teams,ticket)=result.unwrap();assert_eq!(user,42);assert_eq!(teams[0]["id"],"team-id");assert_eq!(ticket,flags==200);}else{assert!(result.is_err());assert!(!server.calls.iter().any(|p|p=="/api/flags"));}}}}
+#[test]
+fn context_search_preserves_all_entity_shapes_and_refusals_are_not_empty_success(){for status in [200,401,403]{let mut server=Server{status,flags:200,calls:vec![]};let result=ai_context::mentions(&mut server,"é &",Some(15));if status==200{let rows=result.unwrap();assert_eq!(rows.iter().filter(|r|ai_context::selectable(r)).count(),4);assert_eq!(rows[3]["project_id"],15);assert_eq!(rows[4]["id"],"agent-uuid");}else{assert_eq!(result.unwrap_err().to_string(),"Error loading results");}}}
+#[test]
+fn recent_scope_order_matches_web_stable_team_and_board_sort(){let teams=json!([{"id":"one","projects":[{"id":1},{"id":2}]},{"id":"empty","projects":[]},{"id":"two","projects":[{"id":3},{"id":4}]}]);let rows=ai_context::sort_scopes(teams.as_array().unwrap(),&[4,2]);assert_eq!(rows.len(),2);assert_eq!(rows[0]["id"],"two");assert_eq!(rows[0]["projects"],json!([{"id":4},{"id":3}]));assert_eq!(rows[1]["projects"],json!([{"id":2},{"id":1}]));}

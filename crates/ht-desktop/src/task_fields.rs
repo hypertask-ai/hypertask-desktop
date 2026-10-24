@@ -13,6 +13,7 @@ pub(super) struct TaskFields {
 struct DuePicker {
     task: i64,
     custom: bool,
+    start: bool,
     month: NaiveDate,
     selected: NaiveDate,
     choice: usize,
@@ -48,7 +49,7 @@ fn at_local(date: NaiveDate, hour: u32, minute: u32) -> Option<String> {
         .earliest()
         .map(|date| date.to_rfc3339())
 }
-fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
+pub(super) fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
     if let Ok(date) = chrono::DateTime::parse_from_rfc3339(query) {
         return Some(date.to_rfc3339());
     }
@@ -68,7 +69,7 @@ fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
     };
     at_local(date, 9, 0)
 }
-fn due_presets(now: chrono::DateTime<Local>) -> Vec<(String, Option<String>)> {
+pub(super) fn due_presets(now: chrono::DateTime<Local>) -> Vec<(String, Option<String>)> {
     let today = now.date_naive();
     let (name, date, hour) = match now.hour() {
         0..=8 => ("Today", today, 9),
@@ -119,6 +120,7 @@ impl Desktop {
         let action = match label {
             "Assignees" | "Agents" => Action::Assign,
             "Priority" => Action::Priority,
+            "Start date" => { self.show_start_date(window, cx); return; }
             "Due date" => Action::DueDate,
             "Tags" => Action::Tags,
             "Task size" => Action::Size,
@@ -234,6 +236,15 @@ impl Desktop {
             .layout_key(&self.layout, "task.summary.full", Some(markdown.to_owned()))
     }
     pub(super) fn show_due_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_task_date(false, window, cx);
+    }
+    pub(super) fn show_start_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_task_date(true, window, cx);
+    }
+    pub(super) fn finish_start_date(&mut self, task: i64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.task_fields.due.as_ref().is_some_and(|due| due.start && due.task == task) { self.close_due(window, cx); }
+    }
+    fn show_task_date(&mut self, start: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.task_fields.summary_open = false;
         let Some(task) = self
             .selected_task()
@@ -241,15 +252,14 @@ impl Desktop {
         else {
             return;
         };
-        let selected = task
-            .due_date
-            .as_deref()
+        let selected = (if start { task.extra.get("startDate").and_then(|value| value.as_str()) } else { task.due_date.as_deref() })
             .and_then(|date| chrono::DateTime::parse_from_rfc3339(date).ok())
             .map(|date| date.with_timezone(&Local).date_naive())
             .unwrap_or_else(|| Local::now().date_naive());
         self.task_fields.due = Some(DuePicker {
             task: task.id,
             custom: false,
+            start,
             month: selected.with_day(1).unwrap(),
             selected,
             choice: 0,
@@ -272,7 +282,7 @@ impl Desktop {
                 .task(due.task)
                 .ok()
                 .flatten()
-                .is_some_and(|task| task.due_date.is_some())
+                .is_some_and(|task| if due.start { task.extra.get("startDate").is_some_and(|value| value.is_string()) } else { task.due_date.is_some() })
             {
                 choices.push(("Reset".into(), None));
             }
@@ -280,7 +290,7 @@ impl Desktop {
                 "due-last:{}",
                 self.db.current_user_id().unwrap_or(0)
             )) {
-                if chrono::DateTime::parse_from_rfc3339(&last).is_ok() {
+                if !due.start && chrono::DateTime::parse_from_rfc3339(&last).is_ok() {
                     choices.push(("last used".into(), Some(last)));
                 }
             }
@@ -291,7 +301,7 @@ impl Desktop {
                 .map(|date| vec![(query.to_owned(), Some(date))])
                 .unwrap_or_default()
         };
-        choices.push(("Pick a custom date".into(), None));
+        if !due.start { choices.push(("Pick a custom date".into(), None)); }
         choices
     }
     fn close_due(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -303,6 +313,10 @@ impl Desktop {
         let Some(due) = &self.task_fields.due else {
             return;
         };
+        if due.start {
+            self.queue_task_action(due.task, ht_core::TaskAction::StartDate(date), window, cx);
+            return;
+        }
         if !self.enqueue(
             Write::TaskPatch {
                 task_id: due.task,
@@ -393,7 +407,7 @@ impl Desktop {
             return div().into_any_element();
         };
         let t = self.colors;
-        let mut content = div().flex().flex_col().gap(px(8.)).child("Due date");
+        let mut content = div().flex().flex_col().gap(px(8.)).child(if due.start { "Start date" } else { "Due date" });
         if due.custom {
             let month = due.month;
             content = content.child(

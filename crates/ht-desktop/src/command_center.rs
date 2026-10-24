@@ -30,6 +30,29 @@ pub enum ShellCommand {
     Feedback,
     Invite,
     Cli,
+    Favorites,
+    Views,
+    CreateTask,
+    Sort,
+    Filters,
+    ValueMatch,
+    SortTimeInColumn,
+    SortLastComment,
+    Columns,
+    Subtasks,
+    EmptyColumns,
+    HideColumn,
+    ArchivedOnBoard,
+    SmartSplit,
+    AutoAssignColumn,
+    TaskTimer,
+    StartDate,
+    WaitingOn,
+    AssignMe,
+    Recurrence,
+    Relation(ht_core::RelationKind),
+    BoardTime,
+    DuplicateTask(bool),
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -96,6 +119,23 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     if task && screen != Screen::Task {
         task_commands(&mut add);
     }
+    if task {
+        for (key, name, keys, keywords, action) in [
+            ("addRelatedTask", "Add related task", "", "add link related task relation associate connect", ShellCommand::Relation(ht_core::RelationKind::RelatedTo)),
+            ("markBlockedBy", "Mark blocked by", "", "mark blocked by dependency waiting prerequisite task relation", ShellCommand::Relation(ht_core::RelationKind::BlockedBy)),
+            ("markAsBlocking", "Mark as blocking", "", "mark blocking blocks dependency task relation", ShellCommand::Relation(ht_core::RelationKind::BlockedTo)),
+            ("markDuplicateOf", "Mark duplicate of", "", "mark duplicate of same repeated task relation", ShellCommand::Relation(ht_core::RelationKind::Duplicate)),
+            ("setRecurrence", "Repeat task", "", "repeat recurring recurrence every daily weekly monthly weekdays cadence schedule routine", ShellCommand::Recurrence),
+            ("setStartDate", "Set start date", "", "start begin kickoff scheduled from date when planned", ShellCommand::StartDate),
+            ("blockedByPerson", "Blocked by person…", "SHIFT B", "blocked waiting blocker block person stuck", ShellCommand::WaitingOn),
+            ("assignToMe", "Assign to me", "", "assign me self take claim mine my task i'll do it", ShellCommand::AssignMe),
+        ] { rows.push(Command { key:key.into(), name:name.into(), group:"Task", keys:keys.into(), keywords, action:CommandAction::Shell(action) }); }
+    }
+    if task {
+        for (key, name, pick_board) in [("duplicateTask", "Duplicate task", false), ("duplicateTaskToBoard", "Duplicate task to board", true)] {
+            rows.push(Command { key:key.into(), name:name.into(), group:"Task", keys:String::new(), keywords:"duplicate copy clone task ticket board", action:CommandAction::Shell(ShellCommand::DuplicateTask(pick_board)) });
+        }
+    }
     for (key, name, keywords, theme) in [
         (
             "lightTheme",
@@ -132,6 +172,25 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         });
     }
     shell_commands(&mut rows);
+    for(key,name,group,keys,keywords,action)in [
+        ("createSmartSplit","Add smart split","Board","","add create smart split ai prompt automatic view label tag",ShellCommand::SmartSplit),
+        ("toggleArchivedOnBoard","Show archived tasks on board","Board","G  X","show hide toggle archive archived completed tasks board visibility",ShellCommand::ArchivedOnBoard),
+        ("createTask","Create task","Board","C","create add new task ticket issue todo work item",ShellCommand::CreateTask),
+        ("hideColumn","Hide board column","Board","","hide conceal column status section board kanban visibility remove from view",ShellCommand::HideColumn),
+        ("manageColumns","Manage board columns","Board","","columns visibility show hide",ShellCommand::Columns),
+        ("subtaskSettings","Sub-task Settings","Board","","subtask checklist settings",ShellCommand::Subtasks),
+        ("toggleEmptyColumns","Hide empty board columns","Board","","empty columns sections hide show toggle blank empty column visibility collapse",ShellCommand::EmptyColumns),
+        ("sortBoard","Sort board","Board","SHIFT S","sort order arrange board kanban tasks priority date size",ShellCommand::Sort),
+        ("ShowFilterHtc","Filters","Navigate","SHIFT F","filter narrow refine search view rules conditions matching tasks",ShellCommand::Filters),
+        ("toggleFilterValueMatch","Filter values: match any or all","Board","","filter values match any all labels tags assignees both either",ShellCommand::ValueMatch),
+        ("sortByTimeInColumn","Sort by time in column","Board","","sort staleness age time status column oldest",ShellCommand::SortTimeInColumn),
+        ("sortByLastComment","Sort by last comment","Board","","sort staleness age comment discussion oldest",ShellCommand::SortLastComment),
+    ]{
+        if screen!=Screen::Inbox || action==ShellCommand::CreateTask{rows.push(Command{key:key.into(),name:name.into(),group,keys:keys.into(),keywords,action:CommandAction::Shell(action)});}
+    }
+    if screen == Screen::Board {
+        rows.push(Command { key:"autoAssignColumn".into(), name:"Auto-assign for this column".into(), group:"Board", keys:String::new(), keywords:"auto assign column section member owner default workflow", action:CommandAction::Shell(ShellCommand::AutoAssignColumn) });
+    }
     rows.sort_by_key(|row| match row.group {
         "Task" if screen == Screen::Task => 0,
         "Board" if screen == Screen::Board => 0,
@@ -144,18 +203,31 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         "Help" => 7,
         _ => 8,
     });
+    let task_order: &[&str] = if screen == Screen::Task {
+        &["assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","priorityModal","labelmodal","estimateModal","moveToColumn","movetasktodifferentboard","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask","followtask","unfollowtask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId","duplicateTask","duplicateTaskToBoard"]
+    } else {
+        &["createTask","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","assignUser","blockedByPerson","assignToMe","addSubTask","viewSubTask","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","labelmodal","estimateModal","priorityModal","moveToColumn","movetasktodifferentboard","followtask","unfollowtask","renameTask","duplicateTask","duplicateTaskToBoard","archiveTask","deleteTask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId"]
+    };
+    // Keep other groups stable while using the web's context-specific task order.
+    let task_positions: Vec<_> = rows.iter().enumerate().filter(|(_,row)|row.group=="Task").map(|(index,_)|index).collect();
+    let mut task_rows: Vec<_> = task_positions.iter().map(|index|rows[*index].clone()).collect();
+    task_rows.sort_by_key(|row|task_order.iter().position(|key|*key==row.key).unwrap_or(usize::MAX));
+    for (index,row) in task_positions.into_iter().zip(task_rows) {rows[index]=row;}
     rows
 }
 
 fn shell_commands(rows: &mut Vec<Command>) {
     use ShellCommand::*;
     for (key, name, group, keys, keywords, action) in [
+        ("manageFavorites", "Manage favorites", "Navigate", "", "manage favorites favourites starred pinned sidebar boards reorder remove organize", Favorites),
         ("sendFeedback", "Send feedback", "Board", "", "send feedback bug idea issue report", Feedback),
         ("inviteBoard", "Invite people", "Board", "", "invite people members email board team", Invite),
         ("settingsCalendarShowWeekends", "Settings: Show weekends", "Settings", "", "settings show weekends profile", Settings("calendar")),
         ("settingsLearnQuickTips", "Settings: Quick tips", "Settings", "", "settings quick tips learning help", Settings("learn")),
         ("settingsGeneral", "Settings: General", "Settings", "", "settings general profile personal preferences application", Settings("general")),
         ("settingsAppearance", "Settings: Appearance", "Settings", "", "settings appearance display color scheme personal profile", Settings("appearance")),
+        ("settingsPlans", "Settings: Plans", "Settings", "", "settings plans pricing upgrade downgrade subscription team", Settings("plans")),
+        ("settingsApiKeys", "Settings: Bring your own key", "Settings", "", "settings bring your own key byok ai api credentials provider team", Settings("apiKeys")),
         ("settingsSkills", "Settings: Skills", "Settings", "", "settings skills prompts slash commands library team ai", Settings("skills")),
         ("settingsBoardMembers", "Settings: Members (board)", "Settings", "", "settings board members people permissions access project", Settings("board-members")),
         ("settingsBoardAi", "Settings: Custom instructions", "Settings", "", "settings board custom instructions prompt behavior configure", Settings("board-ai")),
@@ -173,6 +245,18 @@ fn shell_commands(rows: &mut Vec<Command>) {
     ] {
         rows.push(Command { key: key.into(), name: name.into(), group, keys: keys.into(), keywords, action: CommandAction::Shell(action) });
     }
+    for (key, name) in [
+        ("settingsApiKeysOpenaiApiKey", "Settings: OpenAI API key"),
+        ("settingsApiKeysAnthropicApiKey", "Settings: Anthropic API key"),
+        ("settingsApiKeysGoogleApiKey", "Settings: Google API key"),
+        ("settingsApiKeysDeepseekApiKey", "Settings: DeepSeek API key"),
+        ("settingsApiKeysMoonshotKimiApiKey", "Settings: Moonshot (Kimi) API key"),
+        ("settingsApiKeysZAiGlmApiKey", "Settings: Z.ai (GLM) API key"),
+        ("settingsApiKeysAlibabaQwenApiKey", "Settings: Alibaba (Qwen) API key"),
+        ("settingsApiKeysOpenrouterApiKey", "Settings: OpenRouter API key"),
+        ("settingsApiKeysVercelAiGatewayApiKey", "Settings: Vercel AI Gateway API key"),
+        ("settingsApiKeysCustomEndpointOperatesUnderAnEuUsDataAgreement", "Settings: Custom endpoint EU/US agreement"),
+    ] { rows.push(Command { key:key.into(), name:name.into(), group:"Settings", keys:String::new(), keywords:"settings api key use byok", action:CommandAction::Shell(Settings("apiKeys")) }); }
 }
 fn task_commands(
     add: &mut impl FnMut(&'static str, &'static str, &'static str, &'static str, &'static str, Action),
@@ -396,12 +480,19 @@ mod tests {
         assert_eq!(filter(&rows, "copy")[0].key, "copyformattedTaskLink");
     }
     #[test]
+    fn added_task_command_families_follow_web_context_order_without_exposing_untargeted_actions() {
+        let keys=["assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","priorityModal","labelmodal","estimateModal","moveToColumn","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask"];
+        let rows=commands(Screen::Task,true);let actual:Vec<_>=rows.iter().filter(|row|keys.contains(&row.key.as_str())).map(|row|row.key.as_str()).collect();assert_eq!(actual,keys);
+        let rows=commands(Screen::Inbox,false);for key in keys{assert!(!rows.iter().any(|row|row.key==key));}
+    }
+    #[test]
     fn no_task_commands_without_target_and_no_hidden_noops() {
         let rows = commands(Screen::Inbox, false);
         assert!(rows.iter().all(|r| r.group != "Task"));
         assert!(!rows.iter().any(|r| {
-            ["calendarSettings", "openAiTaskWriter", "settingsApiKeysOpenaiApiKey", "startKanbanTutorial"].contains(&r.key.as_str())
+            ["calendarSettings", "openAiTaskWriter", "settingsAiModelsGdprSafeMode", "startKanbanTutorial"].contains(&r.key.as_str())
         }));
+        assert_eq!(rows.iter().find(|row|row.key=="settingsApiKeysOpenaiApiKey").unwrap().action, CommandAction::Shell(ShellCommand::Settings("apiKeys")));
         let rows = commands(Screen::Task, true);
         assert_eq!(rows[0].group, "Task");
         assert!(edit_distance_one("archive", "archvie"));
@@ -444,8 +535,20 @@ mod composer2_contract_tests {
     fn auth_blocked_inbox_and_agent_actions_are_not_fake_palette_commands() {
         let rows=commands(Screen::Inbox,true);
         assert!(rows.iter().any(|row|row.key=="swipeThroughUnread"));
-        for blocked in ["clearInboxToZero","archiveAllReadNotifications","archiveReactionNotifications","createTask","starTask","nextAgent","previousAgent","sendAgentMessage"] {
+        for blocked in ["clearInboxToZero","archiveAllReadNotifications","archiveReactionNotifications","starTask","nextAgent","previousAgent","sendAgentMessage"] {
             assert!(!rows.iter().any(|row|row.key==blocked),"blocked command {blocked} must not pretend to work");
+        }
+    }
+}
+
+#[cfg(test)]
+mod advanced_commands_tests{
+    use super::*;
+    #[test]
+    fn advanced_view_and_expanded_create_commands_have_real_native_dispatch(){
+        let rows=commands(Screen::Board,true);
+        for(key,action)in [("createTask",ShellCommand::CreateTask),("sortBoard",ShellCommand::Sort),("ShowFilterHtc",ShellCommand::Filters),("toggleFilterValueMatch",ShellCommand::ValueMatch),("sortByTimeInColumn",ShellCommand::SortTimeInColumn),("sortByLastComment",ShellCommand::SortLastComment)]{
+            assert_eq!(rows.iter().find(|row|row.key==key).unwrap().action,CommandAction::Shell(action));
         }
     }
 }
