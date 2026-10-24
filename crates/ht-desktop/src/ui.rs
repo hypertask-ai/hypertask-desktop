@@ -1762,6 +1762,16 @@ impl Render for Desktop {
                     window.focus(&this.focus, cx);
                 }
             }))
+            // GPUI dispatches editor keybinding actions before raw key events.
+            .capture_action(cx.listener(|this, _: &crate::input::Up, window, cx| {
+                if !this.mention_navigation("up", window, cx) { cx.propagate(); }
+            }))
+            .capture_action(cx.listener(|this, _: &crate::input::Down, window, cx| {
+                if !this.mention_navigation("down", window, cx) { cx.propagate(); }
+            }))
+            .capture_action(cx.listener(|this, _: &crate::input::Newline, window, cx| {
+                if !this.mention_navigation("enter", window, cx) { cx.propagate(); }
+            }))
             .capture_key_down(cx.listener(Self::key_down))
             .on_click(cx.listener(|this,_,_,cx|{if this.task_fields.summary_open {this.task_fields.summary_open=false;cx.notify();}}))
             .child(

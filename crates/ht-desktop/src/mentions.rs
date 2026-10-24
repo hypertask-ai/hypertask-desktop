@@ -183,6 +183,18 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) -> bool {
+        let modifiers = event.keystroke.modifiers;
+        if modifiers.control || modifiers.platform || modifiers.alt || modifiers.shift {
+            return false;
+        }
+        self.mention_navigation(&event.keystroke.key, window, cx)
+    }
+    pub(super) fn mention_navigation(
+        &mut self,
+        key: &str,
+        window: &mut Window,
+        cx: &mut Context<Self>,
+    ) -> bool {
         if self.mentions.dismissed
             || self.mentions.token.is_none()
             || !self
@@ -193,15 +205,7 @@ impl Desktop {
         {
             return false;
         }
-        let key = &event.keystroke;
-        if key.modifiers.control
-            || key.modifiers.platform
-            || key.modifiers.alt
-            || key.modifiers.shift
-        {
-            return false;
-        }
-        match key.key.as_str() {
+        match key {
             "escape" => self.mentions.dismissed = true,
             "up" | "down" => {
                 let rows = self.mention_selectable();
@@ -210,7 +214,7 @@ impl Desktop {
                         .iter()
                         .position(|i| *i == self.mentions.choice)
                         .unwrap_or(0);
-                    self.mentions.choice = rows[if key.key == "down" {
+                    self.mentions.choice = rows[if key == "down" {
                         (at + 1) % rows.len()
                     } else {
                         (at + rows.len() - 1) % rows.len()
