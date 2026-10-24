@@ -311,3 +311,9 @@ controls. Both original strict font assertions remain unchanged at 1.5px.
 Acceptance F1–F4 and the superseded B3/B4 handoff are closed by these CI artifacts
 and the final SHA-bound receipt. F011 is unchanged. No VPS build, test, app or
 test-copy execution and no owner-laptop access occurred.
+
+Final dependency review removes the upstream benchmark feature from the vendored
+GPUI test dependency: it uses the existing `test-support` APIs instead of pulling
+24 unrelated benchmark packages into resolution. Linux CI also requires
+`git diff --exit-code -- Cargo.lock` after workspace/backend tests, so successful
+checks cannot silently depend on an uncommitted regenerated lock file.

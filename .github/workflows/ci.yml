@@ -64,6 +64,9 @@ jobs:
       - name: Native web-font advance regression
         if: runner.os == 'Linux'
         run: cargo test --release -p gpui_wgpu --lib cosmic_text_system::tests
+      - name: Dependency lock contract
+        if: runner.os == 'Linux'
+        run: git diff --exit-code -- Cargo.lock
       - uses: actions/setup-node@v4
         if: runner.os == 'Linux'
         with:
