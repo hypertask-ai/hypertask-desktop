@@ -105,4 +105,54 @@ is recorded as unavailable, never invented. All app builds/tests and pixel
 checks run on GitHub, not this VPS or the laptop.
 
 Raw non-sensitive laptop measurements are retained in `memory-laptop-before.json`.
-Final SHA-bound CI before/after figures will be appended after successful proof.
+## Accepted CI proof
+
+[CI 40133081908](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40133081908),
+source `cb9c4939c064ab6972e7bc39bd352d0de02a7e6b`, passed all six jobs:
+Ubuntu 24.04, Windows 2025, macOS 15, Windows ARM64, untrimmed-startup control,
+and Windows memory receipt/budget. Both demo and heavy emitted three exact
+`MEMORY_VISUAL_IDENTICAL` and three `MEM4_WARM_VISUAL_IDENTICAL` results, plus
+all three unchanged-warm-residency rejection controls. All fixtures, stored
+bodies, atlas formats/dimensions, font bytes and swapchain payloads are unchanged.
+
+Heavy medians, decimal MB (before is the same-source untrimmed control):
+
+| Screen | 8 s WS before → after | Warm WS before → after | Warm private commit before → after |
+| --- | ---: | ---: | ---: |
+| Inbox | 75.632640 → 2.125824 | 73.789440 → 36.622336 | 43.446272 → 44.212224 |
+| Board | 96.649216 → 2.347008 | 110.309376 → 67.637248 | 67.284992 → 67.444736 |
+| Task | 98.021376 → 2.400256 | 96.702464 → 56.127488 | 66.285568 → 67.346432 |
+
+**The 2 MB figures are idle residency after eviction, not the app's memory
+allocation or its active-use cost.** The real-redraw warm figures are the useful
+headline. Private commit is not reduced; it slightly increases in these samples.
+Demo warm WS falls 66.953216 → 30.621696 / 72.622080 → 35.082240 /
+85.782528 → 46.514176 MB. Warm is at least 30 s after launch (8 s, the
+restore/maximize/receipt-update cycle, 22 s); independent counter samples precede
+PrintWindow capture and the second resident scan.
+
+Third-run heavy *warm* maps, not medians, decimal MB:
+
+| Screen | Private-region resident before → after | Image resident before → after | Mapped resident before → after |
+| --- | ---: | ---: | ---: |
+| Inbox | 29.433856 → 16.916480 | 30.343168 → 6.606848 | 13.979648 → 13.058048 |
+| Board | 52.453376 → 34.414592 | 30.773248 → 7.008256 | 27.049984 → 26.013696 |
+| Task | 51.691520 → 35.991552 | 30.752768 → 6.987776 | 14.221312 → 13.156352 |
+
+This demonstrates reduced resident cold image/private pages, not released GPU
+textures or reduced data ownership. CI GPU TotalCommitted warm counters were
+30.523392 → 30.523392 / 31.715328 → 31.715328 / 31.543296 → 26.357760 MB;
+cache-dependent counters are not a claimed resource-allocation saving. The
+renderer receipts still report the identical two-buffer 15.498240 MB swapchain,
+4.194304 MB ClearType atlas and original mono/image/instance capacities.
+
+Frozen demo/heavy budgets now apply independently to **both** original 8 s
+medians and real-redraw warm medians on every normal Windows CI run. Every
+screen has an additional warm-over-budget negative control. No limit is raised;
+trimming cannot turn the gate into a check of only the 2 MB idle snapshot.
+
+The live-account poller can touch pages again each second, and network/sync and
+later navigation can fault other pages back in. This offline CI proof therefore
+does not guarantee a sustained installed-laptop number or navigation latency.
+The final PR head is reverified by GitHub after this evidence/budget-only commit;
+its current checks and final run URL are recorded in PR #21, not guessed here.

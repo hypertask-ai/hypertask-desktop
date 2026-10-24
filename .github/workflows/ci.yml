@@ -206,7 +206,7 @@ jobs:
       - name: Generate identical heavy account
         if: github.head_ref == 'mem3' || github.head_ref == 'mem4'
         run: python gates/heavy-fixture.py evidence/heavy-fixtures
-      - name: Measure heavy full-task-read control
+      - name: Measure heavy comparison control
         if: github.head_ref == 'mem3' || github.head_ref == 'mem4'
         shell: pwsh
         run: >-
@@ -219,11 +219,11 @@ jobs:
           -Assets evidence/heavy-assets
           -Revision '${{ matrix.revision }}'
           -Out evidence/windows-memory-heavy-baseline
-          -StartupProof
+          -StartupProof:('${{ github.head_ref }}' -eq 'mem4')
       - name: Validate heavy control
         if: github.head_ref == 'mem3' || github.head_ref == 'mem4'
         run: python gates/heavy-memory-check.py evidence/windows-memory-heavy-baseline
-      - name: Upload heavy full-task-read control
+      - name: Upload heavy comparison control
         if: (github.head_ref == 'mem3' || github.head_ref == 'mem4') && always()
         uses: actions/upload-artifact@v4
         with:
@@ -240,7 +240,7 @@ jobs:
           -Fixtures fixtures/demo
           -Revision '${{ matrix.revision }}'
           -Out evidence/windows-memory
-          -StartupProof
+          -StartupProof:('${{ github.head_ref }}' -eq 'mem4')
       - uses: actions/upload-artifact@v4
         if: github.head_ref != 'mem3' && always()
         with:
