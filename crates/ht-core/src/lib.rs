@@ -30,3 +30,4 @@ pub use worker::Worker;
 pub type Result<T> = anyhow::Result<T>;
 
 mod inbox;
+mod memory;

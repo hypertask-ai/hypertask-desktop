@@ -1702,6 +1702,7 @@ impl Render for Desktop {
             );
         }
         if !self.ready_scheduled {
+            crate::memory::write_store_receipt(&self.db);
             self.ready_scheduled = true;
             let exit = self.options.exit_after_ready;
             let bench = self.options.bench_input;

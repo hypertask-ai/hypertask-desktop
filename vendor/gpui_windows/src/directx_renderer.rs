@@ -359,10 +359,14 @@ impl DirectXRenderer {
                 u64::from(self.width) * u64::from(self.height) * 4 * (1 + u64::from(PATH_MULTISAMPLE_COUNT))
             } else { 0 }
         });
+        let mut swap_desc = DXGI_SWAP_CHAIN_DESC1::default();
+        let swap_bytes = self.resources.as_ref().and_then(|r| unsafe {
+            r.swap_chain.GetDesc1(&mut swap_desc).ok()
+        }).map_or(0, |_| u64::from(swap_desc.Width) * u64::from(swap_desc.Height) * 4 * u64::from(swap_desc.BufferCount));
         // Resource payload sizes, not resident pages: driver/allocator overhead is
         // intentionally left to the independent process working-set receipt.
         let json = format!(
-            "{{\"MonochromeAtlasBytes\":{mono},\"ImageAtlasBytes\":{image},\"FontAtlasBytes\":{subpixel},\"InstanceBufferBytes\":{instance_bytes},\"PathTextureBytes\":{path_bytes}}}"
+            "{{\"MonochromeAtlasBytes\":{mono},\"ImageAtlasBytes\":{image},\"FontAtlasBytes\":{subpixel},\"InstanceBufferBytes\":{instance_bytes},\"PathTextureBytes\":{path_bytes},\"SwapChainBytes\":{swap_bytes}}}"
         );
         if let Err(error) = std::fs::write(path, json) {
             log::error!("writing memory owners: {error}");

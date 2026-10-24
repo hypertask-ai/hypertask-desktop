@@ -98,7 +98,7 @@ jobs:
           -Out evidence/windows-memory
       - name: Validate Windows memory receipt
         if: runner.os == 'Windows'
-        run: python gates/windows-memory-check.py evidence/windows-memory --budget gates/windows-memory-budget.json
+        run: python gates/windows-memory-check.py evidence/windows-memory --owners --budget gates/windows-memory-budget.json
       - name: Upload Windows memory
         if: runner.os == 'Windows' && always()
         uses: actions/upload-artifact@v4
@@ -144,12 +144,12 @@ jobs:
           path: target/aarch64-pc-windows-msvc/release/ht-desktop.exe
           retention-days: 14
   windows-memory-baselines:
-    name: memory-${{ matrix.revision }}
+    name: memory-${{ github.head_ref == 'mem2' && 'system-allocator' || matrix.revision }}
     if: github.event_name == 'pull_request' && (github.head_ref == 'ram2' || github.head_ref == 'mem2')
     strategy:
       fail-fast: false
       matrix:
-        revision: ${{ fromJSON(github.head_ref == 'mem2' && '["a5505cc141315f0c35ef876b6adfc66a9af3799b"]' || '["3d002231efdbc5ea4b823e5a1af430e912a168d9", "5016a9ebe48b03dbac2f2312c170878166586c59"]') }}
+        revision: ${{ fromJSON(github.head_ref == 'mem2' && format('["{0}"]', github.event.pull_request.head.sha) || '["3d002231efdbc5ea4b823e5a1af430e912a168d9", "5016a9ebe48b03dbac2f2312c170878166586c59"]') }}
     runs-on: windows-2025
     timeout-minutes: 60
     steps:
@@ -163,6 +163,10 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo build --release -p ht-desktop -p ht-core
+        if: github.head_ref != 'mem2'
+      - name: Build identical code with the Windows system allocator
+        if: github.head_ref == 'mem2'
+        run: cargo build --release --no-default-features -p ht-desktop -p ht-core
       - name: Measure historical release
         shell: pwsh
         run: >-
@@ -180,7 +184,7 @@ jobs:
           if-no-files-found: error
   windows-memory-proof:
     name: Windows memory receipt and budget
-    # The historical ram2 baselines are intentionally skipped on normal PRs/main.
+    # Comparative baselines run for ram2/mem2; frozen budgets apply on every PR/main.
     if: >-
       ${{ !cancelled() && needs.build.result == 'success' &&
       (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
@@ -193,15 +197,15 @@ jobs:
           pattern: windows-memory*
           path: evidence/memory-proof
       - name: Validate current Windows receipt, target and frozen budget
-        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --budget gates/windows-memory-budget.json
+        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json
       - run: python3 -m pip install Pillow
         if: github.event_name == 'pull_request' && (github.head_ref == 'ram2' || github.head_ref == 'mem2')
       - name: Compare memory optimization pixels and layout
         if: github.event_name == 'pull_request' && github.head_ref == 'mem2'
-        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --budget gates/windows-memory-budget.json --compare evidence/memory-proof/windows-memory-a5505cc141315f0c35ef876b6adfc66a9af3799b
+        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json --compare evidence/memory-proof/windows-memory-${{ github.event.pull_request.head.sha }}
       # PR 11 predates shipped UI additions; pixel identity is only the ram2 optimization contract.
       - name: Validate historical and fixed receipts; compare PR 11 pixels
         if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
         run: |
           python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory-3d002231efdbc5ea4b823e5a1af430e912a168d9
-          python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --budget gates/windows-memory-budget.json --compare evidence/memory-proof/windows-memory-5016a9ebe48b03dbac2f2312c170878166586c59
+          python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json --compare evidence/memory-proof/windows-memory-5016a9ebe48b03dbac2f2312c170878166586c59

@@ -1,5 +1,5 @@
-// Windows' shared process heap retains fragmented small UI/document allocations.
-#[cfg(windows)]
+// Keep the system allocator available for CI's otherwise identical A/B build.
+#[cfg(all(windows, feature = "compact-allocator"))]
 #[global_allocator]
 static ALLOCATOR: mimalloc::MiMalloc = mimalloc::MiMalloc;
 
@@ -33,4 +33,15 @@ pub fn print() -> anyhow::Result<()> {
 #[cfg(not(windows))]
 pub fn print() -> anyhow::Result<()> {
     Ok(())
+}
+
+pub fn write_store_receipt(db: &ht_core::Db) {
+    let Some(path) = std::env::var_os("GPUI_MEMORY_RECEIPT") else { return };
+    let path = std::path::PathBuf::from(path).with_extension("store.json");
+    let result = db.memory_usage().and_then(|usage| {
+        std::fs::write(path, serde_json::to_vec(&usage)?).map_err(Into::into)
+    });
+    if let Err(error) = result {
+        eprintln!("Hypertask: store memory measurement failed: {error:#}");
+    }
 }

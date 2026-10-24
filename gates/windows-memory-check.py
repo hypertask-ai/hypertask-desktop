@@ -38,8 +38,19 @@ parser.add_argument('folder', type=Path)
 parser.add_argument('--budget', type=Path)
 parser.add_argument('--compare', type=Path)
 parser.add_argument('--target', action='store_true')
+parser.add_argument('--owners', action='store_true')
 args = parser.parse_args()
 data = receipt(args.folder)
+if args.owners:
+    for screen in ('inbox', 'board', 'task'):
+        owners = json.loads((args.folder / f'{screen}-3-owners.json').read_text())
+        assert all(isinstance(value, int) and value >= 0 for value in owners.values())
+        assert owners['FontAtlasBytes'] > 0 and owners['InstanceBufferBytes'] > 0
+        assert owners['SwapChainBytes'] > 0
+        store = json.loads((args.folder / f'{screen}-3-owners.store.json').read_text())
+        assert store['SqliteCacheBytes'] > 0 and store['SqliteSchemaBytes'] > 0
+        print(f"MEMORY_RESOURCE_PAYLOAD {screen}: {json.dumps(owners, sort_keys=True)}")
+        print(f"MEMORY_SQLITE_OWNERS {screen}: {json.dumps(store, sort_keys=True)}")
 if args.budget:
     budget = json.loads(args.budget.read_text())
     check_budget(data, budget)
