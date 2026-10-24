@@ -9,6 +9,8 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::TaskTimer => self.toggle_task_timer(window,cx),
+            ShellCommand::BoardTime => self.toggle_board_time(window,cx),
             ShellCommand::AutoAssignColumn => { self.views.column_auto_select = true; self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx); },
             ShellCommand::SmartSplit => self.open_smart_split(None,window,cx),
             ShellCommand::DuplicateTask(pick_board)=>self.open_duplicate_task(pick_board,window,cx),

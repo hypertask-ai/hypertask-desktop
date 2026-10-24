@@ -239,6 +239,7 @@ impl Desktop {
             SortView=>self.open_view_panel(super::board_views::Panel::Sort,window,cx),
             ArchivedOnBoard=>self.toggle_archived_on_board(window,cx),
             FilterView=>self.open_view_panel(super::board_views::Panel::Filters,window,cx),
+            ToggleTimer => self.toggle_task_timer(window,cx),
             ExpandSummary => {
                 if !self.summary.is_empty() { self.task_fields.summary_open = !self.task_fields.summary_open; }
             }
@@ -758,6 +759,7 @@ impl Desktop {
         let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
         self.add_comment_commands(&mut rows);
         self.add_board_commands(&mut rows);
+        self.add_time_commands(&mut rows);
         if let Some(row) = rows.iter_mut().find(|row| row.key == "toggleArchivedOnBoard") { row.name = if self.show_archived_on_board() { "Hide archived tasks on board" } else { "Show archived tasks on board" }.into(); }
         if let Some(row)=rows.iter_mut().find(|row|row.key=="toggleEmptyColumns"){row.name=if self.view_settings()["board_empty_sections"]=="Hidden"{"Show empty board columns"}else{"Hide empty board columns"}.into();}
         if self.ai_sidebar.is_some() {

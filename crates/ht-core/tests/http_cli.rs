@@ -396,3 +396,14 @@ fn column_controls_use_web_paths_with_bearer_and_only_column_delete_accepts_empt
     assert_eq!(http.post("/api/sections/auto-assign",&json!({}),"negative-control").unwrap_err(),TransportError::InvalidResponse);
     receive.recv_timeout(Duration::from_secs(5)).unwrap();thread.join().unwrap();
 }
+
+#[test]
+fn task_timer_routes_send_the_desktop_bearer_and_preserve_start_stop_setting_refusals() {
+    for (change,path,body) in [(ht_core::TimeWrite::Start{task:1},"/api/time/start",json!({"taskId":1})),(ht_core::TimeWrite::Stop{task:1},"/api/time/stop",json!({"taskId":1})),(ht_core::TimeWrite::Board{project:15,enabled:false},"/api/projects/time-tracking",json!({"projectId":15,"enabled":false}))] {
+        for status in [200,401,403] {
+            let (actual_path,actual_body)=change.request().unwrap();let (url,thread,receive)=server(status,"{\"error\":\"Unauthorized\"}");let mut http=Http::with_base(&url,"desktop-time-token".into()).unwrap();
+            let response=http.post(&actual_path,&actual_body,"time-client").unwrap();assert_eq!(response.status,status);assert_eq!(response.body["error"],"Unauthorized");
+            let request=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(request.starts_with(&format!("POST {path} HTTP/1.1\r\n")));assert!(request.to_ascii_lowercase().contains("authorization: bearer desktop-time-token\r\n"));assert_eq!(serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
+        }
+    }
+}

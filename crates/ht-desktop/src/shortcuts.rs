@@ -69,6 +69,7 @@ pub enum Action {
     ExpandComment,
     ExpandComments,
     ExpandSummary,
+    ToggleTimer,
 }
 
 // GPUI consumes Shift for OEM/digit keys on Windows, leaving the shifted character.
@@ -110,6 +111,7 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         };
     }
     match (k, ctrl, shift, m.alt) {
+        ("w", false, false, false) if screen==Screen::Task=>Some(Action::ToggleTimer),
         ("s", false, true, false) if screen!=Screen::Inbox=>Some(Action::SortView),
         ("f", false, true, false) if screen!=Screen::Inbox=>Some(Action::FilterView),
         ("c", false, false, false)=>Some(Action::CreateTask),

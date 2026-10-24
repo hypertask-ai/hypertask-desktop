@@ -45,6 +45,8 @@ pub enum ShellCommand {
     ArchivedOnBoard,
     SmartSplit,
     AutoAssignColumn,
+    TaskTimer,
+    BoardTime,
     DuplicateTask(bool),
 }
 

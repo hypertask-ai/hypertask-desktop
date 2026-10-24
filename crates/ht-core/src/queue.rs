@@ -10,6 +10,7 @@ pub enum Write {
     Preferences { updates: Value },
     AiSession { change: crate::AiSessionWrite },
     View { change: crate::ViewWrite },
+    Time { change: crate::TimeWrite },
     Favorites { project_ids: Vec<i64> },
     FavoriteSlot { index: u8, project_id: Option<i64> },
     CreateTask { project_id: i64, section_id: i64, title: String, top: bool },
@@ -101,6 +102,7 @@ impl Db {
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="ai_session"),"Wait for the previous chat update");
                 ("ai-session".into(),"ai_session",json!({"user_id":user,"change":change,"before":db.ai_sessions()?,"attempted":false}))
             }
+            Write::Time { change } => ("time".into(),"web_time",db.prepare_time(change)?),
             Write::View { change } => {
                 change.validate()?;
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_view" && row.payload_json["change"]["project"]==change.project), "wait for the previous view update to finish");
@@ -261,6 +263,7 @@ impl Db {
     fn apply_optimistic(&self, id: i64, kind: &str, payload: &Value, now: i64) -> Result<()> {
         match kind {
             "shell_write" | "compose_task" => (),
+            "web_time" => self.optimistic_time(payload,id,now)?,
             "ai_session" => self.optimistic_ai_session(payload)?,
             "web_preferences" => self.optimistic_preferences(payload)?,
             "web_view" => {
@@ -495,13 +498,31 @@ impl Db {
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
             "inbox_seen" => ("/inbox/seen", json!({"notification_ids":row.payload_json["notification_ids"]})),
             "inbox_remind" => ("/inbox/archive", json!({"notification_ids":row.payload_json["notification_ids"],"remind_at":row.payload_json["remind_at"]})),
-            "web_preferences" | "ai_session" | "web_view" | "web_favorites" | "web_favorite_slot" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
+            "web_time" | "web_preferences" | "ai_session" | "web_view" | "web_favorites" | "web_favorite_slot" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
         let response = if row.kind == "web_preferences" {
             self.send_preferences(transport,&row.payload_json,&row.client_id)
         } else if row.kind == "ai_session" {
             self.send_ai_session(transport,&row)
+        } else if row.kind == "web_time" {
+            let change:crate::TimeWrite=serde_json::from_value(row.payload_json["change"].clone())?;
+            let timer=!matches!(change,crate::TimeWrite::Board{..});
+            if timer && row.payload_json["attempted"]==true {Ok(Response{status:409,body:json!({"error":"Timer result uncertain; refresh before trying again"})})}
+            else {match transport.get("/user/context") {
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"]=>{
+                    let (path,body)=change.request()?;
+                    if timer {let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;}
+                    match transport.post(&path,&body,&row.client_id) {
+                        Ok(response) if response.status<500=>Ok(response),
+                        _ if timer=>Ok(Response{status:409,body:json!({"error":"Timer result uncertain; refresh before trying again"})}),
+                        other=>other,
+                    }
+                }
+                Err(error)=>Err(error),
+                Ok(identity) if !(200..300).contains(&identity.status)=>Ok(identity),
+                _=>Ok(Response{status:403,body:json!({"error":"Unauthorized"})}),
+            }}
         } else if row.kind == "web_view" {
             let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
             change.validate()?;
@@ -664,7 +685,7 @@ impl Db {
                     Err(_) => (false, "invalid success response".to_owned()),
                 }
             }
-            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_view" {body["message"].as_str().or(body["error"].as_str()).unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
+            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_time" {body["error"].as_str().unwrap_or("Time tracking request failed").to_owned()} else if row.kind=="web_view" {body["message"].as_str().or(body["error"].as_str()).unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
             Err(error) => (false, error.to_string()),
         };
         self.transaction(|db| {
@@ -680,6 +701,10 @@ impl Db {
                 if row.kind == "ai_session" {
                     db.rollback_ai_session(&row.payload_json)?;
                     db.kv_set(&format!("ai-session-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
+                }
+                if row.kind == "web_time" {
+                    db.rollback_time(&row.payload_json)?;
+                    db.kv_set(&format!("time-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
                 }
                 if row.kind == "web_view" {
                     let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
@@ -768,6 +793,10 @@ impl Db {
                 "ai_session" => {
                     db.resolve_ai_session(&row.payload_json,body)?;
                     db.kv_set(&format!("ai-session-result:{}",row.client_id),&body.to_string())?;
+                }
+                "web_time" => {
+                    db.resolve_time(&row.payload_json,body,now)?;
+                    db.kv_set(&format!("time-result:{}",row.client_id),&body.to_string())?;
                 }
                 "web_view" => {
                     let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;

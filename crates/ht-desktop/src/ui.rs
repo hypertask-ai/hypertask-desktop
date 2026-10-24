@@ -88,6 +88,7 @@ mod board_mutations;
 mod board;
 #[path = "board_views.rs"]
 mod board_views;
+mod task_time;
 
 #[path = "interactions.rs"]
 mod interactions;
@@ -130,6 +131,7 @@ pub struct Desktop {
     interaction: interactions::Interaction,
     task_fields: task_fields::TaskFields,
     views: board_views::Views,
+    task_time: task_time::TaskTime,
     board_actions: board::BoardActions,
     board_forms: board_mutations::Forms,
     comment_actions: comment_actions::CommentActions,
@@ -251,6 +253,7 @@ impl Desktop {
             interaction: interactions::Interaction::new(cx),
             task_fields: task_fields::TaskFields::new(cx),
             views: board_views::Views::new(cx),
+            task_time: task_time::TaskTime::default(),
             board_actions: board::BoardActions::new(cx),
             board_forms: board_mutations::Forms::new(cx),
             create_task:task_create::Create::new(cx),
@@ -1607,6 +1610,7 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, format!("task.meta.{i}"), None)
             }))
+            .child(self.task_time_row(cx))
             .when(self.moving, |d| {
                 d.child(
                     div()
@@ -1779,6 +1783,8 @@ impl Render for Desktop {
             return self.sign_in_panel(cx).into_any_element();
         }
         if self.screen==Screen::Board {self.load_board_views(cx);self.load_archived_on_board(cx);}
+        self.load_task_time(cx);
+        self.tick_task_time(cx);
         self.prepare_comment_readers(window,cx);
         self.restore_comment_draft(cx);
         if self.inbox_actions.review.is_some() {return self.unread_review_screen(cx).into_any_element();}
