@@ -194,12 +194,12 @@ impl<T: Transport> Sync<T> {
                         ))
             })
         };
-        // Only flags are needed for markers; never replace published content
-        // with a draft or infer server drafts from the local mutation queue.
+        // Keep drafts separate from published task content; pending discards overlay the cache.
         self.db.transaction(|db| {
             let mut task = db
                 .raw("Task", &json!(task_id))?
                 .context("draft task not cached")?;
+            db.cache_editor_drafts(task_id,drafts)?;
             task["hasDescriptionDraft"] = json!(meaningful("description"));
             task["hasCommentDraft"] = json!(meaningful("comment"));
             // Board badges use getUserDrafts, whose comment filter does not trim.
@@ -209,7 +209,8 @@ impl<T: Transport> Sync<T> {
                         .as_str()
                         .is_some_and(|text| !text.is_empty() && text != "<p></p>")
             }));
-            db.upsert("Task", &task)
+            db.upsert("Task", &task)?;
+            db.reapply_pending()
         })
     }
 
@@ -300,6 +301,7 @@ impl<T: Transport> Sync<T> {
                 "board" => self.board(id)?,
                 "task" => self.task(id)?,
                 "comments" => self.comments(id)?,
+                "drafts" => self.drafts(id)?,
                 "inbox" => self.inbox()?,
                 _ => bail!("unknown refetch target"),
             }

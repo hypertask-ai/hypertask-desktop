@@ -12,6 +12,7 @@ pub(super) struct EditorState {
     dialog: Option<Dialog>,
     pub comment: bool,
     palette: bool,
+    job: Option<(i64, i64)>,
 }
 #[derive(Clone)]
 struct Dialog {
@@ -30,8 +31,39 @@ enum Command {
     Format(Format),
     Emoji,
     Video,
+    Improve(ht_core::ImproveCommand),
 }
 const COMMANDS: &[(&str, &str, Command)] = &[
+    (
+        "Fix Spelling & Grammer",
+        "Fix Spelling and grammar",
+        Command::Improve(ht_core::ImproveCommand::Grammar),
+    ),
+    (
+        "Improve Readability",
+        "Let AI improve your sentence readability",
+        Command::Improve(ht_core::ImproveCommand::Readability),
+    ),
+    (
+        "Summarize",
+        "Summarize all text with AI",
+        Command::Improve(ht_core::ImproveCommand::Summarize),
+    ),
+    (
+        "Make Shorter",
+        "Make the text shorter with AI",
+        Command::Improve(ht_core::ImproveCommand::MakeShorter),
+    ),
+    (
+        "Translate to English",
+        "Translate the text to English",
+        Command::Improve(ht_core::ImproveCommand::English),
+    ),
+    (
+        "Translate to German",
+        "Translate the text to German",
+        Command::Improve(ht_core::ImproveCommand::German),
+    ),
     ("Embed Video", "Add Youtube Video Embed", Command::Video),
     ("Emoji", "Insert an emoji", Command::Emoji),
     (
@@ -99,6 +131,7 @@ impl EditorState {
         e.slash = None;
         e.choice = 0;
         e.palette = false;
+        e.job = None;
         e
     }
     pub fn clear_marks(&mut self) {
@@ -114,6 +147,7 @@ impl EditorState {
             dialog: None,
             comment: false,
             palette: false,
+            job: None,
         }
     }
 }
@@ -122,6 +156,47 @@ impl TextInput {
         self = self.multiline_editor();
         self.editor.as_mut().unwrap().comment = true;
         self
+    }
+    pub fn set_editor_job(&mut self, id: i64, task: i64, cx: &mut Context<Self>) {
+        if let Some(e) = &mut self.editor {
+            e.job = Some((id, task));
+            cx.notify();
+        }
+    }
+    pub fn clear_editor_job(&mut self) {
+        if let Some(e) = &mut self.editor {
+            e.job = None;
+        }
+    }
+    pub fn editor_job(&self) -> Option<(i64, i64)> {
+        self.editor.as_ref().and_then(|e| e.job)
+    }
+    pub fn apply_editor_result(
+        &mut self,
+        result: ht_core::EditorResult,
+        cx: &mut Context<Self>,
+    ) -> Result<(), String> {
+        let Some((_, task)) = self.editor_job() else {
+            return Ok(());
+        };
+        self.editor.as_mut().unwrap().job = None;
+        if result.task_id != task || result.source != self.html() {
+            return Err("Editor changed while AI was running; the result was not applied".into());
+        }
+        if let Some(error) = result.error {
+            return Err(error);
+        }
+        let html = result
+            .html
+            .ok_or_else(|| "Missing improved HTML".to_owned())?;
+        self.remember_edit();
+        let document = Document::parse(&html);
+        self.content = document.text().into();
+        self.selected_range = self.content.len()..self.content.len();
+        self.editor.as_mut().unwrap().document = document;
+        self.last_layout = None;
+        cx.notify();
+        Ok(())
     }
     pub fn is_empty(&self) -> bool {
         self.editor
@@ -141,6 +216,7 @@ impl TextInput {
         let editor = self.editor.as_mut().expect("rich editor");
         editor.document = document;
         editor.comment = comment;
+        self.selected_range = self.content.len()..self.content.len();
     }
     pub fn append_html(&mut self, html: &str, window: &mut Window, cx: &mut Context<Self>) {
         self.remember_edit();
@@ -201,6 +277,7 @@ impl TextInput {
                     return None;
                 }
                 (title.to_lowercase().contains(&query)
+                    || (matches!(command, Command::Improve(_)) && "ai".contains(&query))
                     || (matches!(command, Command::Emoji) && "emojis".contains(&query)))
                 .then_some(i)
             })
@@ -301,6 +378,13 @@ impl TextInput {
                 window,
                 cx,
             ),
+            Command::Improve(command) => {
+                self.selected_range = 0..self.content.len();
+                cx.emit(EditorRequest::Improve {
+                    command,
+                    html: self.html(),
+                });
+            }
             Command::Video => self.open_editor_dialog(DialogKind::Video, window, cx),
             Command::Emoji => self.open_editor_dialog(DialogKind::Emoji, window, cx),
         }
@@ -680,13 +764,10 @@ impl TextInput {
             };
             let mut body = div()
                 .id("editor-dialog")
-                .on_mouse_down_out(
-                    MouseButton::Left,
-                    cx.listener(|this, _, _, cx| {
-                        this.editor.as_mut().unwrap().dialog = None;
-                        cx.notify();
-                    }),
-                )
+                .on_mouse_down_out(cx.listener(|this, _, _, cx| {
+                    this.editor.as_mut().unwrap().dialog = None;
+                    cx.notify();
+                }))
                 .p(px(12.))
                 .bg(crate::theme::color(theme.comment))
                 .text_color(crate::theme::color(theme.text))
@@ -780,7 +861,7 @@ impl TextInput {
                     let (title, description, _) = COMMANDS[index];
                     div()
                         .id(("slash-choice", index))
-                        .debug_selector(|| format!("slash-{index}"))
+                        .debug_selector(|| format!("slash-{title}"))
                         .p(px(6.))
                         .cursor_pointer()
                         .when(choice == e.choice, |d| {
@@ -1308,7 +1389,7 @@ mod tests {
         cx.simulate_input("/Bold");
         cx.run_until_parked();
         let bounds = cx
-            .debug_bounds("slash-9")
+            .debug_bounds("slash-Bold")
             .expect("real slash choice was painted");
         cx.simulate_click(bounds.center(), gpui::Modifiers::default());
         cx.simulate_input("bold");
@@ -1329,17 +1410,7 @@ mod tests {
     fn unsupported_web_services_are_not_inert_slash_commands_and_video_html_is_real(
         cx: &mut gpui::TestAppContext,
     ) {
-        for title in [
-            "Fix Spelling & Grammer",
-            "Improve Readability",
-            "Summarize",
-            "Make Shorter",
-            "Translate to English",
-            "Translate to German",
-            "File Attachments",
-            "GIFs",
-            "Add Image",
-        ] {
+        for title in ["File Attachments", "GIFs", "Add Image"] {
             assert!(!COMMANDS.iter().any(|(t, _, _)| *t == title));
         }
         cx.update(init);

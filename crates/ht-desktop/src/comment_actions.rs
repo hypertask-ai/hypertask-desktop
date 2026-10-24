@@ -177,6 +177,7 @@ impl Desktop {
                     .input
                     .update(cx, |input, cx| input.set_html(&html, cx));
                 self.comment_actions.edit_id = Some(id);
+                self.restore_editor(self.comment_actions.input.clone(),None,cx);
                 self.editing = Editing::ExistingComment;
                 window.focus(&self.comment_actions.input.focus_handle(cx), cx);
             }
@@ -251,6 +252,7 @@ impl Desktop {
         ) {
             return false;
         }
+        self.finish_editor_job(cx);
         self.comment_actions.edit_id = None;
         self.editing = Editing::None;
         window.focus(&self.focus, cx);
@@ -1080,17 +1082,69 @@ mod tests {
         view.read_with(cx,|this,_|assert!(this.interaction.modal.is_some(),"Ctrl+B switches boards outside editors"));
     }
     #[gpui::test]
-    fn discard_is_surface_scoped_and_never_claims_a_cookie_only_server_write(cx: &mut gpui::TestAppContext) {
+    fn discard_is_surface_scoped_and_queues_the_authorized_server_lifecycle(cx: &mut gpui::TestAppContext) {
         cx.update(crate::input::init);let(view,cx)=cx.add_window_view(desktop);
         view.update_in(cx,|this,window,cx|{this.comment_input.update(cx,|input,cx|input.set_content("Keep comment".into(),cx));this.edit_description(window,cx);this.interaction.description.update(cx,|input,cx|input.set_content("Unsaved".into(),cx));});
         cx.simulate_keystrokes("ctrl-shift-,");
         view.update_in(cx,|this,window,cx|{
             assert_eq!(this.interaction.description.read(cx).html(),"<p>Description</p>");
             assert_eq!(this.comment_input.read(cx).content.as_ref(),"Keep comment");
-            assert!(this.db.mutations().unwrap().is_empty());this.edit_comment(window,cx);
+            assert_eq!(this.db.mutations().unwrap()[0].payload_json["draft_type"],"description");this.edit_comment(window,cx);
         });
         cx.simulate_keystrokes("ctrl-shift-,");
-        view.read_with(cx,|this,cx|{assert!(this.comment_input.read(cx).content.is_empty());assert!(this.db.mutations().unwrap().is_empty());});
+        view.read_with(cx,|this,cx|{assert!(this.comment_input.read(cx).content.is_empty());assert_eq!(this.db.mutations().unwrap()[1].payload_json["draft_type"],"comment");});
+    }
+
+    struct ImproveServer;
+    impl ht_core::Transport for ImproveServer {
+        fn get(&mut self,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{panic!("unexpected GET")}
+        fn post(&mut self,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{
+            assert_eq!(path,"/ai/improve");assert_eq!(body["task_id"],1);assert_eq!(body["project_id"],15);assert_eq!(body["text"],"<p>Draft</p>");assert!(!key.is_empty());
+            Ok(ht_core::http::Response{status:200,body:json!({"success":true,"command":body["command"],"html":"<h2>Summary</h2>"})})
+        }
+    }
+    #[gpui::test]
+    fn all_six_ai_slash_commands_queue_apply_and_undo_without_publishing_on_all_surfaces(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(desktop);
+        for surface in 0..3 {for query in ["/Fix","/Readability","/Summarize","/Shorter","/English","/German"] {
+            view.update_in(cx,|this,window,cx|{
+                let input=match surface {0=>{this.edit_comment(window,cx);this.comment_input.clone()},1=>{this.interaction.task_part=1;this.run_comment_action(Action::EditComment,window,cx);this.comment_actions.input.clone()},_=>{this.edit_description(window,cx);this.interaction.description.clone()}};
+                input.update(cx,|input,cx|{input.set_content("Draft".into(),cx);input.append(query,window,cx);});
+            });
+            cx.simulate_keystrokes("enter");
+            view.update_in(cx,|this,_,cx|{
+                let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0].kind,"editor_improve");
+                assert_eq!(this.db.drain_once(&mut ImproveServer,i64::MAX/2).unwrap(),ht_core::Drain::Applied(rows[0].id));this.poll_editor_results(cx);
+                let input=match surface {0=>&this.comment_input,1=>&this.comment_actions.input,_=>&this.interaction.description};assert_eq!(input.read(cx).html(),"<h2>Summary</h2>");assert_eq!(this.db.task(1).unwrap().unwrap().description,"<p>Description</p>");
+            });
+            cx.simulate_keystrokes("ctrl-z");
+            view.read_with(cx,|this,cx|{let input=match surface {0=>&this.comment_input,1=>&this.comment_actions.input,_=>&this.interaction.description};assert_eq!(input.read(cx).html(),"<p>Draft</p>");});
+        }}
+    }
+    #[gpui::test]
+    fn late_ai_result_never_overwrites_typing_and_pending_job_reattaches_to_its_original_editor(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(desktop);
+        view.update_in(cx,|this,window,cx|{this.edit_comment(window,cx);this.comment_input.update(cx,|input,cx|input.append("Draft/Summarize",window,cx));});cx.simulate_keystrokes("enter");
+        view.update_in(cx,|this,window,cx|{
+            this.comment_input.update(cx,|input,cx|input.append(" changed",window,cx));this.db.drain_once(&mut ImproveServer,i64::MAX/2).unwrap();this.poll_editor_results(cx);assert!(this.comment_input.read(cx).content.ends_with(" changed"));assert!(this.error.as_ref().unwrap().contains("not applied"));
+            this.comment_input.update(cx,|input,cx|input.reset(window,cx));this.edit_comment(window,cx);this.comment_input.update(cx,|input,cx|input.append("Draft/Summarize",window,cx));
+        });cx.simulate_keystrokes("enter");
+        view.update_in(cx,|this,window,cx|{this.comment_input.update(cx,|input,cx|input.reset(window,cx));this.restore_editor(this.comment_input.clone(),None,cx);assert_eq!(this.comment_input.read(cx).html(),"<p>Draft</p>");this.db.drain_once(&mut ImproveServer,i64::MAX/2).unwrap();this.poll_editor_results(cx);assert_eq!(this.comment_input.read(cx).html(),"<h2>Summary</h2>");});
+    }
+
+    #[gpui::test]
+    fn cached_web_drafts_load_in_their_own_editor_and_discard_keeps_published_content(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(desktop);
+        view.update_in(cx,|this,window,cx|{
+            this.db.kv_set("editor-drafts:42:1",&json!([
+                {"id":7,"taskId":1,"draftType":"comment","text":"<p><strong>Draft comment</strong></p>"},
+                {"id":8,"taskId":1,"draftType":"description","text":"<h2>Draft description</h2>"}
+            ]).to_string()).unwrap();
+            this.edit_comment(window,cx);assert_eq!(this.comment_input.read(cx).html(),"<p><strong>Draft comment</strong></p>");this.edit_description(window,cx);assert_eq!(this.interaction.description.read(cx).html(),"<h2>Draft description</h2>");
+        });
+        cx.simulate_keystrokes("ctrl-shift-,");
+        view.update_in(cx,|this,window,cx|{assert_eq!(this.interaction.description.read(cx).html(),"<p>Description</p>");assert_eq!(this.db.editor_drafts(1).unwrap().len(),1);assert_eq!(this.db.task(1).unwrap().unwrap().description,"<p>Description</p>");this.edit_comment(window,cx);});
+        cx.simulate_keystrokes("ctrl-shift-,");view.read_with(cx,|this,cx|{assert!(this.comment_input.read(cx).is_empty());assert!(this.db.editor_drafts(1).unwrap().is_empty());assert_eq!(this.db.mutations().unwrap().len(),2);});
     }
 
 }

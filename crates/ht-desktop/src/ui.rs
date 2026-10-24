@@ -50,6 +50,8 @@ enum Editing {
 
 #[path = "comment_actions.rs"]
 mod comment_actions;
+#[path = "editor_actions.rs"]
+mod editor_actions;
 #[path = "shell.rs"]
 mod shell;
 
@@ -202,6 +204,7 @@ impl Desktop {
             ai_sidebar,
             _ai_sidebar_subscription: ai_sidebar_subscription,
         };
+        view.bind_editors(cx);
         view.reload();
         view.init_shell(window, cx);
         view.request_sync();
@@ -225,6 +228,7 @@ impl Desktop {
                     if view
                         .update(cx, |this, cx| {
                             this.reload();
+                            this.poll_editor_results(cx);
                             if let Some(worker) = &this.worker {
                                 if worker.errors().try_iter().next().is_some() {
                                     this.error =
@@ -505,6 +509,7 @@ impl Desktop {
     }
 
     fn edit_comment(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.comment_input.read(cx).is_empty() {self.restore_editor(self.comment_input.clone(),Some(ht_core::DraftType::Comment),cx);}
         self.editing = Editing::Comment;
         self.composer_anchor.scroll_to(window, cx);
         window.focus(&self.comment_input.focus_handle(cx), cx);
@@ -536,6 +541,7 @@ impl Desktop {
             Editing::None | Editing::ExistingComment => return false,
         };
         if self.enqueue(write, cx) {
+            self.finish_editor_job(cx);
             self.editing = Editing::None;
             if comment {
                 self.comment_input

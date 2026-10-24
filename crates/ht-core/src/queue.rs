@@ -7,6 +7,8 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Write {
+    EditorImprove { task_id:i64, command:crate::ImproveCommand, text:String },
+    DiscardDraft { task_id:i64, draft_type:crate::DraftType },
     TaskTitle {
         task_id: i64,
         title: String,
@@ -66,54 +68,66 @@ pub fn permanent(status: u16) -> bool {
 
 impl Db {
     pub fn enqueue(&mut self, write: Write, now: i64) -> Result<i64> {
-        self.transaction(|db| {
-            let (entity, kind, payload) = match &write {
-                Write::TaskTitle { task_id, title } => {
-                    ensure!(!title.trim().is_empty(), "title must not be empty");
-                    ensure!(db.task(*task_id)?.is_some(), "task is not cached");
-                    (format!("task:{task_id}"), "task_title", json!({"task_id":task_id,"title":title}))
+        self.transaction(|db|db.enqueue_in_transaction(write,now))
+    }
+    pub(crate) fn enqueue_in_transaction(&mut self,write:Write,now:i64)->Result<i64> {
+        let db=self;
+        let (entity, kind, payload) = match &write {
+            Write::EditorImprove {task_id,command,text}=>{
+                let task=db.task(*task_id)?.context("task is not cached")?;
+                ensure!(!text.trim().is_empty(),"editor content must not be empty");
+                (format!("editor:{task_id}"),"editor_improve",json!({"task_id":task_id,"project_id":task.project_id,"text":text,"command":command}))
+            }
+            Write::DiscardDraft {task_id,draft_type}=>{
+                let task=db.raw("Task",&json!(task_id))?.context("task is not cached")?;
+                let user=db.current_user_id().context("sync your account before discarding drafts")?;
+                (format!("draft:{task_id}:{}",draft_type.as_str()),"draft_discard",json!({"task_id":task_id,"draft_type":draft_type,"user_id":user,"before":task,"drafts_before":db.editor_drafts(*task_id)?}))
+            }
+            Write::TaskTitle { task_id, title } => {
+                ensure!(!title.trim().is_empty(), "title must not be empty");
+                ensure!(db.task(*task_id)?.is_some(), "task is not cached");
+                (format!("task:{task_id}"), "task_title", json!({"task_id":task_id,"title":title}))
+            }
+            Write::TaskSection { task_id, section_id } => {
+                let task = db.task(*task_id)?.context("task is not cached")?;
+                let section = db.raw("Section", &json!(section_id))?.context("section is not cached")?;
+                ensure!(section["projectId"] == task.project_id && section["deleted"] == false && section["visibility"] == true, "section must be visible and in the same board");
+                (format!("task:{task_id}"), "task_section", json!({"task_id":task_id,"sectionId":section_id,"section":section["section_title"]}))
+            }
+            Write::TaskComment { task_id, text } => {
+                ensure!(!text.trim().is_empty(), "comment must not be empty");
+                ensure!(text.encode_utf16().count() <= 5000, "comment must be 5000 characters or less");
+                ensure!(db.task(*task_id)?.is_some(), "task is not cached");
+                (format!("task:{task_id}"), "task_comment", json!({"task_id":task_id,"text":text}))
+            }
+            Write::CommentAction { task_id, comment_id, change } => {
+                change.validate()?;
+                ensure!(*comment_id > 0, "pending comments cannot be changed");
+                let before = db.raw("Comment", &json!(comment_id))?.context("comment is not cached")?;
+                ensure!(before["taskId"] == *task_id && before["activity"].is_null(), "not a comment in this task");
+                let user_id = db.current_user_id().context("sync your account before changing comments")?;
+                if matches!(change, crate::CommentWrite::Edit { .. } | crate::CommentWrite::Delete) {
+                    ensure!(before["creatorId"] == user_id, "you can only change your own comments");
                 }
-                Write::TaskSection { task_id, section_id } => {
-                    let task = db.task(*task_id)?.context("task is not cached")?;
-                    let section = db.raw("Section", &json!(section_id))?.context("section is not cached")?;
-                    ensure!(section["projectId"] == task.project_id && section["deleted"] == false && section["visibility"] == true, "section must be visible and in the same board");
-                    (format!("task:{task_id}"), "task_section", json!({"task_id":task_id,"sectionId":section_id,"section":section["section_title"]}))
-                }
-                Write::TaskComment { task_id, text } => {
-                    ensure!(!text.trim().is_empty(), "comment must not be empty");
-                    ensure!(text.encode_utf16().count() <= 5000, "comment must be 5000 characters or less");
-                    ensure!(db.task(*task_id)?.is_some(), "task is not cached");
-                    (format!("task:{task_id}"), "task_comment", json!({"task_id":task_id,"text":text}))
-                }
-                Write::CommentAction { task_id, comment_id, change } => {
-                    change.validate()?;
-                    ensure!(*comment_id > 0, "pending comments cannot be changed");
-                    let before = db.raw("Comment", &json!(comment_id))?.context("comment is not cached")?;
-                    ensure!(before["taskId"] == *task_id && before["activity"].is_null(), "not a comment in this task");
-                    let user_id = db.current_user_id().context("sync your account before changing comments")?;
-                    if matches!(change, crate::CommentWrite::Edit { .. } | crate::CommentWrite::Delete) {
-                        ensure!(before["creatorId"] == user_id, "you can only change your own comments");
-                    }
-                    (format!("comment:{comment_id}"), "comment_action", json!({"task_id":task_id,"comment_id":comment_id,"change":change,"before":before,"user_id":user_id}))
-                }
-                Write::TaskPatch { task_id, patch } => {
-                    ensure!(db.task(*task_id)?.is_some(), "task is not cached");
-                    let mut fields = patch.fields()?;
-                    fields["task_id"] = json!(task_id);
-                    (format!("task:{task_id}"), "task_patch", fields)
-                }
-                Write::InboxArchive { notification_id } => {
-                    ensure!(db.raw("Notification", &json!(notification_id))?.is_some(), "notification is not cached");
-                    (format!("notification:{notification_id}"), "inbox_archive", json!({"notification_ids":[notification_id]}))
-                }
-            };
-            let client_id = uuid::Uuid::new_v4().to_string();
-            db.conn.execute("INSERT INTO mutation_queue(client_id,entity,kind,payload_json,created_at,next_attempt_at) VALUES(?,?,?,?,?,?)",
-                params![client_id,entity,kind,payload.to_string(),now,now])?;
-            let id = db.conn.last_insert_rowid();
-            db.apply_optimistic(id, kind, &payload, now)?;
-            Ok(id)
-        })
+                (format!("comment:{comment_id}"), "comment_action", json!({"task_id":task_id,"comment_id":comment_id,"change":change,"before":before,"user_id":user_id}))
+            }
+            Write::TaskPatch { task_id, patch } => {
+                ensure!(db.task(*task_id)?.is_some(), "task is not cached");
+                let mut fields = patch.fields()?;
+                fields["task_id"] = json!(task_id);
+                (format!("task:{task_id}"), "task_patch", fields)
+            }
+            Write::InboxArchive { notification_id } => {
+                ensure!(db.raw("Notification", &json!(notification_id))?.is_some(), "notification is not cached");
+                (format!("notification:{notification_id}"), "inbox_archive", json!({"notification_ids":[notification_id]}))
+            }
+        };
+        let client_id = uuid::Uuid::new_v4().to_string();
+        db.conn.execute("INSERT INTO mutation_queue(client_id,entity,kind,payload_json,created_at,next_attempt_at) VALUES(?,?,?,?,?,?)",
+            params![client_id,entity,kind,payload.to_string(),now,now])?;
+        let id = db.conn.last_insert_rowid();
+        db.apply_optimistic(id, kind, &payload, now)?;
+        Ok(id)
     }
 
     fn apply_optimistic(&self, id: i64, kind: &str, payload: &Value, now: i64) -> Result<()> {
@@ -168,6 +182,8 @@ impl Db {
                 }
                 self.upsert_task(&task)?;
             }
+            "editor_improve"=>(),
+            "draft_discard"=>self.optimistic_discard(payload)?,
             "comment_action" => self.optimistic_comment_action(payload)?,
             "task_comment" => {
                 let timestamp = chrono::DateTime::from_timestamp(now, 0)
@@ -285,6 +301,8 @@ impl Db {
             return Ok(Drain::Waiting(ready));
         }
         let (path, body) = match row.kind.as_str() {
+            "editor_improve" => ("/ai/improve",row.payload_json.clone()),
+            "draft_discard" => ("",Value::Null),
             "task_patch" => ("/tasks/update", row.payload_json.clone()),
             "task_title" => (
                 "/tasks/update",
@@ -302,7 +320,9 @@ impl Db {
             "comment_action" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
-        let response = if row.kind == "comment_action" {
+        let response = if row.kind == "draft_discard" {
+            crate::editor_queue::discard(transport,&row.payload_json,&row.client_id)
+        } else if row.kind == "comment_action" {
             let change: crate::CommentWrite =
                 serde_json::from_value(row.payload_json["change"].clone())?;
             let (method, path, body) = change.request(
@@ -317,7 +337,7 @@ impl Db {
         let result = match response {
             Ok(Response { status, body }) if (200..300).contains(&status) => {
                 match ensure_success(&body)
-                    .and_then(|()| self.resolve_server_authoritative(&row, &body))
+                    .and_then(|()| self.resolve_server_authoritative(&row, &body, now))
                 {
                     Ok(()) => return Ok(Drain::Applied(row.id)),
                     Err(_) => (false, "invalid success response".to_owned()),
@@ -332,6 +352,7 @@ impl Db {
             db.conn.execute("UPDATE mutation_queue SET status=?,last_error=?,next_attempt_at=?,lease_until=NULL WHERE id=? AND attempts=?",
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
+                db.fail_editor(row.id,&row.kind,&row.payload_json,&result.1)?;
                 if row.kind == "comment_action" {
                     db.upsert_comment(row.payload_json["task_id"].as_i64().context("missing task id")?, &row.payload_json["before"])?;
                     db.request_refetch("comments", row.payload_json["task_id"].as_i64().unwrap())?;
@@ -353,11 +374,12 @@ impl Db {
         })
     }
 
-    fn resolve_server_authoritative(&mut self, row: &Mutation, body: &Value) -> Result<()> {
+    fn resolve_server_authoritative(&mut self, row: &Mutation, body: &Value, now:i64) -> Result<()> {
         self.transaction(|db| {
             let active: bool = db.conn.query_row("SELECT EXISTS(SELECT 1 FROM mutation_queue WHERE id=? AND attempts=? AND status='inflight')", params![row.id,row.attempts], |r| r.get(0))?;
             if !active { return Ok(()); }
             match row.kind.as_str() {
+                "editor_improve"|"draft_discard"=>db.resolve_editor(row.id,&row.kind,&row.payload_json,body)?,
                 "comment_action" => db.resolve_comment_action(&row.payload_json, body)?,
                 "task_title" | "task_section" | "task_patch" => {
                     let task = body.get("task").or_else(|| body["tasks"].as_array().and_then(|v| v.iter().find(|t| t["id"] == row.payload_json["task_id"]))).context("mutation response missing task")?;
@@ -377,6 +399,14 @@ impl Db {
                     db.request_refetch("inbox", 0)?;
                 }
                 _ => bail!("unknown mutation kind"),
+            }
+            if let Some(task_id)=row.payload_json["task_id"].as_i64() {
+                let kind=if row.kind=="task_comment"{Some(crate::DraftType::Comment)}else if row.kind=="task_patch"&&row.payload_json["description"].is_string(){Some(crate::DraftType::Description)}else{None};
+                if let Some(draft_type)=kind {
+                    if db.editor_drafts(task_id)?.iter().any(|d|d["draftType"]==draft_type.as_str()) {
+                        db.enqueue_in_transaction(Write::DiscardDraft{task_id,draft_type},now)?;
+                    }
+                }
             }
             db.conn.execute("DELETE FROM mutation_queue WHERE id=? AND attempts=?", params![row.id,row.attempts])?;
             db.reapply_pending()?;

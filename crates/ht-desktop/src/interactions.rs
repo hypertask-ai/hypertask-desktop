@@ -281,6 +281,7 @@ impl Desktop {
                 }
             }
             DiscardDraft => {
+                if !self.discard_editor_draft(cx) {return;}
                 match self.editing {
                     Editing::Description => self.interaction.description.update(cx, |input, cx| {
                         input.set_html(self.detail.as_ref().map_or("", |d| d.task.description.as_str()), cx)
@@ -659,6 +660,7 @@ impl Desktop {
         self.interaction.description.update(cx, |input, cx| {
             input.set_html(self.detail.as_ref().map_or("", |d| d.task.description.as_str()), cx)
         });
+        self.restore_editor(self.interaction.description.clone(),Some(ht_core::DraftType::Description),cx);
         self.editing = Editing::Description;
         self.description_anchor.scroll_to(window, cx);
         window.focus(&self.interaction.description.focus_handle(cx), cx);

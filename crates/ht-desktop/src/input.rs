@@ -18,6 +18,15 @@ use gpui::{
 
 use unicode_segmentation::*;
 
+#[derive(Clone)]
+pub enum EditorRequest {
+    Improve {
+        command: ht_core::ImproveCommand,
+        html: String,
+    },
+}
+impl gpui::EventEmitter<EditorRequest> for TextInput {}
+
 actions!(
     text_input,
     [
@@ -978,6 +987,7 @@ impl Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let menu = self.editor_menu(_window, cx);
         div()
+            .id("text-input")
             .flex()
             .flex_col()
             .relative()

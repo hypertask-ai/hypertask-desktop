@@ -138,6 +138,7 @@ impl Http {
             .request(method, &format!("{}{path}", self.base))
             .set("Authorization", &format!("Bearer {}", self.token))
             .set("Accept", "application/json");
+        if path=="/ai/improve" {request=request.timeout(Duration::from_secs(70));}
         if let Some(client_id) = client_id {
             request = request
                 .set("X-Correlation-ID", client_id)
