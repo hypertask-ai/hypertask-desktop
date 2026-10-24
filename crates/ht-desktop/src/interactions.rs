@@ -986,6 +986,9 @@ impl Desktop {
                 self.switch(Screen::Board, cx);
                 window.focus(&self.focus, cx);
             }
+            ChoiceAction::Command(CommandAction::Shell(action)) => {
+                self.run_shell_command(action, window, cx);
+            }
             ChoiceAction::Command(CommandAction::Theme(theme)) => {
                 self.apply_named_theme(theme, cx);
             }

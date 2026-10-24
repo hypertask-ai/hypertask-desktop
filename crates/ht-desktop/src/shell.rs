@@ -21,6 +21,7 @@ pub(super) struct Shell {
     search_input: Entity<TextInput>,
     search_board: Option<i64>,
     shortcuts: bool,
+    cli: bool,
     invite: bool,
     invite_input: Entity<TextInput>,
     invite_emails: std::collections::VecDeque<String>,
@@ -65,6 +66,7 @@ impl Shell {
             search_input,
             search_board: None,
             shortcuts: false,
+            cli: false,
             invite: false,
             invite_input,
             invite_emails: Default::default(),
@@ -138,6 +140,13 @@ impl Desktop {
         let key = &event.keystroke;
         let m = key.modifiers;
         let ctrl = m.control || m.platform;
+        if self.shell.cli {
+            if key.key == "escape" {
+                self.close_cli(window, cx);
+                cx.stop_propagation();
+            }
+            return true;
+        }
         if self.shell.invite {
             match key.key.as_str() {
                 "escape" => {
@@ -591,6 +600,7 @@ impl Desktop {
     }
 
     pub(super) fn shell_overlay(&self, _window: &mut Window, cx: &mut Context<Self>) -> AnyElement {
+        if self.shell.cli { return self.cli_overlay(cx); }
         if self.shell.invite {
             return self.invite_overlay(cx);
         }
@@ -919,6 +929,7 @@ impl Desktop {
         })
         .detach();
         self.profile_blur(window, cx);
+        if self.options.settings { self.enter_settings_directly(window, cx); }
     }
 
     fn apply_shell_theme(&mut self, theme: ThemeName, cx: &mut Context<Self>) {

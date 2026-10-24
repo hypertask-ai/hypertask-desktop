@@ -32,6 +32,7 @@ pub struct Options {
     pub background: bool,
     pub ai_sidebar: bool,
     pub screen: Screen,
+    pub settings: bool,
     pub board: i64,
     pub board_given: bool,
     pub task: i64,
@@ -52,6 +53,7 @@ impl Options {
             background: false,
             ai_sidebar: false,
             screen: Screen::Inbox,
+            settings: false,
             board: 15,
             board_given: false,
             task: 64897,
@@ -76,11 +78,9 @@ impl Options {
                 "--print-memory" => result.print_memory = true,
                 "--db" => result.db = args.next().context("--db requires a path")?.into(),
                 "--screen" => {
-                    result.screen = Screen::parse(
-                        &args
-                            .next()
-                            .context("--screen requires inbox, board or task")?,
-                    )?
+                    let screen = args.next().context("--screen requires inbox, board, task or settings")?;
+                    result.settings = screen == "settings";
+                    result.screen = if result.settings { Screen::Inbox } else { Screen::parse(&screen)? };
                 }
                 "--theme" => {
                     result.theme =

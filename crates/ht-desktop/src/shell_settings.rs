@@ -18,6 +18,7 @@ struct Request {
 pub(super) struct Settings {
     webhooks: webhooks::Webhooks,
     section: &'static str,
+    return_to_workspace: bool,
     calendar_sunday: bool,
     calendar_weekends: bool,
     search: Entity<TextInput>,
@@ -67,6 +68,7 @@ impl Settings {
         Self {
             webhooks: webhooks::Webhooks::new(cx),
             section: "general",
+            return_to_workspace: false,
             calendar_sunday: calendar["weekStartsOn"] == "sunday",
             calendar_weekends: calendar["showWeekends"].as_bool().unwrap_or(false),
             search,
@@ -123,6 +125,7 @@ const EXAMPLE: &str = "curl \"https://app.hypertask.ai/api/mcp/projects\" \\\n  
 
 impl Desktop {
     pub(in super::super) fn open_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.shell.settings { self.shell.settings_state.return_to_workspace = true; }
         self.shell.settings = true;
         self.shell.settings_state.board = self.options.board;
         self.load_settings(window, cx);
@@ -134,8 +137,24 @@ impl Desktop {
         cx.notify();
     }
 
+    pub(in super::super) fn enter_settings_directly(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.open_settings(window, cx);
+        self.shell.settings_state.return_to_workspace = false;
+    }
+
     fn close_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shell.settings = false;
+        if !self.shell.settings_state.return_to_workspace {
+            let board = self.db.kv_get("last_board").ok().flatten().and_then(|value| value.parse::<i64>().ok())
+                .filter(|id| self.db.projects().unwrap_or_default().iter().any(|board| board["id"] == *id));
+            if let Some(board) = board {
+                self.options.board = board;
+                self.switch(Screen::Board, cx);
+            } else {
+                self.switch(Screen::Inbox, cx);
+            }
+        }
+        self.shell.settings_state.return_to_workspace = false;
         window.focus(&self.focus, cx);
         cx.notify();
     }
@@ -2463,5 +2482,66 @@ mod palette_theme_tests {
             )
         })
         .unwrap();
+    }
+}
+
+#[path = "shell_commands.rs"]
+mod commands;
+
+#[cfg(test)]
+mod return_tests {
+    use super::*;
+    use crate::ui::shell::tests::{click, measured, setup};
+
+    #[gpui::test]
+    fn settings_close_preserves_search_query_table_and_task_context(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        for destination in [0, 1, 2] {
+            view.update(&mut cx, |this, window, cx| {
+                match destination {
+                    0 => {
+                        this.navigate_search(window, cx);
+                        this.shell.search_input.update(cx, |input, cx| input.set_content("Alpha".into(), cx));
+                    }
+                    1 => this.navigate_table(cx),
+                    _ => this.open_task(101, cx),
+                }
+                this.open_settings(window, cx);
+                this.select_settings("learn", window, cx);
+            }).unwrap();
+            click(view, &mut cx, "settings.back");
+            view.read_with(&cx, |this, cx| {
+                assert!(!this.shell.settings);
+                match destination {
+                    0 => {
+                        assert!(this.shell.destination == navigation::Destination::Search);
+                        assert_eq!(this.shell.search_input.read(cx).content.as_ref(), "Alpha");
+                    }
+                    1 => assert!(this.shell.destination == navigation::Destination::Table),
+                    _ => { assert_eq!(this.screen, Screen::Task); assert_eq!(this.options.task, 101); }
+                }
+            }).unwrap();
+        }
+    }
+
+    #[gpui::test]
+    fn direct_settings_boot_returns_to_remembered_board_or_home(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        for remembered in [None, Some("16"), Some("invalid"), Some("999")] {
+            let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| {
+                let mut db = Db::memory().unwrap();
+                db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":16,"title":"Beta","status":"Normal"}]})).unwrap();
+                if let Some(id) = remembered { db.kv_set("last_board", id).unwrap(); }
+                Desktop::new(db, Options::parse(["--offline", "--screen", "settings"].map(str::to_owned)).unwrap(), window, cx)
+            });
+            let mut visual = gpui::VisualTestContext::from_window(view.into(), cx);
+            view.read_with(&visual, |this, _| assert!(this.shell.settings)).unwrap();
+            visual.simulate_keystrokes("escape");
+            view.read_with(&visual, |this, _| {
+                assert!(!this.shell.settings);
+                assert_eq!(this.screen, if remembered == Some("16") { Screen::Board } else { Screen::Inbox });
+                if remembered == Some("16") { assert_eq!(this.options.board, 16); }
+            }).unwrap();
+        }
     }
 }

@@ -14,6 +14,18 @@ pub enum CommandAction {
     Shortcut(Action),
     Theme(ThemeName),
     Board(i64),
+    Shell(ShellCommand),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShellCommand {
+    Settings(&'static str),
+    Shortcuts,
+    QuickTips,
+    HelpCenter,
+    Feedback,
+    Invite,
+    Cli,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -111,7 +123,36 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
             action: CommandAction::Theme(theme),
         });
     }
+    shell_commands(&mut rows);
     rows
+}
+
+fn shell_commands(rows: &mut Vec<Command>) {
+    use ShellCommand::*;
+    for (key, name, group, keys, keywords, action) in [
+        ("sendFeedback", "Send feedback", "Board", "", "send feedback bug idea issue report", Feedback),
+        ("inviteBoard", "Invite people", "Board", "", "invite people members email board team", Invite),
+        ("settingsCalendarShowWeekends", "Settings: Show weekends", "Settings", "", "settings show weekends profile", Settings("calendar")),
+        ("settingsLearnQuickTips", "Settings: Quick tips", "Settings", "", "settings quick tips learning help", Settings("learn")),
+        ("settingsGeneral", "Settings: General", "Settings", "", "settings general profile personal preferences application", Settings("general")),
+        ("settingsAppearance", "Settings: Appearance", "Settings", "", "settings appearance display color scheme personal profile", Settings("appearance")),
+        ("settingsSkills", "Settings: Skills", "Settings", "", "settings skills prompts slash commands library team ai", Settings("skills")),
+        ("settingsBoardMembers", "Settings: Members (board)", "Settings", "", "settings board members people permissions access project", Settings("board-members")),
+        ("settingsBoardAi", "Settings: Custom instructions", "Settings", "", "settings board custom instructions prompt behavior configure", Settings("board-ai")),
+        ("settingsBoardSkills", "Settings: Skills (board)", "Settings", "", "settings board skills prompts slash commands library ai", Settings("board-skills")),
+        ("settingsBoardFiles", "Settings: Files", "Settings", "", "settings board files uploads custom instructions context", Settings("board-files")),
+        ("settingsCli", "Settings: CLI", "Settings", "", "settings cli terminal command line shell install connect", Settings("cli")),
+        ("settingsShortcuts", "Settings: Shortcuts", "Settings", "", "settings shortcuts keyboard hotkeys keybindings cheatsheet help", Settings("shortcuts")),
+        ("settingsLearn", "Settings: Learn Hypertask", "Settings", "", "settings learn hypertask onboarding tutorial guide docs help", Settings("learn")),
+        ("shortcuts", "Keyboard shortcuts", "Help", "?", "keyboard shortcuts hotkeys keybindings commands keys cheatsheet help reference", Shortcuts),
+        ("settings", "Settings", "Help", "\\", "settings preferences configuration options account application customize setup", Settings("general")),
+        ("boardSettings", "Board settings", "Help", "", "board settings preferences configuration options project customize setup", Settings("board-general")),
+        ("helpCenter", "Help center", "Help", "", "help center support docs documentation guide questions answers contact", HelpCenter),
+        ("quickTips", "Quick tips", "Help", "", "quick tips shortcuts help hints guidance learn keyboard productivity suggestions", QuickTips),
+        ("cliInstall", "CLI", "Help", "", "cli terminal command line install npm shell hypertask login", Cli),
+    ] {
+        rows.push(Command { key: key.into(), name: name.into(), group, keys: keys.into(), keywords, action: CommandAction::Shell(action) });
+    }
 }
 fn task_commands(
     add: &mut impl FnMut(&'static str, &'static str, &'static str, &'static str, &'static str, Action),
@@ -339,7 +380,7 @@ mod tests {
         let rows = commands(Screen::Inbox, false);
         assert!(rows.iter().all(|r| r.group != "Task"));
         assert!(!rows.iter().any(|r| {
-            ["calendarSettings", "settings", "openAiTaskWriter"].contains(&r.key.as_str())
+            ["calendarSettings", "openAiTaskWriter", "settingsApiKeysOpenaiApiKey", "startKanbanTutorial"].contains(&r.key.as_str())
         }));
         let rows = commands(Screen::Task, true);
         assert_eq!(rows[0].group, "Task");
