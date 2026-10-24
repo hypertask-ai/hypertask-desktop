@@ -72,9 +72,9 @@ fn plan(team:&Value)->Option<String>{
         None=>Some("Free"),
         Some("price_1QjJeDIhmcH60VcciHzZ3mTJ"|"price_1TMlqDIhmcH60VccRZGW1xK3"|"price_1QjJf8IhmcH60VccNUrF7YJf"|"price_1QCKkpIhmcH60Vcc2RqVACTc")=>Some("Pro"),
         Some(id)=>Some(legacy_plan(id,&[
-            option_env!("NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_01"),option_env!("NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_02"),option_env!("NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_BYOK"),option_env!("NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_PRO"),
+            option_env!("NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_01").filter(|id|!id.is_empty()).or(Some("price_1OSg0zIhmcH60VccTpAFDv32")),option_env!("NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_02").filter(|id|!id.is_empty()).or(Some("price_1QjJeDIhmcH60VcciHzZ3mTJ")),option_env!("NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_BYOK").filter(|id|!id.is_empty()).or(Some("price_1TMlqCIhmcH60Vccgq4fpSWu")),option_env!("NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_PRO").filter(|id|!id.is_empty()).or(Some("price_1QjJeDIhmcH60VcciHzZ3mTJ")),
         ],&[
-            option_env!("NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_01"),option_env!("NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_02"),option_env!("NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_BYOK"),option_env!("NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_PRO"),
+            option_env!("NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_01").filter(|id|!id.is_empty()).or(Some("price_1OSg35IhmcH60VccJP5LQo03")),option_env!("NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_02").filter(|id|!id.is_empty()).or(Some("price_1QjJf8IhmcH60VccNUrF7YJf")),option_env!("NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_BYOK").filter(|id|!id.is_empty()).or(Some("price_1TMlqCIhmcH60VccI6VjW2FM")),option_env!("NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_PRO").filter(|id|!id.is_empty()).or(Some("price_1QjJf8IhmcH60VccNUrF7YJf")),
         ])),
     };
     let comped=team["compedUntil"].as_str().and_then(|s|chrono::DateTime::parse_from_rfc3339(s).ok()).is_some_and(|until|until.timestamp()>chrono::Utc::now().timestamp());
@@ -135,6 +135,7 @@ mod tests {
     fn stripe_mapping_matches_web_legacy_slots_unknown_status_and_comp_precedence(){
         let month=[Some("m1"),Some("m2"),Some("mb"),Some("mp")];let year=[Some("y1"),Some("y2"),Some("yb"),Some("yp")];
         for(id,expected)in [("m1","AI"),("m2","AI"),("y1","AI"),("y2","AI"),("mb","BYOK"),("yb","BYOK"),("mp","Pro"),("yp","Pro"),("unknown","Free")]{assert_eq!(legacy_plan(id,&month,&year),expected);}
+        for(id,expected)in [("price_1OSg0zIhmcH60VccTpAFDv32","AI"),("price_1OSg35IhmcH60VccJP5LQo03","AI"),("price_1TMlqCIhmcH60Vccgq4fpSWu","BYOK"),("price_1TMlqCIhmcH60VccI6VjW2FM","BYOK"),("price_1QjJeDIhmcH60VcciHzZ3mTJ","Pro"),("unknown","Free")]{let team=json!({"subscriptionPlan":[{"subscriptionStatus":"active","priceId":id}]});assert_eq!(plan(&team).as_deref(),Some(expected));}
         for status in ["paid","ACTIVE","trialing","past_due","canceled","unpaid","incomplete"]{
             let team=json!({"subscriptionPlan":[{"subscriptionId":"active","subscriptionStatus":status,"priceId":"price_1TMlqDIhmcH60VccRZGW1xK3"}],"activeSubscriptionPlanId":"active"});
             assert_eq!(plan(&team).as_deref(),Some(if matches!(status,"canceled"|"unpaid"|"incomplete"){"Free"}else{"Pro"}));
