@@ -109,6 +109,17 @@ impl crate::Db {
             "Unauthorized"
         );
         let mut current = serde_json::to_value(self.task(task)?.context("Task is unavailable")?)?;
+        for field in [
+            "startDate",
+            "recurrence",
+            "waitingOnUserId",
+            "waitingOnSetById",
+            "waitingOnSetAt",
+        ] {
+            if let Some(value) = source.get(field) {
+                current[field] = value.clone();
+            }
+        }
         for field in ["relatedFromTasks", "relatedToTasks"] {
             ensure!(source[field].is_array(), "Couldn't load task relations");
             current[field] = source[field].clone();

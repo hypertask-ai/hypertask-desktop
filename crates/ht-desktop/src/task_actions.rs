@@ -11,8 +11,153 @@ pub(super) struct TaskActions {
     search_generation: u64,
     loaded: Option<(i64, i64)>,
     load_generation: u64,
+    clear_waiting: bool,
+    waiting_ticking: bool,
+}
+fn waiting_age(value: Option<&str>, now: i64) -> String {
+    let Some(start) = value.and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+    else {
+        return String::new();
+    };
+    let elapsed = (now - start.timestamp()).max(0);
+    if elapsed < 3600 {
+        format!("{}m", (elapsed / 60).max(1))
+    } else if elapsed < 86400 {
+        format!("{}h", elapsed / 3600)
+    } else {
+        format!("{}d", elapsed / 86400)
+    }
 }
 impl Desktop {
+    pub(super) fn tick_waiting_on(&mut self, cx: &mut Context<Self>) {
+        if self.task_actions.waiting_ticking
+            || self.screen != Screen::Task
+            || self.detail.as_ref().is_none_or(|detail| {
+                detail
+                    .task
+                    .extra
+                    .get("waitingOnUserId")
+                    .and_then(Value::as_i64)
+                    .is_none()
+            })
+        {
+            return;
+        }
+        self.task_actions.waiting_ticking = true;
+        cx.spawn(async move |view, cx| {
+            loop {
+                cx.background_executor()
+                    .timer(Duration::from_secs(60))
+                    .await;
+                if !view
+                    .update(cx, |this, cx| {
+                        let active = this.screen == Screen::Task
+                            && this.detail.as_ref().is_some_and(|detail| {
+                                detail
+                                    .task
+                                    .extra
+                                    .get("waitingOnUserId")
+                                    .and_then(Value::as_i64)
+                                    .is_some()
+                            });
+                        if !active {
+                            this.task_actions.waiting_ticking = false;
+                        }
+                        cx.notify();
+                        active
+                    })
+                    .unwrap_or(false)
+                {
+                    break;
+                }
+            }
+        })
+        .detach();
+    }
+
+    pub(super) fn waiting_on_row(&self, task: &TaskView, cx: &mut Context<Self>) -> AnyElement {
+        let Some(user) = task
+            .extra
+            .get("waitingOnUserId")
+            .and_then(Value::as_i64)
+            .filter(|id| *id > 0)
+        else {
+            return div().into_any_element();
+        };
+        let name = self
+            .db
+            .project_members(task.project_id)
+            .unwrap_or_default()
+            .iter()
+            .find(|member| member["id"] == user)
+            .and_then(|member| member["displayName"].as_str())
+            .unwrap_or("Unknown user")
+            .to_owned();
+        let started = task.extra.get("waitingOnSetAt").and_then(Value::as_str);
+        let now = chrono::Utc::now().timestamp();
+        let age = waiting_age(started, now);
+        let overdue = started
+            .and_then(|value| chrono::DateTime::parse_from_rfc3339(value).ok())
+            .is_some_and(|date| now - date.timestamp() > 86400);
+        let task_id = task.id;
+        div()
+            .mt(px(24.))
+            .flex()
+            .items_start()
+            .gap(px(20.))
+            .child(div().w(px(260. / 3.)).flex_shrink_0().child("Waiting on"))
+            .child(
+                div()
+                    .id("task-waiting-on")
+                    .flex_1()
+                    .flex()
+                    .items_center()
+                    .gap(px(6.))
+                    .cursor_pointer()
+                    .on_click(cx.listener(|this, _, window, cx| {
+                        this.show_modal(interactions::Modal::WaitingOn, window, cx)
+                    }))
+                    .child(div().child(name.clone()).layout_key(
+                        &self.layout,
+                        "task.waiting-on.user",
+                        Some(name),
+                    ))
+                    .when(!age.is_empty(), |d| {
+                        d.child(
+                            div()
+                                .text_color(color(if overdue {
+                                    0xcf222e
+                                } else {
+                                    self.colors.muted
+                                }))
+                                .child(format!("· {age}")),
+                        )
+                    })
+                    .child(
+                        div()
+                            .id("clear-task-waiting-on")
+                            .cursor_pointer()
+                            .child("✕")
+                            .on_click(cx.listener(move |this, _, window, cx| {
+                                cx.stop_propagation();
+                                if this.task_actions.pending.is_some() {
+                                    return;
+                                }
+                                this.queue_task_action(
+                                    task_id,
+                                    TaskAction::WaitingOn(None),
+                                    window,
+                                    cx,
+                                );
+                                this.task_actions.clear_waiting =
+                                    this.task_actions.pending.is_some();
+                            }))
+                            .layout_key(&self.layout, "task.waiting-on.clear", None),
+                    ),
+            )
+            .into_any_element()
+    }
+
     pub(super) fn load_task_relations(&mut self, cx: &mut Context<Self>) {
         if self.options.offline
             || self.screen != Screen::Task
@@ -282,6 +427,7 @@ impl Desktop {
         if self.task_actions.pending.is_some() {
             return;
         }
+        self.task_actions.clear_waiting = false;
         match self.db.enqueue(
             Write::TaskAction {
                 task_id: task,
@@ -342,7 +488,14 @@ impl Desktop {
         };
         self.task_actions.pending = None;
         if self.db.current_user_id() == Some(user) {
-            self.error = result["error"].as_str().map(str::to_owned);
+            self.error = result["error"].as_str().map(|error| {
+                if self.task_actions.clear_waiting {
+                    "Unable to clear blocked by person".to_owned()
+                } else {
+                    error.to_owned()
+                }
+            });
+            self.task_actions.clear_waiting = false;
             self.reload();
             if self.error.is_none() && self.selected_task() == Some(task) {
                 match change {
@@ -703,5 +856,66 @@ mod tests {
         cx.simulate_input("does not exist");
         measured(view, &mut cx, "task.relations.search-status");
         cx.simulate_keystrokes("escape");
+    }
+    #[test]
+    fn waiting_person_age_matches_web_minutes_hours_days_and_future_clamping() {
+        for (elapsed, expected) in [
+            (-1, "1m"),
+            (0, "1m"),
+            (60, "1m"),
+            (3599, "59m"),
+            (3600, "1h"),
+            (86399, "23h"),
+            (86400, "1d"),
+            (172800, "2d"),
+        ] {
+            assert_eq!(
+                waiting_age(
+                    Some("2026-10-01T00:00:00Z"),
+                    chrono::DateTime::parse_from_rfc3339("2026-10-01T00:00:00Z")
+                        .unwrap()
+                        .timestamp()
+                        + elapsed
+                ),
+                expected
+            );
+        }
+        assert_eq!(waiting_age(None, 0), "");
+        assert_eq!(waiting_age(Some("invalid"), 0), "");
+    }
+    #[gpui::test]
+    fn waiting_person_rail_opens_picker_and_clear_queues_exact_web_write_with_refusal_rollback(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx,|this,_,_|{this.db.apply_task(&json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","waitingOnUserId":7,"waitingOnSetById":42,"waitingOnSetAt":"2026-10-01T09:00:00Z"})).unwrap();this.reload();}).unwrap();
+        click(view, &mut cx, "task.waiting-on.user");
+        cx.simulate_keystrokes("escape");
+        for status in [401, 403, 200] {
+            click(view, &mut cx, "task.waiting-on.clear");
+            view.update(&mut cx, |this, window, cx| {
+                assert!(this.db.task(1).unwrap().unwrap().extra["waitingOnUserId"].is_null());
+                this.db
+                    .drain_once(
+                        &mut Server(status, TaskAction::WaitingOn(None)),
+                        chrono::Utc::now().timestamp() + 1,
+                    )
+                    .unwrap();
+                this.poll_task_action(window, cx);
+                if status == 200 {
+                    assert!(this.db.task(1).unwrap().unwrap().extra["waitingOnUserId"].is_null());
+                } else {
+                    assert_eq!(
+                        this.db.task(1).unwrap().unwrap().extra["waitingOnUserId"],
+                        7
+                    );
+                    assert_eq!(
+                        this.error.as_deref(),
+                        Some("Unable to clear blocked by person")
+                    );
+                }
+            })
+            .unwrap();
+        }
     }
 }

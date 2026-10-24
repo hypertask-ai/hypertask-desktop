@@ -22,7 +22,7 @@ impl Transport for Server {
         assert_eq!(path, "/api/tasks/single?id=1");
         Ok(Response {
             status: self.status,
-            body: json!({"id":1,"relatedFromTasks":[{"id":7,"sourceTaskId":1,"targetTaskId":2,"relationType":"BlockedBy","targetTask":{"id":2,"projectId":15,"uniqueIndex":2,"title":"Other"}}],"relatedToTasks":[]}),
+            body: json!({"id":1,"startDate":"2026-10-01T09:00:00Z","recurrence":"Daily","waitingOnUserId":7,"waitingOnSetById":42,"waitingOnSetAt":"2026-10-01T09:00:00Z","relatedFromTasks":[{"id":7,"sourceTaskId":1,"targetTaskId":2,"relationType":"BlockedBy","targetTask":{"id":2,"projectId":15,"uniqueIndex":2,"title":"Other"}}],"relatedToTasks":[]}),
         })
     }
     fn post(&mut self, path: &str, body: &Value, key: &str) -> Result<Response, TransportError> {
@@ -91,6 +91,9 @@ fn task_relation_hydration_accepts_both_directions_preserves_edits_and_refuses_a
             db.apply_task(&json!({"id":1,"title":"Keep title","projectId":15,"status":"Normal","description":"Keep description"})).unwrap();
             db.cache_task_relations(42, 1, &result.unwrap()).unwrap();
             let task = db.task(1).unwrap().unwrap();
+            assert_eq!(task.extra["startDate"], "2026-10-01T09:00:00Z");
+            assert_eq!(task.extra["recurrence"], "Daily");
+            assert_eq!(task.extra["waitingOnUserId"], 7);
             assert_eq!(task.title, "Keep title");
             assert_eq!(task.description, "Keep description");
             assert_eq!(task.extra["relatedFromTasks"][0]["id"], 7);

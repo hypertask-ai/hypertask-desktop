@@ -1619,6 +1619,7 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, format!("task.meta.{i}"), None)
             }))
+            .child(self.waiting_on_row(task, cx))
             .child(self.task_time_row(cx))
             .child(self.task_relations_rows(task, cx))
             .when(self.moving, |d| {
@@ -1796,6 +1797,7 @@ impl Render for Desktop {
         if self.screen==Screen::Board {self.load_board_views(cx);self.load_archived_on_board(cx);}
         self.load_task_time(cx);
         self.load_task_relations(cx);
+        self.tick_waiting_on(cx);
         self.tick_task_time(cx);
         self.prepare_comment_readers(window,cx);
         self.restore_comment_draft(cx);
