@@ -68,6 +68,40 @@ Current SHA-bound GitHub CI evidence remains in uncommitted `FEATURES.md`.
   visibility; C / Shift+S / Shift+F preserve editor typing. These are working
   handlers, not a full registry claim.
 
+## Additional finish-continuation wiring
+
+- Archived board tasks: `G X` / Ctrl+K uses queued unsaved-view visibility,
+  `GET /api/tasks/getArchivedTasksByProject?projectId=…`, account/board-scoped
+  hydration, normal cards followed by dimmed non-draggable archives, active
+  filters and recent-archive manual ordering. Browser fallback follows the web.
+- View tabs: persisted local `hiddenViewTabIds` / `showEmptyViewTabs`, counts
+  against each saved view's own columns/filters/subtask mode, protected active
+  and default tabs, and queued drag order including builtins. These local web
+  preferences do not invent HTTP writes. All five subtask modes now render the
+  parent/count/child card properties and the inspected web click/playlist.
+- Create: two-month due calendar, Back/Confirm, local 09:00 and last-used dates;
+  separate start-date text/presets. Duplicate / duplicate-to-board reads
+  `GET /api/tasks/single?id=…`, copies the web's rich description, size, priority
+  and task-label tags, clears assignees/dates/parent, and queues the existing
+  global create. Explicit fields (including resets) survive delayed metadata
+  and board changes. Neither denied reads nor writes create a guessed success.
+- Model settings handoff: locks and Add API keys now pass the resolved picker
+  team into native Plans/API keys, not an unscoped browser URL. Exact web routes:
+  `GET /api/members/getAllTeamMembers?teamId=…`, team/model/key reads, POST
+  `/api/teams/byokKeys`, `/api/settings/byok-test`, `/api/stripe/ensure-customer`,
+  `/api/stripe/session/checkout`, `/api/stripe/cancelSubscription`. Key writes,
+  tests and billing actions use the queue; enable/remove optimism rolls back,
+  rejected key drafts remain editable, uncertain checkout creates are not
+  replayed, rejected durable secrets are scrubbed, and input is concealed.
+  Membership validates persisted/current/previous/first settings-team fallback.
+  The picker is a measured, viewport-fitted popup above its toggle, without
+  composer reflow; its model/effort submenus stay stacked as the AI web caller
+  requests. Twelve additional real Settings palette targets open these panels.
+
+These portions have mocked accepting/401/403 and native-input/geometry tests
+in GitHub CI. Final SHA-bound evidence belongs in uncommitted `FEATURES.md`;
+source descriptions are not a claim that all original rows are complete.
+
 All newly introduced HTTP behavior has accepting/401/403 mocked CI cases;
 local builtin predicates intentionally make no HTTP mutation. Proof does not
 include successful live SaaS authorization or whole-app visual equivalence.
@@ -79,22 +113,20 @@ regressions; a missing Project row is not an explicitly empty column view.
 These remain missing implementation, not just server authorization:
 
 - Full Ctrl+K: remaining navigation/settings/preferences effects, board/team
-  administration, uploads, billing/provider controls, tutorial lifecycle,
-  templates/relations/recurrence/time and unsupported agent families. Neither
+  administration, uploads, remaining billing/provider-availability settings,
+  tutorial lifecycle, templates/relations/recurrence/time and unsupported agent
+  families. Neither
   hidden commands nor opening a generic page counts as implementation.
-- Views: archived-task hydration/rendering; smart splits; view-tab hide/empty
-  preferences and drag order; complete column reordering/layout management;
-  nested subtask card-property rendering (list visibility modes are wired).
+- Views: smart splits and complete column reordering/layout management.
   Natural-language date search is not the web's full Sugar parser; timer reads
   are loaded for filter activation, not a full realtime timer subscription.
 - Create: flagged empty-ticket fill, typed-board routing and remaining writer
-  feature flags, attachment staging/finalization, full custom-date calendar in
-  the create form, and source-comment/parent/duplicate expansion paths.
-- Full picker/settings handoff: team-targeted native Plans/API Keys settings
-  are not implemented; external web links cannot set the browser's persisted
-  selectedSettingsTeamId. That gap must not be hidden behind a full-row Done.
-  Full web-vs-native visual acceptance is not claimed by method-level GPUI
-  tests or the existing generic layout contract.
+  feature flags, attachment staging/finalization, source-comment/parent flows,
+  and complete description URL/relation/mention expansion. Duplicate field
+  initialization and its queued create are wired, not that broader expansion.
+- Model picker: native team-targeted Plans/API keys and popup geometry are now
+  wired. Full web-vs-native visual equivalence is not claimed by mocked/native
+  method tests or the generic layout contract; live authorization remains A4.
 - Untouched AI rows still include fullscreen history rail, attachments,
   agent-side conversations and the boundaries in `ai-parity.md`.
 
