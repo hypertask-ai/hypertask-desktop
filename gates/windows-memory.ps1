@@ -21,6 +21,7 @@ public class MemoryWindow {
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
     [DllImport("user32.dll")] public static extern uint GetDpiForWindow(IntPtr h);
     [DllImport("user32.dll")] public static extern bool GetClientRect(IntPtr h, out Rect r);
+    [DllImport("user32.dll")] public static extern IntPtr SendMessageTimeout(IntPtr h, uint msg, UIntPtr wparam, IntPtr lparam, uint flags, uint timeout, out UIntPtr result);
     [DllImport("user32.dll")] public static extern bool PrintWindow(IntPtr h, IntPtr dc, uint flags);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern bool EnumDisplaySettings(string device, int mode, byte[] settings);
     [DllImport("user32.dll", CharSet = CharSet.Unicode)] public static extern int ChangeDisplaySettings(byte[] settings, uint flags);
@@ -126,8 +127,15 @@ foreach ($round in 1..3) {
                 $g.Dispose(); $bmp.Dispose()
             }
             if ($StartupProof) {
-                # Repaint after the normal 8 s sample, then observe residency at
-                # 30 s. This exposes refaulting instead of quoting the trim instant.
+                # CI only: force GPUI to rebuild/render, not just copy DWM's
+                # existing surface. WM_USER + 5 is WM_GPUI_FORCE_UPDATE_WINDOW.
+                $renderResult = [UIntPtr]::Zero
+                $renderTime = [System.Diagnostics.Stopwatch]::StartNew()
+                if ([MemoryWindow]::SendMessageTimeout($h, 0x405, [UIntPtr]::Zero, [IntPtr]::Zero, 2, 5000, [ref]$renderResult) -eq [IntPtr]::Zero) {
+                    throw 'Warm GPUI render timed out'
+                }
+                $renderTime.Stop()
+                $rows[-1] | Add-Member -NotePropertyName WarmRenderMilliseconds -NotePropertyValue $renderTime.Elapsed.TotalMilliseconds
                 $bmp = New-Object System.Drawing.Bitmap ($rect.Right), ($rect.Bottom)
                 $g = [System.Drawing.Graphics]::FromImage($bmp)
                 $dc = $g.GetHdc()

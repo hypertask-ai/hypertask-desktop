@@ -184,7 +184,9 @@ jobs:
       - uses: actions/checkout@v4
       - name: Preserve current measurement script
         shell: pwsh
-        run: Copy-Item gates/windows-memory.ps1 "$env:RUNNER_TEMP/windows-memory.ps1"
+        run: |
+          Copy-Item gates/windows-memory.ps1 "$env:RUNNER_TEMP/windows-memory.ps1"
+          Copy-Item gates/windows-memory-inspect.ps1 "$env:RUNNER_TEMP/windows-memory-inspect.ps1"
       - uses: actions/checkout@v4
         with:
           ref: ${{ matrix.revision }}
@@ -247,7 +249,7 @@ jobs:
           if-no-files-found: error
   windows-memory-proof:
     name: Windows memory receipt and budget
-    # Comparative baselines run for ram2/mem2/mem3; frozen budgets apply on every PR/main.
+    # Comparative baselines run for ram2/mem2/mem3/mem4; frozen budgets apply on every PR/main.
     if: >-
       ${{ !cancelled() && needs.build.result == 'success' &&
       (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
