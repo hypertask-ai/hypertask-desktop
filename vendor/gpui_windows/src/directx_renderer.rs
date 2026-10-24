@@ -359,10 +359,9 @@ impl DirectXRenderer {
                 u64::from(self.width) * u64::from(self.height) * 4 * (1 + u64::from(PATH_MULTISAMPLE_COUNT))
             } else { 0 }
         });
-        let mut swap_desc = DXGI_SWAP_CHAIN_DESC1::default();
         let swap_bytes = self.resources.as_ref().and_then(|r| unsafe {
-            r.swap_chain.GetDesc1(&mut swap_desc).ok()
-        }).map_or(0, |_| u64::from(swap_desc.Width) * u64::from(swap_desc.Height) * 4 * u64::from(swap_desc.BufferCount));
+            r.swap_chain.GetDesc1().ok()
+        }).map_or(0, |desc| u64::from(desc.Width) * u64::from(desc.Height) * 4 * u64::from(desc.BufferCount));
         // Resource payload sizes, not resident pages: driver/allocator overhead is
         // intentionally left to the independent process working-set receipt.
         let json = format!(
