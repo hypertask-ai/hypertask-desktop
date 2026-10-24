@@ -52,3 +52,5 @@ pub mod ai_models;
 pub mod team_settings;
 
 pub mod smart_splits;
+
+pub mod board_columns;

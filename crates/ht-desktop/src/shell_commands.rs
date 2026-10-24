@@ -9,11 +9,12 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::AutoAssignColumn => { self.views.column_auto_select = true; self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx); },
             ShellCommand::SmartSplit => self.open_smart_split(None,window,cx),
             ShellCommand::DuplicateTask(pick_board)=>self.open_duplicate_task(pick_board,window,cx),
             ShellCommand::ArchivedOnBoard=>self.toggle_archived_on_board(window,cx),
             ShellCommand::HideColumn=>self.hide_current_column(window,cx),
-            ShellCommand::Columns=>self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx),
+            ShellCommand::Columns=>{self.views.column_auto_select=false;self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx);},
             ShellCommand::Subtasks=>self.open_view_panel(crate::ui::board_views::Panel::Subtasks,window,cx),
             ShellCommand::EmptyColumns=>self.toggle_empty_columns(window,cx),
             ShellCommand::CreateTask=>self.open_create_task(window,cx),

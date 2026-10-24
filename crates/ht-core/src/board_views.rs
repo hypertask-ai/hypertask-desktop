@@ -17,7 +17,7 @@ impl ViewWrite {
         ensure!(
             matches!(
                 self.route.as_str(),
-                "smart-split-create" | "smart-split-edit" | "smart-split-delete" | "rename-view" | "delete-view" | "unsaved-view"
+                "column-create" | "column-update" | "column-visibility" | "column-autoassign" | "smart-split-create" | "smart-split-edit" | "smart-split-delete" | "rename-view" | "delete-view" | "unsaved-view"
                     | "switch-view"
                     | "create-view"
                     | "update-view"
@@ -29,10 +29,12 @@ impl ViewWrite {
             "Unsupported view mutation"
         );
         if self.smart_split() { self.validate_smart_split()?; }
+        if self.column() { self.column_request()?; }
         Ok(())
     }
     pub fn request(&self)->Result<(&'static str,String,Value)> {
         self.validate()?;
+        if self.column() { return self.column_request(); }
         if self.smart_split() {
             return Ok((match self.route.as_str() { "smart-split-create" => "POST", "smart-split-edit" => "PATCH", _ => "DELETE" }, "/api/projects/views/smart-split".into(), self.body.clone()));
         }

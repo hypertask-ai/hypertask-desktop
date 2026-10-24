@@ -117,7 +117,11 @@ impl Db {
                         ensure!(change.route != "smart-split-delete" || project["project_view"]["default_view_id"] != change.body["viewId"], "Choose another default view before deleting this smart split");
                     }
                 }
-                (format!("view:{}",change.project),"web_view",json!({"user_id":user,"change":change,"before":db.board_project(change.project)?,"attempted":false}))
+                let column_before = if change.column() {
+                    ensure!(change.route != "column-update" || change.body["userId"] == user, "Unauthorized");
+                    db.column_snapshot(change)?
+                } else { Value::Null };
+                (format!("view:{}",change.project),"web_view",json!({"user_id":user,"change":change,"before":db.board_project(change.project)?,"column_before":column_before,"attempted":false}))
             }
             Write::FavoriteSlot { index, project_id } => {
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && matches!(row.kind.as_str(),"web_favorites"|"web_favorite_slot")), "wait for the previous favorite update to finish");
@@ -262,7 +266,7 @@ impl Db {
             "web_view" => {
                 if self.current_user_id()!=payload["user_id"].as_i64(){return Ok(());}
                 let change:crate::ViewWrite=serde_json::from_value(payload["change"].clone())?;
-                let mut project=self.board_project(change.project)?;change.optimistic(&mut project);self.upsert("Project",&project)?;
+                if change.column() { self.optimistic_column(&change,id,now)?; } else { let mut project=self.board_project(change.project)?;change.optimistic(&mut project);self.upsert("Project",&project)?; }
             }
             "web_favorites" | "web_favorite_slot" => {
                 let user=payload["user_id"].as_i64().context("missing account")?;
@@ -501,9 +505,9 @@ impl Db {
         } else if row.kind == "web_view" {
             let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
             change.validate()?;
-            if matches!(change.route.as_str(),"create-view"|"smart-split-create") && (row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1)) {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
+            if matches!(change.route.as_str(),"create-view"|"smart-split-create"|"column-create") && (row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1)) {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
                 Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => {
-                    if matches!(change.route.as_str(),"create-view"|"smart-split-create") {
+                    if matches!(change.route.as_str(),"create-view"|"smart-split-create"|"column-create") {
                         let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);
                         self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;
                     }
@@ -660,7 +664,7 @@ impl Db {
                     Err(_) => (false, "invalid success response".to_owned()),
                 }
             }
-            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_view" {body["message"].as_str().unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
+            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_view" {body["message"].as_str().or(body["error"].as_str()).unwrap_or("Could not save the view").to_owned()} else if row.kind=="shell_write" && row.payload_json["path"].as_str().is_some_and(|path| path.starts_with("/api/")) {body["message"].as_str().or(body["error"].as_str()).map(str::to_owned).unwrap_or_else(|| format!("HTTP {status}"))} else {format!("HTTP {status}")}),
             Err(error) => (false, error.to_string()),
         };
         self.transaction(|db| {
@@ -678,7 +682,9 @@ impl Db {
                     db.kv_set(&format!("ai-session-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
                 }
                 if row.kind == "web_view" {
+                    let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
                     if db.current_user_id()==row.payload_json["user_id"].as_i64(){
+                        if change.column() { db.rollback_column(&change,row.id,&row.payload_json["column_before"])?; }
                         let before=&row.payload_json["before"];
                         let mut current=db.board_project(before["id"].as_i64().context("missing board")?)?;
                         current["project_view"]=before["project_view"].clone();
@@ -766,7 +772,9 @@ impl Db {
                 "web_view" => {
                     let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
                     let view=&body["view"];
-                    if change.smart_split() {
+                    if change.column() {
+                        db.resolve_column(&change,row.id,view)?;
+                    }else if change.smart_split() {
                         let mut project = db.board_project(change.project)?;
                         change.resolve_smart_split(&mut project, view)?;
                         db.upsert("Project", &project)?;

@@ -16,6 +16,10 @@ pub(super) enum Panel {
     DateRange(&'static str),
     ValueMatch,
     Columns,
+    AddColumn,
+    EditColumn,
+    DeleteColumn,
+    ColumnAssignees,
     Subtasks,
     Save,
     SavePrivate,
@@ -41,6 +45,11 @@ pub(super) struct Views {
     pub panel: Option<Panel>,
     input: Entity<TextInput>,
     prompt: Entity<TextInput>,
+    column_edit: Option<i64>,
+    pub(super) column_auto_select: bool,
+    column_deferred: std::collections::VecDeque<(String, Value)>,
+    column_reorder: bool,
+    column_error: String,
     pending: Option<String>,
     choice: usize,
     editing: Option<String>,
@@ -81,6 +90,11 @@ impl Views {
             panel: None,
             input,
             prompt,
+            column_edit: None,
+            column_auto_select: false,
+            column_deferred: Default::default(),
+            column_reorder: false,
+            column_error: String::new(),
             pending: None,
             choice: 0,
             editing: None,
@@ -104,6 +118,10 @@ impl Views {
 }
 impl Desktop {
     pub(super) fn invalidate_board_views(&mut self, cx: &mut Context<Self>) {
+        self.views.column_deferred.clear();
+        self.views.column_auto_select = false;
+        self.views.column_edit = None;
+        self.views.column_reorder = false;
         self.views.builtin.clear();
         self.views.decisions = false;
         self.views.previous_builtin = None;
@@ -272,11 +290,12 @@ impl Desktop {
         self.views.panel = Some(panel);
         if matches!(
             panel,
-            Panel::CreatedBy | Panel::UpdatedBy | Panel::BlockedByPerson | Panel::Assignees
+            Panel::CreatedBy | Panel::UpdatedBy | Panel::BlockedByPerson | Panel::Assignees | Panel::ColumnAssignees
         ) && !self.options.offline
         {
             self.load_view_support(false, window, cx);
         }
+        if panel == Panel::Columns { self.error = None; }
         self.views.choice = 0;
         self.views
             .query
@@ -311,7 +330,7 @@ impl Desktop {
         }
         if matches!(
             panel,
-            Panel::SavePrivate | Panel::SaveTeam | Panel::RenameView
+            Panel::SavePrivate | Panel::SaveTeam | Panel::RenameView | Panel::AddColumn | Panel::EditColumn
         ) {
             self.views
                 .input
@@ -425,6 +444,9 @@ impl Desktop {
         self.views.input.update(cx, |input, cx| input.set_read_only(false, cx));
         self.views.prompt.update(cx, |input, cx| input.set_read_only(false, cx));
         self.reload();
+        if self.views.pending_route.starts_with("column-") {
+            return self.poll_column_result(&result,window,cx);
+        }
         if result["error"].is_null() {
             self.views.previous_builtin = None;
             if self.views.pending_route.starts_with("smart-split-") {
@@ -468,6 +490,9 @@ impl Desktop {
                     .unwrap_or("Could not save the view")
                     .into(),
             });
+        }
+        if self.views.pending.is_none() {
+            if let Some((route,body))=self.views.column_deferred.pop_front() {self.queue_column(&route,body,window,cx);}
         }
         cx.notify();
         false
@@ -1247,7 +1272,7 @@ impl Desktop {
             return;
         };
         let board = self.options.board;
-        let agents = matches!(self.views.panel, Some(Panel::Assignees | Panel::UpdatedBy));
+        let agents = matches!(self.views.panel, Some(Panel::Assignees | Panel::UpdatedBy | Panel::ColumnAssignees));
         let generation = self.views.generation;
         self.views.support_pending = true;
         if !timers {
@@ -1353,6 +1378,9 @@ impl Desktop {
     ) -> bool {
         if self.views.panel.is_none() {
             return false;
+        }
+        if matches!(self.views.panel, Some(Panel::Columns | Panel::AddColumn | Panel::EditColumn | Panel::DeleteColumn | Panel::ColumnAssignees)) {
+            return self.column_panel_key(event, window, cx);
         }
         if matches!(self.views.panel, Some(Panel::SmartSplit | Panel::DeleteSmartSplit)) {
             return self.smart_split_key(event, window, cx);
@@ -1590,11 +1618,12 @@ impl Desktop {
         let Some(panel) = self.views.panel else {
             return div().into_any_element();
         };
+        if matches!(panel, Panel::Columns | Panel::AddColumn | Panel::EditColumn | Panel::DeleteColumn | Panel::ColumnAssignees) { return self.column_overlay(cx); }
         if matches!(panel, Panel::SmartSplit | Panel::DeleteSmartSplit) { return self.smart_split_overlay(cx); }
         let t = self.colors;
         let title = match panel {
             Panel::Sort => "Sort",
-            Panel::Columns => "Manage board columns",
+            Panel::Columns | Panel::AddColumn | Panel::EditColumn | Panel::DeleteColumn | Panel::ColumnAssignees => unreachable!(),
             Panel::Subtasks => "Sub-task Settings",
             Panel::Date("DueDate") | Panel::DateRange("DueDate") => "Filter by due date",
             Panel::Date("CreatedAt") | Panel::DateRange("CreatedAt") => "Filter by created date",
@@ -2294,5 +2323,272 @@ mod smart_split_tests {
                 this.views.panel=None;
             }).unwrap();
         }}
+    }
+}
+
+#[derive(Clone)]
+struct ColumnDrag { id: i64, title: String }
+impl Render for ColumnDrag {
+    fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement { div().p(px(8.)).bg(color(0x30343b)).text_color(color(0xffffff)).child(self.title.clone()) }
+}
+impl Desktop {
+    fn managed_columns(&self) -> Vec<Value> {
+        let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
+        let settings=ht_core::board_views::settings(&project);
+        project["section"].as_array().into_iter().flatten().map(|section| {
+            let mut section=section.clone();
+            section["visibility"]=json!(settings["board_columns_view"].as_array().into_iter().flatten().any(|column|column.get("id").or_else(||column.get("sectionId"))==section.get("id") && column["visibility"]==true)); section
+        }).collect()
+    }
+    fn edit_column(&mut self, id:i64, window:&mut Window, cx:&mut Context<Self>) {
+        if id<=0 {return;}
+        let Some(section)=self.managed_columns().into_iter().find(|section|section["id"]==id) else{return;};
+        self.views.column_edit=Some(id);
+        if self.views.column_auto_select {
+            self.views.column_auto_select=false;
+            self.open_view_panel(Panel::ColumnAssignees,window,cx);
+            window.focus(&self.views.query.focus_handle(cx),cx);
+        } else {
+            self.open_view_panel(Panel::EditColumn,window,cx);
+            self.views.input.update(cx,|input,cx|{input.configure("Enter column name",false,cx);input.set_content(section["section_title"].as_str().unwrap_or("").into(),cx);});
+            let handle=self.views.input.focus_handle(cx);
+            cx.on_blur(&handle,window,|this,window,cx| {
+                if this.views.panel==Some(Panel::EditColumn) {this.save_column_title(window,cx);}
+            }).detach();
+        }
+        cx.notify();
+    }
+    fn queue_column(&mut self, route:&str, mut body:Value, window:&mut Window, cx:&mut Context<Self>) {
+        body["projectId"]=json!(self.options.board);
+        if route=="column-update" {body["userId"]=json!(self.db.current_user_id());}
+        if self.views.pending.is_some() {self.views.column_deferred.push_back((route.into(),body));cx.notify();return;}
+        self.error=None;
+        self.views.column_error=match route {
+            "column-create"=>"Error creating column",
+            "column-visibility"=>if body["visible"]==true {"Column could not be shown in all views"} else {"Column could not be hidden in all views"},
+            "column-autoassign"=>"Unable to update column auto-assign",
+            _ if body["newSection"]["deleted"]==true=>"Column could not be deleted",
+            _ if body["newSection"]["ranking"].is_string()=>"Column order could not be saved",
+            _=>"",
+        }.into();
+        self.queue_view(route,body,window,cx);
+    }
+    fn save_column_title(&mut self, window:&mut Window, cx:&mut Context<Self>) {
+        let Some(id)=self.views.column_edit else{return;};
+        let title=self.views.input.read(cx).content.trim().to_owned();
+        if title.is_empty() || self.managed_columns().iter().any(|section|section["id"]==id && section["section_title"]==title) {return;}
+        self.queue_column("column-update",json!({"sectionId":id,"newSection":{"section_title":title}}),window,cx);
+    }
+    fn create_column_form(&mut self, window:&mut Window, cx:&mut Context<Self>) {
+        if self.views.pending.is_some() {return;}
+        let title=self.views.input.read(cx).content.trim().to_owned();
+        if !title.is_empty() {self.queue_column("column-create",json!({"title":title}),window,cx);}
+    }
+    fn reorder_column(&mut self, source:i64, destination:i64, window:&mut Window, cx:&mut Context<Self>) {
+        if source==destination || self.views.pending.is_some() {return;}
+        let mut columns=self.managed_columns();
+        let Some(from)=columns.iter().position(|column|column["id"]==source) else{return;};
+        let Some(to)=columns.iter().position(|column|column["id"]==destination) else{return;};
+        columns.remove(from);
+        let previous=to.checked_sub(1).and_then(|i|columns.get(i)).and_then(|column|column["ranking"].as_str());
+        let next=columns.get(to).and_then(|column|column["ranking"].as_str());
+        match ht_core::task_rank(previous,next) {
+            Ok(rank)=>{self.views.column_reorder=true;self.queue_column("column-update",json!({"sectionId":source,"newSection":{"ranking":rank}}),window,cx);}
+            Err(_)=>{self.error=Some("Column order could not be saved".into());cx.notify();}
+        }
+    }
+    fn poll_column_result(&mut self, result:&Value, window:&mut Window, cx:&mut Context<Self>) -> bool {
+        let reorder=self.views.column_reorder; self.views.column_reorder=false;
+        if let Some(error)=result["error"].as_str() {
+            self.error=Some(if error.contains("last column") || self.views.column_error.is_empty() {error.into()} else {self.views.column_error.clone()});
+        } else {
+            if self.views.pending_route=="column-create" {self.views.panel=None;window.focus(&self.focus,cx);}
+            if self.views.panel==Some(Panel::DeleteColumn) {self.open_view_panel(Panel::Columns,window,cx);}
+            if self.views.panel==Some(Panel::ColumnAssignees) {if let Some(id)=self.views.column_edit {self.edit_column(id,window,cx);}}
+            if reorder {
+                let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
+                self.queue_view("unsaved-view",ht_core::board_columns::reordered_settings(&project),window,cx);
+            }
+        }
+        if self.views.pending.is_none() {
+            if let Some((route,body))=self.views.column_deferred.pop_front() { self.queue_column(&route,body,window,cx); }
+        }
+        cx.notify();false
+    }
+    fn column_people(&self) -> Vec<Value> {
+        let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
+        let data=self.views.people.as_ref().unwrap_or(&project);
+        let mut rows=vec![json!({"id":0,"displayName":"Nobody"})];
+        rows.extend(std::iter::once(&data["owner"]).chain(data["members"].as_array().into_iter().flatten().map(|member|&member["user"])).filter(|person|person["id"].as_i64().is_some_and(|id|id>0)).cloned());
+        rows.extend(data["boardAgents"].as_array().into_iter().flatten().filter(|agent|agent["revokedAt"].is_null()).cloned());
+        let query=self.views.query_text.to_lowercase();
+        rows.into_iter().filter(|person|person["displayName"].as_str().unwrap_or("").to_lowercase().contains(&query)).collect()
+    }
+    fn choose_column_person(&mut self,index:usize,window:&mut Window,cx:&mut Context<Self>) {
+        let Some(section)=self.views.column_edit else{return;};
+        let Some(person)=self.column_people().get(index).cloned() else{return;};
+        let user=person["id"].as_i64().filter(|id|*id>0);
+        let agent=person["id"].as_str();
+        self.queue_column("column-autoassign",json!({"sectionId":section,"autoAssignUserId":user,"autoAssignAgentId":agent}),window,cx);
+    }
+    fn column_back(&mut self,window:&mut Window,cx:&mut Context<Self>) {
+        match self.views.panel {
+            Some(Panel::Columns | Panel::AddColumn)=>{self.views.panel=None;self.views.column_auto_select=false;window.focus(&self.focus,cx);}
+            Some(Panel::EditColumn)=>{self.save_column_title(window,cx);self.open_view_panel(Panel::Columns,window,cx);}
+            _=>{if let Some(id)=self.views.column_edit {self.edit_column(id,window,cx);}},
+        }
+        cx.notify();
+    }
+    fn column_panel_key(&mut self,event:&KeyDownEvent,window:&mut Window,cx:&mut Context<Self>)->bool {
+        match event.keystroke.key.as_str() {
+            "escape"=>self.column_back(window,cx),
+            "enter"=>match self.views.panel {
+                Some(Panel::AddColumn)=>self.create_column_form(window,cx),
+                Some(Panel::EditColumn)=>{self.save_column_title(window,cx);self.open_view_panel(Panel::Columns,window,cx);},
+                Some(Panel::DeleteColumn)=>{if let Some(id)=self.views.column_edit {self.queue_column("column-update",json!({"sectionId":id,"newSection":{"deleted":true}}),window,cx);}},
+                Some(Panel::ColumnAssignees)=>self.choose_column_person(self.views.choice,window,cx),
+                _=>{if let Some(id)=self.managed_columns().get(self.views.choice).and_then(|section|section["id"].as_i64()){self.edit_column(id,window,cx);}},
+            },
+            "up"=>self.views.choice=self.views.choice.saturating_sub(1),
+            "down"=>{let count=if self.views.panel==Some(Panel::ColumnAssignees){self.column_people().len()}else{self.managed_columns().len()};self.views.choice=(self.views.choice+1).min(count.saturating_sub(1));},
+            _=>return true,
+        }
+        cx.stop_propagation();cx.notify();true
+    }
+    fn column_overlay(&self,cx:&mut Context<Self>)->AnyElement {
+        let panel=self.views.panel.unwrap();
+        let mut content=div().flex().flex_col().gap(px(12.)).child(div().flex().justify_between()
+            .child(match panel {Panel::Columns if self.views.column_auto_select=>"Auto-assign: choose a column",Panel::Columns=>"Manage board columns",Panel::AddColumn=>"Add Column",Panel::ColumnAssignees=>"Auto-assign",_=>"Edit board column"})
+            .child(div().id("columns-back").cursor_pointer().child(if matches!(panel,Panel::Columns|Panel::AddColumn){"×"}else{"←"}).on_click(cx.listener(|this,_,window,cx|this.column_back(window,cx))).layout_key(&self.layout,"board.columns.back",None)));
+        if panel==Panel::Columns {
+            content=content.child(div().flex().justify_between()
+                .child(div().id("columns-empty").cursor_pointer().child(format!("Show empty board columns   {}",if self.view_settings()["board_empty_sections"]=="Hidden"{"□"}else{"✓"})).on_click(cx.listener(|this,_,window,cx|this.toggle_empty_columns(window,cx))).layout_key(&self.layout,"board.columns.empty",None))
+                .child(div().id("columns-add").cursor_pointer().child("+").on_click(cx.listener(|this,_,window,cx|this.open_view_panel(Panel::AddColumn,window,cx))).layout_key(&self.layout,"board.columns.add",None)));
+            for (index,section) in self.managed_columns().into_iter().enumerate() {
+                let id=section["id"].as_i64().unwrap_or(0);
+                let name=section["section_title"].as_str().unwrap_or("").to_owned();
+                let count=self.db.column_task_count(self.options.board,id).unwrap_or(0);
+                content=content.child(div().id(("managed-column",index)).flex().items_center().justify_between().p(px(8.)).when(index==self.views.choice,|d|d.bg(color(self.colors.active)))
+                    .on_drag(ColumnDrag{id,title:name.clone()},|drag,_,_,cx|cx.new(|_|drag.clone()))
+                    .on_drop(cx.listener(move|this,drag:&ColumnDrag,window,cx|this.reorder_column(drag.id,id,window,cx)))
+                    .child(format!("{name}   {count}"))
+                    .child(div().flex().gap(px(16.)).child("☰")
+                        .child(div().id(("column-settings",index)).cursor_pointer().child("⚙").on_click(cx.listener(move|this,_,window,cx|this.edit_column(id,window,cx))).layout_key(&self.layout,format!("board.columns.edit.{id}"),None))
+                        .child(div().id(("column-visible",index)).cursor_pointer().child(if section["visibility"]==true{"☑"}else{"□"}).on_click(cx.listener(move|this,_,window,cx|this.choose_view_option(index,window,cx))).layout_key(&self.layout,format!("board.columns.visible.{id}"),None)))
+                    .layout_key(&self.layout,format!("board.columns.row.{id}"),None));
+            }
+        } else if panel==Panel::AddColumn {content=content.child(self.views.input.clone());}
+        else if panel==Panel::ColumnAssignees {
+            content=content.child(self.views.query.clone());
+            for (index,person) in self.column_people().into_iter().enumerate() {
+                content=content.child(div().id(("column-person",index)).p(px(8.)).cursor_pointer().child(person["displayName"].as_str().unwrap_or("").to_owned()).on_click(cx.listener(move|this,_,window,cx|this.choose_column_person(index,window,cx))).layout_key(&self.layout,format!("board.columns.person.{index}"),None));
+            }
+        } else if let Some(section)=self.managed_columns().into_iter().find(|section|section["id"]==json!(self.views.column_edit)) {
+            let id=section["id"].as_i64().unwrap();
+            let name=section["section_title"].as_str().unwrap_or("").trim().to_lowercase();
+            let done=section["isDone"].as_bool().unwrap_or(["done","complete","completed","shipped","closed","finished","live","released"].contains(&name.as_str()));
+            let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
+            let (visible,total)=ht_core::board_columns::visible_counts(&project,id);
+            let description=if total==0{"No views yet".into()}else if total==1{if visible==1{"Visible in the only view".into()}else{"Hidden in the only view".into()}}else if visible==total{format!("Visible in all {total} views")}else if visible==0{format!("Hidden in all {total} views")}else{format!("Visible in {visible} of {total} views")};
+            let assigned=self.column_people().into_iter().find(|person|person["id"]==section["autoAssignUserId"] || person["id"]==section["autoAssignAgentId"]).and_then(|person|person["displayName"].as_str().map(str::to_owned)).unwrap_or_else(||if section["autoAssignAgentId"].is_string(){"Agent".into()}else if section["autoAssignUserId"].is_number(){"Member".into()}else{"Nobody".into()});
+            content=content.child("Name").child(self.views.input.clone())
+                .child(div().id("column-is-done").cursor_pointer().child(format!("Tickets here are finished    {}",if done{"✓"}else{"□"})).child(div().text_color(color(self.colors.muted)).child("Ends the ticket's cycle. Reports, Inbox Zero and agents all treat it as done.")).on_click(cx.listener(move|this,_,window,cx|this.queue_column("column-update",json!({"sectionId":id,"newSection":{"isDone":!done}}),window,cx))).layout_key(&self.layout,"board.columns.done",None))
+                .child("Views").child(description)
+                .child(div().flex().gap(px(16.)).children([(true,"Show in all views"),(false,"Hide in all views")].into_iter().map(|(visible,name)|div().id(if visible{"column-show-all"}else{"column-hide-all"}).cursor_pointer().child(name).on_click(cx.listener(move|this,_,window,cx|this.queue_column("column-visibility",json!({"sectionId":id,"visible":visible}),window,cx))).layout_key(&self.layout,if visible{"board.columns.show-all"}else{"board.columns.hide-all"},None))))
+                .child(div().id("column-autoassign").cursor_pointer().child(format!("Auto-assign    {assigned}")).on_click(cx.listener(|this,_,window,cx|{this.open_view_panel(Panel::ColumnAssignees,window,cx);window.focus(&this.views.query.focus_handle(cx),cx);})).layout_key(&self.layout,"board.columns.autoassign",None))
+                .child("Danger zone").child("Delete board column").child("Its tickets move to the first column.")
+                .child(div().id("column-delete").cursor_pointer().child("Delete").on_click(cx.listener(|this,_,_,cx|{this.views.panel=Some(Panel::DeleteColumn);cx.notify();})).layout_key(&self.layout,"board.columns.delete",None));
+            if panel==Panel::DeleteColumn {content=content.child(format!("Delete board column “{}”?",section["section_title"].as_str().unwrap_or("")))
+                .child(div().id("column-confirm-delete").cursor_pointer().child("Delete board column").on_click(cx.listener(move|this,_,window,cx|this.queue_column("column-update",json!({"sectionId":id,"newSection":{"deleted":true}}),window,cx))).layout_key(&self.layout,"board.columns.confirm-delete",None))
+                .child(div().id("column-cancel-delete").cursor_pointer().child("Cancel").on_click(cx.listener(|this,_,_,cx|{this.views.panel=Some(Panel::EditColumn);cx.notify();})).layout_key(&self.layout,"board.columns.cancel-delete",None));}
+        }
+        content=content.when_some(self.error.clone(),|d,error|d.child(div().text_color(color(0xcf222e)).child(error)));
+        div().absolute().inset_0().bg(rgba(0x00000040)).flex().items_center().justify_center().on_mouse_down(gpui::MouseButton::Left,cx.listener(|this,_,window,cx|this.column_back(window,cx)))
+            .child(div().id("column-manager").w(px(560.)).max_h(px(600.)).overflow_y_scroll().p(px(16.)).bg(color(self.colors.comment)).rounded(px(6.)).on_mouse_down(gpui::MouseButton::Left,|_,_,cx|cx.stop_propagation()).child(content).layout_key(&self.layout,"board.columns.dialog",None)).into_any_element()
+    }
+}
+
+#[cfg(test)]
+mod column_manager_tests {
+    use super::*;
+    use crate::ui::{task_fields::tests::desktop,shell::tests::{click,draw,measured}};
+    struct Server(u16,String,Value,Value);
+    impl ht_core::Transport for Server {
+        fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{assert_eq!(path,"/user/context");Ok(ht_core::http::Response{status:200,body:json!({"success":true,"user":{"id":42}})})}
+        fn post(&mut self,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{assert_eq!(path,self.1);assert_eq!(*body,self.2);assert!(!key.is_empty());Ok(ht_core::http::Response{status:self.0,body:if self.0<300 {self.3.clone()}else{json!({"message":"Forbidden"})}})}
+    }
+    fn seed(this:&mut Desktop) {
+        let columns=json!([{"id":10,"projectId":15,"section_title":"Todo","ranking":"A0100","visibility":true,"deleted":false,"isDone":null,"autoAssignUserId":null,"autoAssignAgentId":null},{"id":11,"projectId":15,"section_title":"Done","ranking":"A0200","visibility":true,"deleted":false,"isDone":null,"autoAssignUserId":null,"autoAssignAgentId":null}]);
+        this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","owner":{"id":42,"uid":"u42","displayName":"Owner"},"members":[{"user":{"id":7,"uid":"u7","displayName":"Member"}}],"boardAgents":[{"id":"agent","displayName":"Agent"}],"project_view":{"id":"pv","projectId":15,"default_view_id":"default","default_view":{"id":"default","board_columns_view":columns},"allViews":[{"id":"default","board_columns_view":columns}],"user_project_views":[{}]}}],"sections":columns})).unwrap();this.screen=Screen::Board;this.views.panel=None;this.reload();
+    }
+    fn settle(this:&mut Desktop,status:u16,window:&mut Window,cx:&mut Context<Desktop>) {
+        let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();let change:ht_core::ViewWrite=serde_json::from_value(row.payload_json["change"].clone()).unwrap();let (_,path,body)=change.request().unwrap();
+        let project=this.db.board_project(15).unwrap();
+        let reply=match change.route.as_str(){
+            "column-update"=>if change.body["newSection"]["deleted"]==true {Value::Null}else{project["section"].as_array().unwrap().iter().find(|section|section["id"]==change.body["sectionId"]).unwrap().clone()},
+            "column-visibility"=>json!({"success":true,"sectionId":change.body["sectionId"],"visible":change.body["visible"]}),
+            "column-autoassign"=>json!({"success":true,"sectionId":change.body["sectionId"],"autoAssignUserId":change.body["autoAssignUserId"],"autoAssignAgentId":change.body["autoAssignAgentId"]}),
+            "unsaved-view"=>{let mut pv=project["project_view"].clone();pv["user_project_views"][0]["unsavedView"]=change.body.clone();pv},
+            _=>panic!("Unexpected route {}",change.route),
+        };
+        let status=if status==200 && reply.is_null(){204}else{status};
+        this.db.drain_once(&mut Server(status,path,body,reply),chrono::Utc::now().timestamp()+1).unwrap();this.poll_view(window,cx);
+    }
+    #[gpui::test]
+    fn column_create_reuses_web_form_and_retains_text_after_refused_optimistic_create(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let (view,cx)=cx.add_window_view(|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});
+        for status in [401,403,200] {view.update_in(cx,|this,window,cx|{
+            seed(this);this.open_view_panel(Panel::AddColumn,window,cx);this.views.input.update(cx,|input,cx|input.set_content("Review".into(),cx));this.create_column_form(window,cx);
+            let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();assert!(this.columns.iter().any(|column|column.id==-row.id));
+            let reply=json!({"section":{"id":12,"projectId":15,"section_title":"Review","ranking":"A0300","visibility":true,"deleted":false},"project_view":{"id":"pv","projectId":15,"user_project_views":[{}]}});
+            this.db.drain_once(&mut Server(status,"/api/section/create".into(),json!({"projectId":15,"title":"Review"}),reply),chrono::Utc::now().timestamp()+1).unwrap();this.poll_view(window,cx);
+            if status>=300 {assert_eq!(this.views.panel,Some(Panel::AddColumn));assert_eq!(this.views.input.read(cx).content.as_ref(),"Review");assert!(!this.columns.iter().any(|column|column.id<0));assert_eq!(this.error.as_deref(),Some("Error creating column"));}
+            else {assert!(this.views.panel.is_none());assert!(this.columns.iter().any(|column|column.id==12));}
+        });}
+    }
+    #[gpui::test]
+    fn column_manager_controls_queue_web_settings_and_restore_401_403(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
+        for control in ["board.columns.done","board.columns.show-all","board.columns.hide-all"] {for status in [401,403,200] {
+            view.update(&mut cx,|this,window,cx|{seed(this);this.edit_column(10,window,cx);}).unwrap();draw(view,&mut cx);click(view,&mut cx,control);
+            view.update(&mut cx,|this,window,cx|{
+                let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();
+                assert_eq!(row.payload_json["change"]["body"]["sectionId"],10);
+                if control=="board.columns.done"{assert_eq!(this.db.board_project(15).unwrap()["section"][0]["isDone"],true);}
+                settle(this,status,window,cx);
+                if status>=300{assert!(this.error.is_some());assert!(this.db.board_project(15).unwrap()["section"][0]["isDone"].is_null());assert_eq!(ht_core::board_columns::visible_counts(&this.db.board_project(15).unwrap(),10),(1,1));}
+            }).unwrap();
+        }}
+    }
+    #[gpui::test]
+    fn column_rename_blur_and_done_are_serialized_without_losing_the_second_intent(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
+        for status in [401,403,200] {
+            view.update(&mut cx,|this,window,cx|{seed(this);this.edit_column(10,window,cx);}).unwrap();cx.simulate_keystrokes("ctrl-a");cx.simulate_input("Backlog");
+            view.update(&mut cx,|this,window,cx|{this.save_column_title(window,cx);this.queue_column("column-update",json!({"sectionId":10,"newSection":{"isDone":true}}),window,cx);assert_eq!(this.views.column_deferred.len(),1);settle(this,status,window,cx);assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);settle(this,200,window,cx);let project=this.db.board_project(15).unwrap();assert_eq!(project["section"][0]["section_title"],if status==200{"Backlog"}else{"Todo"});assert_eq!(project["section"][0]["isDone"],true);}).unwrap();
+        }
+    }
+    #[gpui::test]
+    fn column_autoassign_member_agent_nobody_and_delete_confirmation_have_real_refusal_rollback(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
+        for person in [2,3,0] {for status in [401,403,200] {
+            view.update(&mut cx,|this,window,cx|{seed(this);this.edit_column(10,window,cx);}).unwrap();draw(view,&mut cx);click(view,&mut cx,"board.columns.autoassign");click(view,&mut cx,&format!("board.columns.person.{person}"));
+            view.update(&mut cx,|this,window,cx|{let project=this.db.board_project(15).unwrap();if person==2{assert_eq!(project["section"][0]["autoAssignUserId"],7);}if person==3{assert_eq!(project["section"][0]["autoAssignAgentId"],"agent");}settle(this,status,window,cx);let project=this.db.board_project(15).unwrap();if status>=300{assert_eq!(this.error.as_deref(),Some("Unable to update column auto-assign"));assert!(project["section"][0]["autoAssignUserId"].is_null());assert!(project["section"][0]["autoAssignAgentId"].is_null());}}).unwrap();
+        }}
+        for status in [401,403,200] {
+            view.update(&mut cx,|this,window,cx|{seed(this);this.edit_column(10,window,cx);}).unwrap();draw(view,&mut cx);click(view,&mut cx,"board.columns.delete");click(view,&mut cx,"board.columns.cancel-delete");view.read_with(&cx,|this,_|assert!(!this.db.mutations().unwrap().iter().any(|row|row.status!="failed"))).unwrap();click(view,&mut cx,"board.columns.delete");click(view,&mut cx,"board.columns.confirm-delete");
+            view.update(&mut cx,|this,window,cx|{assert!(!this.columns.iter().any(|column|column.id==10));settle(this,status,window,cx);assert_eq!(this.columns.iter().any(|column|column.id==10),status>=300);if status>=300{assert_eq!(this.error.as_deref(),Some("Column could not be deleted"));} }).unwrap();
+        }
+    }
+    #[gpui::test]
+    fn column_drag_order_persists_rank_then_current_view_and_rolls_back_each_refusal(cx:&mut gpui::TestAppContext) {
+        cx.update(crate::input::init);let (view,cx)=cx.add_window_view(|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});
+        for status in [401,403,200] {view.update_in(cx,|this,window,cx|{seed(this);this.open_view_panel(Panel::Columns,window,cx);this.reorder_column(10,11,window,cx);assert_eq!(this.columns[0].id,11);settle(this,status,window,cx);if status>=300{assert_eq!(this.columns[0].id,10);assert_eq!(this.error.as_deref(),Some("Column order could not be saved"));}else{let row=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap();assert_eq!(row.payload_json["change"]["route"],"unsaved-view");assert_eq!(row.payload_json["change"]["body"]["board_columns_view"][0]["id"],11);settle(this,200,window,cx);assert_eq!(this.columns[0].id,11);}});}
+    }
+    #[gpui::test]
+    fn autoassign_palette_command_is_board_only_and_opens_column_then_person_picker(cx:&mut gpui::TestAppContext) {
+        assert!(!crate::command_center::commands(Screen::Task,true).iter().any(|row|row.key=="autoAssignColumn"));
+        cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
+        cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Auto-assign for this column");cx.simulate_keystrokes("enter");draw(view,&mut cx);measured(view,&mut cx,"board.columns.dialog");click(view,&mut cx,"board.columns.edit.10");measured(view,&mut cx,"board.columns.person.0");view.read_with(&cx,|this,_|assert_eq!(this.views.panel,Some(Panel::ColumnAssignees))).unwrap();
     }
 }

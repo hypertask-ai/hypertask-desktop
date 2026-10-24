@@ -165,7 +165,7 @@ impl Http {
                 let writer_text = path == "/api/ai/task-writer" && !r.header("Content-Type").unwrap_or("").contains("application/json");
                 let body = if writer_text { r.into_string().map(Value::String).unwrap_or(Value::Null) }
                     else { r.into_json().unwrap_or(Value::Null) };
-                if (200..300).contains(&status) && body.is_null() {
+                if (200..300).contains(&status) && body.is_null() && !(status == 204 && path == "/api/section/update") {
                     return Err(TransportError::InvalidResponse);
                 }
                 Ok(Response { status, body })

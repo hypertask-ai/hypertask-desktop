@@ -44,6 +44,7 @@ pub enum ShellCommand {
     HideColumn,
     ArchivedOnBoard,
     SmartSplit,
+    AutoAssignColumn,
     DuplicateTask(bool),
 }
 
@@ -167,6 +168,9 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         ("sortByLastComment","Sort by last comment","Board","","sort staleness age comment discussion oldest",ShellCommand::SortLastComment),
     ]{
         if screen!=Screen::Inbox || action==ShellCommand::CreateTask{rows.push(Command{key:key.into(),name:name.into(),group,keys:keys.into(),keywords,action:CommandAction::Shell(action)});}
+    }
+    if screen == Screen::Board {
+        rows.push(Command { key:"autoAssignColumn".into(), name:"Auto-assign for this column".into(), group:"Board", keys:String::new(), keywords:"auto assign column section member owner default workflow", action:CommandAction::Shell(ShellCommand::AutoAssignColumn) });
     }
     rows.sort_by_key(|row| match row.group {
         "Task" if screen == Screen::Task => 0,

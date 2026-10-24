@@ -371,3 +371,28 @@ fn smart_split_methods_send_the_desktop_bearer_to_exact_web_route_and_preserve_d
         }
     }
 }
+
+#[test]
+fn column_controls_use_web_paths_with_bearer_and_only_column_delete_accepts_empty_204() {
+    for (route,path,body,accepted) in [
+        ("column-create","/api/section/create",json!({"projectId":15,"title":"Review"}),200),
+        ("column-update","/api/section/update",json!({"sectionId":10,"userId":42,"newSection":{"deleted":true}}),204),
+        ("column-visibility","/api/sections/view-visibility",json!({"sectionId":10,"visible":true}),200),
+        ("column-autoassign","/api/sections/auto-assign",json!({"sectionId":10,"autoAssignUserId":7,"autoAssignAgentId":null}),200),
+    ] {
+        for status in [accepted,401,403] {
+            let mut queued=body.clone();queued["projectId"]=json!(15);
+            let (method,actual_path,actual_body)=ht_core::ViewWrite{project:15,route:route.into(),body:queued}.request().unwrap();
+            let (url,thread,receive)=server(status,if status==204{""}else{"{\"message\":\"Forbidden\"}"});
+            let mut http=Http::with_base(&url,"desktop-column-token".into()).unwrap();
+            let response=http.mutate(method,&actual_path,&actual_body,"column-client").unwrap();assert_eq!(response.status,status);
+            let request=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(request.starts_with(&format!("POST {path} HTTP/1.1\r\n")));
+            assert!(request.to_ascii_lowercase().contains("authorization: bearer desktop-column-token\r\n"));
+            assert_eq!(serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
+        }
+    }
+    let (url,thread,receive)=server(204,"");
+    let mut http=Http::with_base(&url,"desktop-column-token".into()).unwrap();
+    assert_eq!(http.post("/api/sections/auto-assign",&json!({}),"negative-control").unwrap_err(),TransportError::InvalidResponse);
+    receive.recv_timeout(Duration::from_secs(5)).unwrap();thread.join().unwrap();
+}
