@@ -83,3 +83,11 @@ fn refused_column_delete_does_not_overwrite_a_newer_acknowledged_task_move() {
     assert_eq!(result,Drain::Failed(id));
     assert_eq!(db.task(1).unwrap().unwrap().section_id,Some(12));assert_eq!(db.task(1).unwrap().unwrap().title,"New title");
 }
+
+#[test]
+fn created_column_accepts_the_webs_nullable_project_view_without_keeping_provisional_ids() {
+    let mut db=Db::memory().unwrap();seed(&mut db);
+    let id=db.enqueue(Write::View{change:ViewWrite{project:15,route:"column-create".into(),body:json!({"projectId":15,"title":"Review"})}},100).unwrap();
+    assert_eq!(db.drain_once(&mut Server{status:200,path:"/api/section/create",body:json!({"projectId":15,"title":"Review"}),reply:json!({"section":section(12,"Review","A0300"),"project_view":null}),calls:0,user:42},100).unwrap(),Drain::Applied(id));
+    let project=db.board_project(15).unwrap();assert!(project["project_view"].is_null());assert!(!project["section"].as_array().unwrap().iter().any(|section|section["id"]==-id));assert_eq!(db.board(15).unwrap().last().unwrap().id,12);
+}

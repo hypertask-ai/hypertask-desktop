@@ -339,7 +339,7 @@ impl Desktop {
                 .input
                 .update(cx, |input, cx| { input.configure("View name", false, cx); input.set_content(String::new(), cx); });
             window.focus(&self.views.input.focus_handle(cx), cx);
-        } else if Self::view_searchable(panel) {
+        } else if Self::view_searchable(panel) || (panel==Panel::Columns && self.views.column_auto_select) {
             window.focus(&self.views.query.focus_handle(cx), cx);
         } else {
             window.focus(&self.focus, cx);
@@ -2343,6 +2343,10 @@ impl Desktop {
             section["visibility"]=json!(settings["board_columns_view"].as_array().into_iter().flatten().any(|column|column.get("id").or_else(||column.get("sectionId"))==section.get("id") && column["visibility"]==true)); section
         }).collect()
     }
+    fn column_choices(&self)->Vec<Value> {
+        let query=self.views.query_text.to_lowercase();
+        self.managed_columns().into_iter().filter(|section| !self.views.column_auto_select || section["section_title"].as_str().unwrap_or("").to_lowercase().contains(&query)).collect()
+    }
     fn edit_column(&mut self, id:i64, window:&mut Window, cx:&mut Context<Self>) {
         if id<=0 {return;}
         let Some(section)=self.managed_columns().into_iter().find(|section|section["id"]==id) else{return;};
@@ -2454,10 +2458,10 @@ impl Desktop {
                 Some(Panel::EditColumn)=>{self.save_column_title(window,cx);self.open_view_panel(Panel::Columns,window,cx);},
                 Some(Panel::DeleteColumn)=>{if let Some(id)=self.views.column_edit {self.queue_column("column-update",json!({"sectionId":id,"newSection":{"deleted":true}}),window,cx);}},
                 Some(Panel::ColumnAssignees)=>self.choose_column_person(self.views.choice,window,cx),
-                _=>{let columns:Vec<_>=self.managed_columns().into_iter().filter(|section|!self.views.column_auto_select || section["visibility"]==true).collect();if let Some(id)=columns.get(self.views.choice).and_then(|section|section["id"].as_i64()){self.edit_column(id,window,cx);}},
+                _=>{let columns=self.column_choices();if let Some(id)=columns.get(self.views.choice).and_then(|section|section["id"].as_i64()){self.edit_column(id,window,cx);}},
             },
             "up"=>self.views.choice=self.views.choice.saturating_sub(1),
-            "down"=>{let count=if self.views.panel==Some(Panel::ColumnAssignees){self.column_people().len()}else{self.managed_columns().len()};self.views.choice=(self.views.choice+1).min(count.saturating_sub(1));},
+            "down"=>{let count=if self.views.panel==Some(Panel::ColumnAssignees){self.column_people().len()}else{self.column_choices().len()};self.views.choice=(self.views.choice+1).min(count.saturating_sub(1));},
             _=>return true,
         }
         cx.stop_propagation();cx.notify();true
@@ -2468,7 +2472,8 @@ impl Desktop {
             .child(match panel {Panel::Columns if self.views.column_auto_select=>"Auto-assign: choose a column",Panel::Columns=>"Manage board columns",Panel::AddColumn=>"Add Column",Panel::ColumnAssignees=>"Auto-assign",_=>"Edit board column"})
             .child(div().id("columns-back").cursor_pointer().child(if matches!(panel,Panel::Columns|Panel::AddColumn){"×"}else{"←"}).on_click(cx.listener(|this,_,window,cx|this.column_back(window,cx))).layout_key(&self.layout,"board.columns.back",None)));
         if panel==Panel::Columns && self.views.column_auto_select {
-            for (index,section) in self.managed_columns().into_iter().enumerate().filter(|(_,section)|section["visibility"]==true) {
+            content=content.child(self.views.query.clone());
+            for (index,section) in self.column_choices().into_iter().enumerate() {
                 let id=section["id"].as_i64().unwrap_or(0);
                 content=content.child(div().id(("autoassign-column-choice",index)).p(px(8.)).cursor_pointer()
                     .child(section["section_title"].as_str().unwrap_or("").to_owned())
@@ -2605,6 +2610,6 @@ mod column_manager_tests {
     fn autoassign_palette_command_is_board_only_and_opens_column_then_person_picker(cx:&mut gpui::TestAppContext) {
         assert!(!crate::command_center::commands(Screen::Task,true).iter().any(|row|row.key=="autoAssignColumn"));
         cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|{let mut this=desktop(window,cx);seed(&mut this);this});let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
-        cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Auto-assign for this column");cx.simulate_keystrokes("enter");draw(view,&mut cx);measured(view,&mut cx,"board.columns.dialog");click(view,&mut cx,"board.columns.edit.10");measured(view,&mut cx,"board.columns.person.0");view.read_with(&cx,|this,_|assert_eq!(this.views.panel,Some(Panel::ColumnAssignees))).unwrap();
+        cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Auto-assign for this column");cx.simulate_keystrokes("enter");draw(view,&mut cx);measured(view,&mut cx,"board.columns.dialog");cx.simulate_input("Done");draw(view,&mut cx);click(view,&mut cx,"board.columns.edit.11");measured(view,&mut cx,"board.columns.person.0");view.read_with(&cx,|this,_|{assert_eq!(this.views.panel,Some(Panel::ColumnAssignees));assert_eq!(this.views.column_edit,Some(11));}).unwrap();
     }
 }

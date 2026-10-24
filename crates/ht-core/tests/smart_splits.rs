@@ -100,3 +100,13 @@ fn smart_split_metadata_read_uses_web_route_and_surfaces_refusals() {
     assert!(smart_splits::labels(&mut Labels(200),15).is_ok());
     for status in [401,403] { assert_eq!(smart_splits::labels(&mut Labels(status),15).unwrap_err().to_string(),"Forbidden"); }
 }
+
+#[test]
+fn smart_split_creation_does_not_report_success_for_unacknowledged_name_or_prompt() {
+    let mut db=Db::memory().unwrap();seed(&mut db);
+    let body=json!({"projectId":15,"name":"Urgent bugs","prompt":"Broken urgent tasks"});
+    let id=db.enqueue(Write::View{change:ViewWrite{project:15,route:"smart-split-create".into(),body:body.clone()}},100).unwrap();
+    let mut server=Server{status:201,method:"POST",expected:body,reply:json!({"view":{"id":"new","title":"Different","project_view_id":"pv"},"label":{"id":"new","projectId":15,"value":"Different","ai_prompt":"Different"}}),calls:0,user:42};
+    assert_eq!(db.drain_once(&mut server,100).unwrap(),Drain::Retrying(id));assert_eq!(db.drain_once(&mut server,1000).unwrap(),Drain::Failed(id));assert_eq!(server.calls,1);
+    assert_eq!(db.board_project(15).unwrap()["project_view"]["allViews"].as_array().unwrap().len(),1);
+}

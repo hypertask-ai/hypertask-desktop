@@ -115,7 +115,7 @@ impl Db {
             let section=&response["section"];
             ensure!(section["id"].as_i64().is_some_and(|id|id>0) && section["projectId"]==change.project && section["section_title"].is_string(), "Wrong column acknowledgement");
             let view=&response["project_view"];
-            ensure!(view["projectId"]==change.project && view["id"].is_string(), "Wrong created-column view acknowledgement");
+            ensure!(view.is_null() || (view["projectId"]==change.project && view["id"].is_string()), "Wrong created-column view acknowledgement");
             self.conn.execute("DELETE FROM Section WHERE id=?",[-mutation])?;
             self.upsert("Section",section)?;
             let mut project=self.board_project(change.project)?; project["project_view"]=view.clone(); self.upsert("Project",&project)?;

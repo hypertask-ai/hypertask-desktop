@@ -100,6 +100,7 @@ impl ViewWrite {
         if self.route == "smart-split-create" {
             let (view, label) = (&response["view"], &response["label"]);
             ensure!(view["id"].as_str().is_some_and(|id| !id.is_empty() && id != PENDING_ID) && label["id"] == view["id"] && label["projectId"] == self.project && view["project_view_id"] == project["project_view"]["id"], "Wrong smart split acknowledgement");
+            ensure!(view["title"]==self.body["name"] && label["value"]==self.body["name"] && label["ai_prompt"]==self.body["prompt"], "Smart split fields were not acknowledged");
             let views = project["project_view"]["allViews"].as_array_mut().context("Missing board views")?;
             views.retain(|row| row["id"] != PENDING_ID && row["id"] != view["id"]); views.push(view.clone());
             if !project["desktop_smart_labels"].is_array() { project["desktop_smart_labels"] = json!([]); }

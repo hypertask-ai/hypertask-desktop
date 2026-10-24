@@ -69,7 +69,7 @@ impl Db {
         let user=payload["user_id"].as_i64().context("Unauthorized")?;ensure!(self.current_user_id()==Some(user),"Timer belongs to another account");
         let change:TimeWrite=serde_json::from_value(payload["change"].clone())?;
         match change {
-            TimeWrite::Board{enabled,..}=>ensure!(response["enabled"]==enabled && response["timeTrackingEnabled"]==enabled,"Time tracking was not acknowledged"),
+            TimeWrite::Board{enabled,..}=>ensure!(response["enabled"]==enabled && response["timeTrackingEnabled"]==enabled && (enabled || response["showTimeTotals"]==false),"Time tracking was not acknowledged"),
             TimeWrite::Start{task}|TimeWrite::Stop{task}=>{
                 let entry=&response["entry"];
                 if !entry.is_null() {ensure!(entry["id"].as_i64().is_some_and(|id|id>0) && entry["taskId"]==task && entry["userId"]==user && instant(&entry["startedAt"]).is_some(),"Wrong timer acknowledgement");}
