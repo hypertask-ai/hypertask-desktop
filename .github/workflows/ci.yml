@@ -104,7 +104,7 @@ jobs:
           retention-days: 14
   windows-memory-baselines:
     name: memory-${{ matrix.revision }}
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
     strategy:
       fail-fast: false
       matrix:
@@ -138,8 +138,11 @@ jobs:
           path: evidence/windows-memory/
           if-no-files-found: error
   windows-memory-proof:
-    name: Windows memory receipt and visual proof
-    if: github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')
+    name: Windows memory receipt and budget
+    # The historical ram2 baselines are intentionally skipped on normal PRs/main.
+    if: >-
+      ${{ !cancelled() && needs.build.result == 'success' &&
+      (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
     needs: [build, windows-memory-baselines]
     runs-on: ubuntu-24.04
     steps:
@@ -148,8 +151,13 @@ jobs:
         with:
           pattern: windows-memory*
           path: evidence/memory-proof
+      - name: Validate current Windows receipt, target and frozen budget
+        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --budget gates/windows-memory-budget.json
       - run: python3 -m pip install Pillow
+        if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
+      # PR 11 predates shipped UI additions; pixel identity is only the ram2 optimization contract.
       - name: Validate historical and fixed receipts; compare PR 11 pixels
+        if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
         run: |
           python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory-3d002231efdbc5ea4b823e5a1af430e912a168d9
           python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --target --budget gates/windows-memory-budget.json --compare evidence/memory-proof/windows-memory-5016a9ebe48b03dbac2f2312c170878166586c59
