@@ -38,7 +38,7 @@ pub(super) struct Views {
     people: Option<Value>,
     pub(super) builtin: std::collections::BTreeMap<i64, String>,
     decisions: bool,
-    previous_builtin: Option<String>,
+    previous_builtin: Option<(i64, String)>,
     support_pending: bool,
     query: Entity<TextInput>,
     query_text: String,
@@ -186,6 +186,7 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        self.views.panel = Some(panel);
         if matches!(
             panel,
             Panel::CreatedBy | Panel::UpdatedBy | Panel::BlockedByPerson | Panel::Assignees
@@ -193,7 +194,6 @@ impl Desktop {
         {
             self.load_view_support(false, window, cx);
         }
-        self.views.panel = Some(panel);
         self.views.choice = 0;
         self.views
             .query
@@ -358,8 +358,8 @@ impl Desktop {
             }
         } else {
             if self.views.pending_route == "switch-view" {
-                if let Some(previous) = self.views.previous_builtin.take() {
-                    self.views.builtin.insert(self.options.board, previous);
+                if let Some((board, previous)) = self.views.previous_builtin.take() {
+                    self.views.builtin.entry(board).or_insert(previous);
                     self.reload();
                 }
             }
@@ -1075,6 +1075,7 @@ impl Desktop {
             return;
         };
         let board = self.options.board;
+        let agents = matches!(self.views.panel, Some(Panel::Assignees | Panel::UpdatedBy));
         let generation = self.views.generation;
         self.views.support_pending = true;
         if !timers {
@@ -1088,7 +1089,16 @@ impl Desktop {
                     if timers {
                         ht_core::board_views::running_timers(&mut http)
                     } else {
-                        ht_core::board_views::filter_people(&mut http, board)
+                        let mut data = ht_core::board_views::filter_people(&mut http, board)?;
+                        if agents {
+                            data["boardAgents"] =
+                                ht_core::board_views::filter_agents(&mut http, board)
+                                    .unwrap_or_else(|error| {
+                                        eprintln!("Failed to load board agents: {error}");
+                                        json!([])
+                                    });
+                        }
+                        Ok(data)
                     }
                 })
                 .map_err(|error| error.to_string());
@@ -1216,6 +1226,40 @@ impl Desktop {
         cx.notify();
         true
     }
+    fn select_board_view(&mut self, id: Value, window: &mut Window, cx: &mut Context<Self>) {
+        if id.as_str().is_some_and(|id| id.starts_with("builtin:")) {
+            let project = self
+                .db
+                .board_project(self.options.board)
+                .unwrap_or(Value::Null);
+            if !ht_core::board_views::builtin_views(&project, self.views.decisions)
+                .iter()
+                .any(|view| view["id"] == id)
+            {
+                return;
+            }
+            self.views
+                .builtin
+                .insert(self.options.board, id.as_str().unwrap().into());
+            self.reload();
+            cx.notify();
+            return;
+        }
+        if self.views.pending.is_some() {
+            return;
+        }
+        self.views.previous_builtin = self
+            .views
+            .builtin
+            .remove(&self.options.board)
+            .map(|previous| (self.options.board, previous));
+        self.queue_view("switch-view", json!({"newViewId":id}), window, cx);
+        if self.views.pending.is_none() {
+            if let Some((board, previous)) = self.views.previous_builtin.take() {
+                self.views.builtin.entry(board).or_insert(previous);
+            }
+        }
+    }
     pub(super) fn board_view_tabs(&self, cx: &mut Context<Self>) -> AnyElement {
         let project = self
             .db
@@ -1265,25 +1309,7 @@ impl Desktop {
                     .cursor_pointer()
                     .child(title)
                     .on_click(cx.listener(move |this, _, window, cx| {
-                        if id.as_str().is_some_and(|id| id.starts_with("builtin:")) {
-                            this.views
-                                .builtin
-                                .insert(this.options.board, id.as_str().unwrap().into());
-                            this.reload();
-                            cx.notify();
-                            return;
-                        }
-                        if this.views.pending.is_some() {
-                            return;
-                        }
-                        this.views.previous_builtin =
-                            this.views.builtin.remove(&this.options.board);
-                        this.queue_view("switch-view", json!({"newViewId":id}), window, cx);
-                        if this.views.pending.is_none() {
-                            if let Some(previous) = this.views.previous_builtin.take() {
-                                this.views.builtin.insert(this.options.board, previous);
-                            }
-                        }
+                        this.select_board_view(id.clone(), window, cx);
                     }))
             }))
             .child(
@@ -1736,7 +1762,14 @@ mod advanced_control_tests {
             body: &Value,
             _: &str,
         ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
-            assert_eq!(path, "/api/projects/views/unsaved-view");
+            assert_eq!(
+                path,
+                if self.body.get("newViewId").is_some() {
+                    "/api/projects/views/switch-view"
+                } else {
+                    "/api/projects/views/unsaved-view"
+                }
+            );
             assert_eq!(body, &self.body);
             Ok(ht_core::http::Response {
                 status: self.status,
@@ -1772,6 +1805,22 @@ mod advanced_control_tests {
         assert!(!this.poll_view(window, cx));
         if status != 200 {
             assert_eq!(this.error.as_deref(), Some("Board access denied"));
+        }
+    }
+    #[gpui::test]
+    fn builtin_selection_is_session_local_and_saved_switch_refusal_preserves_board_and_newer_intent(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        for newer in [false, true] {
+            for status in [401, 403, 200] {
+                view.update_in(cx,|this,window,cx|{
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"allViews":[{"id":"v1","title":"Daily"}],"user_project_views":[{}]}}]})).unwrap();this.select_board_view(json!("builtin:my-tasks"),window,cx);assert_eq!(this.views.builtin.get(&15).map(String::as_str),Some("builtin:my-tasks"));assert!(!this.db.mutations().unwrap().iter().any(|row|row.status!="failed"));
+            this.select_board_view(json!("v1"),window,cx);assert!(!this.views.builtin.contains_key(&15));if newer{this.select_board_view(json!("builtin:agents"),window,cx);}
+            settle(this,status,window,cx);assert_eq!(this.views.builtin.get(&15).map(String::as_str),if newer{Some("builtin:agents")}else if status!=200{Some("builtin:my-tasks")}else{None});this.views.builtin.clear();
+        });
+            }
         }
     }
     #[gpui::test]

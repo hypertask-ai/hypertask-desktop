@@ -1,7 +1,9 @@
 # HTPR-7381: remaining-client follow-up
 
 This is a partial continuation of draft PR #17, **not whole-ticket parity**.
-The acceptance inventory is `.unlazy/prewire/GATES.md` (local, uncommitted).
+The original acceptance inventory is `.unlazy/prewire/GATES.md`; the current
+continuation inventory is `.unlazy/prewire/continuation-gates.md` (both local,
+uncommitted).
 `FEATURES.md` remains uncommitted and carries the final SHA-bound CI receipt.
 No application, build, test, test copy, or laptop command ran on the VPS.
 Only GitHub Actions is runtime proof; source inspection is not live SaaS QA.
@@ -19,30 +21,82 @@ All newly introduced HTTP families send the desktop bearer to the web route,
 without browser cookies, MCP route substitution, or a sidebar-agent identity.
 Tests run in the existing GitHub workspace test jobs; no CI check is bypassed.
 
+## HTPR-7381 continuation: additional native wiring
+
+The following is additional wiring, not a claim that every row is complete.
+Current SHA-bound GitHub CI evidence remains in uncommitted `FEATURES.md`.
+
+- Model picker: web provider/family declaration order; nearest-effort family
+  selection; separate Instant/Thinking and Light/Standard/High submenus;
+  reset-to-plan default; custom model labels; provider/GDPR availability;
+  BYOK/premium locking; docked/fullscreen effort-label visibility. No-current-
+  board resolution reads actual sidebar teams, chooses the last team only if
+  still a member, otherwise the first team. Team-scoped preference mutations
+  retain optimistic rollback. Public production legacy billing identifiers are
+  now verified, not guessed: see [web-billing-prices.md](web-billing-prices.md).
+  Sources: `ModelSelectorDropdown.tsx:303-327,594-771`,
+  `AI_Tiptap_Container.tsx:380-391`, `useAiChatModelPreference.ts:16-44`.
+- Advanced filter wiring: CreatedBy/UpdatedBy/BlockedByPerson; date presets,
+  typed-date payloads and two-month custom range with Back/Confirm; overall
+  ANY/ALL and tag/assignee value matching; unread/inbox/staleness/running-timer
+  predicates. People and agents use `/api/members/getAllForAssignees` and
+  `/api/agents/all`; running timers use `/api/time/running`. Refused rosters do
+  not become fake agent choices. Filter edits use full queued unsaved-view
+  bodies. Source: `FilterHelperFunctions.ts:19-325`,
+  `UpdatedAtRange/index.tsx:75-142,182-235`, `useAgents.ts:31-45,284`.
+- Sorting: all fourteen web modes, three-level stack, per-level order/removal,
+  duplicate/cap exclusion and searchable choices. Staleness commands preserve
+  the secondary stack. Source: `BoardPriorityMode.tsx:29-180,235-244`.
+- View rendering: actual current-view column visibility, hide-current-column,
+  subtask card-list filtering and personal empty-column visibility, including
+  its distinct `updateMode: personal-empty-sections` response. Builtin My Tasks,
+  Overdue, Blocked, Agents, current/next cycle and flag-gated Decisions use real
+  actor/dependency/cycle/done-column metadata; they are session-local, not fake
+  API writes. Saved-view refusal restores the prior builtin without replacing
+  a newer selection. Sources: `builtinViews.ts:35-179`,
+  `useKanbanViews.ts:157-182,279-368`, `SubtaskHelperFunction.ts:22-57`.
+- Expanded create form: title, rich description, board/column, priority, size,
+  tags, human/agent assignment and due/start dates, one durable optimistic
+  `POST /api/tasks/createGlobally`, no uncertain replay; rejection removes the
+  temporary task and preserves all form edits. Bearer identity and real board
+  metadata are required online. Source:
+  `useCreateTaskModalStates.ts:585-621,634-666`,
+  `createTaskGloballycontroller.ts:85-127`.
+- Additional actual Ctrl+K handlers: Create task, Sort board, Filters, Filter
+  values: match any or all, Sort by time in column, Sort by last comment,
+  Manage board columns, Hide board column, Sub-task Settings, and empty-column
+  visibility; C / Shift+S / Shift+F preserve editor typing. These are working
+  handlers, not a full registry claim.
+
+All newly introduced HTTP behavior has accepting/401/403 mocked CI cases;
+local builtin predicates intentionally make no HTTP mutation. Proof does not
+include successful live SaaS authorization or whole-app visual equivalence.
+The CI suite also retains the prior section-only-cache contract/hydration
+regressions; a missing Project row is not an explicitly empty column view.
+
 ## Still required native work
 
 These remain missing implementation, not just server authorization:
 
-- Full advanced views: date/actor/staleness/timer filters and match controls,
-  sorting-stack controls and remaining comparators; built-in tabs; archived
-  hydration, subtask rendering, column visibility/order UI; smart splits;
-  view-tab hide/empty preferences, drag order and complete layout management.
-- Full create flows: expanded task modal, flagged empty-ticket fill and typed
-  column routing, full attachment staging/finalization and writer-feature flags.
-- Full Ctrl+K handlers: the remaining web declarations are not implemented by
-  opening a generic settings page. Durable preferences and their actual render
-  effects, expanded board/team settings, uploads, billing/provider controls,
-  tutorial lifecycle/step execution and other unsupported command families
-  remain open. No inert full-list registry is exposed.
-- Full configured model picker: model/effort submenu presentation and the web's
-  no-current-board last-team resolution remain native work. Legacy Stripe price
-  IDs are deployment configuration absent from the inspected source; billing
-  eligibility must not be guessed. The server still authorizes actual sends.
-- Full AI rows still include fullscreen history rail, attachments, agent-side
-  conversations and the untouched boundaries in `ai-parity.md`.
+- Full Ctrl+K: remaining navigation/settings/preferences effects, board/team
+  administration, uploads, billing/provider controls, tutorial lifecycle,
+  templates/relations/recurrence/time and unsupported agent families. Neither
+  hidden commands nor opening a generic page counts as implementation.
+- Views: archived-task hydration/rendering; smart splits; view-tab hide/empty
+  preferences and drag order; complete column reordering/layout management;
+  nested subtask card-property rendering (list visibility modes are wired).
+  Natural-language date search is not the web's full Sugar parser; timer reads
+  are loaded for filter activation, not a full realtime timer subscription.
+- Create: flagged empty-ticket fill, typed-board routing and remaining writer
+  feature flags, attachment staging/finalization, full custom-date calendar in
+  the create form, and source-comment/parent/duplicate expansion paths.
+- Full picker/settings handoff: team-targeted native Plans/API Keys settings
+  are not implemented; external web links cannot set the browser's persisted
+  selectedSettingsTeamId. That gap must not be hidden behind a full-row Done.
+  Full web-vs-native visual acceptance is not claimed by method-level GPUI
+  tests or the existing generic layout contract.
+- Untouched AI rows still include fullscreen history rail, attachments,
+  agent-side conversations and the boundaries in `ai-parity.md`.
 
-Session lifecycle changes are serialized. Streams are addressed by their server
-session ID, including optimistic deletion snapshots, so a rejected deletion or
-new-chat request cannot discard newer streamed text or redirect it to another
-chat. Full-login live acceptance still needs the server rollout and live QA;
-a mocked 200 is not proof of SaaS access.
+Session lifecycle changes remain serialized and stream-addressed by server
+session ID. No mocked 200 is proof of live SaaS authorization.

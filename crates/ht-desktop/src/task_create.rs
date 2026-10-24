@@ -225,7 +225,11 @@ impl Desktop {
             Some(Field::Assignees) => {
                 let data = self
                     .db
-                    .kv_get(&format!("create-people:{}", self.create_task.project))
+                    .kv_get(&format!(
+                        "create-people:{}:{}",
+                        self.db.current_user_id().unwrap_or(0),
+                        self.create_task.project
+                    ))
                     .ok()
                     .flatten()
                     .and_then(|value| serde_json::from_str::<Value>(&value).ok())
@@ -342,6 +346,14 @@ impl Desktop {
             window.focus(&self.focus, cx);
         }
         if field == Field::Assignees && !self.options.offline {
+            let _ = self.db.kv_set(
+                &format!(
+                    "create-people:{}:{}",
+                    self.db.current_user_id().unwrap_or(0),
+                    self.create_task.project
+                ),
+                "null",
+            );
             if let Some(token) = self.cli_token() {
                 let project = self.create_task.project;
                 let expected = token.clone();
@@ -349,7 +361,14 @@ impl Desktop {
                 std::thread::spawn(move || {
                     let result = ht_core::Http::new(token)
                         .and_then(|mut http| {
-                            ht_core::board_views::filter_people(&mut http, project)
+                            let mut data = ht_core::board_views::filter_people(&mut http, project)?;
+                            data["boardAgents"] =
+                                ht_core::board_views::filter_agents(&mut http, project)
+                                    .unwrap_or_else(|error| {
+                                        eprintln!("Failed to load board agents: {error}");
+                                        json!([])
+                                    });
+                            Ok(data)
                         })
                         .map_err(|error| error.to_string());
                     let _ = send.send(result);
@@ -370,7 +389,10 @@ impl Desktop {
                                     match result {
                                         Ok(data) => {
                                             let _ = this.db.kv_set(
-                                                &format!("create-people:{project}"),
+                                                &format!(
+                                                    "create-people:{}:{project}",
+                                                    this.db.current_user_id().unwrap_or(0)
+                                                ),
                                                 &data.to_string(),
                                             );
                                         }

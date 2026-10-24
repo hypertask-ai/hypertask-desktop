@@ -268,3 +268,13 @@ fn builtin_tabs_use_actual_actor_dependency_agent_cycle_and_done_column_metadata
     for(id,expected)in [("my-tasks",1),("overdue",1),("blocked",2),("agents",2),("current-cycle",1),("next-cycle",2),("decisions",2)]{let columns=db.board_in_view(15,Some(&format!("builtin:{id}"))).unwrap();let ids:Vec<_>=columns.iter().flat_map(|column|column.cards.iter().map(|task|task.id)).collect();assert_eq!(ids,vec![expected],"{id}");if id=="decisions"{assert_eq!(columns.len(),1);}}
     assert!(db.mutations().unwrap().is_empty());assert_eq!(db.board(15).unwrap().iter().map(|column|column.cards.len()).sum::<usize>(),3);
 }
+
+#[test]
+fn actor_picker_board_agents_use_the_web_hook_route_and_never_accept_a_refused_roster(){
+    struct Agents(u16);
+    impl Transport for Agents{
+        fn get(&mut self,path:&str)->Result<Response,TransportError>{assert_eq!(path,"/api/agents/all?projectId=15");Ok(Response{status:self.0,body:if self.0==200{json!({"success":true,"agents":[{"id":"live","displayName":"Live","revokedAt":null},{"id":"revoked","revokedAt":"2026-01-01"}]})}else{json!({"error":"Forbidden"})}})}
+        fn post(&mut self,_:&str,_:&Value,_:&str)->Result<Response,TransportError>{panic!("read-only")}
+    }
+    for status in [200,401,403]{let result=board_views::filter_agents(&mut Agents(status),15);if status==200{assert_eq!(result.unwrap(),json!([{"id":"live","displayName":"Live","revokedAt":null}]));}else{assert_eq!(result.unwrap_err().to_string(),"Forbidden");}}
+}

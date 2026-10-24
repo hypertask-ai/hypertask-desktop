@@ -365,6 +365,12 @@ pub fn filter_people(transport:&mut impl Transport,project:i64)->Result<Value>{
     ensure!(response.body["id"]==project,"Wrong board members");
     Ok(response.body)
 }
+pub fn filter_agents(transport:&mut impl Transport,project:i64)->Result<Value>{
+    let response=transport.get(&format!("/api/agents/all?projectId={project}"))?;
+    ensure!(response.status==200 && response.body["success"]==true,"{}",response.body["error"].as_str().unwrap_or("Failed to load board agents"));
+    let agents=response.body["agents"].as_array().context("Failed to load board agents")?;
+    Ok(json!(agents.iter().filter(|agent|agent["revokedAt"].is_null()).cloned().collect::<Vec<_>>()))
+}
 pub fn running_timers(transport:&mut impl Transport)->Result<Value>{
     let response=transport.get("/api/time/running")?;
     ensure!(response.status==200 && response.body["success"]==true,"{}",response.body["error"].as_str().unwrap_or("Could not load running timers"));
