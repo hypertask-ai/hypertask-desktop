@@ -171,3 +171,35 @@ proof and must not be used as such. B3 **and B4** are consequently unmet/handoff
 required (two met, two abandoned), until the deeper font-metrics work is scoped
 and the real check passes. No native app/Cargo/font-asset changes from the
 unsuccessful experiments remain in the final patch.
+
+## Authorized native-font continuation
+
+The owner authorized deeper font/loading/shaping work for HTPR-7381. Acceptance
+is recorded in `internal/LOOK-FONT-GATES.md`; the earlier B3/B4 handoff is history,
+not the current scope limit. F011 remains unchanged.
+
+The font authority is still `src/lib/fonts/ibmPlexSans.ts:3-10` and
+`src/styles/tailwindThemes/graphite.css:169-172` at web revision
+`6f9901764d355aba7bfc76e4e62ff255e0b68b31`. Footer sizing/weight/line height comes
+from `src/components/Global/BottomSettings_QuickTips.tsx:413-415`; tab sizing,
+spacing and weight classes from
+`src/components/notifications/inboxSplit/SplitTitle.tsx:33-54` and
+`tailwind.config.ts:167-178`. No source-unsupported UI size or offset is added.
+
+CI [40098005431](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40098005431)
+generates unhinted full-coverage faces, retaining every mapped character and
+matching every web-subset advance/bearing. Its `web-source-fonts/freetype.json`
+proves normal FreeType advances of **106/70/46/7** for the footer label,
+Important, Agents and the 11px count; unhinted design widths are
+**108.2476/66.6677/43.7358/6.5999**. The exact Latin subset produces identical
+normal advances. Full-source TrueType hint programs caused the browser variant
+difference, while native layout previously used fractional design advances.
+Rounding design advances alone cannot reproduce FreeType auto-hinting.
+
+The embedded full faces now come directly from that CI artifact, with the web
+asset's unhinted behavior and correctly named weight classes. Linux's vendored
+GPUI backend retains HarfRust shaping and uses FreeType normal advances for the
+actual selected glyphs, preserving kerning, fallback, variable weight and bidi
+cluster order at FreeType 26.6 precision. Glyph metrics are cached per face,
+size and glyph; no text-specific compensation is used. Both original strict
+browser assertions remain unchanged. Final runtime/comparison proof follows.

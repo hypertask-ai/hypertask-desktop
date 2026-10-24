@@ -48,6 +48,9 @@ jobs:
       - run: cargo test --workspace --release
         env:
           HT_QA_COMMENT_ID: ${{ inputs.qa_comment_id || '7' }}
+      - name: Native web-font advance regression
+        if: runner.os == 'Linux'
+        run: cargo test --release -p gpui_wgpu --lib cosmic_text_system::tests
       - name: Upload Rust AI request fixture
         if: runner.os == 'Linux' && always()
         uses: actions/upload-artifact@v4

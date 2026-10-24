@@ -2317,13 +2317,13 @@ dependencies = [
 [[package]]
 name = "gpui_wgpu"
 version = "0.1.0"
-source = "git+https://github.com/zed-industries/zed?rev=784e431c42c5c6ef2f10da9b20503a5e8f506df9#784e431c42c5c6ef2f10da9b20503a5e8f506df9"
 dependencies = [
  "anyhow",
  "bytemuck",
  "collections",
  "cosmic-text",
  "etagere",
+ "freetype-sys",
  "gpui",
  "gpui_util",
  "itertools",
