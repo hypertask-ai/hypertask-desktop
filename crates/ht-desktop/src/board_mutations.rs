@@ -46,7 +46,10 @@ impl Desktop {
                 .iter()
                 .any(|project| {
                     project["id"] == self.options.board
-                        && project["ownerId"].as_i64() == self.db.current_user_id()
+                        && self
+                            .db
+                            .current_user_id()
+                            .is_some_and(|user| project["ownerId"].as_i64() == Some(user))
                 })
         {
             self.error = Some("Only board owner can manage this board".into());
@@ -71,7 +74,14 @@ impl Desktop {
         self.board_forms
             .input
             .update(cx, |input, cx| input.set_content(String::new(), cx));
-        window.focus(&self.board_forms.input.focus_handle(cx), cx);
+        if matches!(
+            action,
+            BoardAction::DeleteColumn | BoardAction::ArchiveBoard
+        ) {
+            window.focus(&self.focus, cx);
+        } else {
+            window.focus(&self.board_forms.input.focus_handle(cx), cx);
+        }
         cx.notify();
     }
     fn close_board_form(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -579,7 +589,8 @@ mod archive_tests {
         cx.run_until_parked();
         cx.simulate_keystrokes("enter escape");
         view.read_with(cx, |this, _| {
-            assert!(this.db.mutations().unwrap().is_empty())
+            assert!(this.db.mutations().unwrap().is_empty());
+            assert!(this.board_forms.form.is_none());
         });
         cx.simulate_keystrokes("ctrl-k");
         cx.simulate_input("Archive board");

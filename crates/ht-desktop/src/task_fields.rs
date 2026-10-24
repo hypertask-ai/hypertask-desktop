@@ -872,7 +872,8 @@ mod plain_paste_tests {
         view.read_with(cx, |this, cx| {
             let input = this.comment_input.read(cx);
             assert_eq!(input.content.as_ref(), "https://example.org\né🙂");
-            assert!(!input.html().contains("<a "));
+            assert!(input.html().contains("https://example.org"));
+            assert!(!input.html().contains("Selected"));
             assert!(this.db.mutations().unwrap().is_empty());
         });
         cx.simulate_keystrokes("ctrl-z");
