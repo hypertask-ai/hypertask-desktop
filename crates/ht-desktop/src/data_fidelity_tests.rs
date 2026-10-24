@@ -69,8 +69,8 @@ fn synced_fidelity_fixture_renders_real_authors_saved_summary_and_web_draft_mark
     let badge = measured(view, &mut cx, "board.card.0.draft");
     assert_eq!(badge["text"], "Draft");
     assert_eq!(badge["color"], "#c2cfa5");
-    assert_eq!(badge["fontWeight"], 500);
-    assert_eq!(badge["lineHeight"], 22);
+    assert_eq!(badge["fontWeight"], 500.0);
+    assert_eq!(badge["lineHeight"], 22.0);
     view.read_with(&mut cx, |this, _| {
         assert_eq!(this.columns[0].cards[0].extra["createdBy"]["displayName"], "Real Human");
         assert!(this.db.mutations().unwrap().is_empty());
