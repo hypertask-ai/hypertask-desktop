@@ -36,6 +36,18 @@ impl TextInput {
         self=self.multiline_editor();self.set_html(html,cx);self.read_only=true;self
     }
     pub fn has_selection(&self) -> bool { !self.selected_range.is_empty() }
+    pub fn slash_token(&self) -> Option<(Range<usize>, String)> {
+        if !self.selected_range.is_empty() { return None; }
+        let before = &self.content[..self.selected_range.end];
+        let start = before.rfind('/')?;
+        let query = &before[start+1..];
+        if query.chars().any(char::is_whitespace) { return None; }
+        Some((start..self.selected_range.end, query.to_owned()))
+    }
+    pub fn replace_token(&mut self, range: Range<usize>, text: &str, window: &mut Window, cx: &mut Context<Self>) {
+        let range = self.range_to_utf16(&range);
+        self.replace_text_in_range(Some(range), text, window, cx);
+    }
     fn quote_selection(&mut self, cx: &mut Context<Self>) {
         if self.selected_range.is_empty() {return;}
         if let Some(editor)=&self.editor {

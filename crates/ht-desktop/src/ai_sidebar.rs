@@ -22,6 +22,9 @@ use std::{
     time::Duration,
 };
 
+#[path = "ai_skills.rs"]
+mod skills;
+
 #[path = "ai_presentation.rs"]
 mod presentation;
 pub use presentation::DisplayMode;
@@ -136,6 +139,7 @@ struct ActiveTurn {
 
 pub struct AiSidebar {
     colors: Theme,
+    skills: skills::Skills,
     presentation: Presentation,
     pub capture: crate::layout::Capture,
     input: Entity<TextInput>,
@@ -226,6 +230,7 @@ impl AiSidebar {
             _input_subscription: input_subscription,
             focus: cx.focus_handle(),
             previous_focus: Some(workspace_focus),
+            skills: skills::Skills::new(token.clone()),
             client: token.and_then(|t| Client::new(t).ok()),
             scope: None,
             include_context: true,
@@ -259,6 +264,7 @@ impl AiSidebar {
         self.history_menu = false;
         self.input
             .update(cx, |input, cx| input.set_content(String::new(), cx));
+        self.skills = skills::Skills::new(token.clone());
         self.client = token.and_then(|t| Client::new(t).ok());
         cx.notify();
     }
@@ -569,6 +575,7 @@ impl AiSidebar {
     }
 
     fn poll(&mut self, cx: &mut Context<Self>) {
+        self.poll_skills(cx);
         self.poll_history(cx);
         let follow_latest = !self.away_from_latest();
         let Some(active) = &mut self.active else {
@@ -1012,6 +1019,7 @@ impl Render for AiSidebar {
             .flex()
             .flex_col()
             .track_focus(&self.focus)
+            .capture_key_down(cx.listener(Self::skill_key))
             .on_key_down(cx.listener(Self::key_down))
             .relative();
         if self.history_menu {
@@ -1210,6 +1218,7 @@ impl Render for AiSidebar {
                     .text_size(px(14.))
                     .child(self.input.clone()),
             );
+        if !self.skill_choices(cx).is_empty() { composer = composer.child(self.skill_menu(cx)); }
         if self.model_menu {
             let mut menu = div()
                 .id("ai-model-options")
