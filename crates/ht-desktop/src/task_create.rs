@@ -140,24 +140,7 @@ impl Desktop {
                             {
                                 return;
                             }
-                            match result {
-                                Ok((user, data)) => match this.db.apply_web_board(user, &data) {
-                                    Ok(()) => {
-                                        this.create_task.loaded = Some(project);
-                                        this.create_task.error = None;
-                                        if this.create_task.section == 0 {
-                                            this.create_task.section = this
-                                                .db
-                                                .board(project)
-                                                .unwrap_or_default()
-                                                .first()
-                                                .map_or(0, |column| column.id);
-                                        }
-                                    }
-                                    Err(error) => this.create_task.error = Some(error.to_string()),
-                                },
-                                Err(error) => this.create_task.error = Some(error),
-                            }
+                            this.apply_create_board(result, cx);
                             cx.notify();
                         });
                         break;
@@ -168,6 +151,48 @@ impl Desktop {
             }
         })
         .detach();
+    }
+    fn apply_create_board(&mut self, result: Result<(i64, Value), String>, cx: &mut Context<Self>) {
+        let result = result.and_then(|(user, data)| {
+            if data["project"]["id"] != self.create_task.project {
+                return Err("Wrong board response".into());
+            }
+            self.db
+                .apply_web_board(user, &data)
+                .map_err(|error| error.to_string())?;
+            Ok(data["project"].clone())
+        });
+        match result {
+            Ok(project) => {
+                let defaults = ht_core::task_create::view_defaults(&project);
+                for key in ["assignees", "priority", "estimate", "tags"] {
+                    if self.create_task.fields[key] == self.create_task.initial[key] {
+                        if let Some(value) = defaults.get(key) {
+                            self.create_task.fields[key] = value.clone();
+                        } else {
+                            self.create_task.fields.as_object_mut().unwrap().remove(key);
+                        }
+                    }
+                }
+                self.create_task.initial = defaults;
+                self.create_task.loaded = Some(self.create_task.project);
+                self.create_task.error = None;
+                if self.create_task.section == 0 {
+                    self.create_task.section = project["section"]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .find(|column| column["deleted"] != true && column["visibility"] == true)
+                        .and_then(|column| column["id"].as_i64())
+                        .unwrap_or(0);
+                }
+            }
+            Err(error) => {
+                self.create_task.loaded = None;
+                self.create_task.error = Some(error);
+            }
+        }
+        cx.notify();
     }
     fn create_choices(&self, cx: &App) -> Vec<(String, Value)> {
         match self.create_task.picker {
@@ -760,6 +785,73 @@ mod tests {
                     json!({"error":"Unauthorized"})
                 },
             })
+        }
+    }
+    #[gpui::test]
+    fn delayed_board_defaults_merge_only_untouched_fields_and_refusal_keeps_the_form(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        struct Metadata(u16);
+        impl ht_core::Transport for Metadata {
+            fn get(
+                &mut self,
+                _: &str,
+            ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                Ok(ht_core::http::Response {
+                    status: 200,
+                    body: json!({"success":true,"user":{"id":42}}),
+                })
+            }
+            fn post(
+                &mut self,
+                path: &str,
+                body: &Value,
+                _: &str,
+            ) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                assert_eq!(path, "/api/projects/boardTasks");
+                assert_eq!(body, &json!({"projectId":15,"userId":42}));
+                Ok(ht_core::http::Response {
+                    status: self.0,
+                    body: if self.0 == 200 {
+                        json!({"project":{"id":15,"title":"Board","section":[{"id":10,"projectId":15,"section_title":"Todo","ranking":"a","visibility":true,"deleted":false}],"project_view":{"user_project_views":[{"unsavedView":{"board_filters":{"matchFilters":"ALL","addedFilters":[{"type":"Priority","searchPayload":[{"priority_index":4}]},{"type":"Size","searchPayload":[{"estimate_index":5}]},{"type":"Assignees","searchPayload":[{"id":42,"uid":"owner"}]}]}}}]}},"allViews":[],"tasks":[]})
+                    } else {
+                        json!({"message":"Board access denied"})
+                    },
+                })
+            }
+        }
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| desktop(window, cx));
+        for status in [401, 403, 200] {
+            view.update_in(cx, |this, window, cx| {
+                this.invalidate_task_create(cx);
+                this.open_create_task(window, cx);
+                this.create_task
+                    .title
+                    .update(cx, |input, cx| input.set_content("Keep note".into(), cx));
+                this.create_picker(Field::Priority, window, cx);
+                this.choose_create_field(2, window, cx);
+                let result = ht_core::board_views::load(&mut Metadata(status), 15)
+                    .map_err(|error| error.to_string());
+                this.apply_create_board(result, cx);
+                assert_eq!(
+                    this.create_task.title.read(cx).content.as_ref(),
+                    "Keep note"
+                );
+                assert_eq!(this.create_task.fields["priority"]["priority_index"], 2);
+                if status == 200 {
+                    assert_eq!(this.create_task.fields["estimate"]["estimate_index"], 5);
+                    assert_eq!(this.create_task.fields["assignees"][0]["id"], 42);
+                    assert_eq!(this.create_task.loaded, Some(15));
+                } else {
+                    assert!(this.create_task.loaded.is_none());
+                    assert_eq!(
+                        this.create_task.error.as_deref(),
+                        Some("Board access denied")
+                    );
+                }
+                assert!(this.db.mutations().unwrap().is_empty());
+            });
         }
     }
     #[gpui::test]
