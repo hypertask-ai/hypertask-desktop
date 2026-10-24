@@ -371,7 +371,7 @@ fn ranked_web_drop_is_optimistic_durable_and_rolls_back_both_denials() {
         let file = tempfile::NamedTempFile::new().unwrap();
         let mut db = Db::open(file.path()).unwrap();
         seed(&mut db);
-        db.apply_task(&json!({"id":1,"ranking":"A0100"})).unwrap();
+        db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"title":"Task","status":"Normal","labels":[],"ranking":"A0100"})).unwrap();
         let rank = ht_core::task_rank(None, Some("A0100")).unwrap();
         let id = db.enqueue(Write::Board { change: BoardWrite::PositionTask {
             task:1, project:15, section:11, title:"Doing".into(), ranking:rank.clone(),
