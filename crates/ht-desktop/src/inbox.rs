@@ -57,6 +57,19 @@ impl Desktop {
             self.enqueue(Write::InboxSeen { notification_id:id }, cx);
         }
     }
+    pub(super) fn task_inbox_ids(&self) -> Vec<i64> {
+        self.db.inbox().unwrap_or_default().iter().filter(|n|n.task_id==Some(self.options.task)).map(|n|n.id).collect()
+    }
+    pub(super) fn composer_inbox_actions(&self,cx:&mut Context<Self>) -> AnyElement {
+        div().flex().items_center().gap(px(24.)).text_size(px(13.)).text_color(color(self.colors.muted))
+            .child(div().id("composer-snooze").cursor_pointer().child("Snooze")
+                .on_click(cx.listener(|this,_,window,cx|{cx.stop_propagation();this.run_shortcut(Action::Remind,window,cx);}))
+                .layout_key(&self.layout,"task.composer.snooze",None))
+            .child(div().id("composer-remove-notification").cursor_pointer().child("Remove notification")
+                .on_click(cx.listener(|this,_,window,cx|{cx.stop_propagation();this.run_shortcut(Action::ArchiveNotification,window,cx);}))
+                .layout_key(&self.layout,"task.composer.remove-notification",None))
+            .into_any_element()
+    }
     pub(super) fn show_inbox_reminder(&mut self, ids: Vec<i64>, window: &mut Window, cx: &mut Context<Self>) {
         if ids.is_empty() { return; }
         let mut dates = reminder_dates(chrono::Local::now());
