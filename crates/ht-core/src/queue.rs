@@ -87,10 +87,14 @@ impl Db {
         let (entity, kind, payload) = match &write {
             Write::View { change } => {
                 change.validate()?;
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_view" && row.payload_json["change"]["project"]==change.project), "wait for the previous view update to finish");
                 let user=db.current_user_id().context("Unauthorized")?;
                 (format!("view:{}",change.project),"web_view",json!({"user_id":user,"change":change,"before":db.board_project(change.project)?}))
             }
-            Write::Favorites { project_ids } => ("favorites".into(),"web_favorites",db.prepare_favorites(project_ids)?),
+            Write::Favorites { project_ids } => {
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_favorites"), "wait for the previous favorite update to finish");
+                ("favorites".into(),"web_favorites",db.prepare_favorites(project_ids)?)
+            },
             Write::CreateTask { project_id, section_id, title, top } => (format!("create:{project_id}"), "web_create", db.prepare_create(*project_id,*section_id,title,*top)?),
             Write::ComposeTask { project_id, text, time_zone } => {
                 ensure!(*project_id > 0 && !text.trim().is_empty(), "choose a board and describe the task");
@@ -449,12 +453,12 @@ impl Db {
             let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
             change.validate()?;
             if change.route=="create-view" && row.attempts>1 {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
-                Ok(identity) if identity.status==200 && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.post(&format!("/api/projects/views/{}",change.route),&change.body,&row.client_id),
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.post(&format!("/api/projects/views/{}",change.route),&change.body,&row.client_id),
                 _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
             }}.map(|r|if r.status==200 {Response{status:200,body:json!({"success":true,"view":r.body})}}else{r})
         } else if row.kind == "web_favorites" {
             match transport.get("/user/context") {
-                Ok(identity) if identity.status==200 && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate("PUT","/api/favorites/reorderFavorites",&row.payload_json["body"],&row.client_id),
+                Ok(identity) if identity.status==200 && identity.body["success"]==true && self.current_user_id()==row.payload_json["user_id"].as_i64() && identity.body["user"]["id"]==row.payload_json["user_id"] => transport.mutate("PUT","/api/favorites/reorderFavorites",&row.payload_json["body"],&row.client_id),
                 _ => Ok(Response{status:403,body:json!({"message":"Forbidden"})}),
             }.map(|r|if r.status==200 && r.body["ok"]==true {Response{status:200,body:json!({"success":true})}}else{r})
         } else if row.kind == "web_create" {
@@ -462,7 +466,7 @@ impl Db {
             if row.attempts > 1 { Ok(Response {status:409,body:json!({"message":"Creation result uncertain; refresh before trying again"})}) }
             else {
                 match transport.get("/user/context") {
-                    Ok(identity) if identity.status == 200 && identity.body["user"]["id"] == row.payload_json["user_id"] => {
+                    Ok(identity) if identity.status == 200 && identity.body["success"] == true && self.current_user_id() == row.payload_json["user_id"].as_i64() && identity.body["user"]["id"] == row.payload_json["user_id"] => {
                         let path = if row.payload_json["global"] == true {"/api/tasks/createGlobally"}else{"/api/tasks/create"};
                         match transport.post(path, &row.payload_json["body"], &row.client_id) {
                             Ok(response) if response.status < 500 => Ok(response),
@@ -572,7 +576,9 @@ impl Db {
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
                 if row.kind == "web_view" {
-                    db.upsert("Project",&row.payload_json["before"])?;db.reapply_pending()?;
+                    let before=&row.payload_json["before"];
+                    let mut current=db.board_project(before["id"].as_i64().context("missing board")?)?;
+                    current["project_view"]=before["project_view"].clone();db.upsert("Project",&current)?;db.reapply_pending()?;
                     db.kv_set(&format!("view-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
                 }
                 if row.kind == "web_favorites" {

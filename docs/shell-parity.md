@@ -1,5 +1,9 @@
 # HTPR-7381 shell parity ledger
 
+Full-sign-in client follow-up: see [prewire-parity.md](prewire-parity.md) for
+newly wired portions and native gaps; historical auth blockers below are not
+claims that server approval alone completes these rows.
+
 The shell is in `crates/ht-desktop/src/shell*.rs`; `ui.rs` only integrates it.
 Executable proof is GitHub CI, including GPUI mouse/key tests and the existing
 xvfb layout gate. No builds, tests, app launches or Windows-laptop access were

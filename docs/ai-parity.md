@@ -1,5 +1,9 @@
 # HTPR-7381 AI and focused-comment parity
 
+Full-sign-in client follow-up: see [prewire-parity.md](prewire-parity.md) for
+newly wired portions and native gaps; historical auth blockers below are not
+claims that server approval alone completes these rows.
+
 Scope: F227/F228, F368-F373, F579/F581/F583, F606-F620. Web paths below
 are relative to `hypertask/src`. This is not a claim of complete AI parity.
 Proof is GitHub CI only: workspace request/queue unit tests, GPUI TestAppContext
