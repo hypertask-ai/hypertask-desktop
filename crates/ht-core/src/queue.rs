@@ -218,6 +218,7 @@ impl Db {
         match kind {
             "shell_write" | "compose_task" => (),
             "web_view" => {
+                if self.current_user_id()!=payload["user_id"].as_i64(){return Ok(());}
                 let change:crate::ViewWrite=serde_json::from_value(payload["change"].clone())?;
                 let mut project=self.board_project(change.project)?;change.optimistic(&mut project);self.upsert("Project",&project)?;
             }
@@ -576,9 +577,11 @@ impl Db {
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
                 if row.kind == "web_view" {
-                    let before=&row.payload_json["before"];
-                    let mut current=db.board_project(before["id"].as_i64().context("missing board")?)?;
-                    current["project_view"]=before["project_view"].clone();db.upsert("Project",&current)?;db.reapply_pending()?;
+                    if db.current_user_id()==row.payload_json["user_id"].as_i64(){
+                        let before=&row.payload_json["before"];
+                        let mut current=db.board_project(before["id"].as_i64().context("missing board")?)?;
+                        current["project_view"]=before["project_view"].clone();db.upsert("Project",&current)?;db.reapply_pending()?;
+                    }
                     db.kv_set(&format!("view-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
                 }
                 if row.kind == "web_favorites" {

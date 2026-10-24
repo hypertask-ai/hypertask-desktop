@@ -49,14 +49,12 @@ impl Desktop {
                                 return;
                             }
                             this.shell.metadata_loading = false;
-                            if this.db.current_user_id() != user
-                                || this.cli_token().as_deref() != Some(expected_token.as_str())
-                            {
+                            if this.cli_token().as_deref() != Some(expected_token.as_str()) {
                                 return;
                             }
                             // Web switcher leaves its last successful data in place on read refusal.
                             if let Ok((resolved_user, teams, favorites)) = result {
-                                if user.is_none() {
+                                if user != Some(resolved_user) {
                                     let _ = this
                                         .db
                                         .kv_set("current-user-id", &resolved_user.to_string());

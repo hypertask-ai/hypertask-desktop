@@ -76,6 +76,7 @@ impl Desktop {
         (self.board_actions.create_section == Some(section)).then(|| div().p(px(8.)).child(self.board_actions.create_input.clone()).layout_key(&self.layout, "board.create.input", None).into_any_element())
     }
     fn submit_board_create(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if !self.board_metadata_ready(cx){return;}
         if self.board_actions.create_pending.is_some() { return; }
         let Some(section) = self.board_actions.create_section else { return; };
         let title = self.board_actions.create_input.read(cx).content.to_string();
@@ -394,6 +395,18 @@ mod tests {
         let mut cx = VisualTestContext::from_window(view.into(), cx);
         draw(view, &mut cx);
         (view, cx)
+    }
+    #[gpui::test]
+    fn online_creation_cannot_guess_view_defaults_before_authoritative_board_read(cx:&mut gpui::TestAppContext){
+        let(view,mut cx)=visual(cx);
+        view.update(&mut cx,|this,window,cx|{
+            this.options.offline=false;this.set_shell_token(None,cx);
+            this.start_board_create(10,window,cx);
+            this.board_actions.create_input.update(cx,|input,cx|input.set_content("Keep title until board loads".into(),cx));
+            this.submit_board_create(window,cx);
+            assert!(this.db.mutations().unwrap().is_empty());
+            assert_eq!(this.board_actions.create_input.read(cx).content.as_ref(),"Keep title until board loads");
+        }).unwrap();
     }
     #[gpui::test]
     fn column_add_is_real_inline_input_and_denial_keeps_title_without_phantom_card(cx: &mut gpui::TestAppContext) {

@@ -12,6 +12,9 @@ pub(super) enum Panel {
 }
 pub(super) struct Views {
     pub loaded: i64,
+    loading: bool,
+    ready: bool,
+    generation: u64,
     pub panel: Option<Panel>,
     input: Entity<TextInput>,
     pending: Option<String>,
@@ -22,6 +25,9 @@ impl Views {
         let input = cx.new(|cx| TextInput::new(String::new(), "View name", color(0x8e9093), cx));
         Self {
             loaded: 0,
+            loading: false,
+            ready: false,
+            generation: 0,
             panel: None,
             input,
             pending: None,
@@ -32,6 +38,9 @@ impl Views {
 impl Desktop {
     pub(super) fn invalidate_board_views(&mut self, cx: &mut Context<Self>) {
         self.views.loaded = 0;
+        self.views.loading = false;
+        self.views.ready = false;
+        self.views.generation += 1;
         self.views.panel = None;
         self.views.pending = None;
         self.views
@@ -47,7 +56,11 @@ impl Desktop {
             return;
         };
         self.views.loaded = board;
-        let account = self.db.current_user_id();
+        self.views.loading = true;
+        self.views.ready = false;
+        self.views.generation += 1;
+        let generation = self.views.generation;
+        let expected_token = token.clone();
         let (send, receive) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
             let result = ht_core::Http::new(token)
@@ -62,14 +75,19 @@ impl Desktop {
                 match receive.try_recv() {
                     Ok(result) => {
                         let _ = view.update(cx, |this, cx| {
-                            if this.options.board != board || this.db.current_user_id() != account {
+                            if this.views.generation != generation {
+                                return;
+                            }
+                            this.views.loading = false;
+                            if this.options.board != board
+                                || this.cli_token().as_deref() != Some(expected_token.as_str())
+                            {
                                 return;
                             }
                             if let Ok((user, body)) = result {
-                                if account.is_none() {
-                                    let _ = this.db.kv_set("current-user-id", &user.to_string());
-                                }
+                                let _ = this.db.kv_set("current-user-id", &user.to_string());
                                 if this.db.apply_web_board(user, &body).is_ok() {
+                                    this.views.ready = true;
                                     this.reload();
                                 }
                             }
@@ -83,6 +101,19 @@ impl Desktop {
             }
         })
         .detach();
+    }
+    pub(super) fn board_metadata_ready(&mut self, cx: &mut Context<Self>) -> bool {
+        if self.options.offline {
+            return true;
+        }
+        if self.views.ready && self.views.loaded == self.options.board {
+            return true;
+        }
+        if !self.views.loading {
+            self.views.loaded = 0;
+            self.load_board_views(cx);
+        }
+        false
     }
     fn view_settings(&self) -> Value {
         self.db
@@ -115,7 +146,7 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.views.pending.is_some() {
+        if self.views.pending.is_some() || !self.board_metadata_ready(cx) {
             return;
         }
         body["projectId"] = json!(self.options.board);
