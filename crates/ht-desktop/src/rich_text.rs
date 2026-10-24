@@ -29,7 +29,7 @@ struct RenderedBlock {
 }
 
 pub(crate) fn mark_style(marks: &[Tag], theme: Theme) -> HighlightStyle {
-    let light = theme.page == 0xffffff;
+    let light = color(theme.page).l > 0.5;
     let mut style = HighlightStyle::default();
     for mark in marks {
         match mark.name.as_str() {
@@ -76,6 +76,7 @@ pub(crate) fn block_size(tag: &str) -> f32 {
 impl RichText {
     pub fn parse(html: &str, theme: Theme) -> Self {
         let document = Document::parse(html);
+        let light = color(theme.page).l > 0.5;
         let mut out = Self::default();
         for display in document.display() {
             let b = display.block;
@@ -90,11 +91,7 @@ impl RichText {
                 quote: display.quote,
                 size: block_size(&b.tag.name),
                 code: b.tag.name == "pre",
-                background: if theme.page == 0xffffff {
-                    0xf5f5f5
-                } else {
-                    0x292c30
-                },
+                background: if light { 0xf5f5f5 } else { 0x292c30 },
             };
             let mut at = 0;
             for span in &b.spans {
@@ -108,11 +105,7 @@ impl RichText {
                     });
                 }
                 if block.code {
-                    style.color = Some(color(if theme.page == 0xffffff {
-                        0xd63384
-                    } else {
-                        0xe8912d
-                    }));
+                    style.color = Some(color(if light { 0xd63384 } else { 0xe8912d }));
                 }
                 if span.marks.iter().any(|m| m.name == "code") || block.code {
                     block.fonts.push((range.clone(), "monospace".into()));
@@ -242,5 +235,22 @@ mod tests {
         assert_eq!(r.blocks[6].prefix, "☑");
         assert!(r.blocks[7].code);
         assert!(r.blocks[7].text.contains("code\nlines"));
+    }
+    #[test]
+    fn code_colors_follow_both_web_light_themes_including_nonwhite_dia() {
+        for (index, theme) in crate::theme::THEMES.into_iter().enumerate() {
+            let light = matches!(index, 0 | 3);
+            let rich = RichText::parse(
+                "<p><code>inline</code></p><pre><code>block</code></pre>",
+                theme,
+            );
+            let expected = color(if light { 0xd63384 } else { 0xe8912d });
+            assert_eq!(rich.blocks[0].highlights[0].1.color, Some(expected));
+            assert_eq!(rich.blocks[1].highlights[0].1.color, Some(expected));
+            assert_eq!(
+                rich.blocks[1].background,
+                if light { 0xf5f5f5 } else { 0x292c30 }
+            );
+        }
     }
 }

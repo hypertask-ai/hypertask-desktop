@@ -305,6 +305,20 @@ impl TextInput {
             range = 0..self.content.len();
             self.selected_range = range.clone();
         }
+        if format.mark().is_some()
+            && range.is_empty()
+            && self
+                .editor
+                .as_ref()
+                .unwrap()
+                .document
+                .block_at(range.start)
+                .tag
+                .name
+                == "pre"
+        {
+            return;
+        }
         if !range.is_empty() || format.mark().is_none() {
             self.remember_edit();
         }
@@ -492,6 +506,12 @@ impl TextInput {
         if self.editor.is_none() || self.selected_range.is_empty() {
             return false;
         }
+        let document = &self.editor.as_ref().unwrap().document;
+        if document.block_at(self.selected_range.start).tag.name == "pre"
+            || document.has_mark(self.selected_range.clone(), "code")
+        {
+            return false;
+        }
         let Some(href) = autolink_url(text) else {
             return false;
         };
@@ -516,7 +536,9 @@ impl TextInput {
         for word in self.content.split_inclusive(char::is_whitespace) {
             let trimmed = word.trim_end().trim_end_matches([',', '.', '!', ';', ':']);
             if let Some(href) = autolink_url(trimmed) {
-                if !e.document.marks_at(at).iter().any(|m| m.name == "code") {
+                if e.document.block_at(at).tag.name != "pre"
+                    && !e.document.marks_at(at).iter().any(|m| m.name == "code")
+                {
                     e.document.link(at..at + trimmed.len(), &href);
                 }
             }
@@ -761,11 +783,7 @@ impl TextInput {
         {
             return vec![];
         }
-        let theme = crate::theme::THEMES[if window.text_style().color.l > 0.5 {
-            1
-        } else {
-            0
-        }];
+        let theme = editor_theme(window.text_style().color);
         let top = self.last_layout.as_ref().map_or(px(0.), |l| {
             let row = l.row(self.cursor_offset().min(l.text.len()));
             l.rows[row].top + l.rows[row].height
@@ -913,7 +931,9 @@ impl TextInput {
                     .shadow_md()
                     .into_any_element(),
             );
-        } else if !self.selected_range.is_empty() {
+        } else if !self.selected_range.is_empty()
+            && e.document.block_at(self.selected_range.start).tag.name != "pre"
+        {
             if e.palette {
                 let palette = div()
                     .id("editor-highlight-colors")
@@ -1072,7 +1092,7 @@ impl TextInput {
                     if b.tag.name == "h3" {
                         run.font.weight = FontWeight::MEDIUM;
                     }
-                    let theme = crate::theme::THEMES[if default.color.l > 0.5 { 1 } else { 0 }];
+                    let theme = editor_theme(default.color);
                     let style = crate::rich_text::mark_style(&s.marks, theme);
                     if let Some(weight) = style.font_weight {
                         run.font.weight = weight;
@@ -1088,11 +1108,12 @@ impl TextInput {
                     if s.marks.iter().any(|m| m.name == "code") || b.tag.name == "pre" {
                         run.font.family = "monospace".into();
                         if b.tag.name == "pre" {
-                            run.color = crate::theme::color(if theme.page == 0xffffff {
-                                0xd63384
-                            } else {
-                                0xe8912d
-                            });
+                            run.color =
+                                crate::theme::color(if crate::theme::color(theme.page).l > 0.5 {
+                                    0xd63384
+                                } else {
+                                    0xe8912d
+                                });
                         }
                     }
                     if let Some(marked) = &self.marked_range {
@@ -1119,6 +1140,13 @@ impl TextInput {
     }
 }
 
+fn editor_theme(text: gpui::Hsla) -> crate::theme::Theme {
+    crate::theme::THEMES
+        .into_iter()
+        .find(|theme| crate::theme::color(theme.text) == text)
+        .unwrap_or(crate::theme::THEMES[if text.l > 0.5 { 1 } else { 0 }])
+}
+
 fn autolink_url(text: &str) -> Option<String> {
     if text
         .chars()
@@ -1128,13 +1156,30 @@ fn autolink_url(text: &str) -> Option<String> {
     }
     let href = if text.starts_with("http://") || text.starts_with("https://") {
         text.to_owned()
-    } else if text.starts_with("www.") {
+    } else if let Some((name, domain)) = text.split_once('@') {
+        if !name.is_empty() && domain.contains('.') && !domain.contains('@') {
+            return Some(format!("mailto:{text}"));
+        }
+        return None;
+    } else if text.contains('.') {
+        let domain = text.split(['/', '?', '#', ':']).next()?;
+        let suffix = domain.rsplit('.').next()?;
+        if !suffix.chars().all(char::is_alphabetic) && !suffix.starts_with("xn--") {
+            return None;
+        }
         format!("http://{text}")
     } else {
         return None;
     };
     let host = href.split("://").nth(1)?.split(['/', '?', '#']).next()?;
-    if host.is_empty() || host.starts_with('.') || host.ends_with('.') || host.contains('@') {
+    if host.is_empty()
+        || host.starts_with('.')
+        || host.ends_with('.')
+        || host.contains('@')
+        || host
+            .chars()
+            .any(|c| !(c.is_alphanumeric() || matches!(c, '.' | '-' | '_' | ':' | '[' | ']')))
+    {
         return None;
     }
     Some(href)
@@ -1567,5 +1612,44 @@ mod tests {
             )
         });
         view.update_in(cx,|input,window,cx|{input.set_html("<p><mark data-color=\"#74c0fc\">blue</mark><mark data-color=\"#ff0000\">red</mark></p>",cx);input.selected_range=0..7;input.highlight_color("#74c0fc",window,cx);assert!(!input.html().contains("#ff0000"));assert!(input.html().contains("data-color=\"#74c0fc\""));input.highlight_color("#74c0fc",window,cx);assert!(!input.html().contains("<mark"));});
+    }
+    #[gpui::test]
+    fn bare_urls_autolink_but_code_block_typing_never_creates_inline_marks(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(init);
+        let (view, cx) = cx.add_window_view(|_, cx| {
+            TextInput::new(String::new(), "", gpui::black(), cx).comment_editor()
+        });
+        view.update_in(cx, |input, window, cx| {
+            window.focus(&input.focus_handle, cx)
+        });
+        cx.simulate_input("example.com ");
+        view.read_with(cx, |input, _| {
+            assert!(input.html().contains("href=\"http://example.com\""))
+        });
+        view.update_in(cx, |input, window, cx| {
+            input.reset(window, cx);
+            input.set_html("<pre><code class=\"language-javascript\"></code></pre>", cx);
+        });
+        cx.simulate_keystrokes("ctrl-b");
+        cx.simulate_input("https://example.com ");
+        view.read_with(cx, |input, _| {
+            assert!(!input.html().contains("<a "));
+            assert!(!input.html().contains("<strong>"));
+            assert_eq!(
+                input.html(),
+                "<pre><code class=\"language-javascript\">https://example.com </code></pre>"
+            );
+        });
+        view.update_in(cx, |input, window, cx| {
+            input.selected_range = 0..input.content.len();
+            assert!(!input.paste_link("https://example.org", window, cx));
+        });
+        assert!(autolink_url("1.2").is_none());
+        assert_eq!(
+            autolink_url("hello@example.com").as_deref(),
+            Some("mailto:hello@example.com")
+        );
     }
 }

@@ -253,6 +253,11 @@ fn parse_parts(el: ElementRef<'_>) -> Vec<Part> {
                         code,
                         spans,
                     };
+                    if name == "pre" {
+                        for span in &mut block.spans {
+                            span.marks.clear();
+                        }
+                    }
                     block.compact();
                     parts.push(Part::Block(block));
                 } else if matches!(name, "blockquote" | "ul" | "ol" | "li")
@@ -587,6 +592,10 @@ impl Document {
         let mut at = 0;
         each_mut(&mut self.parts, &mut 0, &mut |_, b| {
             let len = b.len();
+            if b.tag.name == "pre" {
+                at += len + 1;
+                return;
+            }
             let start = range.start.saturating_sub(at).min(len);
             let end = range.end.saturating_sub(at).min(len);
             if start < end {
@@ -1543,5 +1552,25 @@ mod tests {
                 }
             }
         }
+    }
+    #[test]
+    fn code_blocks_do_not_accept_inline_marks_or_autolinks() {
+        let mut d = Document::parse(
+            "<pre><code class=\"language-javascript\">https://example.com</code></pre>",
+        );
+        let before = d.html();
+        let len = d.text().len();
+        for format in [
+            Format::Bold,
+            Format::Italic,
+            Format::Underline,
+            Format::Highlight,
+            Format::Code,
+        ] {
+            d.format(0..len, format);
+            assert_eq!(d.html(), before);
+        }
+        d.link(0..len, "https://example.com");
+        assert_eq!(d.html(), before);
     }
 }
