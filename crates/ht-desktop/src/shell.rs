@@ -657,9 +657,10 @@ impl Desktop {
                                 },
                             )),
                     )
-                    .child(div().id("favorites-drop-target").px(px(16.)).py(px(8.)).child("Favorite Boards")
-                        .on_drop(cx.listener(|this, drag:&sidebar::BoardDrag, _, cx| this.drop_favorite(drag.project,None,true,cx)))
-                        .layout_key(&self.layout,"shell.boards.favorites",None))
+                    .when(self.db.sidebar_data("favorites").as_array().is_some_and(|favorites|!favorites.is_empty()), |d|d.child(
+                        div().id("favorites-drop-target").px(px(16.)).py(px(8.)).child("Favorite Boards")
+                            .on_drop(cx.listener(|this, drag:&sidebar::BoardDrag, _, cx| this.drop_favorite(drag.project,None,true,cx)))
+                            .layout_key(&self.layout,"shell.boards.favorites",None)))
                     .child(
                         div()
                             .id("boards-list")
