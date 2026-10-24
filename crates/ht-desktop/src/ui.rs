@@ -1,3 +1,4 @@
+use ht_core::generated::Status;
 use crate::{
     Options,
     ai_sidebar::{AiSidebar, Scope},
