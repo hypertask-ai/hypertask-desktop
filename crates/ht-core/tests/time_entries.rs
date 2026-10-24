@@ -64,7 +64,20 @@ fn changes() -> Vec<(TimeEntryChange, &'static str, Value, Value)> {
     edited["note"] = json!("Edited");
     edited["endedAt"] = json!("2026-10-01T13:30:00Z");
     edited["seconds"] = json!(5400);
+    let moved = json!({"id":5,"userId":42,"note":null,"startedAt":"2026-10-02T06:30:00Z","endedAt":"2026-10-02T07:15:00Z"});
     vec![
+        (
+            TimeEntryChange::Update {
+                entry: 5,
+                date: Some("2026-10-02".into()),
+                minutes: 45,
+                offset: -330,
+                note: "  ".into(),
+            },
+            "PATCH",
+            json!({"entryId":5,"date":"2026-10-02","minutes":45,"timezoneOffsetMinutes":-330,"note":"  "}),
+            json!({"success":true,"entry":moved}),
+        ),
         (
             TimeEntryChange::Create {
                 date: "2026-10-01".into(),

@@ -297,7 +297,7 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
-        if self.time_log.pending.is_some() {
+        if self.time_log.pending.is_some() || self.task_time.pending.is_some() {
             return;
         }
         self.queue_time(
@@ -974,6 +974,34 @@ mod tests {
         view.update(&mut cx, |this, _, _| {
             assert!(!this.time_log.open);
             assert!(this.db.mutations().unwrap().is_empty());
+        })
+        .unwrap();
+    }
+    #[gpui::test]
+    fn time_log_does_not_attach_a_refused_entry_to_an_existing_timer_write(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
+        view.update(&mut cx, |this, window, cx| {
+            seed(this);
+            this.queue_time(TimeWrite::Start { task: 1 }, window, cx);
+            let pending = this.task_time.pending.clone();
+            assert!(pending.is_some());
+            this.open_time_log(window, cx);
+            this.time_log
+                .add
+                .hours
+                .update(cx, |input, cx| input.set_content("1".into(), cx));
+            this.submit_time_entry(window, cx);
+            assert!(
+                this.time_log.pending.is_none(),
+                "the timer acknowledgement must never count as entry success"
+            );
+            assert_eq!(this.task_time.pending, pending);
+            assert_eq!(this.db.mutations().unwrap().len(), 1);
+            assert_eq!(this.time_log.add.hours.read(cx).content, "1");
         })
         .unwrap();
     }
