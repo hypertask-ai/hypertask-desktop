@@ -70,3 +70,28 @@ Board footer declaration includes the web's `N / Shift+C` quick-add hint between
 add-task and archive (`src/components/Global/BottomSettings_QuickTips.tsx:125-127,241`).
 This is a cosmetic hint-list change only, with a CI declaration-order regression
 test; it does not implement or change shortcuts or the blocked F011 save route.
+
+Second fix artifact: `50c87bbd8d2f32a91994cf1348f05f217288b923`,
+[40089051349](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40089051349),
+all five applicable jobs successful. Artifact `12558386340`, digest
+`sha256:a5cab35705275673fb9d0ab8636fa7ab01fb2dd52c4aa1efd4cda682258677b1`.
+Dense **116 → 74** (25/26/23); matched structure **83 → 42** (19/12/11).
+The unchanged comparer reports **29 → 0 style-field differences**. Raw counts
+are not reduced by filtering its output or changing its tolerance.
+
+The 42 remaining raw differences consist of:
+
+- 24 native-only rail keys, because the live collector samples only icons 0-4.
+- Nine fixture-dependent boxes: inbox author/title/kind/ticket, board title/ticket
+  and second card height, task ticket and composer (the synthetic detail task is
+  in the inbox, so its existing snooze/remove-notification row is present).
+- Nine small same-label text-metric differences: six tab boxes (including the
+  active alias) and three first-footer-hint boxes. These remain visible, not
+  silently waived. `gates/layout-fonts.mjs` measures the pinned web font and
+  source CSS in CI Chromium against the actual native dumps to investigate them.
+  The probe is not a replacement for the live comparison or a whole-app web QA.
+
+CI logs prove `footer::tests::board_tips_include_the_web_quick_add_hint_in_declaration_order`
+and `tests::cli_validates_all_contract_flags` pass on Windows, macOS and Linux;
+`LAYOUT_DUMP_OK` proves all four themes, both resolutions, held-window behavior,
+exit-after-ready and failed-write handling passed.
