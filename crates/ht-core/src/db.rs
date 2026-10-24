@@ -296,7 +296,7 @@ impl Db {
             sections.retain(|section|columns.iter().any(|column|column.get("id").or_else(||column.get("sectionId"))==section.get("id") && column["visibility"]==true));
         }
         let mut tasks = self.json_rows("SELECT raw_json FROM Task WHERE projectId=? AND status='Normal' ORDER BY ranking ASC,updatedAt DESC,id ASC", [project_id])?;
-        let running=self.kv_get(&format!("web-running-timers:{}",self.current_user_id().unwrap_or(0)))?.and_then(|value|serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();
+        let running=self.kv_get(&format!("web-running-timers:{}:{project_id}",self.current_user_id().unwrap_or(0)))?.and_then(|value|serde_json::from_str::<Vec<Value>>(&value).ok()).unwrap_or_default();
         if let Some(builtin)=builtin{tasks.retain(|task|crate::board_views::builtin_matches(builtin,task,&project,self.current_user_id(),chrono::Utc::now().timestamp()));}
         crate::board_views::filter_sort(&mut tasks,&settings,&project,&running);
         tasks.retain(|task|match settings["board_subtask_setting"].as_str(){Some("None"|"Parent")=>task["parentTask"].is_null(),Some("Card")=>task["parentTask"].is_null() || task["subTasks"].as_array().is_some_and(|subtasks|!subtasks.is_empty()),_=>true});

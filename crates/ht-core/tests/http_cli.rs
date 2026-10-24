@@ -319,7 +319,7 @@ fn web_view_rename_and_delete_use_exact_routes_bearer_and_empty_delete_body(){
 
 #[test]
 fn advanced_view_people_and_timer_reads_use_bearer_on_accept_and_refusals(){
-    for path in ["/api/members/getAllForAssignees?projectId=15","/api/time/running","/api/agents/all?projectId=15"]{for status in [200,401,403]{
+    for path in ["/api/members/getAllForAssignees?projectId=15","/api/time/board-summary?board=15","/api/agents/all?projectId=15"]{for status in [200,401,403]{
         let(url,thread,receive)=server(status,"{}");let mut http=Http::with_base(&url,"desktop-view-token".into()).unwrap();assert_eq!(http.get(path).unwrap().status,status);
         let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("GET {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-view-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));thread.join().unwrap();
     }}

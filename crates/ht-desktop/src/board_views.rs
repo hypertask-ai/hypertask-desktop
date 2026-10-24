@@ -824,7 +824,13 @@ impl Desktop {
                             "ALL"
                         });
                 } else {
-                    if kind == "RunningTimer" && !self.options.offline {
+                    if kind == "RunningTimer"
+                        && !self.options.offline
+                        && self
+                            .db
+                            .board_project(self.options.board)
+                            .is_ok_and(|project| project["timeTrackingEnabled"] == true)
+                    {
                         self.load_view_support(true, window, cx);
                         return;
                     }
@@ -1087,7 +1093,7 @@ impl Desktop {
             let result = ht_core::Http::new(token)
                 .and_then(|mut http| {
                     if timers {
-                        ht_core::board_views::running_timers(&mut http)
+                        ht_core::board_views::running_timers(&mut http, board)
                     } else {
                         let mut data = ht_core::board_views::filter_people(&mut http, board)?;
                         if agents {
@@ -1126,7 +1132,7 @@ impl Desktop {
                                     if timers {
                                         let _ = this.db.kv_set(
                                             &format!(
-                                                "web-running-timers:{}",
+                                                "web-running-timers:{}:{board}",
                                                 this.db.current_user_id().unwrap_or(0)
                                             ),
                                             &data.to_string(),

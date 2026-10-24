@@ -294,6 +294,12 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value, project:&Val
                 };
                 if descending { cmp.reverse() } else { cmp }
             };
+            let dates=|left:&Value,right:&Value,invert:bool,missing_first:bool|{
+                match(timestamp(left),timestamp(right)){
+                    (None,None)=>Ordering::Equal,(None,Some(_))=>if missing_first{Ordering::Less}else{Ordering::Greater},(Some(_),None)=>if missing_first{Ordering::Greater}else{Ordering::Less},
+                    (Some(left),Some(right))=>{let order=left.cmp(&right);if descending!=invert{order.reverse()}else{order}}
+                }
+            };
             let cmp = match *mode {
                 "Manual" => Ordering::Equal,
                 "Priority" => {
@@ -319,35 +325,28 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value, project:&Val
                 }
                 "Title" => compare(&a["title"], &b["title"]),
                 "TicketNumber" => compare(&a["uniqueIndex"], &b["uniqueIndex"]),
-                "DueDate" => {
-                    if a["dueDate"].is_null() || b["dueDate"].is_null() {
-                        a["dueDate"].is_null().cmp(&b["dueDate"].is_null())
-                    } else {
-                        compare(&a["dueDate"], &b["dueDate"])
-                    }
-                }
+                "DueDate"=>dates(&a["dueDate"],&b["dueDate"],false,false),
                 "Assignee" => {
                     let name=|task:&Value|task["assignees"][0]["agent"]["displayName"].as_str().filter(|name|!name.is_empty()).or_else(||task["assignees"][0]["user"]["displayName"].as_str()).map(|name|json!(name)).unwrap_or(Value::Null);
-                    compare(&name(a),&name(b))
+                    let(left,right)=(name(a),name(b));if left.is_null() || right.is_null(){left.is_null().cmp(&right.is_null())}else{compare(&left,&right)}
                 }
-                "TimeOnBoard" => compare(&a["createdAt"],&b["createdAt"]).reverse(),
-                "CreatedAt" => compare(&a["createdAt"], &b["createdAt"]),
-                "UpdatedAt" => compare(&a["updatedAt"], &b["updatedAt"]),
+                "TimeOnBoard" => dates(&a["createdAt"],&b["createdAt"],true,true),
+                "CreatedAt" => dates(&a["createdAt"], &b["createdAt"],false,true),
+                "UpdatedAt" => dates(&a["updatedAt"], &b["updatedAt"],false,true),
                 "SectionChangedAt" | "LastCommentAt" | "TimeInColumn" | "TimeWithoutComment" => {
                     let field = if matches!(*mode,"SectionChangedAt"|"TimeInColumn") {
                         "sectionChangedAt"
                     } else {
                         "lastCommentAt"
                     };
-                    let result=compare(
+                    dates(
                         a.get(field)
                             .filter(|v| !v.is_null())
                             .unwrap_or(&a["createdAt"]),
                         b.get(field)
                             .filter(|v| !v.is_null())
-                            .unwrap_or(&b["createdAt"]),
-                    );
-                    if matches!(*mode,"TimeInColumn"|"TimeWithoutComment"){result.reverse()}else{result}
+                            .unwrap_or(&b["createdAt"]),matches!(*mode,"TimeInColumn"|"TimeWithoutComment"),false,
+                    )
                 }
                 _ => Ordering::Equal,
             };
@@ -371,10 +370,10 @@ pub fn filter_agents(transport:&mut impl Transport,project:i64)->Result<Value>{
     let agents=response.body["agents"].as_array().context("Failed to load board agents")?;
     Ok(json!(agents.iter().filter(|agent|agent["revokedAt"].is_null()).cloned().collect::<Vec<_>>()))
 }
-pub fn running_timers(transport:&mut impl Transport)->Result<Value>{
-    let response=transport.get("/api/time/running")?;
+pub fn running_timers(transport:&mut impl Transport,project:i64)->Result<Value>{
+    let response=transport.get(&format!("/api/time/board-summary?board={project}"))?;
     ensure!(response.status==200 && response.body["success"]==true,"{}",response.body["error"].as_str().unwrap_or("Could not load running timers"));
-    ensure!(response.body["entries"].is_array(),"Could not load running timers");Ok(response.body["entries"].clone())
+    let entries=response.body["entries"].as_array().context("Could not load running timers")?;Ok(json!(entries.iter().filter(|entry|entry["runningEntries"].as_array().is_none_or(|rows|!rows.is_empty())).cloned().collect::<Vec<_>>()))
 }
 
 pub fn ordered_views(project:&Value)->Vec<Value>{
@@ -480,5 +479,15 @@ mod builtin_tests{
         assert!(builtin_matches("builtin:overdue",&json!({"sectionId":1,"status":"Normal","dueDate":"2026-10-01"}),&project,Some(42),now));
         assert!(builtin_matches("builtin:decisions",&json!({"section":"Owner review"}),&project,Some(42),now));assert!(!builtin_matches("builtin:decisions",&json!({"section":"Other review"}),&project,Some(42),now));
         project["cyclesEnabled"]=json!(false);assert!(!builtin_views(&project,false).iter().any(|view|view["id"]=="builtin:decisions" || view["id"]=="builtin:current-cycle"));
+    }
+}
+
+#[cfg(test)]
+mod date_sort_tests{
+    use super::*;
+    #[test]
+    fn date_sort_uses_instants_and_keeps_the_webs_per_mode_missing_value_order(){
+        let rows=vec![json!({"id":1,"createdAt":"2026-10-01T08:00:00Z","dueDate":"2026-10-01T08:00:00Z","lastCommentAt":"2026-10-01T08:00:00Z","assignees":[]}),json!({"id":2,"createdAt":"2026-10-01T09:00:00+02:00","dueDate":"2026-10-01T09:00:00+02:00","lastCommentAt":"2026-10-01T09:00:00+02:00","assignees":[{"user":{"displayName":"Amy"}}]}),json!({"id":3})];
+        for(mode,order,expected)in [("DueDate","Ascending",vec![2,1,3]),("DueDate","Descending",vec![1,2,3]),("CreatedAt","Ascending",vec![3,2,1]),("TimeOnBoard","Descending",vec![3,2,1]),("TimeWithoutComment","Descending",vec![2,1,3]),("Assignee","Ascending",vec![2,1,3])]{let mut tasks=rows.clone();filter_sort(&mut tasks,&json!({"board_sorting_mode":mode,"board_sorting_order":order}),&json!({}),&[]);assert_eq!(tasks.iter().map(|task|task["id"].as_i64().unwrap()).collect::<Vec<_>>(),expected,"{mode}");}
     }
 }

@@ -40,7 +40,7 @@ Current SHA-bound GitHub CI evidence remains in uncommitted `FEATURES.md`.
   typed-date payloads and two-month custom range with Back/Confirm; overall
   ANY/ALL and tag/assignee value matching; unread/inbox/staleness/running-timer
   predicates. People and agents use `/api/members/getAllForAssignees` and
-  `/api/agents/all`; running timers use `/api/time/running`. Refused rosters do
+  `/api/agents/all`; running timers use `/api/time/board-summary?board=<project>`. Refused rosters do
   not become fake agent choices. Filter edits use full queued unsaved-view
   bodies. Source: `FilterHelperFunctions.ts:19-325`,
   `UpdatedAtRange/index.tsx:75-142,182-235`, `useAgents.ts:31-45,284`.
