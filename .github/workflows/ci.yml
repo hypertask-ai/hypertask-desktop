@@ -57,6 +57,18 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - name: Prepare web font faces (CI only)
+        if: runner.os == 'Linux'
+        run: |
+          python3 -m pip install fonttools==4.60.1 brotli==1.1.0
+          python3 gates/layout-font-assets.py
+      - name: Upload web font faces
+        if: runner.os == 'Linux' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: web-source-fonts
+          path: evidence/web-fonts/
+          if-no-files-found: error
       - name: Web-source typography contract
         if: runner.os == 'Linux'
         run: node gates/layout-fonts.mjs

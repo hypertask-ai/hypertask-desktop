@@ -95,3 +95,17 @@ CI logs prove `footer::tests::board_tips_include_the_web_quick_add_hint_in_decla
 and `tests::cli_validates_all_contract_flags` pass on Windows, macOS and Linux;
 `LAYOUT_DUMP_OK` proves all four themes, both resolutions, held-window behavior,
 exit-after-ready and failed-write handling passed.
+
+The CI Chromium probe at `bb76ad36178a9c59c7671600a441fa27ab945834`,
+[40090306655](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40090306655),
+reproduced the frozen widths exactly: footer **106**, Important **96**, Agents
+**72**, versus native **109/93/70**. The stricter gate failed honestly. Thus these
+were not waived as inevitable platform noise: the embedded font faces need
+correction. The web asset is pinned by its SHA-256, sourced from
+`src/lib/fonts/ibmPlexSans.ts:3` and `src/styles/tailwindThemes/graphite.css:171-172`.
+
+`gates/layout-font-assets.py` generates static weight 400/500/600/700 faces only
+in CI. It checks the full Google-family source against every glyph metric in the
+web's Latin subset, and checks that no character from any existing embedded
+face is lost. Only the resulting full-coverage font artifacts are candidates
+for desktop embedding; the narrow web subset is not substituted wholesale.
