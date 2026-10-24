@@ -761,8 +761,10 @@ impl Desktop {
                 s.editing = None;
                 s.delete = None;
                 s.preview.clear();
-                s.draft
-                    .update(cx, |input, cx| input.set_content(String::new(), cx));
+                if matches!(request.section, "skills" | "board-skills") {
+                    s.draft
+                        .update(cx, |input, cx| input.set_content(String::new(), cx));
+                }
                 let message = if request.section == "webhooks" {
                     if request.path.ends_with("/test") {
                         Some("Signed test queued")
