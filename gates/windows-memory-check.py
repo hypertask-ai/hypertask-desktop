@@ -28,7 +28,7 @@ def receipt(folder):
 
 
 def check_budget(data, budget):
-    assert budget['InboxWorkingSet64'] == int(budget['BaselineInboxWorkingSet64'] * 1.05)
+    assert budget['InboxWorkingSet64'] == budget['BaselineInboxWorkingSet64'] * 105 // 100
     inbox = next(m for m in data['Medians'] if m['Screen'] == 'inbox')
     assert inbox['WorkingSet64'] <= budget['InboxWorkingSet64'], 'Inbox exceeds measured baseline + 5%'
 

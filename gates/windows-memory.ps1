@@ -3,8 +3,7 @@ param(
     [Parameter(Mandatory)][string]$CoreExe,
     [Parameter(Mandatory)][string]$Fixtures,
     [Parameter(Mandatory)][string]$Revision,
-    [Parameter(Mandatory)][string]$Out,
-    [string]$Budget
+    [Parameter(Mandatory)][string]$Out
 )
 $ErrorActionPreference = 'Stop'
 Add-Type -AssemblyName System.Drawing
@@ -170,7 +169,7 @@ $medians = @(foreach ($screen in 'inbox', 'board', 'task') {
     }
 })
 $result = [pscustomobject]@{
-    Revision = $Revision; RunnerImage = $env:ImageVersion
+    Revision = $Revision; BuildRevision = (& git rev-parse HEAD); RunnerImage = $env:ImageVersion
     ExeSHA256 = (Get-FileHash $Exe).Hash; DatabaseSHA256 = (Get-FileHash $seed).Hash
     DisplayRequestResult = $displayResult; DisplayWidth = $display.Width; DisplayHeight = $display.Height
     WaitSeconds = 8; Samples = $rows; Medians = $medians
@@ -184,12 +183,4 @@ foreach ($m in $medians) {
 $table | Write-Host
 if ($env:GITHUB_STEP_SUMMARY) {
     @("## Memory: $Revision", "Display $($display.Width)x$($display.Height), maximized, 8 s, median of three. MB = 1,000,000 bytes.") + $table | Add-Content $env:GITHUB_STEP_SUMMARY
-}
-if ($Budget) {
-    $limit = Get-Content $Budget -Raw | ConvertFrom-Json
-    $inbox = ($medians | Where-Object Screen -eq 'inbox').WorkingSet64
-    if ($inbox -gt $limit.InboxWorkingSet64) {
-        throw "Inbox working set $inbox exceeds frozen baseline + 5% ($($limit.InboxWorkingSet64))"
-    }
-    Write-Host "MEMORY_GATE_PASS inbox=$inbox threshold=$($limit.InboxWorkingSet64)"
 }

@@ -55,6 +55,9 @@ jobs:
           -Fixtures fixtures/demo
           -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
           -Out evidence/windows-memory
+      - name: Validate Windows memory receipt
+        if: runner.os == 'Windows'
+        run: python gates/windows-memory-check.py evidence/windows-memory
       - name: Upload Windows memory
         if: runner.os == 'Windows' && always()
         uses: actions/upload-artifact@v4
