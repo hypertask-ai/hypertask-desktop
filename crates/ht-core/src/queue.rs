@@ -321,7 +321,14 @@ impl Db {
             _ => bail!("unknown queued kind"),
         };
         let response = if row.kind == "comment_draft" {
-            crate::comment_draft::send_draft(transport, &row.payload_json, &row.client_id)
+            if self.current_user_id() != row.payload_json["user_id"].as_i64() {
+                Ok(Response {
+                    status: 403,
+                    body: json!({"success":false,"error":"Draft belongs to another account"}),
+                })
+            } else {
+                crate::comment_draft::send_draft(transport, &row.payload_json, &row.client_id)
+            }
         } else if row.kind == "comment_action" {
             let change: crate::CommentWrite =
                 serde_json::from_value(row.payload_json["change"].clone())?;
@@ -360,7 +367,6 @@ impl Db {
                 if row.kind == "task_comment" {
                     db.restore_failed_comment_draft(&row.payload_json)?;
                     db.conn.execute("DELETE FROM Comment WHERE id=?", [-row.id])?;
-                    db.clear_sent_comment_draft(&row.payload_json, row.created_at)?;
                     db.request_refetch("comments", row.payload_json["task_id"].as_i64().context("missing task id")?)?;
                 }
                 if let Some(task_id) = row.payload_json["task_id"].as_i64() { db.request_refetch("task", task_id)?; }
@@ -393,6 +399,7 @@ impl Db {
                     ensure!(comment["id"].as_i64().is_some_and(|id| id>0), "invalid comment id");
                     db.upsert_comment(row.payload_json["task_id"].as_i64().context("missing task id")?, comment)?;
                     db.conn.execute("DELETE FROM Comment WHERE id=?", [-row.id])?;
+                    db.clear_sent_comment_draft(&row.payload_json, row.created_at)?;
                     db.request_refetch("task", row.payload_json["task_id"].as_i64().unwrap())?;
                 }
                 "inbox_archive" => {

@@ -73,3 +73,44 @@ fn timestamp_tooltip_uses_web_local_exact_date_not_relative_text() {
     assert_eq!(exact_comment_time(time), expected);
     assert_eq!(exact_comment_time("bad-time"), "bad-time");
 }
+
+#[gpui::test]
+fn overflow_ellipsis_click_sets_exact_comment_before_opening_command_palette(
+    cx: &mut gpui::TestAppContext,
+) {
+    use crate::ui::shell::tests::{click, draw};
+    use gpui::{VisualTestContext, WindowHandle};
+    cx.update(crate::input::init);
+    let view: WindowHandle<Desktop> = cx.add_window(|window, cx| {
+        let mut view = desktop(window, cx);
+        view.db
+            .apply_task(
+                &json!({"id":1,"projectId":15,"title":"Task","status":"Normal","uniqueIndex":9}),
+            )
+            .unwrap();
+        view.reload();
+        view.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+        view.ready_scheduled = true;
+        view
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    draw(view, &mut cx);
+    click(view, &mut cx, "task.comment.0.options");
+    view.read_with(&mut cx, |this, _| {
+        assert_eq!(this.interaction.task_part, 1);
+        assert_eq!(this.focused_comment().unwrap().id, 7);
+        let mut rows = vec![];
+        this.add_comment_commands(&mut rows);
+        assert!(rows.iter().any(|r| r.key == "editcomment"));
+        assert!(rows.iter().any(|r| r.key == "copyCommentLink"));
+    })
+    .unwrap();
+    cx.simulate_input("Copy comment content");
+    cx.simulate_keystrokes("enter");
+    cx.update(|_, cx| {
+        assert_eq!(
+            cx.read_from_clipboard().unwrap().text().unwrap().trim(),
+            "First é🙂"
+        )
+    });
+}

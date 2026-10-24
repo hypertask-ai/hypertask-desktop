@@ -258,3 +258,22 @@ fn drafts_survive_restart_and_rejected_saves_are_not_reported_as_success() {
     ));
     assert_eq!(db.comment_draft(1).unwrap().as_deref(), Some("Draft"));
 }
+
+#[test]
+fn old_account_drafts_never_write_with_a_different_current_user() {
+    let mut db = db();
+    db.enqueue(save("Owner's draft"), 1).unwrap();
+    db.kv_set("current-user-id", "43").unwrap();
+    let mut server = Server(VecDeque::new());
+    assert!(matches!(
+        db.drain_once(&mut server, 1).unwrap(),
+        Drain::Failed(_)
+    ));
+    assert!(server.0.is_empty());
+    assert!(db.comment_draft(1).unwrap().is_none());
+    db.kv_set("current-user-id", "42").unwrap();
+    assert_eq!(
+        db.comment_draft(1).unwrap().as_deref(),
+        Some("Owner's draft")
+    );
+}

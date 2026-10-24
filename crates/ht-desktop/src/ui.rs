@@ -2055,7 +2055,7 @@ impl Render for Desktop {
                 .then(|| self.selected_task())
                 .flatten();
             let scope = Scope::load(&self.db, self.screen, self.options.board, task);
-            sidebar.update(cx, |sidebar, cx| sidebar.set_scope(scope, cx));
+            sidebar.update(cx, |sidebar, cx| { sidebar.capture = self.layout.clone(); sidebar.set_scope(scope, cx); });
         }
         if self.shell.settings {
             return self.settings_screen(window, cx).into_any_element();

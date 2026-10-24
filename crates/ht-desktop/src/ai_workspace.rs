@@ -51,3 +51,108 @@ impl Desktop {
         cx.notify();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::super::shell::tests::{click, draw, measured, setup};
+    use super::*;
+    use gpui::MouseButton;
+
+    #[gpui::test]
+    fn ai_resize_mouse_drag_clamps_and_persists_after_reopen(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        let edge = measured(view, &mut cx, "ai.resize");
+        let x = edge["x"].as_f64().unwrap() as f32 + 2.;
+        let y = edge["y"].as_f64().unwrap() as f32 + 250.;
+        cx.simulate_mouse_down(point(px(x), px(y)), MouseButton::Left, Default::default());
+        cx.simulate_mouse_move(
+            point(px(x - 180.), px(y)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        cx.simulate_mouse_up(
+            point(px(x - 180.), px(y)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 600.);
+        view.read_with(&mut cx, |this, _| {
+            assert_eq!(
+                this.db.kv_get("aiChatSidebarWidthPx").unwrap().as_deref(),
+                Some("600")
+            )
+        })
+        .unwrap();
+        click(view, &mut cx, "rail.icon.6");
+        click(view, &mut cx, "shell.ai.reopen");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 600.);
+        let edge = measured(view, &mut cx, "ai.resize");
+        let x = edge["x"].as_f64().unwrap() as f32 + 2.;
+        cx.simulate_mouse_down(point(px(x), px(y)), MouseButton::Left, Default::default());
+        cx.simulate_mouse_move(
+            point(px(1430.), px(y)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        cx.simulate_mouse_up(
+            point(px(1430.), px(y)),
+            MouseButton::Left,
+            Default::default(),
+        );
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 340.);
+    }
+
+    #[gpui::test]
+    fn ai_header_pin_modes_close_and_commands_are_real_mouse_paths(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        click(view, &mut cx, "ai.more");
+        click(view, &mut cx, "ai.pin");
+        view.read_with(&mut cx, |this, _| {
+            assert_eq!(
+                this.db.kv_get("aiChatPinned").unwrap().as_deref(),
+                Some("true")
+            )
+        })
+        .unwrap();
+        cx.simulate_keystrokes("2");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
+        click(view, &mut cx, "ai.more");
+        click(view, &mut cx, "ai.mode");
+        let floating = measured(view, &mut cx, "rightpanel");
+        assert_eq!(floating["w"], 432.);
+        assert_eq!(floating["h"], 630.);
+        assert_eq!(measured(view, &mut cx, "main")["w"], 1440.);
+        click(view, &mut cx, "ai.more");
+        click(view, &mut cx, "ai.fullscreen");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 1440.);
+        assert_eq!(measured(view, &mut cx, "rightpanel")["h"], 900.);
+        click(view, &mut cx, "ai.more");
+        click(view, &mut cx, "ai.mode");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
+        click(view, &mut cx, "ai.close");
+        draw(view, &mut cx);
+        view.read_with(&mut cx, |this, _| {
+            assert!(!this.shell.ai_open);
+            assert_eq!(
+                this.db.kv_get("aiChatPinned").unwrap().as_deref(),
+                Some("false")
+            );
+            assert_eq!(
+                this.db
+                    .kv_get("aiChatAutoOpenSuppressed")
+                    .unwrap()
+                    .as_deref(),
+                Some("true")
+            );
+        })
+        .unwrap();
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Pin AI chat open");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Open AI chat full screen");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 1440.);
+    }
+}

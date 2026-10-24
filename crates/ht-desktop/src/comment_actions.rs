@@ -148,6 +148,9 @@ impl Desktop {
     }
 
     pub(super) fn comment_body_html(&self, cx: &App) -> String {
+        if self.comment_actions.quotes.is_empty() {
+            return self.comment_draft_body(cx);
+        }
         let mut text = self.comment_input.read(cx).content.to_string();
         let mut html = String::new();
         for (plain, quote) in &self.comment_actions.quotes {
@@ -668,7 +671,12 @@ impl Desktop {
                                     cx.stop_propagation();
                                     this.interaction.task_part = i + 1;
                                     this.run_shortcut(Action::Commands, window, cx);
-                                })),
+                                }))
+                                .layout_key(
+                                    &self.layout,
+                                    format!("task.comment.{i}.options"),
+                                    None,
+                                ),
                         )
                     })
                     .child({

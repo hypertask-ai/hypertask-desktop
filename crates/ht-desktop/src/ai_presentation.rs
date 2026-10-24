@@ -41,7 +41,9 @@ impl Presentation {
             },
             pinned: flag("aiChatPinned"),
             suppressed: flag("aiChatAutoOpenSuppressed"),
-            open: flag("aiChatPinned") || !flag("aiChatAutoOpenSuppressed"),
+            open: flag("aiChatPinned")
+                || (!flag("aiChatAutoOpenSuppressed")
+                    && db.kv_get("openAiChatByDefault").ok().flatten().as_deref() != Some("false")),
             width: db
                 .kv_get("aiChatSidebarWidthPx")
                 .ok()
@@ -54,15 +56,23 @@ impl Presentation {
     }
 
     pub fn save(&self, db: &Db) -> ht_core::Result<()> {
-        db.kv_set("aiChatPinned", &self.pinned.to_string())?;
-        db.kv_set("aiChatAutoOpenSuppressed", &self.suppressed.to_string())?;
+        let mut values = vec![
+            ("aiChatPinned", self.pinned.to_string()),
+            ("aiChatAutoOpenSuppressed", self.suppressed.to_string()),
+            ("aiChatSidebarWidthPx", self.width.to_string()),
+        ];
         if self.mode != DisplayMode::Fullscreen {
-            db.kv_set(
+            values.push((
                 "isAiChatSidebarMode",
-                &(self.mode == DisplayMode::Sidebar).to_string(),
-            )?;
+                (self.mode == DisplayMode::Sidebar).to_string(),
+            ));
         }
-        db.kv_set("aiChatSidebarWidthPx", &self.width.to_string())
+        for (key, value) in values {
+            if db.kv_get(key)?.as_deref() != Some(&value) {
+                db.kv_set(key, &value)?;
+            }
+        }
+        Ok(())
     }
 
     pub fn clamp(width: f32, viewport: f32) -> f32 {
@@ -125,8 +135,9 @@ impl AiSidebar {
     }
 
     pub fn resize_end(&mut self, _: &MouseUpEvent, _: &mut Window, cx: &mut Context<Self>) {
-        self.presentation.drag = None;
-        cx.notify();
+        if self.presentation.drag.take().is_some() {
+            cx.notify();
+        }
     }
 
     pub fn resize_edge(&self, cx: &mut Context<Self>) -> gpui::AnyElement {
@@ -147,7 +158,7 @@ impl AiSidebar {
                     cx.stop_propagation();
                 }),
             )
-            .into_any_element()
+            .layout_key(&self.capture, "ai.resize", None)
     }
 }
 

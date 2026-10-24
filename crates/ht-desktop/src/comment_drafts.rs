@@ -27,6 +27,7 @@ impl Desktop {
         {
             return;
         }
+        self.comment_actions.clear_quotes();
         let text = RichText::parse(&html, self.colors).text;
         self.comment_drafts.task = Some(task);
         self.comment_drafts.user = user;
@@ -34,6 +35,14 @@ impl Desktop {
         self.comment_drafts.html = html;
         self.comment_input
             .update(cx, |input, cx| input.set_content(text, cx));
+    }
+
+    pub(super) fn comment_draft_body(&self, cx: &App) -> String {
+        crate::rich_text::edited_html(
+            &self.comment_drafts.html,
+            &self.comment_drafts.text,
+            self.comment_input.read(cx).content.as_ref(),
+        )
     }
 
     pub(super) fn observe_comment_draft(&mut self, cx: &mut Context<Self>) {
@@ -47,11 +56,7 @@ impl Desktop {
         let html = if text.is_empty() {
             String::new()
         } else {
-            crate::rich_text::edited_html(
-                &self.comment_drafts.html,
-                &self.comment_drafts.text,
-                &text,
-            )
+            self.comment_body_html(cx)
         };
         self.comment_drafts.text = text;
         self.comment_drafts.html = html.clone();
