@@ -64,3 +64,5 @@ mod memory;
 
 pub mod task_relations;
 pub use task_relations::RelationKind;
+
+pub mod compose_routing;
