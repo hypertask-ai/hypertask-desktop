@@ -581,9 +581,10 @@ impl Desktop {
                 sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
                 return;
             }
-            if sidebar.read(cx).has_focus(window, cx)
-                || (sidebar.read(cx).mode() == crate::ai_sidebar::DisplayMode::Fullscreen
-                    && !((event.keystroke.modifiers.control || event.keystroke.modifiers.platform) && event.keystroke.key == "k")) {
+            let commands = (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)
+                && event.keystroke.key == "k" && !event.keystroke.modifiers.shift && !event.keystroke.modifiers.alt;
+            if (sidebar.read(cx).has_focus(window, cx)
+                || sidebar.read(cx).mode() == crate::ai_sidebar::DisplayMode::Fullscreen) && !commands {
                 return;
             }
         }

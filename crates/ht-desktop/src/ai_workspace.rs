@@ -160,6 +160,7 @@ mod tests {
         cx.simulate_input("Pin AI chat open");
         cx.simulate_keystrokes("enter");
         assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
+        cx.simulate_keystrokes("ctrl-q");
         cx.simulate_keystrokes("ctrl-k");
         cx.simulate_input("Open AI chat full screen");
         cx.simulate_keystrokes("enter");
