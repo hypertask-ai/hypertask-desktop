@@ -83,16 +83,6 @@ impl Desktop {
     pub(super) fn task_inbox_ids(&self) -> Vec<i64> {
         self.db.inbox().unwrap_or_default().iter().filter(|n|n.task_id==Some(self.options.task)).map(|n|n.id).collect()
     }
-    pub(super) fn composer_inbox_actions(&self,cx:&mut Context<Self>) -> AnyElement {
-        div().flex().items_center().gap(px(24.)).text_size(px(13.)).text_color(color(self.colors.muted))
-            .child(div().id("composer-snooze").cursor_pointer().child("Snooze")
-                .on_click(cx.listener(|this,_,window,cx|{cx.stop_propagation();this.run_shortcut(Action::Remind,window,cx);}))
-                .layout_key(&self.layout,"task.composer.snooze",None))
-            .child(div().id("composer-remove-notification").cursor_pointer().child("Remove notification")
-                .on_click(cx.listener(|this,_,window,cx|{cx.stop_propagation();this.run_shortcut(Action::ArchiveNotification,window,cx);}))
-                .layout_key(&self.layout,"task.composer.remove-notification",None))
-            .into_any_element()
-    }
     pub(super) fn show_inbox_reminder(&mut self, ids: Vec<i64>, window: &mut Window, cx: &mut Context<Self>) {
         if ids.is_empty() { return; }
         let mut dates = reminder_dates(chrono::Local::now());
@@ -673,11 +663,11 @@ mod tests {
 #[cfg(test)]
 mod composer_tests {
     use super::*;
-    use crate::ui::shell::tests::{click,draw};
+    use crate::ui::shell::tests::draw;
     use gpui::{VisualTestContext,WindowHandle};
     use serde_json::json;
     #[gpui::test]
-    fn composer_snooze_and_remove_notification_are_real_buttons_without_comment_writes(cx:&mut gpui::TestAppContext) {
+    fn desktop_composer_omits_phone_only_actions_but_task_shortcuts_keep_working(cx:&mut gpui::TestAppContext) {
         cx.update(crate::input::init);
         for snooze in [true,false] {
             let view:WindowHandle<Desktop>=cx.add_window(|window,cx|{
@@ -688,7 +678,17 @@ mod composer_tests {
                 v.layout=Some(Rc::new(RefCell::new(LayoutDump::default())));v.ready_scheduled=true;v
             });
             let mut cx=VisualTestContext::from_window(view.into(),cx);draw(view,&mut cx);
-            click(view,&mut cx,if snooze{"task.composer.snooze"}else{"task.composer.remove-notification"});
+            view.read_with(&mut cx,|this,_|{
+                // NewCommentComponent.tsx:447-485 renders the desktop composer;
+                // TaskOptions is only mounted in its phone branch at line 527.
+                let elements=this.layout.as_ref().unwrap().borrow().interaction_elements();
+                assert!(elements.iter().any(|e|e["key"]=="task.composer"));
+                for key in ["task.composer.snooze","task.composer.remove-notification"] {
+                    assert!(!elements.iter().any(|e|e["key"]==key), "phone-only action {key}");
+                }
+            }).unwrap();
+            view.update(&mut cx,|this,window,cx|window.focus(&this.focus,cx)).unwrap();
+            cx.simulate_keystrokes(if snooze{"h"}else{"e"});
             if snooze {
                 view.read_with(&mut cx,|this,_|{assert_eq!(this.inbox_actions.reminder.as_ref().unwrap().ids,vec![101]);assert!(this.db.mutations().unwrap().is_empty());}).unwrap();
                 cx.simulate_keystrokes("enter");

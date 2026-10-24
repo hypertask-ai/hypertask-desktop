@@ -203,3 +203,12 @@ actual selected glyphs, preserving kerning, fallback, variable weight and bidi
 cluster order at FreeType 26.6 precision. Glyph metrics are cached per face,
 size and glyph; no text-specific compensation is used. Both original strict
 browser assertions remain unchanged. Final runtime/comparison proof follows.
+
+A further source review found that the extra task-composer row is not a fixture
+exception: desktop `NewCommentComponent.tsx:447-485` does **not** mount TaskOptions;
+that row is mounted only by the phone branch at `:527` (its implementation is
+`:631-655`). The native-only row is removed, retaining the existing H/E keyboard
+actions and their write assertions. A replacement regression checks that the
+desktop composer exists without either phone-only control, then exercises both
+shortcuts. The CI sparse Graphite dump additionally requires the live 154px
+composer height. No fixture content or comparer tolerance is changed.

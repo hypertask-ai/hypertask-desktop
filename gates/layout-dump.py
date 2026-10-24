@@ -72,6 +72,8 @@ def validate(path, screen, theme, width=1440, height=900, sparse=False):
         }[screen]
         assert missing == absent, missing
         required -= absent
+        if screen == "task":
+            assert elements["task.composer"]["h"] == 154, elements["task.composer"]
     assert required <= elements.keys(), f"unmeasured native elements: {required - elements.keys()}"
     assert elements["rail"]["x"] == 0 and elements["rail"]["w"] == 48, elements["rail"]
     assert elements["main"]["x"] == 0 and elements["main"]["w"] == width - 420, elements["main"]

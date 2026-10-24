@@ -904,13 +904,21 @@ impl CosmicTextSystemState {
         });
         let mut anchor = None;
         let mut anchor_shift = 0.0;
+        let mut cluster_shifts = HashMap::default();
         for index in order {
             let glyph = &mut layout.glyphs[index];
             if anchor != Some(glyph.x) {
                 anchor = Some(glyph.x);
                 anchor_shift = shift;
             }
-            glyph.x = ((glyph.x + anchor_shift) * 64.0).round() / 64.0;
+            let cluster_shift = *cluster_shifts.entry(glyph.start).or_insert(anchor_shift);
+            // A mark follows its cluster, not the advance of its base glyph.
+            let glyph_shift = if glyph.w == 0.0 {
+                cluster_shift
+            } else {
+                anchor_shift
+            };
+            glyph.x = ((glyph.x + glyph_shift) * 64.0).round() / 64.0;
             glyph.w += shifts[index];
             shift += shifts[index];
         }
@@ -1343,6 +1351,64 @@ mod tests {
                     .all(|glyph| text.is_char_boundary(glyph.index))
             );
         }
+        Ok(())
+    }
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn web_plex_hinting_preserves_shaped_clusters_and_mark_offsets() -> Result<()> {
+        let system = text_system()?;
+        let font_id = system.font_id(&gpui::font("IBM Plex Sans"))?;
+        let mut state = system.0.write();
+        let properties = state.font_match_properties(font_id).unwrap();
+        let attrs =
+            AttrsList::new(&properties.attributes(font_id, &properties.primary_family_name));
+        let text = "AV x\u{0301} ffi";
+        let line = ShapeLine::new(
+            &mut state.font_system,
+            text,
+            &attrs,
+            cosmic_text::Shaping::Advanced,
+            4,
+        );
+        let mut lines = Vec::new();
+        line.layout_to_buffer(
+            &mut state.scratch,
+            14.0,
+            None,
+            cosmic_text::Wrap::None,
+            Ellipsize::None,
+            None,
+            &mut lines,
+            None,
+            cosmic_text::Hinting::Disabled,
+        );
+        let layout = &mut lines[0];
+        let before = layout.glyphs.clone();
+        state.hint_layout(layout);
+        assert_eq!(before.len(), layout.glyphs.len());
+        let mut marks = 0;
+        for (old, new) in before.iter().zip(&layout.glyphs) {
+            assert_eq!(
+                (old.start, old.end, old.glyph_id, old.font_id),
+                (new.start, new.end, new.glyph_id, new.font_id)
+            );
+            if old.w == 0.0 {
+                let base = before
+                    .iter()
+                    .position(|g| g.start == old.start && g.w != 0.0)
+                    .unwrap();
+                let old_offset = old.x - before[base].x;
+                let new_offset = new.x - layout.glyphs[base].x;
+                assert!((old_offset - new_offset).abs() <= 1.0 / 64.0);
+                assert_eq!(new.w, 0.0);
+                marks += 1;
+            }
+        }
+        assert!(
+            marks > 0,
+            "the control must actually shape a combining mark"
+        );
         Ok(())
     }
 
