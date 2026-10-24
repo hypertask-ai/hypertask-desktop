@@ -1,0 +1,23 @@
+{
+  "message": "Reply with exactly: Native AI sidebar is live.",
+  "aiFeature": "aiChat",
+  "session_id": "73810000-0000-4000-8000-000000000001",
+  "user_message_id": "73810000-0000-4000-8000-000000000004",
+  "assistant_message_id": "73810000-0000-4000-8000-000000000002",
+  "stream_id": "73810000-0000-4000-8000-000000000003",
+  "modelOptionId": "gemini-3.5-flash-lite",
+  "model": "google/gemini-3.5-flash-lite",
+  "provider": "gateway",
+  "context_list": [],
+  "default_context": {
+    "surface": "inbox",
+    "surface_path": "/inbox"
+  },
+  "user_context": {},
+  "chat_history": [],
+  "attachments": [],
+  "images64": [],
+  "pdfs64": [],
+  "docx64": [],
+  "byokProviderFlags": []
+}
