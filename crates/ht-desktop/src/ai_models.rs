@@ -121,7 +121,7 @@ impl AiSidebar {
             let default=config.default.clone();let disabled=ht_core::ai_models::option(&default).is_none_or(|model|config.plan.as_deref()==Some("BYOK") && config.locked(model));
             menu=menu.child(div().id("ai-model-reset").p(px(8.)).child("Reset to default").when(!disabled,|d|d.cursor_pointer().on_click(cx.listener(move|this,_,_,cx|this.choose_model(&default,cx)))));
         }
-        menu.child(gpui::canvas(move|bounds,_,_|capture.set(Some(bounds)),|_,_,_,_|{}).absolute().size_full()).layout_key(&self.capture,"ai.models.menu",None)
+        menu.child(gpui::canvas(move|bounds,_,_|capture.set(Some(bounds)),|_,_,_,_|{}).absolute().inset_0()).layout_key(&self.capture,"ai.models.menu",None)
     }
 }
 
@@ -191,8 +191,17 @@ mod popup_tests {
             draw(cx);
             let measured=|cx:&gpui::VisualTestContext,key:&str|view.read_with(cx,|sidebar,_|sidebar.capture.as_ref().unwrap().borrow().interaction_elements().into_iter().find(|element|element["key"]==key).unwrap());
             let input=measured(cx,"ai.models.composer");let toggle=measured(cx,"ai.models.toggle");
-            cx.simulate_click(gpui::point(px(toggle["x"].as_f64().unwrap() as f32+10.),px(toggle["y"].as_f64().unwrap() as f32+8.)),Default::default());draw(cx);
-            view.read_with(cx,|sidebar,_|assert!(sidebar.model_menu));let menu=measured(cx,"ai.models.menu");let after=measured(cx,"ai.models.composer");
+            let toggle_center=gpui::point(px((toggle["x"].as_f64().unwrap()+toggle["w"].as_f64().unwrap()/2.) as f32),px((toggle["y"].as_f64().unwrap()+toggle["h"].as_f64().unwrap()/2.) as f32));
+            cx.update(|window,_|assert!(gpui::Bounds::new(gpui::Point::default(),window.viewport_size()).contains(&toggle_center),"{mode:?}: toggle must be inside viewport: {toggle}"));
+            cx.simulate_click(toggle_center,Default::default());draw(cx);
+            view.read_with(cx,|sidebar,_|assert!(sidebar.model_menu,"{mode:?}: clicking measured toggle must open menu: {toggle}"));let menu=measured(cx,"ai.models.menu");let after=measured(cx,"ai.models.composer");
+            view.read_with(cx,|sidebar,_|{
+                for (element,bounds) in [(&toggle,sidebar.models.anchor.get().unwrap()),(&menu,sidebar.models.menu_bounds.get().unwrap())]{
+                    for (key,value) in [("x",bounds.origin.x),("y",bounds.origin.y),("w",bounds.size.width),("h",bounds.size.height)]{
+                        assert!((element[key].as_f64().unwrap()-f32::from(value) as f64).abs()<=1.,"{mode:?}: measured hit bounds must match {element}: {bounds:?}");
+                    }
+                }
+            });
             for key in ["x","y","w","h"]{assert_eq!(input[key],after[key],"{mode:?} {key}: popup must not reflow composer");}
             assert!(menu["y"].as_f64().unwrap()+menu["h"].as_f64().unwrap()<=toggle["y"].as_f64().unwrap()+1.,"menu must open above toggle");
             cx.simulate_click(gpui::point(px(menu["x"].as_f64().unwrap() as f32+20.),px(menu["y"].as_f64().unwrap() as f32+16.)),Default::default());draw(cx);

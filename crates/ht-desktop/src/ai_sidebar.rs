@@ -1328,7 +1328,7 @@ impl Render for AiSidebar {
                     .relative()
                     .child(self.model_label())
                     .child(icon("chevron-down", t.muted))
-                    .child(gpui::canvas({let anchor=self.models.anchor.clone();move|bounds,_,_|anchor.set(Some(bounds))},|_,_,_,_|{}).absolute().size_full())
+                    .child(gpui::canvas({let anchor=self.models.anchor.clone();move|bounds,_,_|anchor.set(Some(bounds))},|_,_,_,_|{}).absolute().inset_0())
                     .layout_key(&self.capture,"ai.models.toggle",Some(self.model_label())),
             )
             .child(

@@ -103,6 +103,20 @@ mod tests {
     }
 
     #[gpui::test]
+    fn shell_palette_query_keeps_j_and_k_while_arrows_navigate(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("j k");
+        view.read_with(&cx, |this, cx| assert_eq!(this.interaction.query.read(cx).content.as_ref(), "j k")).unwrap();
+        cx.simulate_keystrokes("ctrl-a backspace");
+        cx.simulate_input("Settings");
+        cx.simulate_keystrokes("down");
+        view.read_with(&cx, |this, _| assert_eq!(this.interaction.choice, 1)).unwrap();
+        cx.simulate_keystrokes("up");
+        view.read_with(&cx, |this, _| assert_eq!(this.interaction.choice, 0)).unwrap();
+    }
+
+    #[gpui::test]
     fn shell_palette_favorites_opens_the_web_ten_slot_panel_without_a_write(cx: &mut gpui::TestAppContext) {
         let(view,mut cx)=setup(cx);
         command(view,&mut cx,"manageFavorites");

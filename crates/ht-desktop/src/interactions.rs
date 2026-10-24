@@ -126,6 +126,7 @@ impl Desktop {
             let count = self.choices(cx).len();
             match key.key.as_str() {
                 "escape" => self.close_modal(window, cx),
+                "j" | "k" if !ctrl && !key.modifiers.alt && self.interaction.query.focus_handle(cx).is_focused(window) => return,
                 "down" | "j" if !ctrl && !key.modifiers.alt => {
                     self.interaction.choice =
                         (self.interaction.choice + 1).min(count.saturating_sub(1));
