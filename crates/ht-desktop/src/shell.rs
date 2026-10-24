@@ -314,7 +314,7 @@ impl Desktop {
                 .when(!wide, |d| d.justify_center())
                 .when(wide, |d| d.pl(px(10.)).gap(px(10.)))
                 .rounded(px(5.))
-                .text_size(px(14.))
+                .when(wide, |d| d.text_size(px(14.)))
                 .text_color(color(if selected { t.text } else { t.muted }))
                 .when(selected, |d| d.bg(color(t.hover)))
                 .child(icon(name, if selected { t.text } else { t.muted }, 18.))
@@ -386,15 +386,12 @@ impl Desktop {
                     .when(wide, |d| d.justify_end().pr(px(10.)))
                     .when(!wide, |d| d.justify_center())
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_rail(cx)))
-                    .child(icon(
-                        if wide {
-                            "chevron-left"
-                        } else {
-                            "chevron-right"
-                        },
-                        t.muted,
-                        16.,
-                    ))
+                    .child(
+                        div().w(px(16.)).h(px(20.)).flex().items_center()
+                            .text_color(color(t.muted))
+                            .child(icon(if wide { "chevron-left" } else { "chevron-right" }, t.muted, 16.))
+                            .layout_key(&self.layout, "rail.icon.0", None),
+                    )
                     .when(self.shell.hovered == Some(0), |d| {
                         d.child(
                             div()
@@ -424,8 +421,7 @@ impl Desktop {
                                     ),
                                 ),
                         )
-                    })
-                    .layout_key(&self.layout, "rail.icon.0", None),
+                    }),
             )
             .child(
                 div()
@@ -434,7 +430,7 @@ impl Desktop {
                     .on_click(cx.listener(|this, _, window, cx| this.toggle_boards(window, cx)))
                     .child(button(1, "panel-left", "Boards", self.shell.boards, cx)),
             )
-            .child(div().h(px(12.)).flex_shrink_0())
+            .child(div().h(px(16.)).flex_shrink_0())
             .child(
                 div()
                     .id("rail-inbox")

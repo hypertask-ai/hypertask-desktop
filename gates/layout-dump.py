@@ -76,10 +76,22 @@ def validate(path, screen, theme, width=1440, height=900, sparse=False):
     assert elements["rail"]["x"] == 0 and elements["rail"]["w"] == 48, elements["rail"]
     assert elements["main"]["x"] == 0 and elements["main"]["w"] == width - 420, elements["main"]
     assert elements["rightpanel"]["x"] == width - 420 and elements["rightpanel"]["w"] == 420, elements["rightpanel"]
+    for i in range(5):
+        assert elements[f"rail.icon.{i}"]["fontSize"] == 16, elements[f"rail.icon.{i}"]
+        assert elements[f"rail.icon.{i}"]["lineHeight"] == 24, elements[f"rail.icon.{i}"]
+    assert elements["rail.icon.0"]["w"] == 16 and elements["rail.icon.0"]["h"] == 20, elements["rail.icon.0"]
+    for i in range(2, 5):
+        assert elements[f"rail.icon.{i}"]["y"] == 82 + (i - 2) * 38, elements[f"rail.icon.{i}"]
+    assert elements["footer.text"]["text"] == "Command center", elements["footer.text"]
+    assert 100 <= elements["footer.text"]["w"] <= 110, elements["footer.text"]
     if screen == "board":
+        assert elements["board.column.0.add"]["fontSize"] == 16, elements["board.column.0.add"]
+        assert elements["board.column.0.add"]["lineHeight"] == 24, elements["board.column.0.add"]
+        assert elements["board.card.0.title"]["w"] <= elements["board.card.0"]["w"] - 16, elements["board.card.0.title"]
         assert elements["board.header"]["h"] == 56, elements["board.header"]
         assert elements["board.column.0"]["y"] == 72, elements["board.column.0"]
     if screen == "inbox":
+        assert elements["inbox.tabs"]["w"] == min(width - 468, 1440) - 105, elements["inbox.tabs"]
         assert elements["inbox.tab.0"]["h"] == 32, elements["inbox.tab.0"]
         assert elements["inbox.tab.0"]["fontWeight"] == 400, elements["inbox.tab.0"]
     if theme == "graphite":
