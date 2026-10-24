@@ -31,6 +31,8 @@ pub enum Action {
     ExtendPrevious,
     SelectAll { all_splits: bool },
     BulkArchive,
+    Remind,
+    BulkRemind,
     MoveColumn,
     Priority,
     Assign,
@@ -118,6 +120,8 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
             Some(Action::SelectAll { all_splits })
         }
         ("e", false, true, false) if screen == Screen::Inbox => Some(Action::BulkArchive),
+        ("h", false, true, false) if screen == Screen::Inbox => Some(Action::BulkRemind),
+        ("h", false, false, false) if screen != Screen::Board => Some(Action::Remind),
         ("h" | "left", false, true, false) if screen != Screen::Inbox => Some(Action::MoveLeft),
         ("l" | "right", false, true, false) if screen != Screen::Inbox => Some(Action::MoveRight),
         ("3" | "#", false, true, false) | ("#", false, false, false) => Some(Action::Delete),
@@ -314,6 +318,6 @@ mod tests {
             assert_eq!(key("ctrl-alt-enter", screen, true), None);
         }
         assert_eq!(key("cmd-d", Screen::Task, false), None);
-        assert_eq!(key("shift-h", Screen::Inbox, false), None);
+        assert_eq!(key("shift-h", Screen::Inbox, false), Some(BulkRemind));
     }
 }

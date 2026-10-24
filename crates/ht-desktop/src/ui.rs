@@ -61,6 +61,9 @@ mod shell;
 #[path = "comment_drafts.rs"]
 mod comment_drafts;
 
+#[path = "inbox.rs"]
+mod inbox;
+
 #[path = "comments.rs"]
 mod comments;
 #[path = "interactions.rs"]
@@ -75,6 +78,7 @@ pub struct Desktop {
     screen: Screen,
     previous: Screen,
     inbox: Vec<InboxItem>,
+    inbox_actions: inbox::InboxActions,
     filtered: Vec<usize>,
     splits: Vec<String>,
     split: usize,
@@ -187,6 +191,7 @@ impl Desktop {
             db,
             colors,
             inbox: vec![],
+            inbox_actions: inbox::InboxActions::new(cx),
             filtered: vec![],
             splits: vec![],
             split: 0,
@@ -425,7 +430,7 @@ impl Desktop {
             .inbox
             .iter()
             .enumerate()
-            .filter(|(_, n)| Self::split_matches(n, &self.splits[self.split]))
+            .filter(|(_, n)| Self::split_matches(n, &self.splits[self.split]) && inbox::search_matches(n, &self.inbox_actions.search_text))
             .map(|(i, _)| i)
             .collect();
         self.clamp_selection();
@@ -484,6 +489,7 @@ impl Desktop {
     }
 
     fn open_task(&mut self, id: i64, cx: &mut Context<Self>) {
+        self.mark_opened_notification(id, cx);
         self.remember_playlist();
         if self.screen != Screen::Task {
             self.previous = self.screen;
@@ -591,6 +597,7 @@ impl Desktop {
                 return;
             }
         }
+        if self.inbox_key(event, window, cx) { return; }
         if !self.comment_key(event, window, cx) { self.interaction_key(event, window, cx); }
     }
 
@@ -739,378 +746,6 @@ impl Desktop {
                     .child(icon("x", self.colors.text, 18.)),
             )
             .layout_key(&self.layout, "footer", None)
-    }
-
-    fn inbox_screen(&self, cx: &mut Context<Self>) -> impl IntoElement + use<> {
-        let t = self.colors;
-        let tabs = self.splits.iter().enumerate().map(|(i, name)| {
-            let count = self
-                .inbox
-                .iter()
-                .filter(|n| Self::split_matches(n, name))
-                .count();
-            div()
-                .id(("split", i))
-                .cursor_pointer()
-                .flex()
-                .h(px(32.))
-                .text_size(px(14.))
-                .pr(px(15.))
-                .items_center()
-                .gap(px(4.))
-                .font_weight(FontWeight::NORMAL)
-                .text_color(color(t.text))
-                .on_click(cx.listener(move |this, _, _, cx| {
-                    this.split = i;
-                    this.selected = 0;
-                    this.filter_inbox();
-                    cx.notify();
-                }))
-                .child(
-                    div()
-                        .flex()
-                        .items_baseline()
-                        .gap(px(4.))
-                        .font_weight(if i == self.split {
-                            FontWeight::SEMIBOLD
-                        } else {
-                            FontWeight::NORMAL
-                        })
-                        .text_color(color(if i == self.split { 0xf3f4f6 } else { t.muted }))
-                        .child(name.clone())
-                        .child(
-                            div()
-                                .text_size(px(11.))
-                                .font_weight(FontWeight::NORMAL)
-                                .text_color(color(
-                                    if matches!(
-                                        self.options.theme,
-                                        ThemeName::Graphite | ThemeName::Amoled
-                                    ) {
-                                        0xd1d5dc
-                                    } else {
-                                        0x4b5563
-                                    },
-                                ))
-                                .child(count.to_string()),
-                        ),
-                )
-                .when(i + 1 == self.splits.len(), |d| {
-                    d.child(div().px(px(4.)).child(icon("settings", t.muted, 14.)))
-                })
-                .layout_key(
-                    &self.layout,
-                    format!("inbox.tab.{i}"),
-                    Some(format!("{name} {count}")),
-                )
-        });
-        div()
-            .flex_1()
-            .min_h_0()
-            .flex()
-            .flex_col()
-            .bg(color(t.inbox_page))
-            .items_center()
-            .child(
-                div()
-                    .w_full()
-                    .max_w(px(1440.))
-                    .flex_1()
-                    .min_h_0()
-                    .flex()
-                    .flex_col()
-                    .child(
-                        div()
-                            .h(px(80.))
-                            .flex_shrink_0()
-                            .mx(px(12.))
-                            .pl(px(52.))
-                            .pr(px(20.))
-                            .pt(px(24.))
-                            .pb(px(24.))
-                            .flex()
-                            .gap(px(9.))
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .h(px(32.))
-                                    .flex()
-                                    .items_center()
-                                    .gap(px(9.))
-                                    .children(tabs)
-                                    .layout_key(&self.layout, "inbox.tabs", None),
-                            )
-                            .child(div()),
-                    )
-                    .child(
-                        div()
-                            .mx(px(12.))
-                            .mb(px(12.))
-                            .flex_1()
-                            .min_h_0()
-                            .bg(color(t.inbox))
-                            .rounded(px(6.))
-                            .when(self.options.theme != ThemeName::Amoled, |d| {
-                                d.shadow(vec![
-                                    gpui::BoxShadow {
-                                        inset: false,
-                                        color: rgba(0x0000001a).into(),
-                                        offset: point(px(0.), px(4.)),
-                                        blur_radius: px(6.),
-                                        spread_radius: px(-1.),
-                                    },
-                                    gpui::BoxShadow {
-                                        inset: false,
-                                        color: rgba(0x0000001a).into(),
-                                        offset: point(px(0.), px(2.)),
-                                        blur_radius: px(4.),
-                                        spread_radius: px(-2.),
-                                    },
-                                ])
-                            })
-                            .flex()
-                            .flex_col()
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .h(px(46.))
-                                    .flex_shrink_0()
-                                    .pl(px(52.))
-                                    .pt(px(24.))
-                                    .text_size(px(12.))
-                                    .line_height(px(14.4))
-                                    .font_weight(FontWeight::BOLD)
-                                    .text_color(color(0x95999e))
-                                    .when(self.options.theme == ThemeName::Dia, |d| {
-                                        d.font_family("Newsreader").italic()
-                                    })
-                                    .child(
-                                        div().flex().child(
-                                            div()
-                                                .child(inbox_date(
-                                                    self.filtered.first().map(|&i| {
-                                                        self.inbox[i].created_at.as_str()
-                                                    }),
-                                                ))
-                                                .layout_key(
-                                                    &self.layout,
-                                                    "inbox.section",
-                                                    Some(inbox_date(self.filtered.first().map(
-                                                        |&i| self.inbox[i].created_at.as_str(),
-                                                    ))),
-                                                ),
-                                        ),
-                                    ),
-                            )
-                            .when(self.filtered.is_empty(), |d| {
-                                d.child(
-                                    div()
-                                        .flex_1()
-                                        .flex()
-                                        .flex_col()
-                                        .items_center()
-                                        .justify_center()
-                                        .gap(px(12.))
-                                        .text_color(color(t.muted))
-                                        .child(icon("inbox", t.muted, 32.))
-                                        .child("You're all caught up"),
-                                )
-                            })
-                            .child(
-                                uniform_list(
-                                    "notifications",
-                                    self.filtered.len(),
-                                    cx.processor(|this, range: std::ops::Range<usize>, _, cx| {
-                                        range.map(|i| this.inbox_row(i, cx)).collect::<Vec<_>>()
-                                    }),
-                                )
-                                .track_scroll(&self.inbox_scroll)
-                                .flex_1()
-                                .min_h_0(),
-                            ),
-                    ),
-            )
-    }
-
-    fn inbox_row(&self, row: usize, cx: &mut Context<Self>) -> AnyElement {
-        let n = &self.inbox[self.filtered[row]];
-        let t = self.colors;
-        let id = n.id;
-        let kind = n
-            .raw_json
-            .pointer("/comment/text")
-            .and_then(|v| v.as_str())
-            .map(|html| RichText::parse(html, t).text.to_string())
-            .filter(|text| !text.trim().is_empty())
-            .unwrap_or_else(|| notification_label(n.raw_json["type"].as_str().unwrap_or("")));
-        let source = n.source.clone().unwrap_or_default();
-        let source = match n.raw_json["unreadCount"]
-            .as_u64()
-            .filter(|count| *count > 0)
-        {
-            Some(count) => format!("{source} ({count})"),
-            None => source,
-        };
-        div()
-            .id(("notification", id as u64))
-            .w_full()
-            .h(px(36.))
-            .flex()
-            .items_center()
-            .border_l(px(4.))
-            .border_color(gpui::transparent_black())
-            .pl(px(48.))
-            .pr(px(48.))
-            .cursor_pointer()
-            .when(
-                row == self.selected || self.interaction.bulk.contains(&id),
-                |d| {
-                    d.border_color(color(if self.options.theme == ThemeName::Porcelain {
-                        0x9a9daa
-                    } else {
-                        t.accent
-                    }))
-                    .bg(color(
-                        if self.options.theme == ThemeName::Porcelain {
-                            0xe2e2e6
-                        } else if self.options.theme == ThemeName::Dia {
-                            t.active
-                        } else {
-                            t.footer
-                        },
-                    ))
-                },
-            )
-            .hover(|d| d.bg(color(t.hover)))
-            .on_click(cx.listener(move |this, _, _, cx| {
-                this.selected = row;
-                if let Some(id) = this.selected_task() {
-                    this.open_task(id, cx);
-                }
-            }))
-            .child(
-                div()
-                    .w_full()
-                    .h(px(36.))
-                    .flex()
-                    .items_center()
-                    .gap(px(32.))
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .line_height(px(19.5))
-                            .w(gpui::relative(0.15))
-                            .min_w_0()
-                            .flex_shrink_0()
-                            .flex()
-                            .items_center()
-                            .relative()
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left(px(-8.))
-                                    .size(px(7.))
-                                    .rounded_full()
-                                    .when(!n.seen, |d| d.bg(color(t.accent))),
-                            )
-                            .child(div().truncate().child(source.clone()).layout_key(
-                                &self.layout,
-                                format!("inbox.row.{row}.author"),
-                                Some(source.clone()),
-                            )),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(13.))
-                            .line_height(px(19.5))
-                            .flex_1()
-                            .min_w_0()
-                            .flex()
-                            .items_center()
-                            .gap(px(8.))
-                            .overflow_hidden()
-                            .child(
-                                div()
-                                    .flex()
-                                    .items_baseline()
-                                    .gap(px(4.))
-                                    .min_w(px(180.))
-                                    .child(
-                                        div()
-                                            .flex()
-                                            .flex_shrink_0()
-                                            .text_color(color(0x999a9d))
-                                            .text_size(px(11.))
-                                            .line_height(px(16.5))
-                                            .child(n.ticket_number.clone().unwrap_or_default())
-                                            .child(" ")
-                                            .layout_key(
-                                                &self.layout,
-                                                format!("inbox.row.{row}.taskid"),
-                                                n.ticket_number.clone(),
-                                            ),
-                                    )
-                                    .child(
-                                        div()
-                                            .min_w_0()
-                                            .truncate()
-                                            .child(n.title.clone())
-                                            .layout_key(
-                                                &self.layout,
-                                                format!("inbox.row.{row}.title"),
-                                                Some(n.title.clone()),
-                                            ),
-                                    ),
-                            )
-                            .child(
-                                div()
-                                    .flex_1()
-                                    .min_w(px(90.))
-                                    .text_color(color(0x8e9093))
-                                    .truncate()
-                                    .child(kind.clone())
-                                    .layout_key(
-                                        &self.layout,
-                                        format!("inbox.row.{row}.kind"),
-                                        Some(kind),
-                                    ),
-                            ),
-                    )
-                    .child(
-                        div()
-                            .text_size(px(11.))
-                            .text_color(color(t.muted))
-                            .child(inbox_metadata(&n.raw_json["task"])),
-                    )
-                    .child(
-                        div()
-                            .w(px(62.))
-                            .flex_shrink_0()
-                            .flex()
-                            .items_center()
-                            .justify_end()
-                            .gap(px(10.))
-                            .pr(px(4.))
-                            .child(
-                                div()
-                                    .id(("archive-notification", id as u64))
-                                    .on_click(cx.listener(move |this, _, _, cx| {
-                                        cx.stop_propagation();
-                                        this.enqueue(
-                                            Write::InboxArchive {
-                                                notification_id: id,
-                                            },
-                                            cx,
-                                        );
-                                    }))
-                                    .child(icon("archive-x", 0x696b6e, 18.)),
-                            )
-                            .child(icon("clock", 0x696b6e, 18.))
-                            .layout_key(&self.layout, format!("inbox.row.{row}.actions"), None),
-                    )
-                    .layout_key(&self.layout, format!("inbox.row.{row}"), None),
-            )
-            .into_any_element()
     }
 
     fn board_screen(&self, window: &Window, cx: &mut Context<Self>) -> impl IntoElement + use<> {
@@ -2129,6 +1764,7 @@ impl Render for Desktop {
             .child(self.shell_overlay(window, cx))
             .child(self.interaction_overlay(window, cx))
             .child(self.comment_overlay(cx))
+            .child(self.inbox_reminder_overlay(cx))
             .into_any_element()
     }
 }

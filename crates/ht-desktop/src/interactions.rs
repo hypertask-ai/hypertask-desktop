@@ -421,6 +421,12 @@ impl Desktop {
                 self.interaction.bulk.extend(ids);
             }
             BulkArchive => self.bulk_archive(false, cx),
+            Remind | BulkRemind => {
+                let ids = if action == BulkRemind { self.interaction.bulk.iter().copied().collect() }
+                    else if self.screen == Screen::Inbox { self.selection_id().into_iter().collect() }
+                    else { self.inbox.iter().filter(|n|n.task_id==Some(self.options.task)).map(|n|n.id).collect() };
+                self.show_inbox_reminder(ids,window,cx);
+            }
             MoveColumn => self.show_modal(Modal::Column, window, cx),
             Assign => self.show_modal(Modal::Assign, window, cx),
             Tags => self.show_modal(Modal::Tags, window, cx),
@@ -466,7 +472,7 @@ impl Desktop {
         }
         cx.notify();
     }
-    fn selection_id(&self) -> Option<i64> {
+    pub(super) fn selection_id(&self) -> Option<i64> {
         if self.screen == Screen::Inbox {
             self.filtered.get(self.selected).map(|&i| self.inbox[i].id)
         } else {
@@ -579,7 +585,7 @@ impl Desktop {
         }
         self.interaction.bulk.clear();
     }
-    fn playlist_step(&mut self, delta: isize, cx: &mut Context<Self>) {
+    pub(super) fn playlist_step(&mut self, delta: isize, cx: &mut Context<Self>) {
         let Some(index) = self
             .interaction
             .playlist

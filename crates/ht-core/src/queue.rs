@@ -35,6 +35,8 @@ pub enum Write {
         task_id: i64,
         patch: crate::TaskPatch,
     },
+    InboxSeen { notification_id: i64 },
+    InboxRemind { notification_ids: Vec<i64>, remind_at: String },
     InboxArchive {
         notification_id: i64,
     },
@@ -142,6 +144,24 @@ impl Db {
                 fields["task_id"] = json!(task_id);
                 (format!("task:{task_id}"), "task_patch", fields)
             }
+            Write::InboxSeen { notification_id } => {
+                let before = db.raw("Notification", &json!(notification_id))?.context("notification is not cached")?;
+                (format!("notification:{notification_id}"), "inbox_seen", json!({"notification_ids":[notification_id],"before":[before]}))
+            }
+            Write::InboxRemind { notification_ids, remind_at } => {
+                ensure!(!notification_ids.is_empty() && notification_ids.len() <= 100, "choose between 1 and 100 notifications");
+                let time = chrono::DateTime::parse_from_rfc3339(remind_at).context("reminder requires an ISO timestamp")?.timestamp();
+                ensure!(time > now && time - now <= 365 * 86400, "reminder must be in the future within one year");
+                let mut ids = notification_ids.clone();
+                ids.sort_unstable();
+                ids.dedup();
+                let before = ids.iter().map(|id| {
+                    let n = db.raw("Notification", &json!(id))?.context("notification is not cached")?;
+                    ensure!(*id > 0 && n["status"] == "Normal" && n["taskId"].as_i64().is_some() && n["projectId"].as_i64().is_some(), "Inbox item is unavailable for a reminder");
+                    Ok(n)
+                }).collect::<Result<Vec<_>>>()?;
+                (format!("inbox-reminder:{}", ids[0]), "inbox_remind", json!({"notification_ids":ids,"remind_at":remind_at,"before":before}))
+            }
             Write::InboxArchive { notification_id } => {
                 ensure!(db.raw("Notification", &json!(notification_id))?.is_some(), "notification is not cached");
                 (format!("notification:{notification_id}"), "inbox_archive", json!({"notification_ids":[notification_id]}))
@@ -222,7 +242,15 @@ impl Db {
                     &comment,
                 )?;
             }
-            "inbox_archive" => {
+            "inbox_seen" => {
+                for id in payload["notification_ids"].as_array().context("missing notification ids")? {
+                    let mut n = self.raw("Notification", id)?.context("notification is not cached")?;
+                    n["seen"] = json!(true);
+                    n["unreadCount"] = json!(0);
+                    self.upsert("Notification", &n)?;
+                }
+            }
+            "inbox_archive" | "inbox_remind" => {
                 for notification_id in payload["notification_ids"]
                     .as_array()
                     .context("missing notification ids")?
@@ -344,6 +372,8 @@ impl Db {
                 json!({"task_id":row.payload_json["task_id"],"text":row.payload_json["text"],"kind":"qa","content_type":"html"}),
             ),
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
+            "inbox_seen" => ("/inbox/seen", json!({"notification_ids":row.payload_json["notification_ids"]})),
+            "inbox_remind" => ("/inbox/archive", json!({"notification_ids":row.payload_json["notification_ids"],"remind_at":row.payload_json["remind_at"]})),
             "comment_action" | "comment_draft" | "shell_write" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
@@ -406,6 +436,12 @@ impl Db {
                     db.kv_set(&format!("shell-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
                 }
                 db.fail_editor(row.id,&row.kind,&row.payload_json,&result.1)?;
+                if matches!(row.kind.as_str(), "inbox_seen" | "inbox_remind") {
+                    for before in row.payload_json["before"].as_array().context("missing inbox rollback")? {
+                        db.upsert("Notification", before)?;
+                    }
+                    db.reapply_pending()?;
+                }
                 if row.kind == "comment_action" {
                     db.upsert_comment(row.payload_json["task_id"].as_i64().context("missing task id")?, &row.payload_json["before"])?;
                     db.request_refetch("comments", row.payload_json["task_id"].as_i64().unwrap())?;
@@ -458,6 +494,15 @@ impl Db {
                     db.conn.execute("DELETE FROM Comment WHERE id=?", [-row.id])?;
                     db.clear_sent_comment_draft(&row.payload_json, row.created_at)?;
                     db.request_refetch("task", row.payload_json["task_id"].as_i64().unwrap())?;
+                }
+                "inbox_seen" => {
+                    ensure!(body["seen_count"].as_u64().is_some_and(|n| n <= 1), "seen response missing count");
+                    db.request_refetch("inbox", 0)?;
+                }
+                "inbox_remind" => {
+                    let count = row.payload_json["notification_ids"].as_array().context("missing notification ids")?.len() as u64;
+                    ensure!(body["archived_count"].as_u64() == Some(count) && body["reminder_count"].as_u64().is_some_and(|n| n > 0 && n <= count), "reminder response missing counts");
+                    db.request_refetch("inbox", 0)?;
                 }
                 "inbox_archive" => {
                     ensure!(body["archived_count"].as_u64().is_some(), "archive response missing count");
