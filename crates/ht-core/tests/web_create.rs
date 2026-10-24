@@ -149,3 +149,17 @@ fn expanded_form_cannot_override_identity_placement_or_route_fields(){
         let mut db=Db::memory().unwrap();seed(&mut db,false);assert!(db.enqueue(Write::CreateTaskForm{project_id:15,section_id:10,title:"Task".into(),fields},100).is_err());assert!(db.mutations().unwrap().is_empty());assert_eq!(db.board(15).unwrap()[0].cards.len(),1);
     }
 }
+
+#[test]
+fn duplicate_reads_the_web_single_task_route_and_refusals_never_become_a_source() {
+    struct Source {status:u16,body:Value}
+    impl Transport for Source {
+        fn get(&mut self,path:&str)->Result<Response,TransportError>{assert_eq!(path,"/api/tasks/single?id=1");Ok(Response{status:self.status,body:self.body.clone()})}
+        fn post(&mut self,_:&str,_:&Value,_:&str)->Result<Response,TransportError>{panic!("duplicate reads must not write")}
+    }
+    for status in [200,401,403] {
+        let mut source=Source{status,body:if status==200{json!({"id":1,"projectId":15,"sectionId":10,"title":"Original","description_":{"content":"<p>Rich</p>"}})}else{json!({"message":"Task access denied"})}};
+        let result=ht_core::task_create::duplicate_source(&mut source,1);assert_eq!(result.is_ok(),status==200);if status!=200{assert_eq!(result.unwrap_err().to_string(),"Task access denied");}
+    }
+    assert!(ht_core::task_create::duplicate_source(&mut Source{status:200,body:json!({"id":2,"projectId":15,"sectionId":10,"title":"Wrong task"})},1).is_err());
+}

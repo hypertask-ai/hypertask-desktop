@@ -43,6 +43,7 @@ pub enum ShellCommand {
     EmptyColumns,
     HideColumn,
     ArchivedOnBoard,
+    DuplicateTask(bool),
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -108,6 +109,11 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     );
     if task && screen != Screen::Task {
         task_commands(&mut add);
+    }
+    if task {
+        for (key, name, pick_board) in [("duplicateTask", "Duplicate task", false), ("duplicateTaskToBoard", "Duplicate task to board", true)] {
+            rows.push(Command { key:key.into(), name:name.into(), group:"Task", keys:String::new(), keywords:"duplicate copy clone task ticket board", action:CommandAction::Shell(ShellCommand::DuplicateTask(pick_board)) });
+        }
     }
     for (key, name, keywords, theme) in [
         (

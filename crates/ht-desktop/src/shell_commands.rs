@@ -9,6 +9,7 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::DuplicateTask(pick_board)=>self.open_duplicate_task(pick_board,window,cx),
             ShellCommand::ArchivedOnBoard=>self.toggle_archived_on_board(window,cx),
             ShellCommand::HideColumn=>self.hide_current_column(window,cx),
             ShellCommand::Columns=>self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx),

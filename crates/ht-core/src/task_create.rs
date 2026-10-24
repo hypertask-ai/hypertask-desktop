@@ -1,4 +1,4 @@
-use crate::{Db, Result};
+use crate::{Db, Result, Transport};
 use anyhow::{Context, ensure};
 use serde_json::{Value, json};
 
@@ -78,6 +78,13 @@ pub fn view_defaults(project: &Value) -> Value {
         defaults["estimate"] = value;
     }
     defaults
+}
+pub fn duplicate_source(transport: &mut impl Transport, task: i64) -> Result<Value> {
+    ensure!(task > 0, "Task is unavailable");
+    let response = transport.get(&format!("/api/tasks/single?id={task}"))?;
+    ensure!(response.status == 200, "{}", response.body["message"].as_str().or(response.body["error"].as_str()).unwrap_or("Could not load task"));
+    ensure!(response.body["id"] == task && response.body["projectId"].as_i64().is_some_and(|id| id > 0) && response.body["sectionId"].as_i64().is_some_and(|id| id > 0) && response.body["title"].is_string(), "Invalid task response");
+    Ok(response.body)
 }
 impl Db {
     pub(crate) fn prepare_create_form(&self,project:i64,section:i64,title:&str,fields:&Value)->Result<Value>{

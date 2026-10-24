@@ -32,6 +32,8 @@ pub(super) struct Create {
     custom_date: bool,
     month: NaiveDate,
     selected_date: NaiveDate,
+    source_loading: bool,
+    edited: std::collections::BTreeSet<&'static str>,
 }
 impl Create {
     pub fn new(cx: &mut Context<Desktop>) -> Self {
@@ -63,6 +65,8 @@ impl Create {
             custom_date: false,
             month: chrono::Local::now().date_naive().with_day(1).unwrap(),
             selected_date: chrono::Local::now().date_naive(),
+            source_loading: false,
+            edited: Default::default(),
         }
     }
 }
@@ -93,21 +97,69 @@ impl Desktop {
         window.focus(&self.create_task.title.focus_handle(cx), cx);
         cx.notify();
     }
+    pub(super) fn open_duplicate_task(&mut self, pick_board: bool, window: &mut Window, cx: &mut Context<Self>) {
+        if self.create_task.open || self.create_task.pending.is_some() || self.create_task.source_loading { return; }
+        let Some(task) = self.selected_task().filter(|id| *id > 0) else { return; };
+        self.create_task.generation += 1;
+        let generation = self.create_task.generation;
+        self.create_task.source_loading = true;
+        if self.options.offline {
+            let result = self.db.task(task).map_err(|error|error.to_string()).and_then(|task| task.ok_or_else(||"Task is unavailable".into())).and_then(|task|serde_json::to_value(task).map_err(|error|error.to_string()));
+            self.apply_duplicate_source(result, pick_board, window, cx);
+            return;
+        }
+        let Some(token) = self.cli_token() else { self.create_task.source_loading=false; return; };
+        let expected=token.clone();
+        let (send,receive)=std::sync::mpsc::channel();
+        std::thread::spawn(move||{let result=ht_core::Http::new(token).and_then(|mut http|ht_core::task_create::duplicate_source(&mut http,task)).map_err(|error|error.to_string());let _=send.send(result);});
+        cx.spawn_in(window,async move|view,cx|{
+            loop{
+                cx.background_executor().timer(Duration::from_millis(50)).await;
+                match receive.try_recv(){
+                    Ok(result)=>{let _=view.update_in(cx,|this,window,cx|{
+                        if this.create_task.generation!=generation{return;}
+                        if this.cli_token().as_deref()!=Some(expected.as_str()){this.create_task.source_loading=false;return;}
+                        this.apply_duplicate_source(result,pick_board,window,cx);
+                    });break;}
+                    Err(std::sync::mpsc::TryRecvError::Empty)=>(),_=>break,
+                }
+            }
+        }).detach();
+    }
+    fn apply_duplicate_source(&mut self,result:Result<Value,String>,pick_board:bool,window:&mut Window,cx:&mut Context<Self>){
+        self.create_task.source_loading=false;
+        let task=match result{Ok(task)=>task,Err(error)=>{eprintln!("Error fetching task: {error}");cx.notify();return;}};
+        let Some(project)=task["projectId"].as_i64() else{return;};
+        let Some(section)=task["sectionId"].as_i64() else{return;};
+        self.invalidate_task_create(cx);
+        self.create_task.project=project;self.create_task.section=section;
+        self.create_task.fields=json!({"assignees":[],"priority":task["priority"],"estimate":task["estimate"],"tags":task["taskLabels"].as_array().into_iter().flatten().map(|row|row["label"].clone()).collect::<Vec<_>>()});
+        self.create_task.edited.extend(["assignees","priority","estimate","tags"]);
+        self.create_task.initial=self.create_task.fields.clone();
+        self.create_task.title.update(cx,|input,cx|input.set_content(task["title"].as_str().unwrap_or("").into(),cx));
+        self.create_task.description.update(cx,|input,cx|input.set_html(task["description_"]["content"].as_str().filter(|description|!description.is_empty()).or(task["description"].as_str()).unwrap_or("<p></p>"),cx));
+        self.create_task.open=true;
+        if !self.options.offline{self.load_create_board(cx);}
+        if pick_board{self.create_picker(Field::Board,window,cx);}else{window.focus(&self.create_task.title.focus_handle(cx),cx);}
+        cx.notify();
+    }
     fn reset_create_destination(&mut self, cx: &mut Context<Self>) {
         let project = self.create_task.project;
         let columns = self.db.board(project).unwrap_or_default();
         self.create_task.section = columns.first().map_or(0, |column| column.id);
-        self.create_task.fields = self
-            .db
-            .board_project(project)
-            .map(|project| ht_core::task_create::view_defaults(&project))
-            .unwrap_or(json!({"assignees":[]}));
+        let defaults = self.db.board_project(project).map(|project| ht_core::task_create::view_defaults(&project)).unwrap_or(json!({"assignees":[]}));
+        if !self.create_task.initial.is_object() { self.create_task.initial = json!({}); }
+        for key in ["assignees", "priority", "estimate", "tags"] {
+            if !self.create_task.edited.contains(key) {
+                if let Some(value) = defaults.get(key) { self.create_task.fields[key] = value.clone(); self.create_task.initial[key] = value.clone(); }
+                else { self.create_task.fields.as_object_mut().unwrap().remove(key); self.create_task.initial.as_object_mut().unwrap().remove(key); }
+            }
+        }
         if project == self.options.board {
             if let Some(column) = columns.get(self.column) {
                 self.create_task.section = column.id;
             }
         }
-        self.create_task.initial = self.create_task.fields.clone();
         cx.notify();
     }
     fn load_create_board(&mut self, cx: &mut Context<Self>) {
@@ -173,15 +225,16 @@ impl Desktop {
             Ok(project) => {
                 let defaults = ht_core::task_create::view_defaults(&project);
                 for key in ["assignees", "priority", "estimate", "tags"] {
-                    if self.create_task.fields[key] == self.create_task.initial[key] {
+                    if !self.create_task.edited.contains(key) {
                         if let Some(value) = defaults.get(key) {
                             self.create_task.fields[key] = value.clone();
+                            self.create_task.initial[key] = value.clone();
                         } else {
                             self.create_task.fields.as_object_mut().unwrap().remove(key);
+                            self.create_task.initial.as_object_mut().unwrap().remove(key);
                         }
                     }
                 }
-                self.create_task.initial = defaults;
                 self.create_task.loaded = Some(self.create_task.project);
                 self.create_task.error = None;
                 if self.create_task.section == 0 {
@@ -337,6 +390,7 @@ impl Desktop {
             Some(Field::StartDate) => self.create_task.fields["startDate"] = value,
             Some(Field::Column) => self.create_task.section = value.as_i64().unwrap(),
             Some(Field::Priority) => {
+                self.create_task.edited.insert("priority");
                 self.create_task.fields["priority"] = if value["priority_index"] == 0 {
                     Value::Null
                 } else {
@@ -344,6 +398,7 @@ impl Desktop {
                 }
             }
             Some(Field::Size) => {
+                self.create_task.edited.insert("estimate");
                 self.create_task.fields["estimate"] = if value["estimate_index"] == 0 {
                     Value::Null
                 } else {
@@ -356,6 +411,7 @@ impl Desktop {
                 } else {
                     "assignees"
                 };
+                self.create_task.edited.insert(key);
                 let mut values = self.create_task.fields[key]
                     .as_array()
                     .cloned()
@@ -571,6 +627,9 @@ impl Desktop {
         if result["error"].is_null() {
             self.create_task.open = false;
             self.create_task.project = 0;
+            self.create_task.edited.clear();
+            self.create_task.fields = json!({});
+            self.create_task.initial = Value::Null;
             for input in [
                 &self.create_task.title,
                 &self.create_task.description,
@@ -789,6 +848,9 @@ impl Desktop {
                                 this.create_task.open = false;
                                 this.create_task.discard = false;
                                 this.create_task.project = 0;
+                                this.create_task.edited.clear();
+                                this.create_task.fields = json!({});
+                                this.create_task.initial = Value::Null;
                                 for input in [
                                     &this.create_task.title,
                                     &this.create_task.description,
@@ -1061,6 +1123,45 @@ mod tests {
                 }
             });
         }
+    }
+
+    #[gpui::test]
+    fn duplicate_commands_read_real_source_copy_web_fields_and_queue_global_create_with_refusal_rollback(cx:&mut gpui::TestAppContext){
+        struct Duplicate {read:u16,write:u16}
+        impl ht_core::Transport for Duplicate{
+            fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{
+                let body=if path=="/user/context"{return Ok(ht_core::http::Response{status:200,body:json!({"success":true,"user":{"id":42}})});}else{assert_eq!(path,"/api/tasks/single?id=1");if self.read==200{json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Original","status":"Normal","description":"<p>Old</p>","description_":{"content":"<p>Rich <strong>source</strong></p>"},"priority":ht_core::task_create::priority(4).unwrap(),"estimate":ht_core::task_create::estimate(3).unwrap(),"dueDate":"2026-12-01T09:00:00Z","startDate":"2026-11-01T09:00:00Z","parentTask":{"id":7},"assignees":[{"id":42,"uid":"owner"}],"taskLabels":[{"label":{"id":"11111111-1111-1111-1111-111111111111","value":"Copied"}}]})}else{json!({"message":"Task access denied"})}};
+                Ok(ht_core::http::Response{status:self.read,body})
+            }
+            fn post(&mut self,path:&str,body:&Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{
+                assert_eq!(path,"/api/tasks/createGlobally");assert_eq!(body["title"],"Original");assert_eq!(body["description"],"<p>Rich <strong>source</strong></p>");assert_eq!(body["assignees"],json!([]));assert_eq!(body["priority"]["priority_index"],4);assert_eq!(body["estimate"]["estimate_index"],3);assert_eq!(body["tags"][0]["value"],"Copied");assert!(body.get("parentTask").is_none());assert!(body.get("dueDate").is_none());assert!(body.get("startDate").is_none());
+                let mut task=body.clone();task["id"]=json!(501);task["status"]=json!("Normal");Ok(ht_core::http::Response{status:self.write,body:if self.write==200{json!({"newTask":task})}else{json!({"message":"Create access denied"})}})
+            }
+        }
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(|window,cx|desktop(window,cx));
+        for pick_board in [false,true]{for read in [401,403,200]{for write in [401,403,200]{
+            view.update_in(cx,|this,window,cx|{
+                this.invalidate_task_create(cx);let mut server=Duplicate{read,write};let result=ht_core::task_create::duplicate_source(&mut server,1).map_err(|error|error.to_string());this.apply_duplicate_source(result,pick_board,window,cx);
+                if read!=200{assert!(!this.create_task.open);assert!(!this.db.mutations().unwrap().iter().any(|row|row.status!="failed"));return;}
+                assert_eq!(this.create_task.picker,if pick_board{Some(Field::Board)}else{None});
+                let before=this.create_task.fields.clone();
+                this.apply_create_board(Ok((42,json!({"project":{"id":15,"title":"Board","section":[{"id":10,"projectId":15,"section_title":"Todo","ranking":"a","visibility":true,"deleted":false}],"project_view":{"user_project_views":[{"unsavedView":{"board_filters":{"addedFilters":[{"type":"Priority","searchPayload":[{"priority_index":1}]},{"type":"Assignees","searchPayload":[{"id":42,"uid":"owner"}]}]}}}]}},"allViews":[],"tasks":[]}))),cx);
+                assert_eq!(this.create_task.fields,before);
+                this.create_task.picker=None;this.submit_create_task(window,cx);let id=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap().id;assert!(this.db.task(-id).unwrap().is_some());this.db.drain_once(&mut server,chrono::Utc::now().timestamp()+1).unwrap();assert!(!this.poll_create_task(window,cx));assert!(this.db.task(-id).unwrap().is_none());
+                if write!=200{assert!(this.create_task.open);assert_eq!(this.create_task.fields,before);assert_eq!(this.create_task.title.read(cx).content.as_ref(),"Original");}
+            });
+        }}}
+    }
+    #[gpui::test]
+    fn explicit_create_fields_and_dates_survive_board_switch_and_late_defaults_even_when_equal_to_opening_defaults(cx:&mut gpui::TestAppContext){
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(|window,cx|desktop(window,cx));
+        view.update_in(cx,|this,window,cx|{
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":16,"title":"Other","project_view":{"user_project_views":[{"unsavedView":{"board_filters":{"addedFilters":[{"type":"Priority","searchPayload":[{"priority_index":1}]},{"type":"Size","searchPayload":[{"estimate_index":6}]}]}}}]}}],"sections":[{"id":20,"projectId":16,"section_title":"Todo","ranking":"a","visibility":true,"deleted":false}]})).unwrap();
+            this.open_create_task(window,cx);this.create_picker(Field::Priority,window,cx);this.choose_create_field(0,window,cx);this.create_task.fields["dueDate"]=json!("2026-12-01T09:00:00Z");
+            this.create_picker(Field::Board,window,cx);let index=this.create_choices(cx).iter().position(|(_,id)|*id==16).unwrap();this.choose_create_field(index,window,cx);
+            assert!(this.create_task.fields["priority"].is_null());assert_eq!(this.create_task.fields["estimate"]["estimate_index"],6);assert_eq!(this.create_task.fields["dueDate"],"2026-12-01T09:00:00Z");
+            assert_eq!(this.create_task.section,20);assert!(this.db.mutations().unwrap().is_empty());
+        });
     }
 
 }
