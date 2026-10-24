@@ -44,7 +44,6 @@ enum Work {
     Catalog(i64),
     Task(i64),
     Inbox,
-    Event(String),
     Draft(i64),
     Drain,
     Refetch,
@@ -58,7 +57,6 @@ impl Work {
             Self::Catalog(_) => "catalog",
             Self::Task(_) => "task",
             Self::Inbox => "inbox",
-            Self::Event(_) => "event",
             Self::Draft(_) => "draft",
             Self::Drain => "mutations",
             Self::Refetch => "refetch",
@@ -83,7 +81,6 @@ impl Work {
                 sync.drafts(*id)?;
             }
             Self::Inbox => sync.inbox()?,
-            Self::Event(frame) => sync.db.apply_event(frame)?,
             Self::Draft(id) => sync.drafts(*id)?,
             Self::Drain => {
                 let mut applied = false;
@@ -149,6 +146,7 @@ fn schedule(pending: &mut BTreeMap<Work, Pending>, work: Work) {
 
 enum Command {
     Work(Work),
+    Event(String),
     Wake,
     Stop,
 }
@@ -167,7 +165,7 @@ impl WorkerHandle {
         Ok(self.sender.send(Command::Work(Work::Inbox))?)
     }
     pub fn event(&self, frame: String) -> Result<()> {
-        Ok(self.sender.send(Command::Work(Work::Event(frame)))?)
+        Ok(self.sender.send(Command::Event(frame))?)
     }
     pub fn wake(&self) -> Result<()> {
         Ok(self.sender.send(Command::Wake)?)
@@ -199,18 +197,29 @@ impl Worker {
                         Ok(command) => Some(command),
                         Err(mpsc::RecvTimeoutError::Timeout) => None,
                     };
-                    let wake = matches!(command, Some(Command::Wake));
-                    if let Some(Command::Work(work)) = command {
-                        match &work {
-                            Work::Board(id) => {
-                                boards.insert(*id);
-                                schedule(&mut pending, Work::Projects);
+                    let mut wake = matches!(command, Some(Command::Wake));
+                    match command {
+                        Some(Command::Work(work)) => {
+                            match &work {
+                                Work::Board(id) => {
+                                    boards.insert(*id);
+                                    schedule(&mut pending, Work::Projects);
+                                }
+                                Work::Inbox => inbox = true,
+                                Work::Task(id) => task = Some(*id),
+                                _ => (),
                             }
-                            Work::Inbox => inbox = true,
-                            Work::Task(id) => task = Some(*id),
-                            _ => (),
+                            schedule(&mut pending, work);
                         }
-                        schedule(&mut pending, work);
+                        Some(Command::Event(frame)) => {
+                            if let Err(error) = sync.db.apply_event(&frame) {
+                                // Replaying a malformed frame cannot repair it;
+                                // reconcile via HTTP rather than latching an outage.
+                                log.failure("event", &error, 1);
+                                wake = true;
+                            }
+                        }
+                        _ => (),
                     }
                     if wake || last_pull.elapsed() >= Duration::from_secs(60) {
                         last_pull = Instant::now();

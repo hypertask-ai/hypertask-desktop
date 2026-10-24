@@ -51,7 +51,9 @@ realtime events, idle queue ticks, and reconnect notifications are not recovery
 proof. The failed operation must complete successfully (or a mutation queue
 must finish processing its outstanding writes). A reconnect wakes and refetches
 tracked views and retries outstanding work immediately; it does not itself
-clear failures. Independent UI validation errors remain independent.
+clear failures. A malformed realtime frame is logged once and reconciled via
+fresh HTTP snapshots, never replayed forever as a false connection failure.
+Independent UI validation errors remain independent.
 
 ## Diagnostics
 

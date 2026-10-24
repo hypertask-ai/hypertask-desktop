@@ -266,3 +266,29 @@ fn healthy_reconnect_refetches_the_tracked_inbox() {
     server.request("/inbox/list");
     assert_eq!(worker.status().message(), None);
 }
+
+#[test]
+fn malformed_realtime_frame_is_logged_once_and_reconciled_without_false_outage() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("local.db");
+    let server = Server::new(200);
+    let worker = server.worker(&db);
+    worker.handle().sync_inbox().unwrap();
+    server.request("/inbox/list");
+    worker
+        .handle()
+        .event("fixture-secret-malformed-frame".into())
+        .unwrap();
+    // Recover the missed event via a fresh snapshot, not by replaying bad JSON.
+    server.request("/inbox/list");
+    assert_eq!(worker.status(), SyncStatus::Healthy);
+    assert_eq!(worker.status().message(), None);
+    drop(worker);
+    let log = std::fs::read_to_string(db.with_extension("sync.log")).unwrap();
+    assert_eq!(
+        log.matches("event=failed operation=event code=invalid-data attempts=1")
+            .count(),
+        1
+    );
+    assert!(!log.contains("fixture-secret"));
+}
