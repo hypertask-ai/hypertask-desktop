@@ -49,6 +49,12 @@ pub enum ImproveCommand {
     English,
     #[serde(rename = "Translate:German")]
     German,
+    #[serde(rename = "Translate:Dutch")]
+    Dutch,
+    #[serde(rename = "Translate:Spanish")]
+    Spanish,
+    #[serde(rename = "Translate:French")]
+    French,
 }
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]

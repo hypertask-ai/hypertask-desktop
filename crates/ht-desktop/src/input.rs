@@ -3,6 +3,8 @@ use std::ops::Range;
 #[path = "editor.rs"]
 mod editor;
 use editor::EditorState;
+#[path = "editor_drag.rs"]
+mod editor_drag;
 #[path = "editor_layout.rs"]
 mod editor_layout;
 use editor_layout::{EditorRow, editor_rows};
@@ -246,7 +248,8 @@ impl TextInput {
         }
     }
 
-    fn on_mouse_up(&mut self, _: &MouseUpEvent, _window: &mut Window, _: &mut Context<Self>) {
+    fn on_mouse_up(&mut self, event: &MouseUpEvent, window: &mut Window, cx: &mut Context<Self>) {
+        self.finish_block_drag(event, window, cx);
         self.is_selecting = false;
     }
 
@@ -986,6 +989,7 @@ impl Element for TextElement {
 impl Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let menu = self.editor_menu(_window, cx);
+        let handles = self.block_drag_handles(cx);
         div()
             .id("text-input")
             .flex()
@@ -1038,6 +1042,7 @@ impl Render for TextInput {
             .w_full()
             .line_height(px(24.))
             .child(TextElement { input: cx.entity() })
+            .children(handles)
             .children(
                 menu.into_iter()
                     .map(|menu| gpui::deferred(menu).with_priority(1)),

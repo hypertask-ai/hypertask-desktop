@@ -13,6 +13,8 @@ pub(super) struct EditorState {
     dialog: Option<Dialog>,
     pub comment: bool,
     palette: bool,
+    ai_menu: bool,
+    pub(super) dragging: Option<Vec<usize>>,
     job: Option<(i64, i64)>,
     capture: Capture,
 }
@@ -35,6 +37,17 @@ enum Command {
     Video,
     Improve(ht_core::ImproveCommand),
 }
+const AI_DROPDOWN: &[(&str, ht_core::ImproveCommand)] = &[
+    ("Fix Spelling & Grammar",ht_core::ImproveCommand::Grammar),
+    ("Improve Readability",ht_core::ImproveCommand::Readability),
+    ("Summarize",ht_core::ImproveCommand::Summarize),
+    ("Make Shorter",ht_core::ImproveCommand::MakeShorter),
+    ("Translate to English",ht_core::ImproveCommand::English),
+    ("Translate to German",ht_core::ImproveCommand::German),
+    ("Translate to Dutch",ht_core::ImproveCommand::Dutch),
+    ("Translate to Spanish",ht_core::ImproveCommand::Spanish),
+    ("Translate to French",ht_core::ImproveCommand::French),
+];
 const COMMANDS: &[(&str, &str, Command)] = &[
     (
         "Fix Spelling & Grammer",
@@ -133,6 +146,8 @@ impl EditorState {
         e.slash = None;
         e.choice = 0;
         e.palette = false;
+        e.ai_menu = false;
+        e.dragging = None;
         e.job = None;
         e
     }
@@ -149,6 +164,8 @@ impl EditorState {
             dialog: None,
             comment: false,
             palette: false,
+            ai_menu: false,
+            dragging: None,
             job: None,
             capture: cfg!(test)
                 .then(|| std::rc::Rc::new(std::cell::RefCell::new(LayoutDump::default()))),
@@ -683,6 +700,9 @@ impl TextInput {
         }
         let key = &event.keystroke;
         let ctrl = key.modifiers.control || key.modifiers.platform;
+        if key.key=="escape" && self.editor.as_ref().is_some_and(|e|e.ai_menu) {
+            self.editor.as_mut().unwrap().ai_menu=false;cx.stop_propagation();cx.notify();return;
+        }
         if let Some(dialog) = self.editor.as_ref().and_then(|e| e.dialog.clone()) {
             match key.key.as_str() {
                 "escape" => self.close_editor_dialog(window, cx),
@@ -982,6 +1002,17 @@ impl TextInput {
                     );
                 return vec![palette.into_any_element()];
             }
+            if e.ai_menu {
+                return vec![div().id("editor-ai-dropdown").absolute().left_0().top(top).w(px(260.)).p(px(8.)).flex().flex_col().bg(crate::theme::color(theme.comment)).text_color(crate::theme::color(theme.text)).shadow_md()
+                    .children(AI_DROPDOWN.iter().enumerate().map(|(i,(label,command))| {
+                        let command=*command;
+                        div().id(("editor-ai-command",i)).p(px(6.)).cursor_pointer().child(*label)
+                            .on_mouse_down(MouseButton::Left,cx.listener(move|this,_,_,cx| {
+                                cx.stop_propagation();this.editor.as_mut().unwrap().ai_menu=false;
+                                cx.emit(EditorRequest::Improve{command,html:this.html()});cx.notify();
+                            })).layout_key(&e.capture,format!("ai-command-{i}"),None)
+                    })).into_any_element()];
+            }
             let buttons = [
                 ("B", Format::Bold),
                 ("I", Format::Italic),
@@ -997,6 +1028,9 @@ impl TextInput {
             ];
             let toolbar = div()
                 .id("editor-bubble-menu")
+                .child(div().id("editor-ai-toggle").cursor_pointer().child("Ai ▾")
+                    .on_mouse_down(MouseButton::Left,cx.listener(|this,_,_,cx|{cx.stop_propagation();this.editor.as_mut().unwrap().ai_menu=true;cx.notify();}))
+                    .layout_key(&e.capture,"editor-ai-toggle",None))
                 .flex()
                 .flex_wrap()
                 .gap(px(8.))
@@ -1492,6 +1526,27 @@ mod tests {
         view.read_with(cx, |input, _| {
             assert_eq!(input.html(), "<p><strong><em>bold</em></strong></p>")
         });
+    }
+    #[gpui::test]
+    fn ai_dropdown_click_preserves_selection_and_emits_each_exact_whole_document_command(cx: &mut gpui::TestAppContext) {
+        use std::{cell::RefCell,rc::Rc};
+        cx.update(init);
+        let (view,cx)=cx.add_window_view(|_,cx|TextInput::new(String::new(),"",gpui::black(),cx).comment_editor());
+        let events=Rc::new(RefCell::new(vec![]));let received=events.clone();
+        cx.update(|_,cx|cx.subscribe(&view,move|_,event:&EditorRequest,_,_|received.borrow_mut().push(event.clone())).detach());
+        for (i,(_,command)) in AI_DROPDOWN.iter().enumerate() {
+            view.update_in(cx,|input,window,cx|{input.set_html("<p>Whole <strong>é🙂</strong> draft</p>",cx);input.selected_range=0..5;window.focus(&input.focus_handle,cx);});
+            cx.run_until_parked();
+            let center=|key:&str,cx:&mut gpui::VisualTestContext|view.read_with(cx,|input,_|{
+                let capture=input.editor.as_ref().unwrap().capture.as_ref().unwrap().borrow();
+                let rows=capture.interaction_elements();let row=rows.iter().find(|e|e["key"]==key).expect("painted AI choice");
+                point(px((row["x"].as_f64().unwrap()+row["w"].as_f64().unwrap()/2.)as f32),px((row["y"].as_f64().unwrap()+row["h"].as_f64().unwrap()/2.)as f32))
+            });
+            let pos=center("editor-ai-toggle",cx);cx.simulate_click(pos,Default::default());cx.run_until_parked();
+            let pos=center(&format!("ai-command-{i}"),cx);cx.simulate_click(pos,Default::default());
+            view.read_with(cx,|input,_|{assert_eq!(input.selected_range,0..5);assert!(!input.editor.as_ref().unwrap().ai_menu);assert_eq!(input.html(),"<p>Whole <strong>é🙂</strong> draft</p>");});
+            let events=events.borrow();let EditorRequest::Improve{command:actual,html}=events.last().unwrap();assert_eq!(actual,command);assert_eq!(html,"<p>Whole <strong>é🙂</strong> draft</p>");
+        }
     }
     #[gpui::test]
     fn unsupported_web_services_are_not_inert_slash_commands_and_video_html_is_real(

@@ -520,6 +520,41 @@ impl Document {
         display_blocks(&self.parts, 0, false, "", false, &mut out);
         out
     }
+    pub fn drag_blocks(&self) -> Vec<(Vec<usize>, usize)> {
+        fn walk(parts: &[Part], path: &mut Vec<usize>, at: &mut usize, out: &mut Vec<(Vec<usize>,usize)>) {
+            for (i, part) in parts.iter().enumerate() {
+                path.push(i);
+                match part {
+                    Part::Block(b) => { if path.len()==1 {out.push((path.clone(),*at));} *at+=b.len()+1; }
+                    Part::Container(tag,children) => {
+                        if path.len()==1 || tag.name=="li" {out.push((path.clone(),*at));}
+                        walk(children,path,at,out);
+                    }
+                    Part::Atom(_) => (),
+                }
+                path.pop();
+            }
+        }
+        let mut out=vec![];
+        walk(&self.parts,&mut vec![],&mut 0,&mut out);
+        out
+    }
+    pub fn reorder_block(&mut self, source: &[usize], target: &[usize], after: bool) -> bool {
+        if source.is_empty() || target.is_empty() {return false;}
+        // Cross-container drops move whole top-level nodes, never orphaning a list item.
+        let (source,target)=if source.len()==target.len() && source[..source.len()-1]==target[..target.len()-1] {(source,target)}else{(&source[..1],&target[..1])};
+        if source==target {return false;}
+        let mut parts=&mut self.parts;
+        for index in &source[..source.len()-1] {
+            match parts.get_mut(*index) {Some(Part::Container(_,children))=>parts=children,_=>return false}
+        }
+        let from=source[source.len()-1];let to=target[target.len()-1];
+        if from>=parts.len() || to>=parts.len() {return false;}
+        let insert=to+usize::from(after);
+        let insert=if from<insert {insert-1}else{insert};
+        if insert==from {return false;}
+        let part=parts.remove(from);parts.insert(insert,part);true
+    }
     pub fn text(&self) -> String {
         self.blocks()
             .iter()
@@ -1572,5 +1607,28 @@ mod tests {
         }
         d.link(0..len, "https://example.com");
         assert_eq!(d.html(), before);
+    }
+}
+
+#[cfg(test)]
+mod drag_tests {
+    use super::*;
+    #[test]
+    fn drag_paragraph_after_nested_checklist_preserves_marks_and_item_state() {
+        let mut doc=Document::parse("<p><strong>move é🙂</strong></p><ul data-type=\"taskList\"><li data-type=\"taskItem\" data-checked=\"true\"><p>done</p><ul><li><p>nested</p></li></ul></li></ul><p>end</p>");
+        let list=doc.parts[1].clone();
+        assert!(doc.reorder_block(&[0],&[1],true));
+        assert_eq!(doc.parts[0],list);
+        assert!(doc.html().contains("<strong>move é🙂</strong>"));
+        assert_eq!(Document::parse(&doc.html()).html(),doc.html());
+        assert_eq!(doc.text(),"done\nnested\nmove é🙂\nend");
+    }
+    #[test]
+    fn drag_nested_sibling_items_keeps_their_complete_subtrees_and_rejects_noop() {
+        let mut doc=Document::parse("<ul><li><p>one</p><ul><li><p>child</p></li></ul></li><li><p>two</p></li></ul><p>end</p>");
+        assert!(doc.reorder_block(&[0,0],&[0,1],true));
+        assert_eq!(doc.text(),"two\none\nchild\nend");
+        assert!(!doc.reorder_block(&[0,0],&[0,0],true));
+        let before=doc.html();assert!(!doc.reorder_block(&[999],&[0],false));assert_eq!(doc.html(),before);
     }
 }

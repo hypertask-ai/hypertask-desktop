@@ -66,7 +66,7 @@ fn drafts() -> Value {
     ]})
 }
 #[test]
-fn all_six_web_ai_commands_use_same_prompt_contract_through_durable_bearer_queue() {
+fn all_web_ai_dropdown_commands_use_same_prompt_contract_through_durable_bearer_queue() {
     for (command, name) in [
         (ImproveCommand::Grammar, "FixSpellingAndGrammar"),
         (ImproveCommand::Readability, "ImproveReadability"),
@@ -74,6 +74,9 @@ fn all_six_web_ai_commands_use_same_prompt_contract_through_durable_bearer_queue
         (ImproveCommand::MakeShorter, "MakeShorter"),
         (ImproveCommand::English, "Translate:English"),
         (ImproveCommand::German, "Translate:German"),
+        (ImproveCommand::Dutch, "Translate:Dutch"),
+        (ImproveCommand::Spanish, "Translate:Spanish"),
+        (ImproveCommand::French, "Translate:French"),
     ] {
         let file = tempfile::NamedTempFile::new().unwrap();
         let mut db = Db::open(file.path()).unwrap();
