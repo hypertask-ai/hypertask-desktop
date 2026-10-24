@@ -40,3 +40,6 @@ pub mod board_sidebar;
 
 pub mod board_views;
 pub use board_views::ViewWrite;
+
+mod ai_sessions;
+pub use ai_sessions::AiSessionWrite;

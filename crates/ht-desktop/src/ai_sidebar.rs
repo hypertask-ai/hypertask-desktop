@@ -26,6 +26,11 @@ use std::{
 #[path = "ai_skills.rs"]
 mod skills;
 
+#[path = "ai_sessions.rs"]
+mod sessions;
+pub use sessions::SessionRequest;
+use sessions::SessionPending;
+
 #[path = "ai_presentation.rs"]
 mod presentation;
 pub use presentation::DisplayMode;
@@ -100,11 +105,14 @@ impl Scope {
     }
 }
 
+#[derive(Clone)]
 struct ChatMessage {
     message: Message,
     rich: RichText,
 }
+#[derive(Clone)]
 struct Chat {
+    persisted: bool,
     id: String,
     title: String,
     messages: Vec<ChatMessage>,
@@ -116,6 +124,7 @@ impl Chat {
     fn new() -> Self {
         Self {
             id: ai_chat::session_id(),
+            persisted: false,
             title: "New AI Chat".into(),
             messages: vec![],
             status: String::new(),
@@ -164,6 +173,9 @@ pub struct AiSidebar {
     history_next: Option<String>,
     history_append: bool,
     chat_pending: Option<Receiver<Result<Chat,String>>>,
+    session_pending: Option<SessionPending>,
+    rename_open: bool,
+    rename_input: Entity<TextInput>,
     more_menu: bool,
     collapsed: bool,
     scroll: ScrollHandle,
@@ -201,6 +213,8 @@ impl AiSidebar {
             )
             .multiline()
         });
+        let rename_input=cx.new(|cx|TextInput::new(String::new(),"Chat name",color(colors.muted),cx));
+        cx.observe(&rename_input,|_,_,cx|cx.notify()).detach();
         let input_scroll = ScrollHandle::new();
         let scroll = input_scroll.clone();
         let mut draft = String::new();
@@ -249,6 +263,9 @@ impl AiSidebar {
             history_next: None,
             history_append: false,
             chat_pending: None,
+            session_pending: None,
+            rename_open: false,
+            rename_input,
             more_menu: false,
             collapsed: false,
             scroll: ScrollHandle::new(),
@@ -258,6 +275,7 @@ impl AiSidebar {
 
     pub fn set_token(&mut self, token: Option<String>, cx: &mut Context<Self>) {
         self.stop(cx);
+        self.session_pending=None;self.rename_open=false;
         self.active = None;
         self.chats = vec![Chat::new()];
         self.selected = 0;
@@ -322,6 +340,7 @@ impl AiSidebar {
     }
 
     fn toggle_history(&mut self, cx: &mut Context<Self>) {
+        if self.session_pending.is_some(){return;}
         self.history_menu = !self.history_menu;
         self.model_menu = false;
         self.more_menu = false;
@@ -374,6 +393,7 @@ impl AiSidebar {
                     })
                     .collect();
                 let _ = send.send(Ok(Chat {
+                    persisted: true,
                     id,
                     title,
                     messages,
@@ -432,6 +452,12 @@ impl AiSidebar {
     }
 
     fn new_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.session_pending.is_some(){return;}
+        if self.client.is_some(){
+            self.request_session(self.create_scope(),None,None,cx);
+            window.focus(&self.input.focus_handle(cx),cx);
+            return;
+        }
         self.chat_pending = None;
         self.draft_quotes.clear();
         self.chats.push(Chat::new());
@@ -480,7 +506,11 @@ impl AiSidebar {
             &text
         });
         let text = text.trim().to_owned();
-        if text.is_empty() || self.active.is_some() {
+        if text.is_empty() || self.active.is_some() || self.session_pending.is_some() {
+            return;
+        }
+        if self.client.is_some() && !self.chats[self.selected].persisted {
+            self.request_session(self.create_scope(),None,Some(text),cx);
             return;
         }
         let chat = &mut self.chats[self.selected];
@@ -681,6 +711,10 @@ impl AiSidebar {
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let key = event.keystroke.key.as_str();
         let modifiers = event.keystroke.modifiers;
+        if self.rename_open {
+            match key {"enter"=>self.rename_session(cx),"escape"=>{self.rename_open=false;cx.notify();},_=>return}
+            cx.stop_propagation();return;
+        }
         if modifiers.control && key == "q" {
             self.focus_composer(window, cx);
         } else if modifiers.control && modifiers.shift && matches!(key, "o" | "j") {
@@ -1157,6 +1191,15 @@ impl Render for AiSidebar {
                                 .layout_key(&self.capture, id.replace('-', "."), None)
                         }),
                     )
+                    .when(self.chats[self.selected].persisted,|d|d
+                        .child(div().id("ai-rename").p(px(6.)).cursor_pointer().child("Rename chat").on_click(cx.listener(|this,_,window,cx|{
+                            this.more_menu=false;this.rename_open=true;
+                            let title=this.chats[this.selected].title.clone();this.rename_input.update(cx,|input,cx|input.set_content(title,cx));
+                            window.focus(&this.rename_input.focus_handle(cx),cx);cx.notify();
+                        })))
+                        .child(div().id("ai-delete").p(px(6.)).cursor_pointer().child("Delete chat").on_click(cx.listener(|this,_,_,cx|{
+                            this.request_session(ht_core::AiSessionWrite::Delete{id:this.chats[this.selected].id.clone()},None,None,cx);
+                        }))))
                     .child(
                         div()
                             .id("ai-new-menu")
@@ -1170,6 +1213,7 @@ impl Render for AiSidebar {
         }
         panel = panel
             .child(header_area)
+            .child(self.session_controls(cx))
             .child(transcript)
             .when(self.away_from_latest(), |d| {
                 d.child(

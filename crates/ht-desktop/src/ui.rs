@@ -259,6 +259,7 @@ impl Desktop {
             ai_sidebar,
             _ai_sidebar_subscription: ai_sidebar_subscription,
         };
+        view.bind_ai_sessions(window,cx);
         view.bind_editors(cx);
         view.bind_mentions(cx);
         view.reload();

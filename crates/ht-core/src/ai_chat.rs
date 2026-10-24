@@ -84,7 +84,7 @@ pub struct Message {
     pub content: String,
 }
 
-#[derive(Debug, Deserialize, Serialize)]
+#[derive(Clone, Debug, Deserialize, Serialize)]
 pub struct Session {
     pub id: String,
     pub title: Option<String>,

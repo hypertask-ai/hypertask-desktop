@@ -7,6 +7,7 @@ use serde_json::{Value, json};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(tag = "kind", rename_all = "snake_case")]
 pub enum Write {
+    AiSession { change: crate::AiSessionWrite },
     View { change: crate::ViewWrite },
     Favorites { project_ids: Vec<i64> },
     FavoriteSlot { index: u8, project_id: Option<i64> },
@@ -86,6 +87,12 @@ impl Db {
     pub(crate) fn enqueue_in_transaction(&mut self,write:Write,now:i64)->Result<i64> {
         let db=self;
         let (entity, kind, payload) = match &write {
+            Write::AiSession { change } => {
+                change.request()?;
+                let user=db.current_user_id().context("Sign in before changing chats")?;
+                ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="ai_session"),"Wait for the previous chat update");
+                ("ai-session".into(),"ai_session",json!({"user_id":user,"change":change,"before":db.ai_sessions()?,"attempted":false}))
+            }
             Write::View { change } => {
                 change.validate()?;
                 ensure!(!db.mutations()?.iter().any(|row|row.status!="failed" && row.kind=="web_view" && row.payload_json["change"]["project"]==change.project), "wait for the previous view update to finish");
@@ -226,6 +233,7 @@ impl Db {
     fn apply_optimistic(&self, id: i64, kind: &str, payload: &Value, now: i64) -> Result<()> {
         match kind {
             "shell_write" | "compose_task" => (),
+            "ai_session" => self.optimistic_ai_session(payload)?,
             "web_view" => {
                 if self.current_user_id()!=payload["user_id"].as_i64(){return Ok(());}
                 let change:crate::ViewWrite=serde_json::from_value(payload["change"].clone())?;
@@ -458,10 +466,12 @@ impl Db {
             "inbox_archive" => ("/inbox/archive", row.payload_json.clone()),
             "inbox_seen" => ("/inbox/seen", json!({"notification_ids":row.payload_json["notification_ids"]})),
             "inbox_remind" => ("/inbox/archive", json!({"notification_ids":row.payload_json["notification_ids"],"remind_at":row.payload_json["remind_at"]})),
-            "web_view" | "web_favorites" | "web_favorite_slot" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
+            "ai_session" | "web_view" | "web_favorites" | "web_favorite_slot" | "web_create" | "compose_task" | "comment_action" | "comment_draft" | "shell_write" | "board_write" => ("", Value::Null),
             _ => bail!("unknown queued kind"),
         };
-        let response = if row.kind == "web_view" {
+        let response = if row.kind == "ai_session" {
+            self.send_ai_session(transport,&row)
+        } else if row.kind == "web_view" {
             let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
             change.validate()?;
             if change.route=="create-view" && (row.payload_json["attempted"]==true || (row.payload_json.get("attempted").is_none() && row.attempts>1)) {Ok(Response{status:409,body:json!({"message":"View creation result uncertain; refresh before trying again"})})}else{match transport.get("/user/context") {
@@ -608,6 +618,10 @@ impl Db {
             db.conn.execute("UPDATE mutation_queue SET status=?,last_error=?,next_attempt_at=?,lease_until=NULL WHERE id=? AND attempts=?",
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
+                if row.kind == "ai_session" {
+                    db.rollback_ai_session(&row.payload_json)?;
+                    db.kv_set(&format!("ai-session-result:{}",row.client_id),&json!({"error":result.1}).to_string())?;
+                }
                 if row.kind == "web_view" {
                     if db.current_user_id()==row.payload_json["user_id"].as_i64(){
                         let before=&row.payload_json["before"];
@@ -680,6 +694,10 @@ impl Db {
             let active: bool = db.conn.query_row("SELECT EXISTS(SELECT 1 FROM mutation_queue WHERE id=? AND attempts=? AND status='inflight')", params![row.id,row.attempts], |r| r.get(0))?;
             if !active { return Ok(()); }
             match row.kind.as_str() {
+                "ai_session" => {
+                    db.resolve_ai_session(&row.payload_json,body)?;
+                    db.kv_set(&format!("ai-session-result:{}",row.client_id),&body.to_string())?;
+                }
                 "web_view" => {
                     let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
                     let view=&body["view"];

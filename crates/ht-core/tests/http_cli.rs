@@ -283,3 +283,16 @@ fn board_view_web_routes_send_bearer_and_unmodified_body_on_accept_and_refusal()
         let request=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(request.starts_with(&format!("POST {path} HTTP/1.1")));assert!(request.to_lowercase().contains("authorization: bearer desktop-views-token\r\n"));assert_eq!(serde_json::from_str::<Value>(request.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
     }}
 }
+
+#[test]
+fn ai_lifecycle_web_requests_send_bearer_and_exact_body_for_accept_and_refusal(){
+    use ht_core::AiSessionWrite;
+    for change in [AiSessionWrite::Create{task:Some(7),project:Some(15)},AiSessionWrite::Rename{id:"chat/é &".into(),title:"  New title  ".into()},AiSessionWrite::Delete{id:"chat/é &".into()},AiSessionWrite::DeleteAll] {
+        let(method,path,body)=change.request().unwrap();
+        for status in [200,401,403]{
+            let(url,thread,receive)=server(status,"{}");let mut http=Http::with_base(&url,"desktop-ai-token".into()).unwrap();
+            assert_eq!(http.mutate(method,&path,&body,"session-key").unwrap().status,status);
+            let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("{method} {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-ai-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);thread.join().unwrap();
+        }
+    }
+}

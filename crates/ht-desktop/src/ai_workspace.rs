@@ -2,6 +2,35 @@ use super::*;
 use crate::{ai_sidebar::DisplayMode, shortcuts::Action};
 
 impl Desktop {
+    pub(super) fn bind_ai_sessions(&mut self,window:&mut Window,cx:&mut Context<Self>) {
+        let Some(sidebar)=self.ai_sidebar.clone() else{return;};
+        sidebar.update(cx,|sidebar,cx|sidebar.restore_sessions(&self.db,cx));
+        cx.subscribe_in(&sidebar,window,|this,sidebar,event:&crate::ai_sidebar::SessionRequest,window,cx|{
+            let result=this.db.cache_ai_sessions(&event.sessions).and_then(|()|this.db.enqueue(Write::AiSession{change:event.change.clone()},chrono::Utc::now().timestamp()));
+            match result {
+                Ok(id)=>{
+                    let key=this.db.mutations().unwrap().into_iter().find(|row|row.id==id).unwrap().client_id;
+                    sidebar.update(cx,|sidebar,cx|sidebar.session_queued(key,cx));
+                    this.request_sync();
+                    cx.spawn_in(window,async move|view,cx|{
+                        loop {
+                            cx.background_executor().timer(Duration::from_millis(100)).await;
+                            if !view.update_in(cx,|this,window,cx|this.poll_ai_sessions(window,cx)).unwrap_or(false){break;}
+                        }
+                    }).detach();
+                }
+                Err(error)=>sidebar.update(cx,|sidebar,cx|sidebar.session_finished(serde_json::json!({"error":error.to_string()}),window,cx)),
+            }
+        }).detach();
+    }
+    pub(super) fn poll_ai_sessions(&mut self,window:&mut Window,cx:&mut Context<Self>)->bool {
+        let Some(sidebar)=self.ai_sidebar.clone() else{return false;};
+        let Some(key)=sidebar.read(cx).session_key().map(|key|format!("ai-session-result:{key}")) else{return false;};
+        let Some(result)=self.db.kv_get(&key).ok().flatten().and_then(|s|serde_json::from_str::<serde_json::Value>(&s).ok()) else{return true;};
+        let _=self.db.kv_set(&key,"null");
+        sidebar.update(cx,|sidebar,cx|sidebar.session_finished(result,window,cx));
+        false
+    }
     pub(super) fn ai_panel(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(sidebar) = self.ai_sidebar.clone().filter(|_| self.shell.ai_open) else {
             return div().into_any_element();
@@ -50,6 +79,7 @@ impl Desktop {
     pub(super) fn ai_command(&mut self, action: Action, cx: &mut Context<Self>) {
         if let Some(sidebar) = &self.ai_sidebar {
             sidebar.update(cx, |sidebar, cx| match action {
+                Action::DeleteAllAiChats => sidebar.delete_all_sessions(cx),
                 Action::PinAiChat => sidebar.toggle_pin(cx),
                 Action::FullscreenAiChat => sidebar.set_mode(DisplayMode::Fullscreen, cx),
                 _ => (),

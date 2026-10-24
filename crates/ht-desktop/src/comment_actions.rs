@@ -168,7 +168,7 @@ impl Desktop {
                     )));
                 }
             }
-            Action::CopyCommentToAiChat => {
+            Action::CopyCommentToAiChat | Action::BranchCommentToAiChat => {
                 let Some(creator) = comment.extra.get("creator") else {
                     return;
                 };
@@ -182,7 +182,7 @@ impl Desktop {
                 );
                 if let Some(sidebar) = &self.ai_sidebar {
                     sidebar.update(cx, |sidebar, cx| {
-                        sidebar.insert_comment_quote(quote, window, cx)
+                        if action==Action::BranchCommentToAiChat{sidebar.branch_comment(quote,window,cx);}else{sidebar.insert_comment_quote(quote, window, cx)}
                     });
                     self.shell.ai_open = true;
                 }
@@ -429,6 +429,7 @@ impl Desktop {
                     Action::CopyCommentToAiChat,
                     self.ai_sidebar.is_some(),
                 ),
+                ("branchInNewChat","Branch in new chat","",Action::BranchCommentToAiChat,self.ai_sidebar.is_some()),
                 (
                     "fastLikeComment",
                     "Like comment",
