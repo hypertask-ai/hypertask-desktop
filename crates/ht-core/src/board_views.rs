@@ -17,7 +17,7 @@ impl ViewWrite {
         ensure!(
             matches!(
                 self.route.as_str(),
-                "unsaved-view"
+                "rename-view" | "delete-view" | "unsaved-view"
                     | "switch-view"
                     | "create-view"
                     | "update-view"
@@ -29,6 +29,14 @@ impl ViewWrite {
             "Unsupported view mutation"
         );
         Ok(())
+    }
+    pub fn request(&self)->Result<(&'static str,String,Value)> {
+        self.validate()?;
+        if self.route=="delete-view" {
+            let id=self.body["viewId"].as_str().filter(|id|!id.is_empty()).context("Select a saved view")?;
+            let query=url::form_urlencoded::Serializer::new(String::new()).append_pair("viewId",id).append_pair("projectId",&self.project.to_string()).finish();
+            Ok(("DELETE",format!("/api/projects/views/delete-rename-view?{query}"),Value::Null))
+        }else{Ok(("POST",format!("/api/projects/views/{}",if self.route=="rename-view"{"delete-rename-view"}else{&self.route}),self.body.clone()))}
     }
     pub(crate) fn optimistic(&self, project: &mut Value) {
         let view = &mut project["project_view"];
@@ -43,6 +51,17 @@ impl ViewWrite {
         }
         match self.route.as_str() {
             "unsaved-view" => view["user_project_views"][0]["unsavedView"] = self.body.clone(),
+            "rename-view"|"update-view"=>{
+                let patch=if self.route=="rename-view"{json!({"title":self.body["title"]})}else{self.body["view_settings"].clone()};
+                let mut update=|row:&mut Value|{if row["id"]==self.body["viewId"]{for(key,value)in patch.as_object().into_iter().flatten(){row[key]=value.clone();}}};
+                for row in view["allViews"].as_array_mut().into_iter().flatten(){update(row);}
+                update(&mut view["default_view"]);update(&mut view["user_project_views"][0]["appliedView"]);
+                if self.route=="update-view"{view["user_project_views"][0]["unsavedView"]=Value::Null;}
+            }
+            "delete-view"=>{
+                if let Some(rows)=view["allViews"].as_array_mut(){rows.retain(|row|row["id"]!=self.body["viewId"]);}
+                if view["user_project_views"][0]["appliedView"]["id"]==self.body["viewId"]{view["user_project_views"][0]["appliedView"]=Value::Null;view["user_project_views"][0]["unsavedView"]=Value::Null;}
+            }
             "switch-view" => {
                 let selected = view["allViews"]
                     .as_array()
@@ -62,8 +81,10 @@ impl ViewWrite {
                 }
             }
             "update-order" => {
-                view["user_project_views"][0]["viewOrder"] = self.body["viewOrder"].clone()
+                view["user_project_views"][0]["view_order"] = self.body["viewOrder"].clone()
             }
+            "reset-order"=>view["user_project_views"][0]["view_order"]=Value::Null,
+            "set-default-order"=>view["default_view_order"]=self.body["viewOrder"].clone(),
             _ => (),
         }
     }
@@ -309,4 +330,12 @@ pub(crate) fn filter_sort(tasks: &mut Vec<Value>, settings: &Value) {
         }
         Ordering::Equal
     });
+}
+
+pub fn ordered_views(project:&Value)->Vec<Value>{
+    let pv=&project["project_view"];let unsaved=&pv["user_project_views"][0]["unsavedView"]["id"];
+    let mut rows:Vec<Value>=pv["allViews"].as_array().into_iter().flatten().filter(|view|view["id"]!=*unsaved).cloned().collect();
+    let order=pv["user_project_views"][0]["view_order"].as_array().or_else(||pv["default_view_order"].as_array());
+    rows.sort_by_key(|view|if view["id"]==pv["default_view_id"]{0}else{1+order.and_then(|order|order.iter().position(|id|*id==view["id"])).unwrap_or(usize::MAX-1)});
+    rows
 }

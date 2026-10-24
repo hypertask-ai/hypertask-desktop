@@ -311,3 +311,8 @@ fn configured_model_reads_and_team_preference_write_use_desktop_bearer_on_accept
         let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("{method} {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-model-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));if method!="GET"{assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);}thread.join().unwrap();
     }}
 }
+
+#[test]
+fn web_view_rename_and_delete_use_exact_routes_bearer_and_empty_delete_body(){
+    for route in ["rename-view","delete-view"]{for status in [200,401,403]{let change=ht_core::ViewWrite{project:15,route:route.into(),body:json!({"projectId":15,"viewId":"view /é","title":"Renamed"})};let(method,path,body)=change.request().unwrap();let(url,thread,receive)=server(status,"{}");let mut http=Http::with_base(&url,"desktop-view-token".into()).unwrap();assert_eq!(http.mutate(method,&path,&body,"view-key").unwrap().status,status);let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with(&format!("{method} {path} HTTP/1.1")));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-view-token\r\n"));if method=="DELETE"{assert_eq!(wire.split_once("\r\n\r\n").unwrap().1,"");}else{assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);}thread.join().unwrap();}}
+}

@@ -285,6 +285,7 @@ impl Desktop {
     }
     pub(super) fn add_board_commands(&self, rows: &mut Vec<crate::command_center::Command>) {
         if self.screen == Screen::Board {
+            rows.push(crate::command_center::Command{key:"manageViews".into(),name:"Manage views".into(),group:"Board",keys:String::new(),keywords:"views layout",action:crate::command_center::CommandAction::Shell(crate::command_center::ShellCommand::Views)});
             for (key, name, action) in [
                 (
                     "addColumn",

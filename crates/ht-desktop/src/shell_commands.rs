@@ -9,6 +9,7 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::Views => self.open_view_panel(crate::ui::board_views::Panel::Manage,window,cx),
             ShellCommand::Favorites => self.open_favorites(window, cx),
             ShellCommand::Settings(section) => {
                 self.open_settings(window, cx);

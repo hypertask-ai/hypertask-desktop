@@ -490,7 +490,10 @@ impl Db {
                         let mut payload=row.payload_json.clone();payload["attempted"]=json!(true);
                         self.conn.execute("UPDATE mutation_queue SET payload_json=? WHERE id=?",params![payload.to_string(),row.id])?;
                     }
-                    transport.post(&format!("/api/projects/views/{}",change.route),&change.body,&row.client_id)
+                    {
+                        let(method,path,body)=change.request()?;
+                        if method=="POST"{transport.post(&path,&body,&row.client_id)}else{transport.mutate(method,&path,&body,&row.client_id)}
+                    }
                 },
                 Err(error) => Err(error),
                 Ok(identity) if !(200..300).contains(&identity.status) => Ok(identity),
@@ -619,7 +622,7 @@ impl Db {
                     Err(_) => (false, "invalid success response".to_owned()),
                 }
             }
-            Ok(Response { status, .. }) => (permanent(status), format!("HTTP {status}")),
+            Ok(Response { status, body }) => (permanent(status), if row.kind=="web_view" {body["message"].as_str().unwrap_or("Could not save the view").to_owned()} else {format!("HTTP {status}")}),
             Err(error) => (false, error.to_string()),
         };
         self.transaction(|db| {
@@ -720,9 +723,14 @@ impl Db {
                     let change:crate::ViewWrite=serde_json::from_value(row.payload_json["change"].clone())?;
                     let view=&body["view"];
                     if matches!(change.route.as_str(),"update-order"|"reset-order"|"set-default-order") {
-                        ensure!(view.get("viewOrder").is_some() || view.get("defaultViewOrder").is_some(),"Missing view order acknowledgement");
+                        let mut project=db.board_project(change.project)?;
+                        match change.route.as_str(){
+                            "set-default-order"=>{ensure!(view["defaultViewOrder"].is_array(),"Missing default order acknowledgement");project["project_view"]["default_view_order"]=view["defaultViewOrder"].clone();}
+                            _=>{ensure!(view.get("viewOrder").is_some(),"Missing view order acknowledgement");project["project_view"]["user_project_views"][0]["view_order"]=view["viewOrder"].clone();}
+                        }
+                        db.upsert("Project",&project)?;
                     } else {
-                        let view=if change.route=="create-view"{view.get("project_view_updated").unwrap_or(view)}else{view};
+                        let view=if matches!(change.route.as_str(),"create-view"|"rename-view"){view.get("project_view_updated").unwrap_or(view)}else{view};
                         ensure!(view["projectId"]==change.project && view["id"].is_string(),"Wrong view acknowledgement");
                         let mut project=db.board_project(change.project)?;project["project_view"]=view.clone();db.upsert("Project",&project)?;
                     }

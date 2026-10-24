@@ -198,7 +198,7 @@ impl Transport for Http {
         body: &Value,
         client_id: &str,
     ) -> std::result::Result<Response, TransportError> {
-        self.request(method, path, Some(body), Some(client_id))
+        self.request(method, path, if body.is_null() {None}else{Some(body)}, Some(client_id))
     }
     fn get(&mut self, path: &str) -> std::result::Result<Response, TransportError> {
         self.request("GET", path, None, None)

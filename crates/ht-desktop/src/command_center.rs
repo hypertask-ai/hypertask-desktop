@@ -31,6 +31,7 @@ pub enum ShellCommand {
     Invite,
     Cli,
     Favorites,
+    Views,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.

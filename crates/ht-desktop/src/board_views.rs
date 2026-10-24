@@ -9,6 +9,11 @@ pub(super) enum Panel {
     Labels,
     Assignees,
     Save,
+    SavePrivate,
+    SaveTeam,
+    Manage,
+    RenameView,
+    DeleteView,
 }
 pub(super) struct Views {
     pub loaded: i64,
@@ -19,6 +24,8 @@ pub(super) struct Views {
     input: Entity<TextInput>,
     pending: Option<String>,
     choice: usize,
+    editing: Option<String>,
+    pending_route: String,
 }
 impl Views {
     pub fn new(cx: &mut Context<Desktop>) -> Self {
@@ -32,6 +39,8 @@ impl Views {
             input,
             pending: None,
             choice: 0,
+            editing: None,
+            pending_route: String::new(),
         }
     }
 }
@@ -129,7 +138,7 @@ impl Desktop {
     ) {
         self.views.panel = Some(panel);
         self.views.choice = 0;
-        if panel == Panel::Save {
+        if matches!(panel,Panel::SavePrivate|Panel::SaveTeam|Panel::RenameView) {
             self.views
                 .input
                 .update(cx, |input, cx| input.set_content(String::new(), cx));
@@ -169,6 +178,7 @@ impl Desktop {
             chrono::Utc::now().timestamp(),
         ) {
             Ok(id) => {
+                self.views.pending_route=route.into();
                 self.views.pending = self
                     .db
                     .mutations()
@@ -221,12 +231,27 @@ impl Desktop {
         if result["error"].is_null() {
             self.views.panel = None;
             window.focus(&self.focus, cx);
+        }else{
+            self.error=Some(match self.views.pending_route.as_str(){
+                "rename-view"=>"Error renaming view".into(),"delete-view"=>"Error deleting view".into(),"update-order"=>"Unable to save view order".into(),"reset-order"=>"Unable to reset view order".into(),"set-default-order"=>"Unable to set the default view order".into(),_=>result["error"].as_str().unwrap_or("Could not save the view").into()
+            });
         }
         cx.notify();
         false
     }
     fn view_choices(&self) -> Vec<(String, Value)> {
         match self.views.panel {
+            Some(Panel::Save)=>["Save as current view","Set as default board for everyone","Save as additional view for team","Save as view for me only","Reset View"].into_iter().enumerate().map(|(i,name)|(name.into(),json!(i))).collect(),
+            Some(Panel::SavePrivate|Panel::SaveTeam)=>vec![("Save view".into(),Value::Null)],
+            Some(Panel::RenameView)=>vec![("Save".into(),json!("rename")),("DELETE VIEW".into(),json!("delete"))],
+            Some(Panel::DeleteView)=>vec![("Delete view".into(),json!("confirm")),("Cancel".into(),json!("cancel"))],
+            Some(Panel::Manage)=>{
+                let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
+                let mut choices=vec![("Sort alphabetically".into(),json!({"action":"alphabetical"})),("Reset to default order".into(),json!({"action":"reset"}))];
+                if self.can_set_view_default(&project){choices.push(("Set as default order for everyone".into(),json!({"action":"default"})));}
+                choices.extend(ht_core::board_views::ordered_views(&project).into_iter().map(|view|(view["title"].as_str().unwrap_or("Untitled view").into(),view)));
+                choices
+            }
             Some(Panel::Sort) => [
                 ("Manual", "Manual"),
                 ("Priority", "Priority"),
@@ -289,19 +314,56 @@ impl Desktop {
         if self.views.pending.is_some() {
             return;
         }
-        if self.views.panel == Some(Panel::Save) {
-            let title = self.views.input.read(cx).content.trim().to_owned();
-            if title.is_empty() {
+        match self.views.panel {
+            Some(Panel::SavePrivate|Panel::SaveTeam)=>{
+                let title=self.views.input.read(cx).content.trim().to_owned();if title.is_empty(){self.error=Some("Give your view a name first".into());cx.notify();return;}
+                let public=self.views.panel==Some(Panel::SaveTeam);
+                self.queue_view("create-view",json!({"userId":self.db.current_user_id(),"viewTitle":title,"visibility":if public{"Public"}else{"Private"},"setAsDefault":false,"view_settings":self.view_settings()}),window,cx);return;
+            }
+            Some(Panel::Save)=>{
+                match index {
+                    2=>self.open_view_panel(Panel::SaveTeam,window,cx),3=>self.open_view_panel(Panel::SavePrivate,window,cx),
+                    4=>self.queue_view("reset-to-default",json!({"mode":"ResetCurrent"}),window,cx),
+                    0|1=>{
+                        let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
+                        let applied=project["project_view"]["user_project_views"][0]["appliedView"]["id"].clone();
+                        if index==0 && applied.is_string(){self.queue_view("update-view",json!({"viewId":applied,"view_settings":self.view_settings()}),window,cx);}
+                        else{self.queue_view("create-view",json!({"userId":self.db.current_user_id(),"viewTitle":format!("default-view-id-{}",self.options.board),"visibility":"Public","setAsDefault":true,"view_settings":self.view_settings()}),window,cx);}
+                    }
+                    _=>(),
+                }
                 return;
             }
-            self.queue_view("create-view",json!({"viewTitle":title,"visibility":"Private","setAsDefault":false,"view_settings":self.view_settings()}),window,cx);
-            return;
+            _=>(),
         }
         let Some((_, value)) = self.view_choices().get(index).cloned() else {
             return;
         };
         let mut settings = self.view_settings();
         match self.views.panel {
+            Some(Panel::Manage)=>{
+                if let Some(action)=value["action"].as_str(){
+                    if action=="reset"{self.queue_view("reset-order",json!({}),window,cx);return;}
+                    let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
+                    let mut views=ht_core::board_views::ordered_views(&project);
+                    if action=="alphabetical"{views.sort_by_key(|v|(v["id"]!=project["project_view"]["default_view_id"],v["title"].as_str().unwrap_or("").to_lowercase()));}
+                    self.queue_view(if action=="default"{"set-default-order"}else{"update-order"},json!({"viewOrder":views.iter().map(|v|v["id"].clone()).collect::<Vec<_>>()}),window,cx);return;
+                }
+                self.views.editing=value["id"].as_str().map(str::to_owned);
+                self.open_view_panel(Panel::RenameView,window,cx);
+                self.views.input.update(cx,|input,cx|input.set_content(value["title"].as_str().unwrap_or("").into(),cx));return;
+            }
+            Some(Panel::RenameView)=>{
+                if value=="delete"{self.views.panel=Some(Panel::DeleteView);self.views.choice=0;cx.notify();return;}
+                let title=self.views.input.read(cx).content.to_string();if title.chars().count()<2{self.error=Some("View name must be at least 2 characters".into());cx.notify();return;}
+                self.queue_view("rename-view",json!({"viewId":self.views.editing,"title":title}),window,cx);return;
+            }
+            Some(Panel::DeleteView)=>{
+                if value=="cancel"{self.views.panel=Some(Panel::Manage);cx.notify();return;}
+                let project=self.db.board_project(self.options.board).unwrap_or(Value::Null);
+                if project["project_view"]["default_view_id"]==json!(self.views.editing){return;}
+                self.queue_view("delete-view",json!({"viewId":self.views.editing}),window,cx);return;
+            }
             Some(Panel::Sort) => {
                 if value.is_string() {
                     settings["board_sorting_mode"] = value;
@@ -387,7 +449,7 @@ impl Desktop {
                     (self.views.choice + 1).min(self.view_choices().len().saturating_sub(1))
             }
             "up" => self.views.choice = self.views.choice.saturating_sub(1),
-            _ => return self.views.panel != Some(Panel::Save),
+            _ => return !matches!(self.views.panel,Some(Panel::SavePrivate|Panel::SaveTeam|Panel::RenameView)),
         }
         cx.stop_propagation();
         cx.notify();
@@ -401,10 +463,7 @@ impl Desktop {
         if !project["project_view"].is_object() {
             return div().into_any_element();
         }
-        let views = project["project_view"]["allViews"]
-            .as_array()
-            .cloned()
-            .unwrap_or_default();
+        let views = ht_core::board_views::ordered_views(&project);
         div()
             .px(px(24.))
             .flex()
@@ -429,7 +488,11 @@ impl Desktop {
                         this.open_view_panel(Panel::Save, window, cx)
                     })),
             )
+            .child(div().id("manage-board-views").cursor_pointer().child("Manage views").on_click(cx.listener(|this,_,window,cx|this.open_view_panel(Panel::Manage,window,cx))))
             .into_any_element()
+    }
+    fn can_set_view_default(&self,project:&Value)->bool{
+        self.db.current_user_id().is_some_and(|user|project["ownerId"]==user || project["members"].as_array().into_iter().flatten().any(|m|m["userId"]==user && m["status"]=="Accepted" && m["role"]=="Admin"))
     }
     pub(super) fn view_overlay(&self, cx: &mut Context<Self>) -> AnyElement {
         let Some(panel) = self.views.panel else {
@@ -438,7 +501,9 @@ impl Desktop {
         let t = self.colors;
         let title = match panel {
             Panel::Sort => "Sort",
-            Panel::Save => "Save view",
+            Panel::Save => "Save this view",
+            Panel::SaveTeam=>"Save as new view for team",Panel::SavePrivate=>"Save as view for me only",
+            Panel::Manage=>"Manage views",Panel::RenameView=>"View settings",Panel::DeleteView=>"Delete this view? That cannot be undone.",
             _ => "Filter",
         };
         div()
@@ -458,17 +523,7 @@ impl Desktop {
                     .bg(color(t.comment))
                     .rounded(px(6.))
                     .child(title)
-                    .when(panel == Panel::Save, |d| {
-                        d.child(self.views.input.clone()).child(
-                            div()
-                                .id("view-save-submit")
-                                .cursor_pointer()
-                                .child("Save")
-                                .on_click(cx.listener(|this, _, window, cx| {
-                                    this.choose_view_option(0, window, cx)
-                                })),
-                        )
-                    })
+                    .when(matches!(panel,Panel::SavePrivate|Panel::SaveTeam|Panel::RenameView),|d|d.child(self.views.input.clone()))
                     .children(
                         self.view_choices()
                             .into_iter()
@@ -566,5 +621,33 @@ mod tests {
                 );
             });
         }
+    }
+}
+
+#[cfg(test)]
+mod management_tests {
+    use super::*;
+    use crate::ui::task_fields::tests::desktop;
+    struct Web{status:u16,expected:ht_core::ViewWrite,reply:Value}
+    impl ht_core::Transport for Web {
+        fn get(&mut self,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{Ok(ht_core::http::Response{status:200,body:json!({"success":true,"user":{"id":42}})})}
+        fn post(&mut self,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{self.mutate("POST",path,body,key)}
+        fn mutate(&mut self,method:&str,path:&str,body:&Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{let(m,p,b)=self.expected.request().unwrap();assert_eq!(method,m);assert_eq!(path,p);assert_eq!(body,&b);Ok(ht_core::http::Response{status:self.status,body:if self.status==200{self.reply.clone()}else{json!({"message":"Board access denied"})}})}
+    }
+    #[gpui::test]
+    fn save_view_menu_uses_all_five_web_flows_and_keeps_name_on_both_refusals(cx:&mut gpui::TestAppContext){
+        cx.update(crate::input::init);
+        let(view,cx)=cx.add_window_view(|window,cx|{let mut this=desktop(window,cx);this.screen=Screen::Board;this});
+        for option in 0..5{for status in [401,403,200]{view.update_in(cx,|this,window,cx|{
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","project_view":{"id":"pv","projectId":15,"user_project_views":[{"appliedView":{"id":"v1","title":"Daily"}}],"allViews":[{"id":"v1","title":"Daily"}]}}]})).unwrap();this.reload();
+            this.open_view_panel(Panel::Save,window,cx);assert_eq!(this.view_choices().len(),5);this.choose_view_option(option,window,cx);
+            if matches!(option,2|3){this.views.input.update(cx,|input,cx|input.set_content("Named view".into(),cx));this.choose_view_option(0,window,cx);}
+            let row=this.db.mutations().unwrap().into_iter().find(|r|r.status!="failed").unwrap();let change:ht_core::ViewWrite=serde_json::from_value(row.payload_json["change"].clone()).unwrap();
+            if option==1||option==2||option==3{assert_eq!(change.route,"create-view");assert_eq!(change.body["userId"],42);assert_eq!(change.body["visibility"],if option==3{"Private"}else{"Public"});assert_eq!(change.body["setAsDefault"],option==1);}
+            if option==0{assert_eq!(change.route,"update-view");assert_eq!(change.body["viewId"],"v1");}if option==4{assert_eq!(change.body["mode"],"ResetCurrent");}
+            let pv=this.db.board_project(15).unwrap()["project_view"].clone();let reply=if change.route=="create-view"{json!({"project_view_updated":pv})}else{pv};
+            this.db.drain_once(&mut Web{status,expected:change,reply},chrono::Utc::now().timestamp()+1).unwrap();assert!(!this.poll_view(window,cx));assert_eq!(this.views.panel.is_none(),status==200);
+            if status!=200{assert_eq!(this.error.as_deref(),Some("Board access denied"));if option==2||option==3{assert_eq!(this.views.input.read(cx).content.as_ref(),"Named view");}}
+        });}}
     }
 }

@@ -177,3 +177,22 @@ fn null_unsaved_fields_inherit_applied_settings_without_resetting_other_view_fie
     assert_eq!(settings["board_empty_sections"], "Hidden");
     assert_eq!(settings["board_filters"]["matchFilters"], "ALL");
 }
+
+#[test]
+fn rename_delete_and_view_order_are_optimistic_and_authoritative_after_refusal_or_restart(){
+    struct Web {change:ViewWrite,status:u16,reply:Value}
+    impl Transport for Web{
+        fn get(&mut self,_:&str)->Result<Response,TransportError>{Ok(Response{status:200,body:json!({"success":true,"user":{"id":42}})})}
+        fn post(&mut self,path:&str,body:&Value,key:&str)->Result<Response,TransportError>{self.mutate("POST",path,body,key)}
+        fn mutate(&mut self,method:&str,path:&str,body:&Value,_:&str)->Result<Response,TransportError>{let(m,p,b)=self.change.request().unwrap();assert_eq!(method,m);assert_eq!(path,p);assert_eq!(body,&b);Ok(Response{status:self.status,body:if self.status==200{self.reply.clone()}else{json!({"message":"Unauthorized"})}})}
+    }
+    for route in ["rename-view","delete-view","update-order","reset-order","set-default-order"]{for status in [200,401,403]{
+        let file=tempfile::NamedTempFile::new().unwrap();let mut db=Db::open(file.path()).unwrap();seed(&mut db);
+        let before=db.board_project(15).unwrap();let body=match route{"rename-view"=>json!({"projectId":15,"viewId":"v1","title":"Renamed"}),"delete-view"=>json!({"projectId":15,"viewId":"v1"}),_=>json!({"projectId":15,"viewOrder":["v1"]})};
+        let change=ViewWrite{project:15,route:route.into(),body};db.enqueue(Write::View{change:change.clone()},1).unwrap();
+        match route{"rename-view"=>assert_eq!(db.board_project(15).unwrap()["project_view"]["allViews"][0]["title"],"Renamed"),"delete-view"=>assert!(board_views::ordered_views(&db.board_project(15).unwrap()).is_empty()),"update-order"=>assert_eq!(db.board_project(15).unwrap()["project_view"]["user_project_views"][0]["view_order"],json!(["v1"])),_=>()}
+        let reply=match route{"rename-view"=>{let mut view=before["project_view"].clone();view["allViews"][0]["title"]=json!("Renamed");json!({"view":{"id":"v1","title":"Renamed"},"project_view_updated":view})},"delete-view"=>{let mut view=before["project_view"].clone();view["allViews"]=json!([]);view},"set-default-order"=>json!({"defaultViewOrder":["v1"]}),"reset-order"=>json!({"viewOrder":null}),_=>json!({"viewOrder":["v1"]})};
+        drop(db);let mut db=Db::open(file.path()).unwrap();let result=db.drain_once(&mut Web{change,status,reply},2).unwrap();assert_eq!(matches!(result,Drain::Applied(_)),status==200);
+        if status!=200{assert_eq!(db.board_project(15).unwrap()["project_view"],before["project_view"]);}else{match route{"rename-view"=>assert_eq!(db.board_project(15).unwrap()["project_view"]["allViews"][0]["title"],"Renamed"),"delete-view"=>assert!(board_views::ordered_views(&db.board_project(15).unwrap()).is_empty()),"set-default-order"=>assert_eq!(db.board_project(15).unwrap()["project_view"]["default_view_order"],json!(["v1"])),"reset-order"=>assert!(db.board_project(15).unwrap()["project_view"]["user_project_views"][0]["view_order"].is_null()),_=>()}}
+    }}
+}
