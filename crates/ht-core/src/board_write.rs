@@ -5,6 +5,11 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BoardWrite {
+    AssignAgent {
+        task: i64,
+        agent: String,
+        active: bool,
+    },
     AddColumn {
         project: i64,
         title: String,
@@ -47,6 +52,25 @@ impl BoardWrite {
             Ok::<(), anyhow::Error>(())
         };
         let request = match self {
+            Self::AssignAgent {
+                task,
+                agent,
+                active,
+            } => {
+                positive(*task)?;
+                ensure!(
+                    !agent.is_empty()
+                        && agent
+                            .bytes()
+                            .all(|c| c.is_ascii_alphanumeric() || matches!(c, b'-' | b'_')),
+                    "invalid agent id"
+                );
+                (
+                    "POST",
+                    "/assignees/assign".into(),
+                    json!({"task_id":task,"agent_id":agent,"intent":if *active {"assign"} else {"unassign"}}),
+                )
+            }
             Self::AddColumn {
                 project,
                 title: name,
@@ -127,6 +151,46 @@ impl BoardWrite {
     }
     pub(crate) fn resolve(&self, db: &mut Db, body: &Value, now: i64) -> Result<()> {
         match self {
+            Self::AssignAgent {
+                task,
+                agent,
+                active,
+            } => {
+                let rows = body["assignees"]
+                    .as_array()
+                    .context("missing assignment acknowledgement")?;
+                ensure!(
+                    rows.iter().any(|row| row["agent"]["id"] == *agent) == *active,
+                    "agent assignment not acknowledged"
+                );
+                let mut task_row = db
+                    .raw("Task", &json!(task))?
+                    .context("task is not cached")?;
+                let project = task_row["projectId"]
+                    .as_i64()
+                    .context("missing task board")?;
+                let members = db.project_members(project)?;
+                let selected = rows
+                    .iter()
+                    .map(|row| {
+                        let id = row["userId"].as_i64().context("missing assignment user")?;
+                        let mut member = members
+                            .iter()
+                            .find(|member| member["id"] == id)
+                            .cloned()
+                            .unwrap_or_else(|| json!({"id":id}));
+                        if row["agent"].is_object() {
+                            member["agent"] = row["agent"].clone();
+                            member["displayName"] = row["agent"]["displayName"].clone();
+                        }
+                        Ok(member)
+                    })
+                    .collect::<Result<Vec<Value>>>()?;
+                task_row["assignees"] = json!(selected);
+                task_row["assigneeCount"] = json!(selected.len());
+                db.upsert_task(&task_row)?;
+                db.request_refetch("task", *task)?;
+            }
             Self::AddColumn { project, .. } | Self::RenameColumn { project, .. } => {
                 let section = body
                     .get("section")

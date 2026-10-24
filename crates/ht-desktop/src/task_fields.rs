@@ -116,7 +116,7 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         let action = match label {
-            "Assignees" => Action::Assign,
+            "Assignees" | "Agents" => Action::Assign,
             "Priority" => Action::Priority,
             "Due date" => Action::DueDate,
             "Tags" => Action::Tags,
@@ -125,6 +125,7 @@ impl Desktop {
             _ => return,
         };
         self.run_shortcut(action, window, cx);
+        self.interaction.agents_only = label == "Agents";
     }
     pub(super) fn has_next_status(&self, task: &TaskView) -> bool {
         self.columns
@@ -618,6 +619,7 @@ pub(super) mod tests {
             cx.simulate_input(query);
             cx.run_until_parked();
             click(view, &mut cx, "command.choice.0");
+            cx.simulate_keystrokes("escape");
         }
         view.read_with(&mut cx, |this, _| {
             let task = this.db.task(1).unwrap().unwrap();
@@ -630,6 +632,7 @@ pub(super) mod tests {
         for field in [0, 8] {
             click(view, &mut cx, &format!("task.meta.{field}"));
             click(view, &mut cx, "command.choice.0");
+            cx.simulate_keystrokes("escape");
         }
         view.read_with(&mut cx, |this, _| {
             let task = this.db.task(1).unwrap().unwrap();
@@ -782,5 +785,62 @@ mod summary_tests {
         click(view, &mut cx, "task.summary.toggle");
         view.read_with(&mut cx, |this, _| assert!(!this.task_fields.summary_open))
             .unwrap();
+    }
+}
+
+#[cfg(test)]
+mod assignee_tests {
+    use super::*;
+    use crate::ui::shell::tests::{click, draw};
+    use crate::ui::task_fields::tests::desktop;
+    use gpui::VisualTestContext;
+    use serde_json::json;
+    #[gpui::test]
+    fn inline_people_and_agent_pickers_stay_open_and_toggle_distinct_id_types(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let view =
+            cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| {
+                let v = desktop(window, cx);
+                v.db.kv_set("members:15",&json!([
+                {"id":7,"displayName":"Alex"},{"id":8,"displayName":"Bea"},
+                {"id":"agent-a","displayName":"Runner","owner":{"id":42,"displayName":"Owner"}}
+            ]).to_string()).unwrap();
+                v
+            });
+        let mut cx = VisualTestContext::from_window(view.into(), cx);
+        draw(view, &mut cx);
+        click(view, &mut cx, "task.meta.0");
+        click(view, &mut cx, "command.choice.0");
+        click(view, &mut cx, "command.choice.1");
+        view.read_with(&mut cx, |this, _| {
+            assert_eq!(this.db.task(1).unwrap().unwrap().assignee_count, 2);
+            assert_eq!(
+                this.interaction.modal,
+                Some(super::super::interactions::Modal::Assign)
+            );
+        })
+        .unwrap();
+        cx.simulate_keystrokes("escape");
+        click(view, &mut cx, "task.meta.1");
+        view.read_with(&mut cx, |this, cx| assert_eq!(this.choices(cx).len(), 1))
+            .unwrap();
+        click(view, &mut cx, "command.choice.0");
+        view.read_with(&mut cx, |this, _| {
+            let task = this.db.task(1).unwrap().unwrap();
+            assert_eq!(task.assignee_count, 3);
+            assert_eq!(task.extra["assignees"][2]["agent"]["id"], "agent-a");
+        })
+        .unwrap();
+        click(view, &mut cx, "command.choice.0");
+        view.read_with(&mut cx, |this, _| {
+            assert_eq!(this.db.task(1).unwrap().unwrap().assignee_count, 2);
+            assert_eq!(
+                this.db.mutations().unwrap()[3].payload_json["change"]["AssignAgent"]["active"],
+                false
+            );
+        })
+        .unwrap();
     }
 }

@@ -87,7 +87,8 @@ impl Db {
                 if let crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
                     ensure!(db.task(*task)?.is_some_and(|task| task.project_id == *project), "task is not cached in this board");
                 }
-                ("board".into(), "board_write", json!({"user_id":user,"change":change}))
+                let before = if let crate::BoardWrite::AssignAgent { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
+                ("board".into(), "board_write", json!({"user_id":user,"change":change,"before":before}))
             }
             Write::Shell { request } => {
                 request.validate()?;
@@ -188,7 +189,19 @@ impl Db {
 
     fn apply_optimistic(&self, id: i64, kind: &str, payload: &Value, now: i64) -> Result<()> {
         match kind {
-            "shell_write" | "board_write" => (),
+            "shell_write" => (),
+            "board_write" => {
+                if let crate::BoardWrite::AssignAgent { task, agent, active } = serde_json::from_value(payload["change"].clone())? {
+                    let mut task_row = self.raw("Task",&json!(task))?.context("task is not cached")?;
+                    let project = task_row["projectId"].as_i64().context("missing task board")?;
+                    let members = self.project_members(project)?;
+                    let member = members.iter().find(|member|member["id"] == agent).context("agent is not cached in this board")?;
+                    let mut selected = task_row["assignees"].as_array().cloned().unwrap_or_default();
+                    selected.retain(|row|row["agent"]["id"] != agent);
+                    if active { selected.push(json!({"id":member["owner"]["id"],"displayName":member["displayName"],"agent":{"id":agent,"displayName":member["displayName"]}})); }
+                    task_row["assigneeCount"] = json!(selected.len()); task_row["assignees"] = json!(selected); self.upsert_task(&task_row)?;
+                }
+            },
             "task_title" | "task_section" => {
                 let mut task = self
                     .raw("Task", &payload["task_id"])?
@@ -224,7 +237,7 @@ impl Db {
                 }
                 if let Some(ids) = payload["assignee"].as_array() {
                     let members = self.project_members(project)?;
-                    let selected = ids
+                    let mut selected = ids
                         .iter()
                         .map(|id| {
                             members
@@ -234,6 +247,7 @@ impl Db {
                                 .context("member is not cached in this board")
                         })
                         .collect::<Result<Vec<_>>>()?;
+                    selected.extend(task["assignees"].as_array().into_iter().flatten().filter(|row|row["agent"].is_object()).cloned());
                     task["assigneeCount"] = json!(selected.len());
                     task["assignees"] = json!(selected);
                 }
@@ -458,6 +472,7 @@ impl Db {
                 params![if result.0 { "failed" } else { "pending" },result.1,now+backoff(row.attempts-1),row.id,row.attempts])?;
             if result.0 {
                 if row.kind == "board_write" {
+                    if !row.payload_json["before"].is_null() { db.upsert_task(&row.payload_json["before"])?; db.reapply_pending()?; }
                     db.kv_set(&format!("board-result:{}", row.client_id), &json!({"error":result.1}).to_string())?;
                 }
                 if row.kind == "shell_write" {

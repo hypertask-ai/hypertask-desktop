@@ -1488,7 +1488,7 @@ impl Desktop {
                     .flex()
                     .items_start()
                     .gap(px(20.))
-                    .when(matches!(label, "Assignees" | "Priority" | "Due date" | "Tags" | "Task size" | "ID"), |d| {
+                    .when(matches!(label, "Assignees" | "Agents" | "Priority" | "Due date" | "Tags" | "Task size" | "ID"), |d| {
                         d.cursor_pointer().on_click(cx.listener(move |this, _, window, cx| {
                             cx.stop_propagation();
                             this.open_task_field(label, window, cx);
@@ -1732,6 +1732,7 @@ impl Render for Desktop {
         let body = self.shell_body(body, cx);
         let t = self.colors;
         div()
+            .id("desktop-workspace")
             .size_full()
             .flex()
             .font_family(self.options.theme.font())

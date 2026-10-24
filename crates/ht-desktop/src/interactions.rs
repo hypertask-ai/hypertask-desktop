@@ -32,6 +32,7 @@ enum ChoiceAction {
     Column(i64),
     Priority(u8),
     Assignee(i64),
+    Agent(usize),
     Label(usize),
     Size(u8),
     DueDate(i64),
@@ -42,6 +43,7 @@ enum ChoiceAction {
 }
 pub(super) struct Interaction {
     pub modal: Option<Modal>,
+    pub agents_only: bool,
     pub query: Entity<TextInput>,
     pub description: Entity<TextInput>,
     pub choice: usize,
@@ -77,6 +79,7 @@ impl Interaction {
         cx.observe(&description, |_, _, cx| cx.notify()).detach();
         Self {
             modal: None,
+            agents_only: false,
             query,
             description,
             choice: 0,
@@ -685,6 +688,7 @@ impl Desktop {
 
     pub(super) fn show_modal(&mut self, modal: Modal, window: &mut Window, cx: &mut Context<Self>) {
         self.task_fields.summary_open = false;
+        self.interaction.agents_only = false;
         if !matches!(
             modal,
             Modal::Commands | Modal::Search | Modal::LocalSearch | Modal::Boards
@@ -885,14 +889,16 @@ impl Desktop {
                         .project_members(task.project_id)
                         .unwrap_or_default()
                         .into_iter()
-                        .filter_map(|m| {
+                        .enumerate()
+                        .filter(|(_,member)| !self.interaction.agents_only || member["id"].is_string())
+                        .filter_map(|(i,m)| {
                             Some(Choice {
                                 name: m["displayName"]
                                     .as_str()
                                     .filter(|s| !s.is_empty())
                                     .or(m["email"].as_str())?
                                     .into(),
-                                action: ChoiceAction::Assignee(m["id"].as_i64()?),
+                                action: if let Some(id) = m["id"].as_i64() { ChoiceAction::Assignee(id) } else { m["id"].as_str()?; ChoiceAction::Agent(i) },
                             })
                         })
                         .collect()
@@ -983,7 +989,10 @@ impl Desktop {
             }
         }
         let query = self.interaction.query.read(cx).content.trim().to_owned();
-        self.close_modal(window, cx);
+        let keep_open = matches!(self.interaction.modal,Some(Modal::Assign|Modal::Tags))
+            && matches!(choice.action,ChoiceAction::Assignee(_)|ChoiceAction::Agent(_)|ChoiceAction::Label(_))
+            && !(self.screen == Screen::Board && !self.interaction.bulk.is_empty());
+        if !keep_open { self.close_modal(window, cx); }
         match choice.action {
             ChoiceAction::Command(CommandAction::Shortcut(action)) => {
                 self.run_shortcut(action, window, cx)
@@ -1024,7 +1033,7 @@ impl Desktop {
                     && matches!(
                         choice.action,
                         ChoiceAction::Column(_)
-                            | ChoiceAction::Assignee(_)
+                            | ChoiceAction::Assignee(_) | ChoiceAction::Agent(_)
                             | ChoiceAction::Label(_)
                     ) {
                     self.interaction.bulk.iter().copied().collect()
@@ -1037,6 +1046,13 @@ impl Desktop {
                             task_id,
                             section_id,
                         },
+                        ChoiceAction::Agent(index) => {
+                            let Some(task) = self.db.task(task_id).ok().flatten() else { return; };
+                            let members = self.db.project_members(task.project_id).unwrap_or_default();
+                            let Some(agent) = members.get(index).and_then(|member|member["id"].as_str()) else { return; };
+                            let active = !task.extra.get("assignees").and_then(serde_json::Value::as_array).into_iter().flatten().any(|row|row["agent"]["id"] == agent);
+                            Write::Board { change: ht_core::BoardWrite::AssignAgent { task:task_id, agent:agent.into(), active } }
+                        }
                         ChoiceAction::Assignee(id) => {
                             let Some(task) = self.db.task(task_id).ok().flatten() else {
                                 return;
@@ -1048,6 +1064,7 @@ impl Desktop {
                                 .as_array()
                                 .into_iter()
                                 .flatten()
+                                .filter(|m|m["agent"].is_null())
                                 .filter_map(|m| m["id"].as_i64())
                                 .collect();
                             if ids.contains(&id) {
@@ -1221,6 +1238,15 @@ impl Desktop {
             } else {
                 ""
             };
+            let checked = self.selected_task().and_then(|id|self.db.task(id).ok().flatten()).is_some_and(|task| match choice.action {
+                ChoiceAction::Column(id) => task.section_id == Some(id),
+                ChoiceAction::Priority(index) => task.extra.get("priority").is_some_and(|p|p["priority_index"] == index),
+                ChoiceAction::Size(index) => task.extra.get("estimate").is_some_and(|p|p["estimate_index"] == index),
+                ChoiceAction::Assignee(id) => task.extra.get("assignees").and_then(serde_json::Value::as_array).into_iter().flatten().any(|row| row["agent"].is_null() && row["id"] == id),
+                ChoiceAction::Agent(index) => self.db.project_members(task.project_id).ok().and_then(|rows|rows.get(index).cloned()).is_some_and(|member|task.extra.get("assignees").and_then(serde_json::Value::as_array).into_iter().flatten().any(|row|row["agent"]["id"] == member["id"])),
+                ChoiceAction::Label(index) => self.db.project_labels(task.project_id).ok().and_then(|rows|rows.get(index).cloned()).is_some_and(|label|task.extra.get("labels").and_then(serde_json::Value::as_array).into_iter().flatten().any(|row|row["id"] == label["id"])),
+                _ => false,
+            });
             list = list.child(
                 div()
                     .id(("command-choice", i))
@@ -1247,6 +1273,7 @@ impl Desktop {
                         this.run_choice(window, cx);
                     }))
                     .child(div().flex_1().child(choice.name.clone()))
+                    .when(checked, |d| d.child("✓"))
                     .child(
                         div().flex().items_center().gap(px(3.)).children(
                             keys.split(' ')

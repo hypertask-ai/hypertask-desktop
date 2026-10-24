@@ -126,7 +126,7 @@ impl Desktop {
         cx.stop_propagation();
         true
     }
-    pub(super) fn board_search(&self, cx: &mut Context<Self>) -> AnyElement {
+    pub(super) fn board_search(&self, _cx: &mut Context<Self>) -> AnyElement {
         div()
             .px(px(24.))
             .py(px(8.))

@@ -259,3 +259,86 @@ fn move_to_board_uses_selected_destination_and_authoritative_task_without_guessi
     assert_eq!(db.task(1).unwrap().unwrap().project_id, 16);
     assert!(db.board(15).unwrap()[0].cards.is_empty());
 }
+
+#[test]
+fn people_and_agent_assignments_preserve_each_other_and_denial_rolls_back() {
+    let mut db = Db::memory().unwrap();
+    seed(&mut db);
+    db.kv_set(
+        "members:15",
+        &json!([
+            {"id":7,"displayName":"Alex"},
+            {"id":"agent-a","displayName":"Runner","owner":{"id":42,"displayName":"Owner"}}
+        ])
+        .to_string(),
+    )
+    .unwrap();
+    let id = db
+        .enqueue(
+            Write::Board {
+                change: BoardWrite::AssignAgent {
+                    task: 1,
+                    agent: "agent-a".into(),
+                    active: true,
+                },
+            },
+            100,
+        )
+        .unwrap();
+    assert_eq!(
+        db.task(1).unwrap().unwrap().extra["assignees"][0]["agent"]["id"],
+        "agent-a"
+    );
+    db.enqueue(
+        Write::TaskPatch {
+            task_id: 1,
+            patch: ht_core::TaskPatch::Assignees(vec![7]),
+        },
+        100,
+    )
+    .unwrap();
+    assert_eq!(db.task(1).unwrap().unwrap().assignee_count, 2);
+    let mut s = server(
+        "POST",
+        "/assignees/assign",
+        json!({"task_id":1,"agent_id":"agent-a","intent":"assign"}),
+        json!({"success":true,"assignees":[{"userId":42,"agent":{"id":"agent-a","displayName":"Runner"}}],"assignStatus":"Assigned"}),
+    );
+    assert_eq!(db.drain_once(&mut s, 101).unwrap(), Drain::Applied(id));
+    assert_eq!(
+        db.task(1).unwrap().unwrap().assignee_count,
+        2,
+        "later queued people change must be reapplied over agent acknowledgement"
+    );
+    let mut people = server(
+        "POST",
+        "/tasks/update",
+        json!({"task_id":1,"assignee":[7]}),
+        json!({"success":true,"task":{"id":1,"projectId":15,"title":"Task","status":"Normal","assignees":[{"id":7,"displayName":"Alex"},{"id":42,"displayName":"Runner","agent":{"id":"agent-a","displayName":"Runner"}}]}}),
+    );
+    db.drain_once(&mut people, 102).unwrap();
+    db.enqueue(
+        Write::Board {
+            change: BoardWrite::AssignAgent {
+                task: 1,
+                agent: "agent-a".into(),
+                active: false,
+            },
+        },
+        103,
+    )
+    .unwrap();
+    assert_eq!(db.task(1).unwrap().unwrap().assignee_count, 1);
+    let mut deny = server(
+        "POST",
+        "/assignees/assign",
+        json!({"task_id":1,"agent_id":"agent-a","intent":"unassign"}),
+        json!({"success":false}),
+    );
+    deny.status = 403;
+    assert!(matches!(
+        db.drain_once(&mut deny, 104).unwrap(),
+        Drain::Failed(_)
+    ));
+    assert_eq!(db.task(1).unwrap().unwrap().assignee_count, 2);
+}
