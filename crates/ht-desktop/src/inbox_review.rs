@@ -75,7 +75,7 @@ impl Desktop {
                 .child(div().id("review-close").cursor_pointer().child("Close").on_click(cx.listener(|this,_,window,cx|this.finish_unread_review(window,cx))).layout_key(&self.layout,"inbox.review.close",None))
                 .child(format!("{} left",review.rows.len()-review.decisions.len()))
                 .child(div().id("review-undo").cursor_pointer().child("Undo").on_click(cx.listener(|this,_,window,cx|this.undo_unread(window,cx))).layout_key(&self.layout,"inbox.review.undo",None)))
-            .child(div().w_full().max_w(px(720.)).flex_1().min_h_0().child(if current.is_none(){div().size_full().flex().items_center().justify_center().child("All caught up").into_any_element()}else if current.unwrap().task_id.is_none(){div().child("This notification has no task to display").into_any_element()}else{self.task_screen(cx)}).layout_key(&self.layout,"inbox.review.task",None))
+            .child(div().w_full().max_w(px(720.)).flex_1().min_h_0().flex().flex_col().child(if current.is_none(){div().size_full().flex().items_center().justify_center().child("All caught up").into_any_element()}else if current.unwrap().task_id.is_none(){div().child("This notification has no task to display").into_any_element()}else{self.task_screen(cx)}).layout_key(&self.layout,"inbox.review.task",None))
             .when(current.is_some(),|d|d.child(div().w_full().max_w(px(720.)).flex().gap(px(16.)).py(px(16.))
                 .child(div().id("review-keep").flex_1().p(px(12.)).rounded_full().bg(color(t.hover)).cursor_pointer().child("← Keep in inbox").on_click(cx.listener(|this,_,window,cx|this.decide_unread(false,window,cx))).layout_key(&self.layout,"inbox.review.keep",None))
                 .child(div().id("review-archive").flex_1().p(px(12.)).rounded_full().bg(color(t.accent)).cursor_pointer().child("Archive →").on_click(cx.listener(|this,_,window,cx|this.decide_unread(true,window,cx))).layout_key(&self.layout,"inbox.review.archive",None))))
@@ -127,4 +127,45 @@ mod layout_tests {
                 "{key} is horizontally clipped by unread review: {field}");
         }
     }
+
+    #[gpui::test]
+    fn unread_long_task_wheel_reaches_properties_inside_the_review_viewport(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx, |this, window, cx| {
+            let comments = (1..=24).map(|i| serde_json::json!({
+                "id":i,"taskId":101,"creatorId":1,"text":format!("<p>Long review comment {i}</p>"),
+                "createdAt":format!("2026-01-{i:02}T00:00:00Z")
+            })).collect::<Vec<_>>();
+            this.db.apply_comments(101, &serde_json::json!({"success":true,"comments":comments})).unwrap();
+            this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[
+                {"id":77,"taskId":101,"projectId":15,"seen":false,"status":"Normal","createdAt":"2026-01-02T00:00:00Z"},
+                {"id":78,"taskId":102,"projectId":16,"seen":false,"status":"Normal","createdAt":"2026-01-01T00:00:00Z"}
+            ]})).unwrap();
+            this.reload();
+            this.start_unread_review(window, cx);
+        }).unwrap();
+        let card = measured(view, &mut cx, "inbox.review.task");
+        let top = card["y"].as_f64().unwrap();
+        let bottom = top + card["h"].as_f64().unwrap();
+        let before = measured(view, &mut cx, "task.meta.5");
+        assert!(before["y"].as_f64().unwrap() > bottom, "long-thread fixture must require scrolling");
+        cx.simulate_event(gpui::ScrollWheelEvent {
+            position: gpui::point(px((card["x"].as_f64().unwrap() + 360.) as f32), px((top + 200.) as f32)),
+            delta: gpui::ScrollDelta::Pixels(gpui::point(px(0.), px(-10000.))),
+            touch_phase: gpui::TouchPhase::Moved,
+            ..Default::default()
+        });
+        for i in 0..6 {
+            let field = measured(view, &mut cx, &format!("task.meta.{i}"));
+            let y = field["y"].as_f64().unwrap();
+            assert!(y >= top && y + field["h"].as_f64().unwrap() <= bottom,
+                "wheel did not reveal review property {i} inside the card: {field}");
+        }
+        cx.simulate_keystrokes("right backspace left escape");
+        view.read_with(&cx, |this, _| {
+            assert!(this.inbox_actions.review.is_none());
+            assert!(this.db.mutations().unwrap().is_empty(), "undo then keep must not archive the reviewed task");
+        }).unwrap();
+    }
+
 }
