@@ -44,6 +44,7 @@ enum ChoiceAction {
 pub(super) struct Interaction {
     pub modal: Option<Modal>,
     pub agents_only: bool,
+    pub command_task: bool,
     pub query: Entity<TextInput>,
     pub description: Entity<TextInput>,
     pub choice: usize,
@@ -80,6 +81,7 @@ impl Interaction {
         Self {
             modal: None,
             agents_only: false,
+            command_task: false,
             query,
             description,
             choice: 0,
@@ -693,6 +695,7 @@ impl Desktop {
     pub(super) fn show_modal(&mut self, modal: Modal, window: &mut Window, cx: &mut Context<Self>) {
         self.task_fields.summary_open = false;
         self.interaction.agents_only = false;
+        self.interaction.command_task = false;
         if !matches!(
             modal,
             Modal::Commands | Modal::Search | Modal::LocalSearch | Modal::Boards
@@ -753,74 +756,91 @@ impl Desktop {
             .unwrap_or_else(|| serde_json::json!({}))
     }
     fn command_rows(&self) -> Vec<command_center::Command> {
-        let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
+        let context = if self.interaction.command_task { Screen::Task } else { self.screen };
+        let mut rows = command_center::commands(context, self.selected_task().is_some());
         self.add_comment_commands(&mut rows);
         self.add_board_commands(&mut rows);
         if self.ai_sidebar.is_some() {
-            for (key, name, action) in [
-                ("pinAiChatOpen", "Pin AI chat open", Action::PinAiChat),
-                ("fullScreenAiChat", "Open AI chat full screen", Action::FullscreenAiChat),
+            for (key, name, group, keys, keywords, action) in [
+                ("appShellAIChat", "App shell: Toggle AI chat", "App shell surfaces", "5", "surface switch toggle ai chat", CommandAction::Shell(command_center::ShellCommand::ToggleAi)),
+                ("appShellAIChatAlternative", "App shell: Toggle AI chat (alternative)", "App shell surfaces", "]", "surface switch toggle ai chat bracket alternative", CommandAction::Shell(command_center::ShellCommand::ToggleAi)),
+                ("aiChatInterface", "Chat with AI", "AI", "", "chat ask ai assistant bot conversation answer help discuss", CommandAction::Shell(command_center::ShellCommand::ToggleAi)),
+                ("pinAiChatOpen", "Pin AI chat open", "AI", "", "pin keep chat open always", CommandAction::Shortcut(Action::PinAiChat)),
+                ("fullScreenAiChat", "Open AI chat full screen", "AI", "", "full screen chat fullscreen expand ai big large page", CommandAction::Shortcut(Action::FullscreenAiChat)),
+                ("toggleAIChatView", "Switch AI chat mode", "AI", "", "switch toggle ai chat mode sidebar floating view layout", CommandAction::Shell(command_center::ShellCommand::ToggleAiMode)),
             ] {
-                rows.push(command_center::Command { key: key.into(), name: name.into(), group: "AI", keys: String::new(), keywords: "ai chat", action: CommandAction::Shortcut(action) });
+                rows.push(command_center::Command { key: key.into(), name: name.into(), group, keys: keys.into(), keywords, action });
             }
         }
-        if self
-            .selected_task()
-            .and_then(|id| self.db.task(id).ok().flatten())
+        if self.screen == Screen::Task && !self.task_inbox_ids().is_empty() {
+            rows.push(command_center::Command { key: "removeTaskNotification".into(), name: "Remove task notification".into(), group: "Task", keys: "E".into(), keywords: "remove notification mute", action: CommandAction::Shortcut(Action::ArchiveNotification) });
+        }
+        if self.selected_task().and_then(|id| self.db.task(id).ok().flatten())
             .is_some_and(|t| t.status == Status::Archive)
         {
-            rows.retain(|r| {
-                !matches!(
-                    r.action,
-                    CommandAction::Shortcut(Action::Assign | Action::MoveColumn)
-                )
-            });
+            rows.retain(|row| !matches!(row.action, CommandAction::Shortcut(Action::Assign | Action::MoveColumn)));
             if let Some(row) = rows.iter_mut().find(|r| r.key == "archiveTask") {
                 row.name = "Unarchive task".into();
             }
         }
-        let insert = rows.first().map_or(0, |first| {
-            rows.iter()
-                .position(|r| r.group != first.group)
-                .unwrap_or(rows.len())
-        });
-        let boards = self
-            .db
-            .projects()
-            .unwrap_or_default()
-            .into_iter()
+        if context == Screen::Task && self.selected_task().and_then(|id| self.db.task(id).ok().flatten())
+            .is_some_and(|task| !task.title.is_empty() && task.ticket_number.as_deref().is_some_and(|ticket| !ticket.is_empty()))
+        {
+            rows.push(command_center::Command { key: "copyBranchName".into(), name: "Copy branch name".into(), group: "Task", keys: String::new(), keywords: "git branch name copy github", action: CommandAction::Shell(command_center::ShellCommand::CopyBranchName) });
+        }
+        command_center::order(&mut rows, context);
+        let context_groups = if rows.first().is_some_and(|row| row.group == "Comment") { 2 } else { 1 };
+        let mut groups = 0;
+        let insert = rows.windows(2).position(|pair| {
+            if pair[0].group != pair[1].group { groups += 1; }
+            groups == context_groups
+        }).map_or(rows.len(), |i| i + 1);
+        let boards = self.db.projects().unwrap_or_default().into_iter()
+            .filter(|p| p["id"].as_i64() != Some(self.options.board))
+            .take(50)
             .filter_map(|p| {
                 let id = p["id"].as_i64()?;
                 Some(command_center::Command {
-                    key: format!("board-{id}"),
-                    name: p["title"].as_str().or(p["name"].as_str())?.into(),
+                    key: format!("gotoBoard-{id}"),
+                    name: format!("Go to board: {}", p["title"].as_str().or(p["name"].as_str())?),
                     group: "Boards",
                     keys: String::new(),
-                    keywords: "board project kanban navigate open",
+                    keywords: "board project go open switch",
                     action: CommandAction::Board(id),
                 })
             });
         rows.splice(insert..insert, boards);
         let usage = self.command_usage();
         let now = chrono::Utc::now().timestamp_millis();
-        let mut frequent: Vec<_> = rows
-            .iter()
-            .filter(|r| usage[&r.key]["frequency"].as_u64().unwrap_or(0) > 0)
-            .cloned()
-            .collect();
-        frequent.sort_by(|a, b| {
-            let score = |r: &command_center::Command| {
-                command_center::frecency(
-                    usage[&r.key]["frequency"].as_u64().unwrap_or(0),
-                    usage[&r.key]["lastUsedAt"].as_i64().unwrap_or(now),
-                    now,
-                )
-            };
-            score(b).total_cmp(&score(a))
-        });
+        let score = |r: &command_center::Command| {
+            command_center::frecency(
+                usage[&r.key]["frequency"].as_u64().unwrap_or(0),
+                usage[&r.key]["lastUsedAt"].as_i64().unwrap_or(now),
+                now,
+            )
+        };
+        let mut start = 0;
+        while start < rows.len() {
+            let end = start + rows[start..].iter().take_while(|r| r.group == rows[start].group).count();
+            if !matches!(rows[start].group, "Comment" | "Selected tasks") {
+                rows[start..end].sort_by(|a, b| score(b).total_cmp(&score(a)));
+            }
+            start = end;
+        }
+        if context == Screen::Task || !self.interaction.bulk.is_empty() {
+            return rows;
+        }
+        let mut frequent: Vec<_> = rows.iter().filter(|r| usage[&r.key]["frequency"].as_u64().unwrap_or(0) > 0).cloned().collect();
+        frequent.sort_by(|a, b| score(b).total_cmp(&score(a)));
         frequent.truncate(5);
-        for row in &mut frequent {
-            row.group = "Frequently used";
+        for row in &mut frequent { row.group = "Frequently used"; }
+        if frequent.is_empty() {
+            for key in ["createTask", "createTaskWithAiWriter", "inviteBoard", "createBoard", "addColumn"] {
+                if let Some(mut row) = rows.iter().find(|row| row.key == key).cloned() {
+                    row.group = "Get started";
+                    frequent.push(row);
+                }
+            }
         }
         rows.splice(0..0, frequent);
         rows
@@ -1235,7 +1255,8 @@ impl Desktop {
                         .text_size(px(11.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(color(t.muted))
-                        .child(group.to_uppercase()),
+                        .child(group.to_uppercase())
+                        .layout_key(&self.layout, format!("command.group.{i}"), Some(group.into())),
                 );
             }
             let keys = if modal == Modal::Commands {
@@ -1277,7 +1298,12 @@ impl Desktop {
                         this.interaction.choice = i;
                         this.run_choice(window, cx);
                     }))
-                    .child(div().flex_1().child(choice.name.clone()))
+                    .child(div().flex_1().flex().items_center().child(choice.name.clone())
+                        .when(modal == Modal::Commands && matches!(filtered[i].key.as_str(), "copyCommentToAiChat" | "cliInstall"), |d| d.child(
+                            div().ml(px(8.)).px(px(5.)).py(px(2.)).rounded(px(2.))
+                                .bg(color(0x4455bb)).text_color(color(0xffffff)).text_size(px(11.))
+                                .font_weight(FontWeight::MEDIUM).line_height(px(11.)).child("New")
+                                .layout_key(&self.layout, format!("command.new.{i}"), Some("New".into())))))
                     .when(checked, |d| d.child("✓"))
                     .child(
                         div().flex().items_center().gap(px(3.)).children(
@@ -1300,8 +1326,12 @@ impl Desktop {
                                             .bg(color(keycap))
                                             .text_size(px(11.))
                                             .font_weight(FontWeight::MEDIUM)
+                                            .line_height(px(11.))
+                                            .text_color(color(t.text))
                                             .child(if cfg!(target_os = "macos") && key == "CTRL" {
                                                 "CMD".to_owned()
+                                            } else if cfg!(target_os = "macos") && key == "ALT" {
+                                                "OPT".to_owned()
                                             } else {
                                                 key.to_owned()
                                             })
@@ -1336,6 +1366,10 @@ impl Desktop {
                     .id("command-center")
                     .absolute()
                     .top(px(f32::from(window.viewport_size().height) * 0.24))
+                    .left(px(((f32::from(window.viewport_size().width) - if self.shell.ai_open {
+                        self.ai_sidebar.as_ref().filter(|sidebar| sidebar.read(cx).mode() == crate::ai_sidebar::DisplayMode::Sidebar)
+                            .map_or(0., |sidebar| sidebar.read(cx).width())
+                    } else { 0. } - 560.) / 2.).max(0.)))
                     .w(px(560.))
                     .rounded(px(5.))
                     .bg(color(background))
@@ -1354,7 +1388,7 @@ impl Desktop {
                             .flex()
                             .items_center()
                             .gap(px(10.))
-                            .child(icon("search", t.muted, 13.))
+                            .child(icon("search", t.muted, 13.).layout_key(&self.layout, "command.search.icon", None))
                             .child(
                                 div()
                                     .flex_1()
@@ -1362,7 +1396,7 @@ impl Desktop {
                                     .layout_key(&self.layout, "command.input", None),
                             ),
                     )
-                    .child(list)
+                    .child(list.layout_key(&self.layout, "command.results", None))
                     .child(
                         div()
                             .px(px(16.))
@@ -1409,4 +1443,264 @@ impl Desktop {
             )
             .into_any_element()
     }
+}
+
+#[cfg(test)]
+mod cmdk_parity_tests {
+    use super::*;
+    use crate::ui::task_fields::tests::desktop;
+
+    #[gpui::test]
+    fn cmdk_task_commands_match_web_order_labels_and_groups(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            assert!(this.selected_task().is_some());
+            let rows = this.command_rows();
+            let task: Vec<_> = rows.iter().filter(|row| row.group == "Task")
+                .map(|row| (row.key.as_str(), row.name.as_str(), row.keys.as_str())).collect();
+            assert_eq!(task, vec![
+                ("assignUser", "Assign task", "A"),
+                ("setDueDate", "Set due date", "D"),
+                ("priorityModal", "Set priority", "P"),
+                ("labelmodal", "Set tags", "T"),
+                ("estimateModal", "Set task size", "S"),
+                ("moveToColumn", "Move task to column", "M"),
+                ("movetasktodifferentboard", "Move task to board", "SHIFT M"),
+                ("archiveTask", "Archive task", "CTRL E"),
+                ("copyformattedTaskLink", "Copy private task link (title + URL)", "CTRL :"),
+                ("copyLink", "Copy private task URL", "CTRL SHIFT :"),
+                ("copyTaskId", "Copy task ID", "CTRL SHIFT I"),
+                ("copyTaskTitleId", "Copy task title and ID", "CTRL I"),
+                ("copyBranchName", "Copy branch name", ""),
+                ("toggleAllComments", "Expand / collapse all comments", "SHIFT O"),
+                ("renameTask", "Rename task", ""),
+                ("deleteTask", "Delete task", "SHIFT 3"),
+            ]);
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_board_and_inbox_groups_have_complete_web_sequences(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            for screen in [Screen::Inbox, Screen::Board] {
+                this.screen = screen;
+                this.reload();
+                let rows = this.command_rows();
+                let keys = |group| rows.iter().filter(|row| row.group == group)
+                    .map(|row| row.key.as_str()).collect::<Vec<_>>();
+                assert_eq!(keys("Navigate"), ["copyCurrentPageUrl", "GotoInbox", "searchTask"]);
+                assert_eq!(keys("App shell surfaces"), ["appShellInbox", "appShellBoard", "appShellAIChat", "appShellAIChatAlternative"]);
+                assert_eq!(keys("AI"), ["aiChatInterface", "pinAiChatOpen", "fullScreenAiChat", "toggleAIChatView"]);
+                assert_eq!(keys("Appearance"), ["lightTheme", "darkTheme", "amoledTheme", "paperTheme"]);
+                assert_eq!(keys("Settings"), ["settingsCalendarShowWeekends", "settingsLearnQuickTips", "settingsGeneral", "settingsAppearance", "settingsSkills", "settingsBoardMembers", "settingsBoardAi", "settingsBoardSkills", "settingsBoardFiles", "settingsCli", "settingsShortcuts", "settingsLearn"]);
+                assert_eq!(keys("Help"), ["shortcuts", "settings", "boardSettings", "helpCenter", "quickTips", "cliInstall"]);
+                assert!(keys("Task").is_empty());
+                if screen == Screen::Board {
+                    assert_eq!(keys("Board"), ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"]);
+                    assert_eq!(keys("Get started"), ["createTaskWithAiWriter", "inviteBoard", "addColumn"]);
+                } else {
+                    assert_eq!(keys("Inbox"), ["swipeThroughUnread"]);
+                    assert_eq!(keys("Board"), ["createTaskWithAiWriter", "sendFeedback", "inviteBoard", "manageMembers", "toggleRailExpanded"]);
+                    assert_eq!(keys("Get started"), ["createTaskWithAiWriter", "inviteBoard"]);
+                }
+                let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
+                groups.dedup();
+                assert_eq!(groups, if screen == Screen::Board {
+                    vec!["Get started", "Board", "Navigate", "Inbox", "App shell surfaces", "AI", "Appearance", "Settings", "Help"]
+                } else {
+                    vec!["Get started", "Navigate", "Inbox", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]
+                });
+            }
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_comment_context_has_web_group_order_and_owner_actions(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            this.db.apply_comments(1, &serde_json::json!({"success":true,"comments":[
+                {"id":7,"text":"One","creatorId":42,"creator":{"id":42},"createdAt":"2026-01-01T00:00:00Z"},
+                {"id":8,"text":"Two","creatorId":43,"creator":{"id":43},"createdAt":"2026-01-02T00:00:00Z"}
+            ]})).unwrap();
+            this.reload();
+            for (part, own) in [(1, true), (2, false)] {
+                this.interaction.task_part = part;
+                let rows = this.command_rows();
+                let comments = rows.iter().filter(|row| row.group == "Comment")
+                    .map(|row| (row.key.as_str(), row.name.as_str(), row.keys.as_str())).collect::<Vec<_>>();
+                let mut expected = vec![
+                    ("fastLikeComment", "Fast like", ""),
+                    ("replyToComment", "Reply to comment", "ENTER"),
+                    ("reactToComment", "React to comment", "R"),
+                    ("pinComment", "Pin comment", "CTRL SHIFT P"),
+                    ("copyCommentContent", "Copy comment content", ""),
+                    ("starComment", "Star comment", "CTRL SHIFT S"),
+                    ("copyCommentToAiChat", "Copy comment to AI chat", ""),
+                ];
+                if own { expected.insert(0, ("editcomment", "Edit comment", "")); expected.push(("deletemessage", "Delete comment", "")); }
+                assert_eq!(comments, expected);
+                let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
+                groups.dedup();
+                assert_eq!(groups, ["Comment", "Task", "Navigate", "Inbox", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]);
+            }
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_usage_and_bulk_recommendations_follow_web_context(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            let now = chrono::Utc::now().timestamp_millis();
+            this.db.kv_set("command-usage", &serde_json::json!({"copyTaskId":{"frequency":10,"lastUsedAt":now},"searchTask":{"frequency":20,"lastUsedAt":now}}).to_string()).unwrap();
+            let rows = this.command_rows();
+            assert_eq!(rows[0].key, "copyTaskId");
+            assert!(!rows.iter().any(|row| row.group == "Frequently used"));
+            let navigate = rows.iter().filter(|row| row.group == "Navigate").map(|row|row.key.as_str()).collect::<Vec<_>>();
+            assert_eq!(navigate, ["searchTask", "copyCurrentPageUrl", "GotoInbox"]);
+            this.screen = Screen::Board;
+            this.reload();
+            assert_eq!(this.command_rows()[0].group, "Frequently used");
+            this.interaction.bulk.insert(1);
+            let rows = this.command_rows();
+            assert_eq!(rows.iter().take(4).map(|row|row.key.as_str()).collect::<Vec<_>>(), ["bulkMoveToColumn", "bulkAssignUser", "bulkSetLabels", "bulkArchive"]);
+            assert!(!rows.iter().any(|row| matches!(row.group, "Get started" | "Frequently used")));
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_ai_and_sidebar_actions_run_from_keyboard_and_persist_usage(cx: &mut gpui::TestAppContext) {
+        use crate::ui::shell::tests::{draw, measured, setup};
+        use crate::ai_sidebar::DisplayMode;
+        let (view, mut cx) = setup(cx);
+        for (name, key) in [
+            ("Switch AI chat mode", "toggleAIChatView"),
+            ("Chat with AI", "aiChatInterface"),
+            ("Pin AI chat open", "pinAiChatOpen"),
+            ("Collapse / expand sidebar", "toggleRailExpanded"),
+        ] {
+            cx.simulate_keystrokes("ctrl-k");
+            cx.simulate_input(name);
+            draw(view, &mut cx);
+            assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], name);
+            cx.simulate_keystrokes("enter");
+            draw(view, &mut cx);
+            view.read_with(&mut cx, |this, cx| {
+                assert_eq!(this.command_usage()[key]["frequency"], 1);
+                assert!(this.interaction.modal.is_none());
+                let sidebar = this.ai_sidebar.as_ref().unwrap().read(cx);
+                match key {
+                    "toggleAIChatView" => assert_eq!(sidebar.mode(), DisplayMode::Floating),
+                    "aiChatInterface" => assert!(!this.shell.ai_open),
+                    "pinAiChatOpen" => assert!(this.shell.ai_open && sidebar.is_open()),
+                    "toggleRailExpanded" => assert_eq!(this.shell.width(), 130.),
+                    _ => unreachable!(),
+                }
+            }).unwrap();
+        }
+    }
+
+
+    #[gpui::test]
+    fn cmdk_notification_row_and_archived_edits_follow_native_capabilities(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[{"id":20,"taskId":1,"projectId":15,"status":"Normal","createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
+            this.reload();
+            let rows = this.command_rows();
+            let position = |key| rows.iter().position(|row|row.key == key).unwrap();
+            assert!(position("toggleAllComments") < position("removeTaskNotification"));
+            assert!(position("removeTaskNotification") < position("renameTask"));
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Archived","status":"Archive"})).unwrap();
+            this.reload();
+            let rows = this.command_rows();
+            assert_eq!(rows.iter().find(|row| row.key == "archiveTask").unwrap().name, "Unarchive task");
+            for key in ["assignUser", "moveToColumn", "removeTaskNotification", "setReminder"] {
+                assert!(!rows.iter().any(|row|row.key == key), "unsupported archived action {key}");
+            }
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_boards_use_web_keys_labels_and_context_insertion(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = crate::ui::shell::tests::setup(cx);
+        view.update(&mut cx, |this, _, _| {
+            let rows = this.command_rows();
+            let boards = rows.iter().filter(|row|row.group == "Boards").map(|row|(row.key.as_str(),row.name.as_str())).collect::<Vec<_>>();
+            assert_eq!(boards, [("gotoBoard-16", "Go to board: Beta")]);
+            let index = rows.iter().position(|row|row.group == "Boards").unwrap();
+            assert_eq!(rows[index-1].group, "Navigate");
+            assert_eq!(rows[index+1].group, "Inbox");
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_paints_web_modal_rows_header_and_new_badge(cx: &mut gpui::TestAppContext) {
+        use crate::ui::shell::tests::{draw, measured, setup};
+        let (view, mut cx) = setup(cx);
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("CLI");
+        draw(view, &mut cx);
+        let modal = measured(view, &mut cx, "command.center");
+        assert_eq!(modal["w"], 560.);
+        assert!((modal["y"].as_f64().unwrap() - 216.).abs() < 1.);
+        assert!((modal["x"].as_f64().unwrap() - 230.).abs() < 1.);
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["h"], 36.);
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "CLI");
+        assert_eq!(measured(view, &mut cx, "command.search.icon")["w"], 13.);
+        assert_eq!(measured(view, &mut cx, "command.new.0")["text"], "New");
+        assert!(measured(view, &mut cx, "command.results")["h"].as_f64().unwrap() <= 364.);
+    }
+
+
+    #[gpui::test]
+    fn cmdk_saved_comment_labels_match_cached_web_state(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            this.db.apply_comments(1, &serde_json::json!({"success":true,"comments":[{"id":7,"text":"Saved","creatorId":42,"createdAt":"2026-01-01T00:00:00Z","savedContent":[{"type":"Public"},{"type":"Private"}]}]})).unwrap();
+            this.reload();
+            this.interaction.task_part = 1;
+            let rows = this.command_rows();
+            assert_eq!(rows.iter().find(|row|row.key == "pinComment").unwrap().name, "Unpin comment");
+            assert_eq!(rows.iter().find(|row|row.key == "starComment").unwrap().name, "Unstar comment");
+            assert!(!rows.iter().any(|row|row.key == "copyCommentToAiChat"));
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_copy_branch_name_uses_web_slug_and_only_loaded_ticket_data(cx: &mut gpui::TestAppContext) {
+        use crate::ui::shell::tests::{draw, measured};
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
+        for (title, expected) in [
+            ("  Fix é BUG / edge___case!  ".to_owned(), "ht-1-fix-bug-edge-case".to_owned()),
+            (format!("{} tail", "A".repeat(49)), format!("ht-1-{}", "a".repeat(49))),
+            ("🙂".to_owned(), "ht-1".to_owned()),
+        ] {
+            view.update(&mut cx, |this, _, cx| {
+                this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":title,"ticketNumber":" HT-1 ","status":"Normal"})).unwrap();
+                this.reload();
+                cx.notify();
+            }).unwrap();
+            cx.simulate_keystrokes("ctrl-k");
+            cx.simulate_input("Copy branch name");
+            draw(view, &mut cx);
+            assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "Copy branch name");
+            cx.simulate_keystrokes("enter");
+            view.read_with(&mut cx, |_, cx| assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), expected)).unwrap();
+        }
+        view.update(&mut cx, |this, _, _| {
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"No ticket","ticketNumber":null,"status":"Normal"})).unwrap();
+            this.reload();
+            assert!(!this.command_rows().iter().any(|row|row.key == "copyBranchName"));
+        }).unwrap();
+    }
+
 }

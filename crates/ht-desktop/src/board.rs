@@ -176,6 +176,7 @@ impl Desktop {
                         this.column = column;
                         this.selected = row;
                         this.run_shortcut(Action::Commands, window, cx);
+                        this.interaction.command_task = true;
                     }))
                     .child(gpui::img("htc-logo").size(px(14.)))
                     .layout_key(&self.layout, format!("board.card.{task}.commands"), None),
@@ -243,10 +244,10 @@ impl Desktop {
                 });
             }
         }
-        if self.selected_task().is_some() {
+        if (self.screen == Screen::Task || self.interaction.command_task) && self.selected_task().is_some() {
             rows.push(crate::command_center::Command {
-                key: "moveTaskToBoard".into(),
-                name: "Move to board".into(),
+                key: "movetasktodifferentboard".into(),
+                name: "Move task to board".into(),
                 group: "Task",
                 keys: "SHIFT M".into(),
                 keywords: "move task another board",
@@ -413,17 +414,23 @@ mod tests {
     ) {
         let (view, mut cx) = visual(cx);
         click(view, &mut cx, "board.card.2.commands");
-        view.read_with(&mut cx, |this, _| {
+        view.read_with(&mut cx, |this, cx| {
             assert_eq!(this.selected_task(), Some(2));
             assert_eq!(this.screen, Screen::Board);
             assert_eq!(this.interaction.modal, Some(interactions::Modal::Commands));
+            assert!(this.interaction.command_task);
+            assert_eq!(this.choices(cx)[0].name, "Assign task");
         })
         .unwrap();
-        cx.simulate_keystrokes("escape ctrl-shift-=");
-        view.read_with(&mut cx, |this, _| {
+        cx.simulate_keystrokes("escape ctrl-k");
+        view.read_with(&mut cx, |this, cx| {
+            assert!(!this.interaction.command_task);
+            assert_eq!(this.choices(cx)[0].name, "Create task with AI Task Writer");
             assert_eq!(this.interaction.modal, Some(interactions::Modal::Commands))
         })
         .unwrap();
+        cx.simulate_keystrokes("escape ctrl-shift-=");
+        view.read_with(&mut cx, |this, _| assert_eq!(this.interaction.modal, Some(interactions::Modal::Commands))).unwrap();
     }
     #[gpui::test]
     fn board_search_is_inline_title_ticket_only_and_escape_restores_board(

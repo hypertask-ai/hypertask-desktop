@@ -96,7 +96,7 @@ impl Shell {
 }
 
 impl Desktop {
-    fn toggle_rail(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn toggle_rail(&mut self, cx: &mut Context<Self>) {
         self.shell.expanded = !self.shell.expanded;
         if let Err(error) = self.db.kv_set(
             "appShellRailExpanded",
@@ -107,7 +107,7 @@ impl Desktop {
         cx.notify();
     }
 
-    fn toggle_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn toggle_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shell.ai_open = !self.shell.ai_open;
         if let Some(sidebar) = &self.ai_sidebar {
             sidebar.update(cx, |sidebar, cx| sidebar.set_open(self.shell.ai_open, cx));

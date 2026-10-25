@@ -30,6 +30,10 @@ pub enum ShellCommand {
     Feedback,
     Invite,
     Cli,
+    ToggleRail,
+    ToggleAi,
+    ToggleAiMode,
+    CopyBranchName,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -49,10 +53,11 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     if task && screen == Screen::Task {
         task_commands(&mut add);
     }
-    if screen == Screen::Inbox {
-        add("swipeThroughUnread","Swipe through unread","Inbox","","review unread notifications",ReviewUnread);
+    add("swipeThroughUnread","Swipe through unread","Inbox","","inbox unread catch up review swipe triage notifications",ReviewUnread);
+    if screen == Screen::Inbox && task {
+        add("remindMe", "Remind me", "Task", "H", "remind me reminder alert notify later snooze schedule followup", Remind);
     }
-    add("composeTask", "New Task", "Navigate", "CTRL J", "compose create task AI writer", Compose);
+    add("createTaskWithAiWriter", "Create task with AI Task Writer", "Board", "CTRL J", "create add new task ai writer prompt generate draft describe", Compose);
     add(
         "copyCurrentPageUrl",
         "Copy current page URL",
@@ -80,7 +85,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     add(
         "appShellInbox",
         "App shell: Inbox",
-        "App shell",
+        "App shell surfaces",
         "1",
         "inbox",
         Inbox,
@@ -88,14 +93,11 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     add(
         "appShellBoard",
         "App shell: Board",
-        "App shell",
+        "App shell surfaces",
         "2",
         "board kanban",
         Board,
     );
-    if task && screen != Screen::Task {
-        task_commands(&mut add);
-    }
     for (key, name, keywords, theme) in [
         (
             "lightTheme",
@@ -132,26 +134,42 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
         });
     }
     shell_commands(&mut rows);
-    rows.sort_by_key(|row| match row.group {
-        "Task" if screen == Screen::Task => 0,
-        "Board" if screen == Screen::Board => 0,
-        "Navigate" => 1,
-        "App shell" => 2,
-        "Task" => 3,
-        "Board" => 4,
-        "Appearance" => 5,
-        "Settings" => 6,
-        "Help" => 7,
-        _ => 8,
-    });
+    order(&mut rows, screen);
     rows
+}
+
+// Context producers append rows; order the complete list, not just the base registry.
+pub fn order(rows: &mut [Command], screen: Screen) {
+    let task = ["assignUser", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "renameTask", "deleteTask"];
+    let board = ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"];
+    rows.sort_by_key(|row| {
+        let group = match row.group {
+            "Selected tasks" | "Comment" => 0,
+            "Task" if screen == Screen::Task => 1,
+            "Board" if screen == Screen::Board => 1,
+            "Navigate" => 2,
+            "Inbox" => 3,
+            "App shell surfaces" => 4,
+            "Task" => 5,
+            "Board" => 6,
+            "AI" => 7,
+            "Appearance" => 8,
+            "Settings" => 9,
+            "Help" => 10,
+            _ => 11,
+        };
+        let keys: &[&str] = match row.group { "Task" if screen == Screen::Task => &task, "Board" => &board, _ => &[] };
+        (group, keys.iter().position(|key| *key == row.key).unwrap_or(keys.len()))
+    });
 }
 
 fn shell_commands(rows: &mut Vec<Command>) {
     use ShellCommand::*;
     for (key, name, group, keys, keywords, action) in [
         ("sendFeedback", "Send feedback", "Board", "", "send feedback bug idea issue report", Feedback),
-        ("inviteBoard", "Invite people", "Board", "", "invite people members email board team", Invite),
+        ("inviteBoard", "Invite people", "Board", "", "invite share add board member people coworker teammate team collaborate", Invite),
+        ("manageMembers", "Manage members", "Board", "", "members people remove kick board access permissions manage teammates users", Settings("board-members")),
+        ("toggleRailExpanded", "Collapse / expand sidebar", "Board", "[", "collapse expand sidebar rail labels narrow wide toggle show hide", ToggleRail),
         ("settingsCalendarShowWeekends", "Settings: Show weekends", "Settings", "", "settings show weekends profile", Settings("calendar")),
         ("settingsLearnQuickTips", "Settings: Quick tips", "Settings", "", "settings quick tips learning help", Settings("learn")),
         ("settingsGeneral", "Settings: General", "Settings", "", "settings general profile personal preferences application", Settings("general")),
@@ -224,8 +242,8 @@ fn task_commands(
         (
             "renameTask",
             "Rename task",
-            "F2",
-            "rename edit change task title",
+            "",
+            "rename edit change task title name subject heading update",
             Rename,
         ),
         (
@@ -245,14 +263,14 @@ fn task_commands(
         (
             "copyformattedTaskLink",
             "Copy private task link (title + URL)",
-            "CTRL ;",
+            "CTRL :",
             "copy private task link title URL clipboard",
             CopyTitleUrl,
         ),
         (
             "copyLink",
             "Copy private task URL",
-            "CTRL SHIFT ;",
+            "CTRL SHIFT :",
             "copy private task URL link clipboard",
             CopyUrl,
         ),
