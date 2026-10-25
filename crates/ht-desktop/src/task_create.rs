@@ -849,7 +849,7 @@ impl Desktop {
                 let url = file["urlString"].as_str().unwrap_or("").to_owned();
                 div().id(("create-task-attachment",index)).p(px(8.)).bg(color(self.colors.container)).rounded(px(4.)).flex().gap(px(8.))
                     .child(div().cursor_pointer().child(title).on_click(move |_,_,cx| { if url.starts_with("https://") || url.starts_with("http://") { cx.open_url(&url); } })))
-                    .child(div().id(("create-task-attachment-remove",index)).cursor_pointer().child("×").on_click(cx.listener(move |this,_,_,cx| {
+                    .child(div().id(("create-task-attachment-remove",index)).cursor_pointer().child("×").layout_key(&self.layout, &format!("create.attachment.remove.{index}"), None).on_click(cx.listener(move |this,_,_,cx| {
                         if this.create_task.pending.is_none() {
                             if let Some(files)=this.create_task.fields["urlsToAdd"].as_array_mut() { if index < files.len() { files.remove(index); } }
                             cx.notify();
@@ -985,7 +985,7 @@ mod tests {
     }
     #[gpui::test]
     fn comment_palette_create_quotes_the_source_keeps_files_and_preserves_refused_draft(cx: &mut gpui::TestAppContext) {
-        use crate::ui::shell::tests::draw;
+        use crate::ui::shell::tests::{draw, click};
         struct CommentCreate(u16);
         impl ht_core::Transport for CommentCreate {
             fn get(&mut self, path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
@@ -1013,7 +1013,7 @@ mod tests {
             view.update(&mut cx,|this,window,cx| {
                 this.invalidate_task_create(cx);
                 this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Source","uniqueIndex":7,"ticketNumber":"HT-7","status":"Normal"})).unwrap();
-                this.db.apply_comments(1,&json!({"success":true,"comments":[{"id":71,"taskId":1,"text":"<p>Keep <strong>this</strong></p>","createdAt":"2026-10-01T00:00:00Z","creatorId":7,"creator":{"id":7,"displayName":"Alex & Bea"},"attachments":[{"id":"file-1","fileName":"source.pdf","fileSize":"1024","fileSource":"https://files.example/source.pdf","fileType":"application/pdf"}]}]})).unwrap();
+                this.db.apply_comments(1,&json!({"success":true,"comments":[{"id":71,"taskId":1,"text":"<p>Keep <strong>this</strong></p>","createdAt":"2026-10-01T00:00:00Z","creatorId":7,"creator":{"id":7,"displayName":"Alex & Bea"},"attachments":[{"id":"file-1","fileName":"source.pdf","fileSize":"1024","fileSource":"https://files.example/source.pdf","fileType":"application/pdf"},{"id":"file-2","fileName":"remove.txt","fileSize":null,"fileSource":"https://files.example/remove.txt","fileType":"text/plain"}]}]})).unwrap();
                 this.reload();this.interaction.task_part=1;window.focus(&this.focus,cx);
             }).unwrap();
             draw(view,&mut cx);
@@ -1024,9 +1024,11 @@ mod tests {
                 assert_eq!(this.create_task.section,10);
                 assert!(this.create_task.title.read(cx).content.is_empty());
                 assert!(this.create_task.description.read(cx).html().contains("Alex &amp; Bea"));
-                assert_eq!(this.create_task.fields["urlsToAdd"].as_array().unwrap().len(),1);
+                assert_eq!(this.create_task.fields["urlsToAdd"].as_array().unwrap().len(),2);
+                assert!(this.create_task.fields["urlsToAdd"][1].get("fileSize").is_none());
                 assert!(this.db.mutations().unwrap().iter().all(|row|row.status=="failed"));
             }).unwrap();
+            click(view,&mut cx,"create.attachment.remove.1");
             cx.simulate_input("Follow up");cx.simulate_keystrokes("ctrl-enter");
             view.update(&mut cx,|this,window,cx| {
                 let id=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap().id;
