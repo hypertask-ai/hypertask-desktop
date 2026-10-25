@@ -98,3 +98,35 @@ fn today_time_options_cover_every_hour_no_past_times_and_midnight_boundary() {
         }
     }
 }
+
+#[test]
+fn phrase_date_options_match_web_sugar_ranking_edges_clamping_start_direction_and_deduplication() {
+    use std::{io::Write, process::{Command, Stdio}};
+    use serde_json::{Value, json};
+    let queries=["tomorrow","to","mon","next","week","month","end","friday","next friday","this weekend","next weekend","next week","next month","next year","end of week","end of month","sun","t","m"];
+    for (zone,offset) in [("UTC","+00:00"),("Etc/GMT-2","+02:00")] {
+        let mut cases=vec![];
+        let mut actual=vec![];
+        for day in ["2026-01-31","2026-02-01","2026-02-02","2028-02-29"] {
+            for time in ["00:00:00","08:42:17","18:42:17"] {
+                let now=DateTime::parse_from_rfc3339(&format!("{day}T{time}{offset}")).unwrap();
+                for past in [false,true] { for query in queries {
+                    cases.push(json!({"query":query,"now":now.to_rfc3339(),"past":past}));
+                    actual.push(ht_core::date_options::phrase_options(query,now,past).expect(query));
+                }}
+            }
+        }
+        let mut oracle=Command::new("node").arg(format!("{}/tests/date_reference.cjs",env!("CARGO_MANIFEST_DIR")))
+            .env("TZ",zone).env("LANG","en_US.UTF-8").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped()).spawn().expect("hosted CI must provide Node for the real Sugar reference");
+        oracle.stdin.take().unwrap().write_all(serde_json::to_string(&cases).unwrap().as_bytes()).unwrap();
+        let output=oracle.wait_with_output().unwrap();
+        assert!(output.status.success(),"{}",String::from_utf8_lossy(&output.stderr));
+        let expected:Vec<Vec<Value>>=serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(expected.len(),actual.len());
+        for ((case,actual),expected) in cases.iter().zip(actual).zip(expected) {
+            let actual:Vec<_>=actual.into_iter().map(|row|(row.display,DateTime::parse_from_rfc3339(&row.date).unwrap().timestamp_millis())).collect();
+            let expected:Vec<_>=expected.into_iter().map(|row|(row["display"].as_str().unwrap().to_owned(),DateTime::parse_from_rfc3339(row["date"].as_str().unwrap()).unwrap().timestamp_millis())).collect();
+            assert_eq!(actual,expected,"{zone} {case}");
+        }
+    }
+}

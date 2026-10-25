@@ -297,6 +297,7 @@ impl Desktop {
             choices
         } else {
             ht_core::date_options::relative_options(query, Local::now(), due.start)
+                .or_else(|| ht_core::date_options::phrase_options(query, Local::now(), due.start))
                 .map(|rows| rows.into_iter().map(|row| (row.display, Some(row.date))).collect())
                 .unwrap_or_else(|| parse_due(query, Local::now().date_naive()).map(|date| vec![(query.to_owned(), Some(date))]).unwrap_or_default())
         };

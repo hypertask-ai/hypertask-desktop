@@ -136,3 +136,66 @@ pub fn relative_options<Tz: TimeZone>(
     }
     Some(rows)
 }
+
+const PHRASES: &[&str] = &[
+    "today", "tomorrow", "this weekend", "next week", "next weekend", "next month", "next year",
+    "end of week", "end of month", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday", "sunday",
+    "next monday", "next tuesday", "next wednesday", "next thursday", "next friday", "next saturday", "next sunday",
+];
+
+fn phrase_date<Tz: TimeZone>(phrase: &str, now: &DateTime<Tz>, past: bool) -> Option<DateTime<Tz>> {
+    let today = now.date_naive();
+    let weekday = today.weekday().num_days_from_sunday() as i64;
+    let date = match phrase {
+        "today" => at(now, today, 9)?,
+        "tomorrow" => at(now, today.checked_add_signed(Duration::days(1))?, 9)?,
+        "next week" => local(now, now.naive_local().checked_add_signed(Duration::weeks(1))?)?,
+        "next month" | "next year" => local(now, today.checked_add_months(chrono::Months::new(if phrase == "next year" {12} else {1}))?.and_time(now.time()))?,
+        "this weekend" | "next weekend" => at(now, today.checked_add_signed(Duration::days(6 - weekday + if phrase == "next weekend" {7} else {0}))?, 9)?,
+        "end of week" | "end of month" => {
+            let date = if phrase == "end of week" { today.checked_add_signed(Duration::days(6 - weekday))? }
+                else { today.with_day(1)?.checked_add_months(chrono::Months::new(1))?.pred_opt()? };
+            local(now, date.and_hms_milli_opt(23, 59, 59, 999)?)?
+        }
+        _ => {
+            let next = phrase.starts_with("next ");
+            let day = phrase.strip_prefix("next ").unwrap_or(phrase);
+            let target = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].iter().position(|candidate| *candidate == day)? as i64;
+            let mut date = today.checked_add_signed(Duration::days(target - weekday + if next {7} else {0}))?;
+            if !next {
+                let midnight = at(now, date, 0)?;
+                if if past {midnight >= *now} else {midnight <= *now} {
+                    date = date.checked_add_signed(Duration::days(if past {-7} else {7}))?;
+                }
+            }
+            at(now, date, 9)?
+        }
+    };
+    if date.hour() == 0 && date.minute() == 0 && date.second() == 0 { at(now, date.date_naive(), 9) } else { Some(date) }
+}
+
+/// The web's ranked phrase table and exact-phrase Sugar result. Other grammar stays with the caller.
+pub fn phrase_options<Tz: TimeZone>(input: &str, now: DateTime<Tz>, past: bool) -> Option<Vec<DateOption>> {
+    let query = input.trim().to_lowercase();
+    if query.is_empty() || query == "today" || query.starts_with(|character: char| character.is_ascii_digit()) { return None; }
+    let mut phrases: Vec<_> = PHRASES.iter().filter_map(|phrase| phrase.find(&query).map(|index| (*phrase, index != 0, phrase.len()))).collect();
+    if phrases.is_empty() { return None; }
+    phrases.sort_by_key(|(_, contains, length)| (*contains, *length));
+    let mut rows = vec![];
+    for (phrase, _, _) in phrases.into_iter().take(6) {
+        if let Some(date) = phrase_date(phrase, &now, past) {
+            if !past && date < now { continue; }
+            let display = phrase.split(' ').map(|word| { let mut chars=word.chars(); format!("{}{}", chars.next().unwrap().to_ascii_uppercase(), chars.as_str()) }).collect::<Vec<_>>().join(" ");
+            rows.push(DateOption { display, date:date.to_rfc3339() });
+        }
+    }
+    if let Some(date) = phrase_date(&query, &now, past).and_then(|date| at(&now, date.date_naive(), 9)) {
+        let difference = date.signed_duration_since(&now).num_milliseconds();
+        if if past {difference < 60_000} else {difference > 60_000} {
+            rows.push(DateOption { display:date.naive_local().format("%-m/%-d/%Y, %-I:%M:%S %p").to_string(), date:date.to_rfc3339() });
+        }
+    }
+    let mut seen = std::collections::BTreeSet::new();
+    rows.retain(|row| DateTime::parse_from_rfc3339(&row.date).is_ok_and(|date| seen.insert(date.timestamp().div_euclid(60))));
+    Some(rows)
+}
