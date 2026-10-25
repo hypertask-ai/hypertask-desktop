@@ -1694,7 +1694,7 @@ mod cmdk_parity_tests {
             view.read_with(&mut cx, |_, cx| assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), expected)).unwrap();
         }
         view.update(&mut cx, |this, _, _| {
-            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"No ticket","status":"Normal"})).unwrap();
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"No ticket","ticketNumber":null,"status":"Normal"})).unwrap();
             this.reload();
             assert!(!this.command_rows().iter().any(|row|row.key == "copyBranchName"));
         }).unwrap();

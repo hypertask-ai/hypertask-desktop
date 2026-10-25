@@ -54,3 +54,10 @@ Follow-up coverage includes loaded-ticket branch copying through real Ctrl+K
 input, cached Pin/Star labels, and explicit card versus Board context. Archived
 edits remain omitted because the native operation rejects them. Evidence uses
 GitHub only. No local build, test, lint, or app launch was run.
+
+The next CI run, https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40237481540,
+reports 190 passed and one failed on Linux. All command behavior and geometry
+checks pass except the missing-ticket fixture. That fixture omitted a previously
+cached field; native partial updates correctly retain it. The fixture now sends
+`ticketNumber: null` to represent genuinely absent data. The assertion and
+production behavior are unchanged.
