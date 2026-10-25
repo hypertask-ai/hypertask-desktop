@@ -934,6 +934,12 @@ mod tests {
         let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
         view.update(&mut cx, |this, _, _| seed(this)).unwrap(); draw(view, &mut cx);
         cx.simulate_keystrokes("b"); click(view, &mut cx, "time-log.edit.5");
+        click(view, &mut cx, "time-log.edit.cancel");
+        view.update(&mut cx, |this, window, cx| {
+            assert!(this.time_log.editing.is_none()); assert!(this.time_log.add.hours.focus_handle(cx).is_focused(window));
+            assert!(this.db.mutations().unwrap().is_empty(), "Cancel must not queue a write");
+        }).unwrap();
+        click(view, &mut cx, "time-log.edit.5");
         cx.simulate_keystrokes("ctrl-a"); cx.simulate_input("2"); click(view, &mut cx, "time-log.edit.save");
         click(view, &mut cx, "time-log.close");
         view.update(&mut cx, |this, window, cx| {
