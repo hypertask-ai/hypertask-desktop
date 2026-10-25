@@ -41,6 +41,16 @@ impl TextInput {
     }
     pub fn has_selection(&self) -> bool { !self.selected_range.is_empty() }
     pub fn input_bounds(&self) -> Option<Bounds<Pixels>> { self.last_bounds }
+    #[cfg(test)]
+    pub(crate) fn editor_control_bounds(&self, key: &str) -> Option<Bounds<Pixels>> {
+        let capture = self.editor.as_ref()?.capture.as_ref()?.borrow();
+        let rows = capture.interaction_elements();
+        let row = rows.iter().find(|row| row["key"] == key)?;
+        Some(Bounds::new(
+            point(px(row["x"].as_f64()? as f32), px(row["y"].as_f64()? as f32)),
+            size(px(row["w"].as_f64()? as f32), px(row["h"].as_f64()? as f32)),
+        ))
+    }
     pub fn mention_token(&self) -> Option<(Range<usize>, String)> {
         if !self.selected_range.is_empty() || self.marked_range.is_some() {return None;}
         let before = &self.content[..self.selected_range.end];
@@ -1023,6 +1033,20 @@ impl Element for TextElement {
             line.paint(*point, *height, gpui::TextAlign::Left, None, window, cx)
                 .unwrap();
         }
+        for (row, line) in prepaint.layout.lines.iter().enumerate() {
+            line.paint_background(
+                point(
+                    bounds.left() + prepaint.layout.rows[row].indent,
+                    bounds.top() + prepaint.layout.rows[row].top,
+                ),
+                prepaint.layout.rows[row].height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            )
+            .unwrap();
+        }
         for selection in prepaint.selections.drain(..) {
             window.paint_quad(selection);
         }
@@ -1108,6 +1132,7 @@ impl Render for TextInput {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event, window, cx| {
+                    cx.stop_propagation();
                     window.focus(&this.focus_handle, cx);
                     this.on_mouse_down(event, window, cx);
                 }),

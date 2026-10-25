@@ -413,3 +413,73 @@ adjacent single-line content's measured height, retaining the mandatory 180px
 clip, exact long-case 180px width, and 8px/32px gaps. No application dimensions,
 existing assertion, gate tolerance or fixture is changed to accommodate that
 failure. Final proof is bound to the corrected descendant below via PR 18.
+
+## Approved reference-content continuation
+
+The separate HTPR-7381 reference-content fixture is additive. Dense/demo and
+sparse/Graphite fixtures, all existing assertions, the frozen live reference,
+comparer tolerances and memory budgets remain unchanged. Synthetic IDs are
+retained. There are no credentials or authenticated calls. The fixture and
+reference provenance are in `gates/fixtures/layout-reference/README.md`.
+
+Baseline SHA `7d718dd919abc150c106bccd74b96bbbb8bec180`, CI
+[40145936859](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40145936859),
+measures **68 raw / 33 sparse / 27 reference-content** differences at 1920x1009.
+The historical sparse count of 34 includes a date-dependent section label;
+this run's unmodified fixture happens to agree on LAST WEEK. The reference
+fixture alone dates its notification to the previous Thursday for stability.
+Its lower count must not be presented as a product layout improvement.
+
+The unchanged comparer exposes three genuine reference-content box defects,
+ranked by maximum native/live area:
+
+| Box | Area, square pixels | Maximum coordinate/size delta |
+| --- | ---: | ---: |
+| `inbox.row.0.kind` | 12745.38 | 2.609375px |
+| `inbox.row.0.title` | 5518.5 | 2.609375px |
+| `inbox.row.0.taskid` | 752 | 3px |
+
+All larger reference-content boxes already match. The remaining 24 differences
+are eight unsampled rail keys per screen, retained in the full output. Style
+mismatches are zero. No source-supported padding or column-width change is
+justified by the larger, content-dependent dense/sparse boxes.
+
+The common root cause is trailing whitespace. Web
+`src/components/Common/TaskRowComponents/TaskTitle.tsx:185-208` renders a flex
+container with `gap-1`, an 11px ticket span ending in a literal space, and the
+adjacent task title. Browser normal whitespace processing collapses the trailing
+space at the flex item's end; GPUI's separate text child previously reserved
+its advance. Removing that native child retains the source's 4px gap without
+inventing a compensating width. The notification kind retains its separate 8px
+gap from `src/components/notifications/NotificationRow.tsx:70-78`. Citations use
+web revision `6f9901764d355aba7bfc76e4e62ff255e0b68b31`.
+
+The additive Chromium probe keeps the web span's literal trailing space and
+compares its measured ticket/title widths and gap with the new native reference
+dump. Both pre-existing strict font assertions remain mandatory. The regression
+also feeds the three exact old native records, with original CI artifact
+provenance, through the same box assertion used for current native records.
+All three must be rejected before current shared boxes can pass. The full
+before/after comparison and exact-head all-job receipt belong to
+[draft PR 24](https://github.com/hypertask-ai/hypertask-desktop/pull/24).
+F011 remains out of scope; no native control is added or removed.
+
+Hosted comparison at SHA `2810c660db5056c4c2939514094c302e34a66a7a`, CI
+[40148850357](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40148850357),
+confirms reference-content **27 → 24**, closing all three real shared-box
+defects. The 24 unsampled rail-key differences remain unfiltered. Chromium and
+native agree exactly on ticket width **44px**, title width **283px** and gap
+**4px**. All three original box records are rejected by the regression. Dense
+stays **68**; sparse is **34**, since the different synthetic ticket no longer
+has an accidental width agreement with the live ticket. This does not count
+fixture/content changes as layout wins. Artifact `12582007428`, digest
+`sha256:b71fd507f88266507052eb5c70fcb2eb0cb762cad2e3f3715eb376273a91c20b`,
+retains the full comparisons and browser receipt.
+
+That intermediate run passes Linux layout, strict fonts, native keyboard input
+and ARM64, but is not an all-green receipt. Its macOS worker-recovery test server
+fails with `WouldBlock` on a newly accepted socket. macOS inherits nonblocking
+mode from the listener, unlike Linux. The test server now explicitly restores
+blocking mode on accepted streams before its existing read timeout. No test
+assertion, timeout or product transport changes. The final exact-head receipt
+on PR 24 must also prove this correction on all three test platforms.

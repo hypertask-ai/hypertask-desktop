@@ -261,7 +261,7 @@ impl<T: Transport> Sync<T> {
             }
             let ids: std::collections::HashSet<_> = incoming
                 .iter()
-                .map(|n| integer(n, "id"))
+                .map(crate::inbox::notification_id)
                 .collect::<Result<_>>()?;
             for mut old in db.json_rows(
                 "SELECT raw_json FROM Notification WHERE status='Normal'",

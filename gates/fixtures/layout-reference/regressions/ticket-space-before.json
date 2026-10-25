@@ -1,0 +1,54 @@
+{
+  "revision": "7d718dd919abc150c106bccd74b96bbbb8bec180",
+  "run": "https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40145936859",
+  "artifact_id": 12580857232,
+  "artifact_digest": "sha256:2c651c184e3d6490f5d005dd75db68e8a9d5d10354e2cc663a5d520824ff913a",
+  "screen": "inbox",
+  "elements": [
+    {
+      "key": "inbox.row.0.taskid",
+      "x": 347.0,
+      "y": 137.0,
+      "w": 47.0,
+      "h": 16.0,
+      "color": "#999a9d",
+      "bg": null,
+      "fontSize": 11.0,
+      "fontWeight": 400.0,
+      "lineHeight": 16.5,
+      "radius": null,
+      "borderColor": null,
+      "text": "QABO-5"
+    },
+    {
+      "key": "inbox.row.0.title",
+      "x": 398.0,
+      "y": 134.0,
+      "w": 283.0,
+      "h": 19.0,
+      "color": "#ffffff",
+      "bg": null,
+      "fontSize": 13.0,
+      "fontWeight": 400.0,
+      "lineHeight": 19.5,
+      "radius": null,
+      "borderColor": null,
+      "text": "HTPR-7175 QA reminder check (safe to del"
+    },
+    {
+      "key": "inbox.row.0.kind",
+      "x": 689.0,
+      "y": 134.0,
+      "w": 651.0,
+      "h": 19.0,
+      "color": "#8e9093",
+      "bg": null,
+      "fontSize": 13.0,
+      "fontWeight": 400.0,
+      "lineHeight": 19.5,
+      "radius": null,
+      "borderColor": null,
+      "text": "Task Reminder"
+    }
+  ]
+}

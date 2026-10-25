@@ -673,3 +673,32 @@ fn bounded_sync_cache_evicts_pages_without_losing_persisted_offline_content() {
         assert_eq!(db.task_detail(id).unwrap().unwrap().task.description, description);
     }
 }
+
+#[test]
+fn inbox_synthetic_string_ids_sync_without_losing_rows_or_split_membership() {
+    for compact in [true, false] {
+        let dir = tempfile::tempdir().unwrap();
+        let path = dir.path().join("local.db");
+        let mut db = Db::open(&path).unwrap();
+        db.kv_set("current-user-id", "6").unwrap();
+        db.apply_task(&task(42, "Normal", "2026-10-20T00:00:00Z")).unwrap();
+        let ordinary = json!({"id":7,"taskId":43,"status":"Normal","seen":false,"createdAt":"2026-10-20T00:00:00Z"});
+        let synthetic = json!({"id":"-42","taskId":42,"waitingOnSynthetic":true,"status":"Normal","seen":true,"createdAt":"2026-10-21T00:00:00Z","task":{"title":"Waiting on you","updatedAt":"2026-10-21T00:00:00Z"}});
+        let data = if compact { json!([[0], [1]]) } else { json!([[ordinary.clone()], [synthetic.clone()]]) };
+        let response = json!({"success":true,"user_notifications":[ordinary,synthetic],"structuredData":{"tabs":[{"project":"Important"},{"project":"Blocked by you"}],"data":data}});
+        let mut sync = Sync::new(db, Script::new(vec![response.clone(), response]));
+        sync.inbox().expect("HTTP 200 synthetic inbox must sync");
+        sync.inbox().expect("repeated snapshots must converge");
+        assert_eq!(sync.transport.paths, vec!["/inbox/list", "/inbox/list"]);
+        assert_eq!(sync.db.task(42).unwrap().unwrap().title, "Waiting on you");
+        drop(sync);
+        let db = Db::open(&path).unwrap();
+        let rows = db.inbox().unwrap();
+        assert_eq!(rows.iter().map(|n| n.id).collect::<Vec<_>>(), vec![-42, 7]);
+        assert_eq!(rows[0].raw_json["id"], -42);
+        assert_eq!(rows[0].raw_json["waitingOnSynthetic"], true);
+        let splits = db.inbox_splits().unwrap().unwrap();
+        assert_eq!(splits[0]["ids"], json!([7]));
+        assert_eq!(splits[1]["ids"], json!([-42]));
+    }
+}

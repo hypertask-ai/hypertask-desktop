@@ -88,6 +88,9 @@ jobs:
       - name: Layout dump contract
         if: runner.os == 'Linux'
         run: xvfb-run -a -s '-screen 0 1920x1009x24' python3 gates/layout-dump.py
+      - name: Reference-content whole-box evidence
+        if: runner.os == 'Linux'
+        run: python3 gates/layout-reference.py
       - name: Native web-font advance regression
         if: runner.os == 'Linux'
         run: cargo test --release -p gpui_wgpu --lib cosmic_text_system::tests
@@ -123,7 +126,9 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: layout-dumps
-          path: evidence/layout/**/*.json
+          path: |
+            evidence/layout/**/*.json
+            evidence/layout/**/*.txt
           if-no-files-found: error
       - name: Windows memory (three runs per screen)
         if: runner.os == 'Windows'

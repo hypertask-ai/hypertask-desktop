@@ -483,7 +483,6 @@ impl Desktop {
                                             .text_size(px(11.))
                                             .line_height(px(16.5))
                                             .child(n.ticket_number.clone().unwrap_or_default())
-                                            .child(" ")
                                             .layout_key(
                                                 &self.layout,
                                                 format!("inbox.row.{row}.taskid"),

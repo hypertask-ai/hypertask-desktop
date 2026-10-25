@@ -155,12 +155,17 @@ impl Db {
             .iter()
             .find(|(name, _)| *name == model)
             .context("unknown model")?;
-        let id = value.get("id").context("missing entity id")?;
+        let id = if model == "Notification" {
+            json!(crate::inbox::notification_id(value)?)
+        } else {
+            value.get("id").context("missing entity id")?.clone()
+        };
         ensure!(id.is_i64() || id.is_string(), "invalid entity id");
-        let mut merged = self.raw(model, id)?.unwrap_or(json!({}));
+        let mut merged = self.raw(model, &id)?.unwrap_or(json!({}));
         for (key, value) in value.as_object().context("entity must be an object")? {
             merged[key] = value.clone();
         }
+        merged["id"] = id;
         let mut names = Vec::new();
         let mut values = Vec::new();
         for &col in *columns {

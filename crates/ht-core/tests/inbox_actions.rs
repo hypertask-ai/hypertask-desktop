@@ -73,3 +73,37 @@ fn inbox_server_split_memberships_are_durable_account_scoped_and_never_guessed_f
     assert_eq!(tabs[0]["ids"],json!([2]));assert_eq!(tabs[1]["ids"],json!([1]));
     db.kv_set("current-user-id","43").unwrap();assert!(db.inbox_splits().unwrap().is_none());
 }
+
+#[test]
+fn synthetic_inbox_ids_are_normalized_on_import_but_cannot_enter_notification_writes() {
+    let mut db = Db::memory().unwrap();
+    let synthetic = json!({"id":"-42","taskId":42,"projectId":15,"waitingOnSynthetic":true,"status":"Normal","seen":true,"createdAt":"2026-01-01T00:00:00Z"});
+    db.apply_response(&json!({"success":true,"user_notifications":[synthetic]})).unwrap();
+    assert_eq!(db.inbox().unwrap()[0].id, -42);
+    let now = 1767312000;
+    for write in [
+        Write::InboxSeen { notification_id: -42 },
+        Write::InboxArchive { notification_id: -42 },
+        Write::InboxRemind { notification_ids: vec![-42], remind_at: "2026-01-03T09:00:00Z".into() },
+    ] {
+        assert!(db.enqueue(write, now).is_err());
+        assert!(db.mutations().unwrap().is_empty());
+        assert_eq!(db.inbox().unwrap().len(), 1);
+    }
+}
+
+#[test]
+fn malformed_string_notification_ids_do_not_replace_a_valid_inbox_snapshot() {
+    for (id, synthetic, task_id) in [
+        ("7", false, 42), ("-42", false, 42), ("-41", true, 42),
+        ("42", true, 42), ("-042", true, 42), ("not-an-id", true, 42),
+        ("-9223372036854775809", true, 42),
+    ] {
+        let mut db = Db::memory().unwrap();
+        seed(&mut db);
+        let before = db.dump().unwrap();
+        let invalid = json!({"success":true,"user_notifications":[{"id":id,"taskId":task_id,"waitingOnSynthetic":synthetic,"status":"Normal","createdAt":"2026-01-01T00:00:00Z"}]});
+        assert!(db.apply_response(&invalid).is_err());
+        assert_eq!(db.dump().unwrap(), before);
+    }
+}
