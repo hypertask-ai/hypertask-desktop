@@ -9,6 +9,20 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::AssignToMe => {
+                let Some(user) = self.db.current_user_id() else { return; };
+                let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return; };
+                let mut people: Vec<_> = task.extra.get("assignees").and_then(serde_json::Value::as_array)
+                    .into_iter().flatten().filter(|row| row["agent"].is_null())
+                    .filter_map(|row| row["id"].as_i64()).collect();
+                if !people.contains(&user) {
+                    people.push(user);
+                    if !self.enqueue(Write::TaskPatch { task_id: task.id, patch: ht_core::TaskPatch::Assignees(people) }, cx) {
+                        return;
+                    }
+                }
+                self.show_modal(super::interactions::Modal::Assign, window, cx);
+            }
             ShellCommand::CopyBranchName => {
                 if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
                     if let Some(ticket) = task.ticket_number {
