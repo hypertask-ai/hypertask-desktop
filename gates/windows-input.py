@@ -1,5 +1,6 @@
 """Hosted Windows input, visible effects, durable writes, and owned cleanup."""
 import argparse
+from contextlib import closing
 import ctypes as C
 from ctypes import wintypes as W
 import hashlib
@@ -145,7 +146,7 @@ def visible(data, key, text=None):
 
 
 def verify_database(db, case, task_id, notification_id, text):
-    with sqlite3.connect(db) as conn:
+    with closing(sqlite3.connect(db)) as conn, conn:
         rows = conn.execute("SELECT kind,payload_json,status,attempts FROM mutation_queue ORDER BY id").fetchall()
         assert len(rows) == 1, f"Expected exactly one write, got {rows}"
         kind, raw, status, attempts = rows[0]
@@ -181,7 +182,7 @@ def run_case(case, app, core, out, env):
         dump = out / "layout.json"
         behavior = dump.with_suffix("behavior.json")
         subprocess.run([core, "--db", db, "import-fixtures", ROOT / "fixtures/demo"], env=env, check=True)
-        with sqlite3.connect(db) as conn:
+        with closing(sqlite3.connect(db)) as conn, conn:
             conn.execute("DELETE FROM Comment WHERE taskId=58006")
             conn.execute("UPDATE Task SET raw_json=json_set(raw_json,'$.description','<p>Native CI original</p>','$.totalComments',0) WHERE id=58006")
         process = None
@@ -219,7 +220,7 @@ def run_case(case, app, core, out, env):
                              "Native typed text did not reach focused editor")
                     key("Enter" if screen == "board" else ("Ctrl+Enter" if case == "task-description" else "Ctrl+Shift+Enter"))
                 else:
-                    with sqlite3.connect(db) as conn:
+                    with closing(sqlite3.connect(db)) as conn, conn:
                         tabs = json.loads(conn.execute("SELECT value FROM kv WHERE key='inbox-splits:0'").fetchone()[0])
                         members = tabs[before["state"]["split"]]["ids"]
                         placeholders = ",".join("?" for _ in members)
@@ -249,7 +250,7 @@ def run_case(case, app, core, out, env):
                 (out / "after.json").write_text(json.dumps(after, indent=2))
                 assert window.capture(out / "after.png") != first_hash, "Visible effect must change presented pixels"
                 if case == "inbox-archive-notification":
-                    with sqlite3.connect(db) as conn:
+                    with closing(sqlite3.connect(db)) as conn, conn:
                         changed = {row[0] for row in conn.execute("SELECT id FROM Notification WHERE status='Archive'")} - original
                     assert changed == {notification_id}, "One key must archive only the selected notification"
                 result["mutation"] = verify_database(db, case, task_id, notification_id, text)
@@ -272,7 +273,7 @@ def run_case(case, app, core, out, env):
                     process.wait()
                     result["graceful_exit"] = False
                 result["process_exited"] = process.poll() is not None
-            with sqlite3.connect(db) as conn, sqlite3.connect(out / "result.db") as saved:
+            with closing(sqlite3.connect(db)) as conn, closing(sqlite3.connect(out / "result.db")) as saved:
                 conn.backup(saved)
             if result["passed"]:
                 verify_database(out / "result.db", case, task_id, notification_id, text)
