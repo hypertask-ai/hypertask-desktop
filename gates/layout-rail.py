@@ -17,7 +17,7 @@ for screen in ("inbox", "board", "task"):
     for index in range(5, 13):
         native = elements[f"rail.icon.{index}"]
         expected = {
-            "x": table["x"], "w": 36, "h": 34, "radius": 5,
+            "x": table["x"], "w": 36, "h": 34, "radius": 5 if index < 9 else 0,
             "color": "#8e9093", "bg": None,
             "y": table["y"] + (index - 4) * (34 + 4) if index < 8 else dump["height"] - 8 - 4 - 34 - (12 - index) * (34 + 4),
         }
@@ -36,7 +36,7 @@ def pointer_differences(record):
         key: {"expected": expected, "native": native}
         for key, expected, native in (
             ("color", "#ffffff", record["element"]["color"]),
-            ("bg", "#3a3d45", record["element"]["bg"]),
+            ("bg", "#3a3d45", (record.get("item") or record["element"])["bg"]),
             ("paintedHoverBackground", True, record["paintedHoverBackground"]),
         ) if expected != native
     }

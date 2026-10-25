@@ -1,0 +1,224 @@
+{
+  "revision": "0ccb8638e4656bf5bd86ccf3e522ac3d483b3dc9",
+  "run": "https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40242172983",
+  "artifactId": 12618045263,
+  "artifactDigest": "sha256:cc7c649dbf4df8c9a593f6ab454a4b895b8cf3351837c02d04ee641b3918db52",
+  "records": [
+    {
+      "screen": "inbox",
+      "element": {
+        "key": "rail.icon.9",
+        "x": 5.0,
+        "y": 849.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Invite"
+      }
+    },
+    {
+      "screen": "inbox",
+      "element": {
+        "key": "rail.icon.10",
+        "x": 5.0,
+        "y": 887.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "News"
+      }
+    },
+    {
+      "screen": "inbox",
+      "element": {
+        "key": "rail.icon.11",
+        "x": 5.0,
+        "y": 925.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Feedback"
+      }
+    },
+    {
+      "screen": "inbox",
+      "element": {
+        "key": "rail.icon.12",
+        "x": 5.0,
+        "y": 963.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Settings"
+      }
+    },
+    {
+      "screen": "board",
+      "element": {
+        "key": "rail.icon.9",
+        "x": 5.0,
+        "y": 849.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Invite"
+      }
+    },
+    {
+      "screen": "board",
+      "element": {
+        "key": "rail.icon.10",
+        "x": 5.0,
+        "y": 887.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "News"
+      }
+    },
+    {
+      "screen": "board",
+      "element": {
+        "key": "rail.icon.11",
+        "x": 5.0,
+        "y": 925.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Feedback"
+      }
+    },
+    {
+      "screen": "board",
+      "element": {
+        "key": "rail.icon.12",
+        "x": 5.0,
+        "y": 963.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Settings"
+      }
+    },
+    {
+      "screen": "task",
+      "element": {
+        "key": "rail.icon.9",
+        "x": 5.0,
+        "y": 849.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Invite"
+      }
+    },
+    {
+      "screen": "task",
+      "element": {
+        "key": "rail.icon.10",
+        "x": 5.0,
+        "y": 887.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "News"
+      }
+    },
+    {
+      "screen": "task",
+      "element": {
+        "key": "rail.icon.11",
+        "x": 5.0,
+        "y": 925.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Feedback"
+      }
+    },
+    {
+      "screen": "task",
+      "element": {
+        "key": "rail.icon.12",
+        "x": 5.0,
+        "y": 963.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Settings"
+      }
+    }
+  ]
+}

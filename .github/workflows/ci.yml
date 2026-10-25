@@ -114,6 +114,9 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+      - name: Complete source-backed rail collection
+        if: runner.os == 'Linux'
+        run: node gates/layout-rail-collector.mjs
       - name: Native inbox keyboard archive
         if: runner.os == 'Linux'
         run: xvfb-run -a -s '-screen 0 1440x900x24' python3 gates/desktop-input.py
