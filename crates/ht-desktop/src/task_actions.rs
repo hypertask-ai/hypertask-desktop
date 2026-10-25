@@ -726,10 +726,14 @@ mod tests {
         draw(view, &mut cx);
         (view, cx)
     }
-    fn palette(cx: &mut gpui::VisualTestContext, name: &str) {
+    fn palette(view: WindowHandle<Desktop>, cx: &mut gpui::VisualTestContext, name: &str) {
+        draw(view, cx);
         cx.simulate_keystrokes("ctrl-k");
+        draw(view, cx);
         cx.simulate_input(name);
+        draw(view, cx);
         cx.simulate_keystrokes("enter");
+        draw(view, cx);
     }
     #[gpui::test]
     fn phrase_date_queries_choose_web_weekday_for_due_and_start_and_rollback_both_refusals(cx: &mut gpui::TestAppContext) {
@@ -740,7 +744,7 @@ mod tests {
                 this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Task","status":"Normal","dueDate":null,"startDate":null})).unwrap();
                 this.reload();window.focus(&this.focus,cx);
             }).unwrap();
-            palette(&mut cx,if start {"Set start date"} else {"Set due date"});
+            palette(view, &mut cx,if start {"Set start date"} else {"Set due date"});
             cx.simulate_input("next friday");cx.simulate_keystrokes("enter enter");
             view.update(&mut cx,|this,window,cx| {
                 let task=this.db.task(1).unwrap().unwrap();
@@ -767,7 +771,7 @@ mod tests {
                 this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Task","status":"Normal","dueDate":null,"startDate":null})).unwrap();
                 this.reload(); window.focus(&this.focus, cx);
             }).unwrap();
-            palette(&mut cx, if start { "Set start date" } else { "Set due date" });
+            palette(view, &mut cx, if start { "Set start date" } else { "Set due date" });
             let query = match (start, relative) {
                 (false, false) => "tomorrow at 3pm", (true, false) => "yesterday at 6pm",
                 (false, true) => "in 2 hours", (true, true) => "2 hours ago",
@@ -810,7 +814,7 @@ mod tests {
                 this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Task","status":"Normal","dueDate":null,"startDate":null})).unwrap();
                 this.reload(); window.focus(&this.focus, cx);
             }).unwrap();
-            palette(&mut cx, if start { "Set start date" } else { "Set due date" });
+            palette(view, &mut cx, if start { "Set start date" } else { "Set due date" });
             let before = chrono::Local::now().date_naive();
             cx.simulate_input(query); cx.simulate_keystrokes("enter enter");
             view.update(&mut cx, |this, window, cx| {
@@ -838,7 +842,7 @@ mod tests {
     ) {
         let (view, mut cx) = setup(cx);
         for status in [401, 403, 200] {
-            palette(&mut cx, "Set start date");
+            palette(view, &mut cx, "Set start date");
             cx.simulate_input("2030-12-31T14:30:00+02:00");
             cx.simulate_keystrokes("enter enter");
             view.update(&mut cx, |this, window, cx| {
@@ -874,7 +878,7 @@ mod tests {
                 cx.simulate_keystrokes("escape");
             }
         }
-        palette(&mut cx, "Set start date");
+        palette(view, &mut cx, "Set start date");
         click(view, &mut cx, "due.choice.0");
         view.update(&mut cx, |this, window, cx| {
             this.db
@@ -897,7 +901,7 @@ mod tests {
             if status == 401 {
                 cx.simulate_keystrokes("shift-b");
             } else {
-                palette(&mut cx, "Blocked by person");
+                palette(view, &mut cx, "Blocked by person");
             }
             cx.simulate_input("Alex");
             cx.simulate_keystrokes("enter enter");
@@ -960,7 +964,7 @@ mod tests {
     ) {
         let (view, mut cx) = setup(cx);
         for status in [401, 403, 200] {
-            palette(&mut cx, "Assign to me");
+            palette(view, &mut cx, "Assign to me");
             view.update(&mut cx, |this, window, cx| {
                 assert_eq!(this.db.task(1).unwrap().unwrap().assignee_count, 1);
                 this.db
@@ -1001,7 +1005,7 @@ mod tests {
                         this.db.task(1).unwrap().unwrap().extra["recurrence"].clone()
                     })
                     .unwrap();
-                palette(&mut cx, "Repeat task");
+                palette(view, &mut cx, "Repeat task");
                 cx.simulate_input(label);
                 let index = view
                     .read_with(&cx, |this, cx| {
@@ -1058,7 +1062,7 @@ mod tests {
                 this.db.apply_task(&json!({"id":2,"projectId":15,"sectionId":10,"title":"Other","ticketNumber":"HT-2","uniqueIndex":2,"status":"Normal"})).unwrap();
                 this.reload();
             }).unwrap();
-            palette(&mut cx, "Decline as duplicate of");
+            palette(view, &mut cx, "Decline as duplicate of");
             cx.simulate_input("Other");
             cx.simulate_keystrokes("enter enter");
             view.update(&mut cx, |this, window, cx| {
@@ -1097,7 +1101,7 @@ mod tests {
         ] {
             for status in [401, 403, 200] {
                 view.update(&mut cx,|this,_,_|{this.db.apply_task(&json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","relatedFromTasks":[],"relatedToTasks":[]})).unwrap();}).unwrap();
-                palette(&mut cx, kind.title());
+                palette(view, &mut cx, kind.title());
                 cx.simulate_input("Other");
                 cx.simulate_keystrokes("enter enter");
                 view.update(&mut cx,|this,window,cx|{
@@ -1141,7 +1145,7 @@ mod tests {
             })
             .unwrap();
         }
-        palette(&mut cx, "Add related task");
+        palette(view, &mut cx, "Add related task");
         cx.simulate_input("does not exist");
         measured(view, &mut cx, "task.relations.search-status");
         cx.simulate_keystrokes("escape");
@@ -1255,7 +1259,7 @@ mod tests {
                     this.reload();
                 }).unwrap();
                 draw(view, &mut cx);
-                palette(&mut cx, name);
+                palette(view, &mut cx, name);
                 view.update(&mut cx, |this, window, cx| {
                     assert_eq!(
                         this.db

@@ -554,13 +554,13 @@ mod tests {
             assert_eq!(this.screen, Screen::Board);
             assert_eq!(this.interaction.modal, Some(interactions::Modal::Commands));
             assert!(this.interaction.command_task);
-            assert_eq!(this.choices(cx)[0].name, "Assign task");
+            assert_eq!(this.choices(cx)[0].name, "Accept task");
         })
         .unwrap();
         cx.simulate_keystrokes("escape ctrl-k");
         view.read_with(&mut cx, |this, cx| {
             assert!(!this.interaction.command_task);
-            assert_eq!(this.choices(cx)[0].name, "Create task with AI Task Writer");
+            assert_eq!(this.choices(cx)[0].name, "Create task");
             assert_eq!(this.interaction.modal, Some(interactions::Modal::Commands))
         })
         .unwrap();
