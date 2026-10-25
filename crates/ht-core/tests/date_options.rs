@@ -201,3 +201,25 @@ fn legacy_js_date_fallback_is_an_explicit_gap_not_a_concatenated_clock() {
     assert_eq!(web[0][0]["date"], "2001-01-01T05:30:00.000Z");
     assert!(ht_core::date_options::query_options(query, now, true).is_none(), "legacy JS fallback is not implemented; never join split clock digits into tomorrow at 15:30");
 }
+
+#[test]
+fn short_calendar_years_remain_explicit_gaps_not_misparsed_centuries() {
+    use std::{io::Write, process::{Command, Stdio}};
+    use serde_json::{Value, json};
+    let now = DateTime::parse_from_rfc3339("2026-01-31T08:42:17Z").unwrap();
+    let cases = [("12/31/30", false, 2030), ("January 15, 20", true, 2020)];
+    let input: Vec<_> = cases.iter().map(|(query, past, _)| json!({"query":query,"past":past,"now":now.to_rfc3339()})).collect();
+    let mut oracle = Command::new("node").arg(format!("{}/tests/date_reference.cjs", env!("CARGO_MANIFEST_DIR")))
+        .env("TZ", "UTC").env("LANG", "en_US.UTF-8").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().expect("hosted CI must provide Node for the real Sugar reference");
+    oracle.stdin.take().unwrap().write_all(serde_json::to_string(&input).unwrap().as_bytes()).unwrap();
+    let output = oracle.wait_with_output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let web: Vec<Vec<Value>> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(web.len(), cases.len());
+    for ((query, past, year), rows) in cases.into_iter().zip(web) {
+        assert_eq!(rows.len(), 1, "{query}: {rows:?}");
+        assert_eq!(DateTime::parse_from_rfc3339(rows[0]["date"].as_str().unwrap()).unwrap().year(), year, "{query}");
+        assert!(ht_core::date_options::query_options(query, now, past).is_none(), "short-year grammar is not implemented; never interpret {query} as an ancient year");
+    }
+}

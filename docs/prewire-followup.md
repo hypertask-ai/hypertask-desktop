@@ -4,7 +4,8 @@ This is a partial continuation of draft PR #17, **not whole-ticket parity**.
 The original acceptance inventory is `.unlazy/prewire/GATES.md`; the current
 continuation inventory is `.unlazy/prewire/continuation-gates.md` (both local,
 uncommitted).
-`FEATURES.md` remains uncommitted and carries the final SHA-bound CI receipt.
+`FEATURES.md` is now committed under the round 13 continuation request.
+Its historical uncommitted policy no longer applies.
 No application, build, test, test copy, or laptop command ran on the VPS.
 Only GitHub Actions is runtime proof; source inspection is not live SaaS QA.
 
@@ -24,7 +25,7 @@ Tests run in the existing GitHub workspace test jobs; no CI check is bypassed.
 ## HTPR-7381 continuation: additional native wiring
 
 The following is additional wiring, not a claim that every row is complete.
-Current SHA-bound GitHub CI evidence remains in uncommitted `FEATURES.md`.
+Current feature dispositions and hosted evidence are in committed `FEATURES.md`.
 
 - Model picker: web provider/family declaration order; nearest-effort family
   selection; separate Instant/Thinking and Light/Standard/High submenus;

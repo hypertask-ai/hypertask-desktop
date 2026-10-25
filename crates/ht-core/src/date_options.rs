@@ -256,6 +256,8 @@ fn calendar_date<Tz: TimeZone>(query: &str, now: &DateTime<Tz>, past: bool) -> O
     }).collect::<Vec<_>>().join(" ");
     let full_formats = ["%Y-%m-%d", "%m/%d/%Y", "%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y"];
     for format in full_formats {
+        let year = if format.starts_with("%Y") { words.split('-').next() } else { words.rsplit([' ', '/']).next() }?;
+        if year.len() != 4 || !year.chars().all(|c| c.is_ascii_digit()) { continue; }
         if let Ok(date) = NaiveDate::parse_from_str(&words, format) {
             return local(now, date.and_time(clock.unwrap_or(default_time)));
         }

@@ -2,6 +2,31 @@
 
 The current request commits this inherited feature ledger. Historical statements below that FEATURES.md must remain uncommitted describe earlier instructions and no longer govern this continuation. Historical SHA and CI receipts remain unchanged. New acceptance checks: `.unlazy/prewire/round13-continuation-gates.md`.
 
+# Round 13 offline date continuation
+
+## Added
+
+- Named calendar dates: full or abbreviated English months, day-first or month-first, optional ordinal suffix/comma/year, and explicit clocks. Numeric month/day and ISO calendar days use the same shared suggestions. Four-digit explicit years only; short-year grammar stays unsupported rather than returning the wrong century.
+- Relative days: yesterday, day before yesterday, and day after tomorrow, with optional `the` and explicit clocks. No new controls, endpoints, or sign-in dependency.
+- Due/start command input and the full create form use these dates through their existing durable queues. Native keyboard tests verify exact stored dates, successful acknowledgements, and both 401/403 rollback paths. Rejected creates preserve the title and both dates.
+- Yearless past/future direction is resolved before default-hour replacement. The web time-detection regex can treat a calendar number as an explicit time; native output preserves that behavior, not an invented universal 09:00 default.
+
+Web sources: `src/utils/helperFunctions/dateParse.ts:4-12,15-76` owns Sugar grammar, default-time detection, result ordering, direction and minute deduplication. `src/lib/constants/constants.ts:167-169` owns 09:00 defaults. `src/components/Modals/DueDate/index.tsx:265-277` feeds the existing input into these suggestions. Values come only from `/home/valentin/projects/hypertask/src`.
+
+## Hosted evidence
+
+Implementation candidate `c602785279bae55cf8fe000d7c92375900b1403d` passed all six required jobs and the canonical `DESKTOP_CI_VERIFIED` receipt: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40238568338. Linux, macOS and Windows each passed **266 desktop tests**. The expanded real-Sugar matrix now covers **52 queries and 1872 exact comparisons per platform**, plus the unchanged **912 ranked-phrase comparisons**. The short-year unsupported-grammar regression is a separate safeguard, not a parity success count.
+
+The final continuation head additionally includes the short-year safeguard and this ledger update. Its exact-head CI run, artifact receipts, named test log lines and SHA-256 fingerprints are recorded in `.unlazy/prewire/evidence/round13-continuation-final-{ci.json,proof.txt}` and the final handoff. Those local receipts are not application execution. All builds, tests, runtime negative controls and app launches run on public GitHub-hosted runners only. No VPS tests or laptop access. PR https://github.com/hypertask-ai/hypertask-desktop/pull/17 stays draft.
+
+## Still open
+
+- Full arbitrary Sugar grammar, short years, named timezones, native-JavaScript legacy fallback and complete dynamic-filter date parsing remain OPEN. This continuation does not claim the whole date row.
+- Production timer websocket subscription remains BLOCKED on desktop session authorization and public deployment configuration. Web `src/lib/realtime/client.ts:388-400` configures Pusher and `/api/pusher/auth`; `src/pages/api/pusher/auth.ts:67-78` requires `getSessionUser`, which reads cookie/Better Auth sessions at `src/lib/auth/getSessionUser.ts:17-35`, not the existing desktop bearer. No copied cookies, guessed Pusher values, or live-subscription claim. HTPR-7699 part 2 is not live.
+- Remaining command families, binary attachment lifecycle, writer flags/skills/questions and parent flows retain their historical implementation/auth gaps. No unrelated completion claimed.
+
+---
+
 # HTPR-7381 round 13 (UNCOMMITTED)
 
 Final SHA **`a16ce4c0a933d78a5a0c666345f10a4fd67aa62c`**. Exact-head CI **SUCCESS**, https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40164406532, attempt 1. All six required jobs and nonexpired artifacts passed `DESKTOP_CI_VERIFIED`. This is a verified partial continuation, not full HTPR-7381 completion.
