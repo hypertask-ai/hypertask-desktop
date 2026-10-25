@@ -162,6 +162,8 @@ impl Install {
         remove(&self.path("staged"))?;
         let mut file = File::create(self.path("download"))?;
         file.write_all(bytes)?;
+        #[cfg(unix)]
+        file.set_permissions(fs::metadata(&self.exe)?.permissions())?;
         file.sync_all()?;
         drop(file);
         fs::rename(self.path("download"), self.path("staged"))?;
