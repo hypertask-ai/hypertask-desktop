@@ -180,5 +180,24 @@ with tempfile.TemporaryDirectory(prefix="ht-layout-") as tmp:
         result = subprocess.run(args, env=ENV, capture_output=True, text=True, timeout=60)
         assert result.returncode == 0 and "READY" in result.stdout, result
         validate(path, screen, "graphite", 1920, 1009, sparse=True)
+    reference_db = str(Path(tmp) / "reference.db")
+    subprocess.run([ROOT / "target/release/ht-core-cli", "--db", reference_db, "import-fixtures", ROOT / "gates/fixtures/layout-reference"], check=True)
+    # Relative dates keep the frozen LAST WEEK label independent of the CI date.
+    import datetime
+    today = datetime.date.today()
+    last_thursday = today - datetime.timedelta(days=today.weekday() + 4)
+    with sqlite3.connect(reference_db) as conn:
+        notification_id, raw = conn.execute("SELECT id,raw_json FROM Notification").fetchone()
+        notification = json.loads(raw)
+        notification["createdAt"] = f"{last_thursday.isoformat()}T12:00:00Z"
+        conn.execute("UPDATE Notification SET raw_json=?,createdAt=? WHERE id=?", (json.dumps(notification), notification["createdAt"], notification_id))
+    reference_out = OUT / "reference"
+    reference_out.mkdir(exist_ok=True)
+    for screen in KEYS:
+        path = reference_out / f"{screen}.json"
+        args = [str(APP), "--db", reference_db, "--offline", "--screen", screen, "--board", "15", "--task", "103", "--theme", "graphite", "--window-size", "1920x1009", "--dump-layout", str(path), "--exit-after-ready"]
+        result = subprocess.run(args, env=ENV, capture_output=True, text=True, timeout=60)
+        assert result.returncode == 0 and "READY" in result.stdout, result
+        validate(path, screen, "graphite", 1920, 1009, sparse=True)
     assert not errors, "\n".join(errors)
 print("LAYOUT_DUMP_OK: all screens, all themes, Graphite 1920x1009, hold, exit and write failure", flush=True)
