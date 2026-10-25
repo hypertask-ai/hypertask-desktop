@@ -203,3 +203,110 @@ pub fn phrase_options<Tz: TimeZone>(input: &str, now: DateTime<Tz>, past: bool) 
     rows.retain(|row| DateTime::parse_from_rfc3339(&row.date).is_ok_and(|date| seen.insert(date.timestamp().div_euclid(60))));
     Some(rows)
 }
+
+fn parse_clock(input: &str) -> Option<chrono::NaiveTime> {
+    let input: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    let (clock, period) = if let Some(clock) = input.strip_suffix("am") {
+        (clock, Some(false))
+    } else if let Some(clock) = input.strip_suffix("pm") {
+        (clock, Some(true))
+    } else {
+        (input.as_str(), None)
+    };
+    if period.is_none() && !clock.contains(':') { return None; }
+    let parts: Vec<_> = clock.split(':').collect();
+    if parts.len() > 2 || parts[0].is_empty() || parts[0].len() > 2 { return None; }
+    if !parts.iter().all(|part| part.chars().all(|c| c.is_ascii_digit())) { return None; }
+    let mut hour = parts[0].parse::<u32>().ok()?;
+    let minute = if parts.len() == 2 {
+        if parts[1].len() != 2 { return None; }
+        parts[1].parse::<u32>().ok()?
+    } else { 0 };
+    if let Some(pm) = period {
+        if !(1..=12).contains(&hour) { return None; }
+        hour = hour % 12 + if pm { 12 } else { 0 };
+    }
+    chrono::NaiveTime::from_hms_opt(hour, minute, 0)
+}
+
+fn explicit_date<Tz: TimeZone>(query: &str, now: &DateTime<Tz>, past: bool) -> Option<DateTime<Tz>> {
+    let words: Vec<_> = query.split_whitespace().collect();
+    let relative_expression = if words.first() == Some(&"in") {
+        Some((&words[1..], 1))
+    } else if words.last() == Some(&"ago") {
+        Some((&words[..words.len() - 1], -1))
+    } else if query.ends_with(" from now") {
+        Some((&words[..words.len() - 2], 1))
+    } else if words.last() == Some(&"later") {
+        Some((&words[..words.len() - 1], 1))
+    } else if words.len() == 2 && words[0].parse::<i32>().is_ok() {
+        Some((words.as_slice(), 1))
+    } else { None };
+    if let Some((words, direction)) = relative_expression {
+        if words.len() != 2 { return None; }
+        let amount = words[0].parse::<i32>().ok()?;
+        if amount < 0 || words[0] != amount.to_string() { return None; }
+        let amount_signed = amount.checked_mul(direction)?;
+        let unit = words[1].trim_end_matches('s');
+        let date = match unit {
+            "month" => {
+                let months = chrono::Months::new(amount as u32);
+                let date = if direction < 0 { now.date_naive().checked_sub_months(months)? } else { now.date_naive().checked_add_months(months)? };
+                local(now, date.and_time(now.time()))?
+            }
+            "year" => {
+                let year = now.year().checked_add(amount_signed)?;
+                let date = NaiveDate::from_ymd_opt(year, now.month(), 1)?.checked_add_signed(Duration::days(now.day0() as i64))?;
+                local(now, date.and_time(now.time()))?
+            }
+            _ => relative(now, amount_signed, unit)?,
+        };
+        // The web's time-detection regex treats only standalone numbers 0..23 as explicit times.
+        return if amount <= 23 { Some(date) } else { at(now, date.date_naive(), 9) };
+    }
+    let (day, time) = if let Some((day, clock)) = query.split_once(" at ") {
+        (Some(day), parse_clock(clock)?)
+    } else if let Some(time) = parse_clock(query) {
+        (None, time)
+    } else {
+        let (day, clock) = query.split_once(' ')?;
+        (Some(day), parse_clock(clock)?)
+    };
+    let today = now.date_naive();
+    let mut date = match day {
+        None | Some("today") => today,
+        Some("tomorrow") => today.succ_opt()?,
+        Some("yesterday") => today.pred_opt()?,
+        Some(day) => {
+            let next = day.starts_with("next ");
+            let day = day.strip_prefix("next ").unwrap_or(day);
+            let target = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"].iter().position(|candidate| *candidate == day)? as i64;
+            today.checked_add_signed(Duration::days(target - today.weekday().num_days_from_sunday() as i64 + if next { 7 } else { 0 }))?
+        }
+    };
+    let value = local(now, date.and_time(time))?;
+    if day.is_none() || day.is_some_and(|day| !["today", "tomorrow", "yesterday"].contains(&day) && !day.starts_with("next ")) {
+        if if past { value >= *now } else { value <= *now } {
+            date = date.checked_add_signed(Duration::days(if past { -1 } else { 1 } * if day.is_none() { 1 } else { 7 }))?;
+        }
+    }
+    local(now, date.and_time(time))
+}
+
+/// Web inputChange suggestions plus its explicit date/time result, in web order.
+pub fn query_options<Tz: TimeZone>(input: &str, now: DateTime<Tz>, past: bool) -> Option<Vec<DateOption>> {
+    let query = input.trim().to_lowercase();
+    let mut rows = relative_options(input, now.clone(), past).or_else(|| phrase_options(input, now.clone(), past));
+    if let Some(date) = explicit_date(&query, &now, past) {
+        let rows = rows.get_or_insert_with(Vec::new);
+        let difference = date.timestamp_millis() - now.timestamp_millis();
+        if if past { difference < 60_000 } else { difference > 60_000 } {
+            rows.push(DateOption { display: date.naive_local().format("%-m/%-d/%Y, %-I:%M:%S %p").to_string(), date: date.to_rfc3339() });
+        }
+    }
+    if let Some(rows) = &mut rows {
+        let mut seen = std::collections::BTreeSet::new();
+        rows.retain(|row| DateTime::parse_from_rfc3339(&row.date).is_ok_and(|date| seen.insert(date.timestamp().div_euclid(60))));
+    }
+    rows
+}

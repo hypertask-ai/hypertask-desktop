@@ -394,8 +394,7 @@ impl Desktop {
                     choices.extend(super::task_fields::due_presets(chrono::Local::now()).into_iter().map(|(name, value)| (name, json!(value))));
                     choices
                 } else {
-                    ht_core::date_options::relative_options(query, chrono::Local::now(), field == Field::StartDate)
-                        .or_else(|| ht_core::date_options::phrase_options(query, chrono::Local::now(), field == Field::StartDate))
+                    ht_core::date_options::query_options(query, chrono::Local::now(), field == Field::StartDate)
                         .map(|rows| rows.into_iter().map(|row| (row.display, json!(row.date))).collect())
                         .unwrap_or_else(|| super::task_fields::parse_due(query, chrono::Local::now().date_naive()).map(|value| vec![(query.into(), json!(value))]).unwrap_or_default())
                 };
@@ -1201,6 +1200,54 @@ mod tests {
             assert!(this.db.mutations().unwrap().is_empty());
         });
     }
+    #[gpui::test]
+    fn create_form_natural_time_input_preserves_dates_and_note_on_both_refusals(cx: &mut gpui::TestAppContext) {
+        use crate::ui::shell::tests::draw;
+        use chrono::Timelike;
+        struct DateServer { status: u16, dates: Value }
+        impl ht_core::Transport for DateServer {
+            fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> { ht_core::Transport::get(&mut Server(self.status), path) }
+            fn post(&mut self, path: &str, body: &Value, key: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                assert_eq!(path, "/api/tasks/createGlobally");
+                for field in ["dueDate", "startDate"] { assert_eq!(body[field], self.dates[field]); }
+                assert!(!key.is_empty()); assert_eq!(body["title"], "Keep my dated task");
+                let mut task = body.clone(); task["id"] = json!(500); task["status"] = json!("Normal");
+                Ok(ht_core::http::Response { status: self.status, body: if self.status == 200 { json!({"newTask":task}) } else { json!({"error":"Unauthorized"}) } })
+            }
+        }
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
+        for status in [401, 403, 200] {
+            view.update(&mut cx, |this, window, cx| { this.invalidate_task_create(cx); this.open_create_task(window, cx); }).unwrap();
+            draw(view, &mut cx); cx.simulate_input("Keep my dated task");
+            for (field, query, hour) in [(Field::DueDate, "tomorrow at 3pm", 15), (Field::StartDate, "yesterday at 6pm", 18)] {
+                view.update(&mut cx, |this, window, cx| this.create_picker(field, window, cx)).unwrap();
+                draw(view, &mut cx); cx.simulate_input(query); cx.simulate_keystrokes("enter");
+                view.read_with(&cx, |this, _| {
+                    let key = if field == Field::DueDate { "dueDate" } else { "startDate" };
+                    let date = this.create_task.fields[key].as_str().expect(query);
+                    let date = chrono::DateTime::parse_from_rfc3339(date).unwrap().with_timezone(&chrono::Local);
+                    assert_eq!(date.hour(), hour); assert_eq!(date.minute(), 0);
+                }).unwrap();
+            }
+            cx.simulate_keystrokes("ctrl-enter");
+            view.update(&mut cx, |this, window, cx| {
+                let dates = this.create_task.fields.clone();
+                let id = this.db.mutations().unwrap().into_iter().find(|row| row.status != "failed").unwrap().id;
+                let task = this.db.task(-id).unwrap().unwrap();
+                assert_eq!(task.due_date.as_deref(), dates["dueDate"].as_str()); assert_eq!(task.extra["startDate"], dates["startDate"]);
+                this.db.drain_once(&mut DateServer { status, dates: dates.clone() }, chrono::Utc::now().timestamp() + 1).unwrap();
+                assert!(!this.poll_create_task(window, cx)); assert!(this.db.task(-id).unwrap().is_none());
+                if status != 200 {
+                    assert!(this.create_task.open); assert_eq!(this.create_task.title.read(cx).content.as_ref(), "Keep my dated task");
+                    for field in ["dueDate", "startDate"] { assert_eq!(this.create_task.fields[field], dates[field]); }
+                    assert_eq!(this.create_task.error.as_deref(), Some("Task could not be created"));
+                } else { assert!(!this.create_task.open); assert!(this.db.task(500).unwrap().is_some()); }
+            }).unwrap();
+        }
+    }
+
     #[gpui::test]
     fn create_custom_due_calendar_confirms_nine_am_and_mocked_refusals_preserve_date_and_draft(cx: &mut gpui::TestAppContext) {
         struct CalendarServer { status: u16, date: Value }
