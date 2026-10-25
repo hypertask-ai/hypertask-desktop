@@ -213,12 +213,20 @@ impl Transport for Http {
     }
 }
 
+#[derive(Debug)]
+pub(crate) struct HttpStatus(pub u16);
+
+impl std::fmt::Display for HttpStatus {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "HTTP {}", self.0)
+    }
+}
+impl std::error::Error for HttpStatus {}
+
 pub(crate) fn successful(response: Response) -> Result<Value> {
-    ensure!(
-        (200..300).contains(&response.status),
-        "HTTP {}",
-        response.status
-    );
+    if !(200..300).contains(&response.status) {
+        return Err(HttpStatus(response.status).into());
+    }
     ensure!(
         response.body.get("success").context("missing success")? == true,
         "API response was not successful"
