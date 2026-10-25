@@ -61,18 +61,18 @@ impl Desktop {
             Ok(id)=>{
                 let row=self.db.mutations().unwrap().into_iter().find(|row|row.id==id).unwrap();
                 self.task_time.pending=Some((row.client_id,self.db.current_user_id().unwrap_or(0)));self.error=None;self.reload();self.request_sync();
-                if !self.options.offline{cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(100)).await;if !view.update_in(cx,|this,_,cx|this.poll_time(cx)).unwrap_or(false){break;}}}).detach();}
+                if !self.options.offline{cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(100)).await;if !view.update_in(cx,|this,window,cx|this.poll_time(window,cx)).unwrap_or(false){break;}}}).detach();}
             }
             Err(error)=>self.error=Some(error.to_string()),
         }
         cx.notify();
     }
-    pub(super) fn poll_time(&mut self,cx:&mut Context<Self>)->bool {
+    pub(super) fn poll_time(&mut self,window:&mut Window,cx:&mut Context<Self>)->bool {
         let Some((key,user))=self.task_time.pending.clone() else{return false;};
         let Some(result)=self.db.kv_get(&format!("time-result:{key}")).ok().flatten().and_then(|value|serde_json::from_str::<Value>(&value).ok()) else{return true;};
         self.task_time.pending=None;
         if self.db.current_user_id()==Some(user){
-            self.finish_time_log(&result,cx);
+            self.finish_time_log(&result,window,cx);
             self.error=result["error"].as_str().map(str::to_owned);self.reload();self.task_time.loaded=None;self.load_task_time(cx);
         }
         cx.notify();false
@@ -124,7 +124,7 @@ mod tests {
         for running in [false,true] {for status in [401,403,200] {
             view.update(&mut cx,|this,_,_|seed(this,running)).unwrap();draw(view,&mut cx);measured(view,&mut cx,"task.time.toggle");
             if running{click(view,&mut cx,"task.time.toggle");}else if status==200{cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Start or stop timer");cx.simulate_keystrokes("enter");}else{cx.simulate_keystrokes("w w");}
-            view.update(&mut cx,|this,_,cx|{assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);assert_eq!(this.db.task_time(1).unwrap().unwrap()["runningEntry"].is_object(),!running);this.db.drain_once(&mut Server(status,running,false),chrono::Utc::now().timestamp()+1).unwrap();assert!(!this.poll_time(cx));assert_eq!(this.db.task_time(1).unwrap().unwrap()["runningEntry"].is_object(),if status==200{!running}else{running});if status!=200{assert_eq!(this.error.as_deref(),Some("Time tracking is disabled for this board"));}}).unwrap();
+            view.update(&mut cx,|this,window,cx|{assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);assert_eq!(this.db.task_time(1).unwrap().unwrap()["runningEntry"].is_object(),!running);this.db.drain_once(&mut Server(status,running,false),chrono::Utc::now().timestamp()+1).unwrap();assert!(!this.poll_time(window,cx));assert_eq!(this.db.task_time(1).unwrap().unwrap()["runningEntry"].is_object(),if status==200{!running}else{running});if status!=200{assert_eq!(this.error.as_deref(),Some("Time tracking is disabled for this board"));}}).unwrap();
         }}
     }
     #[gpui::test]
@@ -141,8 +141,8 @@ mod tests {
         cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|desktop(window,cx));let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
         view.update(&mut cx,|this,_,_|seed(this,false)).unwrap();draw(view,&mut cx);
         cx.simulate_keystrokes("w");
-        view.update(&mut cx,|this,_,cx| {
-            this.db.drain_once(&mut Server(200,false,false),chrono::Utc::now().timestamp()+1).unwrap();this.poll_time(cx);
+        view.update(&mut cx,|this,window,cx| {
+            this.db.drain_once(&mut Server(200,false,false),chrono::Utc::now().timestamp()+1).unwrap();this.poll_time(window,cx);
             assert!(this.db.task_time(1).unwrap().unwrap()["runningEntry"].is_object());
             this.db.apply_event(&serde_json::json!({"event":"time:changed","channel":"private-time-task-1","data":{}}).to_string()).unwrap();
             let db=std::mem::replace(&mut this.db,ht_core::Db::memory().unwrap());
@@ -162,7 +162,7 @@ mod tests {
         cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|desktop(window,cx));let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
         for status in [401,403,200] {
             view.update(&mut cx,|this,_,_|seed(this,false)).unwrap();draw(view,&mut cx);cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Turn off time tracking for this board");cx.simulate_keystrokes("enter");
-            view.update(&mut cx,|this,_,cx|{assert_eq!(this.db.board_project(15).unwrap()["timeTrackingEnabled"],false);this.db.drain_once(&mut Server(status,false,true),chrono::Utc::now().timestamp()+1).unwrap();this.poll_time(cx);let project=this.db.board_project(15).unwrap();assert_eq!(project["timeTrackingEnabled"],status!=200);assert_eq!(project["showTimeTotals"],status!=200);if status==200{assert!(!this.command_rows().iter().any(|row|row.key=="toggleTimeTracking"));}}).unwrap();
+            view.update(&mut cx,|this,window,cx|{assert_eq!(this.db.board_project(15).unwrap()["timeTrackingEnabled"],false);this.db.drain_once(&mut Server(status,false,true),chrono::Utc::now().timestamp()+1).unwrap();this.poll_time(window,cx);let project=this.db.board_project(15).unwrap();assert_eq!(project["timeTrackingEnabled"],status!=200);assert_eq!(project["showTimeTotals"],status!=200);if status==200{assert!(!this.command_rows().iter().any(|row|row.key=="toggleTimeTracking"));}}).unwrap();
         }
         view.update(&mut cx,|this,_,_|{this.screen=Screen::Inbox;assert!(!this.command_rows().iter().any(|row|row.key=="toggleTimeTracking"||row.key=="toggleBoardTimeTracking"));}).unwrap();
     }

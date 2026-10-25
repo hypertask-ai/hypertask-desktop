@@ -318,7 +318,7 @@ impl Desktop {
         }
         cx.notify();
     }
-    pub(super) fn finish_time_log(&mut self, result: &Value, cx: &mut Context<Self>) {
+    pub(super) fn finish_time_log(&mut self, result: &Value, window: &mut Window, cx: &mut Context<Self>) {
         let Some(change) = self.time_log.pending.take() else {
             return;
         };
@@ -334,7 +334,10 @@ impl Desktop {
                         input.update(cx, |input, cx| input.set_content(String::new(), cx));
                     }
                 }
-                TimeEntryChange::Update { .. } => self.time_log.editing = None,
+                TimeEntryChange::Update { .. } => {
+                    self.time_log.editing = None;
+                    window.focus(&self.time_log.add.hours.focus_handle(cx), cx);
+                },
                 _ => (),
             }
             self.load_time_log(cx);
@@ -471,8 +474,9 @@ impl Desktop {
                                 .id("time-log-cancel-edit")
                                 .cursor_pointer()
                                 .child("Cancel")
-                                .on_click(cx.listener(|this, _, _, cx| {
+                                .on_click(cx.listener(|this, _, window, cx| {
                                     this.time_log.editing = None;
+                                    window.focus(&this.time_log.add.hours.focus_handle(cx), cx);
                                     cx.notify();
                                 }))
                                 .layout_key(&self.layout, "time-log.edit.cancel", None),
@@ -833,7 +837,7 @@ mod tests {
                         click(view, &mut cx, "time-log.delete.5");
                     }
                 }
-                view.update(&mut cx, |this, _, cx| {
+                view.update(&mut cx, |this, window, cx| {
                     assert!(this.time_log.open);
                     let change = this
                         .time_log
@@ -876,7 +880,7 @@ mod tests {
                             chrono::Utc::now().timestamp() + 1,
                         )
                         .unwrap();
-                    assert!(!this.poll_time(cx));
+                    assert!(!this.poll_time(window,cx));
                     let value = this.db.time_entries(1).unwrap().unwrap();
                     if status != 200 {
                         assert_eq!(this.time_log.error.as_deref(), Some("Forbidden"));
@@ -897,6 +901,7 @@ mod tests {
                         }
                         if operation == "update" {
                             assert!(this.time_log.editing.is_none());
+                            assert!(this.time_log.add.hours.focus_handle(cx).is_focused(window));
                             assert_eq!(value["entries"][0]["seconds"], 7200);
                         }
                         if operation == "delete" {
@@ -913,7 +918,7 @@ mod tests {
                 }
                 cx.simulate_keystrokes("escape");
                 view.read_with(&mut cx, |this, _| {
-                    assert!(!this.time_log.open);
+                    assert!(!this.time_log.open, "{operation} HTTP {status} must leave keyboard focus on a mounted control");
                     assert_eq!(this.screen, Screen::Task);
                 })
                 .unwrap();
