@@ -94,7 +94,11 @@ impl Db {
                 if let crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
                     ensure!(db.task(*task)?.is_some_and(|task| task.project_id == *project), "task is not cached in this board");
                 }
-                let before = if let crate::BoardWrite::AssignAgent { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
+                if let crate::BoardWrite::AssignToMe { user: target, task } = change {
+                    ensure!(*target == user, "self assignment belongs to another account");
+                    ensure!(db.task(*task)?.is_some_and(|task| task.status == crate::generated::Status::Normal), "unarchive this task before assigning it");
+                }
+                let before = if let crate::BoardWrite::AssignAgent { task, .. } | crate::BoardWrite::AssignToMe { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
                 ("board".into(), "board_write", json!({"user_id":user,"change":change,"before":before}))
             }
             Write::Shell { request } => {
@@ -200,6 +204,19 @@ impl Db {
         match kind {
             "shell_write" | "compose_task" => (),
             "board_write" => {
+                if let crate::BoardWrite::AssignToMe { task, user } = serde_json::from_value(payload["change"].clone())? {
+                    let mut task_row = self.raw("Task", &json!(task))?.context("task is not cached")?;
+                    let project = task_row["projectId"].as_i64().context("missing task board")?;
+                    let members = self.project_members(project)?;
+                    let member = members.iter().find(|member| member["id"] == user).context("member is not cached in this board")?;
+                    let mut selected = task_row["assignees"].as_array().cloned().unwrap_or_default();
+                    if !selected.iter().any(|row| row["id"] == user && row["agent"].is_null()) {
+                        selected.push(member.clone());
+                    }
+                    task_row["assigneeCount"] = json!(selected.len());
+                    task_row["assignees"] = json!(selected);
+                    self.upsert_task(&task_row)?;
+                }
                 if let crate::BoardWrite::AssignAgent { task, agent, active } = serde_json::from_value(payload["change"].clone())? {
                     let mut task_row = self.raw("Task",&json!(task))?.context("task is not cached")?;
                     let project = task_row["projectId"].as_i64().context("missing task board")?;

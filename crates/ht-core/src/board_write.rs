@@ -13,6 +13,10 @@ pub enum BoardWrite {
         agent: String,
         active: bool,
     },
+    AssignToMe {
+        task: i64,
+        user: i64,
+    },
     AddColumn {
         project: i64,
         title: String,
@@ -61,6 +65,15 @@ impl BoardWrite {
                     "POST",
                     "/projects/archive".into(),
                     json!({"project_id":project,"status":"Archive"}),
+                )
+            }
+            Self::AssignToMe { task, user } => {
+                positive(*task)?;
+                positive(*user)?;
+                (
+                    "POST",
+                    "/assignees/assign".into(),
+                    json!({"task_id":task,"user_id":user,"intent":"assign"}),
                 )
             }
             Self::AssignAgent {
@@ -162,18 +175,21 @@ impl BoardWrite {
     }
     pub(crate) fn resolve(&self, db: &mut Db, body: &Value, now: i64) -> Result<()> {
         match self {
-            Self::AssignAgent {
-                task,
-                agent,
-                active,
-            } => {
+            Self::AssignAgent { task, .. } | Self::AssignToMe { task, .. } => {
                 let rows = body["assignees"]
                     .as_array()
                     .context("missing assignment acknowledgement")?;
-                ensure!(
-                    rows.iter().any(|row| row["agent"]["id"] == *agent) == *active,
-                    "agent assignment not acknowledged"
-                );
+                match self {
+                    Self::AssignAgent { agent, active, .. } => ensure!(
+                        rows.iter().any(|row| row["agent"]["id"] == *agent) == *active,
+                        "agent assignment not acknowledged"
+                    ),
+                    Self::AssignToMe { user, .. } => ensure!(
+                        rows.iter().any(|row| row["userId"] == *user && row["agent"].is_null()),
+                        "self assignment not acknowledged"
+                    ),
+                    _ => unreachable!(),
+                }
                 let mut task_row = db
                     .raw("Task", &json!(task))?
                     .context("task is not cached")?;

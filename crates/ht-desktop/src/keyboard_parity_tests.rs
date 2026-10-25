@@ -311,9 +311,9 @@ fn cmdk_assign_to_me_preserves_people_agents_and_reopens_assignment(cx: &mut Tes
             assert!(task.extra["assignees"].as_array().unwrap().iter().any(|row| row["id"] == 7));
             assert!(task.extra["assignees"].as_array().unwrap().iter().any(|row| row["id"] == 42));
             assert!(task.extra["assignees"].as_array().unwrap().iter().any(|row| row["agent"]["id"] == "agent-a"));
-            let writes: Vec<_> = this.db.mutations().unwrap().into_iter().filter(|row| row.kind == "task_patch").collect();
+            let writes: Vec<_> = this.db.mutations().unwrap().into_iter().filter(|row| row.kind == "board_write").collect();
             assert_eq!(writes.len(), expected_writes);
-            assert_eq!(writes[0].payload_json["assignee"], serde_json::json!([7,42]));
+            assert_eq!(writes[0].payload_json["change"], serde_json::json!({"AssignToMe":{"task":1,"user":42}}));
             assert_eq!(this.interaction.modal, Some(super::interactions::Modal::Assign));
         });
         cx.simulate_keystrokes("escape");
