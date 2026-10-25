@@ -229,6 +229,50 @@ fn parse_clock(input: &str) -> Option<chrono::NaiveTime> {
     chrono::NaiveTime::from_hms_opt(hour, minute, 0)
 }
 
+fn calendar_date<Tz: TimeZone>(query: &str, now: &DateTime<Tz>, past: bool) -> Option<DateTime<Tz>> {
+    let (day, clock) = if let Some((day, clock)) = query.split_once(" at ") {
+        (day, Some(parse_clock(clock)?))
+    } else if let Some((index, clock)) = query.char_indices().filter(|(_, c)| *c == ' ')
+        .find_map(|(index, _)| parse_clock(&query[index + 1..]).map(|clock| (index, clock))) {
+        (&query[..index], Some(clock))
+    } else { (query, None) };
+    let day = day.strip_prefix("the ").unwrap_or(day);
+    let offset = match day {
+        "yesterday" => Some(-1),
+        "day before yesterday" => Some(-2),
+        "day after tomorrow" => Some(2),
+        _ => None,
+    };
+    let has_numeric_time = query.split(|c: char| !c.is_ascii_alphanumeric() && c != '_')
+        .any(|word| word.len() <= 2 && word.parse::<u32>().is_ok_and(|number| number <= 23));
+    let default_time = chrono::NaiveTime::from_hms_opt(if has_numeric_time { 0 } else { 9 }, 0, 0)?;
+    if let Some(offset) = offset {
+        return local(now, now.date_naive().checked_add_signed(Duration::days(offset))?.and_time(clock.unwrap_or(default_time)));
+    }
+    let words = day.replace(',', " ").split_whitespace().map(|word| {
+        ["st", "nd", "rd", "th"].iter().find_map(|suffix| word.strip_suffix(suffix)
+            .filter(|number| !number.is_empty() && number.chars().all(|c| c.is_ascii_digit())))
+            .unwrap_or(word).to_owned()
+    }).collect::<Vec<_>>().join(" ");
+    let full_formats = ["%Y-%m-%d", "%m/%d/%Y", "%B %d %Y", "%b %d %Y", "%d %B %Y", "%d %b %Y"];
+    for format in full_formats {
+        if let Ok(date) = NaiveDate::parse_from_str(&words, format) {
+            return local(now, date.and_time(clock.unwrap_or(default_time)));
+        }
+    }
+    for format in ["%m/%d", "%B %d", "%b %d", "%d %B", "%d %b"] {
+        if let Ok(date) = NaiveDate::parse_from_str(&format!("{} {words}", now.year()), &format!("%Y {format}")) {
+            // Sugar chooses the year before the web replaces an unspecified time.
+            let comparison = local(now, date.and_time(clock.unwrap_or_default()))?;
+            let date = if if past { comparison >= *now } else { comparison <= *now } {
+                date.with_year(date.year().checked_add(if past { -1 } else { 1 })?)?
+            } else { date };
+            return local(now, date.and_time(clock.unwrap_or(default_time)));
+        }
+    }
+    None
+}
+
 fn explicit_date<Tz: TimeZone>(query: &str, now: &DateTime<Tz>, past: bool) -> Option<DateTime<Tz>> {
     let words: Vec<_> = query.split_whitespace().collect();
     let relative_expression = if words.first() == Some(&"in") {
@@ -263,6 +307,7 @@ fn explicit_date<Tz: TimeZone>(query: &str, now: &DateTime<Tz>, past: bool) -> O
         // The web's time-detection regex treats only standalone numbers 0..23 as explicit times.
         return if amount <= 23 { Some(date) } else { at(now, date.date_naive(), 9) };
     }
+    if let Some(date) = calendar_date(query, now, past) { return Some(date); }
     let (day, time) = if let Some((day, clock)) = query.split_once(" at ") {
         (Some(day), parse_clock(clock)?)
     } else if let Some(time) = parse_clock(query) {

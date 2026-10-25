@@ -1218,10 +1218,15 @@ mod tests {
         cx.update(crate::input::init);
         let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
         let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
-        for status in [401, 403, 200] {
+        for calendar in [false, true] { for status in [401, 403, 200] {
             view.update(&mut cx, |this, window, cx| { this.invalidate_task_create(cx); this.open_create_task(window, cx); }).unwrap();
             draw(view, &mut cx); cx.simulate_input("Keep my dated task");
-            for (field, query, hour) in [(Field::DueDate, "tomorrow at 3pm", 15), (Field::StartDate, "yesterday at 6pm", 18)] {
+            let queries = if calendar {
+                [(Field::DueDate, "December 31st, 2030 at 3pm", 15), (Field::StartDate, "15 Jan 2020 at 6pm", 18)]
+            } else {
+                [(Field::DueDate, "tomorrow at 3pm", 15), (Field::StartDate, "yesterday at 6pm", 18)]
+            };
+            for (field, query, hour) in queries {
                 view.update(&mut cx, |this, window, cx| this.create_picker(field, window, cx)).unwrap();
                 draw(view, &mut cx); cx.simulate_input(query); cx.simulate_keystrokes("enter");
                 view.read_with(&cx, |this, _| {
@@ -1229,6 +1234,11 @@ mod tests {
                     let date = this.create_task.fields[key].as_str().expect(query);
                     let date = chrono::DateTime::parse_from_rfc3339(date).unwrap().with_timezone(&chrono::Local);
                     assert_eq!(date.hour(), hour); assert_eq!(date.minute(), 0);
+                    if calendar {
+                        assert_eq!(date.date_naive(), if field == Field::DueDate {
+                            chrono::NaiveDate::from_ymd_opt(2030, 12, 31).unwrap()
+                        } else { chrono::NaiveDate::from_ymd_opt(2020, 1, 15).unwrap() });
+                    }
                 }).unwrap();
             }
             cx.simulate_keystrokes("ctrl-enter");
@@ -1245,7 +1255,7 @@ mod tests {
                     assert_eq!(this.create_task.error.as_deref(), Some("Task could not be created"));
                 } else { assert!(!this.create_task.open); assert!(this.db.task(500).unwrap().is_some()); }
             }).unwrap();
-        }
+        }}
     }
 
     #[gpui::test]

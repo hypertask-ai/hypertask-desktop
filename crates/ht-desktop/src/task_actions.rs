@@ -797,6 +797,42 @@ mod tests {
     }
 
     #[gpui::test]
+    fn calendar_and_relative_day_commands_use_keyboard_queue_and_both_refusals(cx: &mut gpui::TestAppContext) {
+        use chrono::Timelike;
+        let (view, mut cx) = setup(cx);
+        for (start, query, day, hour) in [
+            (false, "December 31st, 2030 at 3pm", Some((2030, 12, 31)), 15),
+            (true, "15 Jan 2020 at 6pm", Some((2020, 1, 15)), 18),
+            (false, "the day after tomorrow at 3pm", None, 15),
+            (true, "the day before yesterday at 6pm", None, 18),
+        ] { for status in [401, 403, 200] {
+            view.update(&mut cx, |this, window, cx| {
+                this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Task","status":"Normal","dueDate":null,"startDate":null})).unwrap();
+                this.reload(); window.focus(&this.focus, cx);
+            }).unwrap();
+            palette(&mut cx, if start { "Set start date" } else { "Set due date" });
+            let before = chrono::Local::now().date_naive();
+            cx.simulate_input(query); cx.simulate_keystrokes("enter enter");
+            view.update(&mut cx, |this, window, cx| {
+                let task = this.db.task(1).unwrap().unwrap();
+                let date = if start { task.extra["startDate"].as_str().expect(query).to_owned() } else { task.due_date.expect(query) };
+                let value = chrono::DateTime::parse_from_rfc3339(&date).unwrap().with_timezone(&chrono::Local);
+                let expected = day.map(|(year, month, day)| chrono::NaiveDate::from_ymd_opt(year, month, day).unwrap())
+                    .unwrap_or_else(|| before + chrono::Duration::days(if start { -2 } else { 2 }));
+                assert_eq!(value.date_naive(), expected, "{query}");
+                assert_eq!(value.hour(), hour); assert_eq!(value.minute(), 0);
+                let change = if start { TaskAction::StartDate(Some(date)) } else { TaskAction::DueDate(Some(date)) };
+                this.db.drain_once(&mut Server(status, change.clone()), chrono::Utc::now().timestamp() + 1).unwrap();
+                assert!(!this.poll_task_action(window, cx));
+                let task = this.db.task(1).unwrap().unwrap();
+                assert_eq!(if start { task.extra["startDate"].is_string() } else { task.due_date.is_some() }, status == 200);
+                if status != 200 { assert_eq!(this.error.as_deref(), Some(change.failure())); }
+            }).unwrap();
+            cx.simulate_keystrokes("escape");
+        }}
+    }
+
+    #[gpui::test]
     fn start_date_palette_sets_and_resets_through_web_queue_and_keeps_refused_editor(
         cx: &mut gpui::TestAppContext,
     ) {

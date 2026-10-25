@@ -146,6 +146,13 @@ fn everyday_time_queries_match_real_web_sugar_options_and_refuse_malformed_input
         "2 hours", "1 month", "30 minutes", "3pm", "15:30", "9:15 am",
         "tomorrow at 25:00", "in bananas", "tomorrow at 3pm junk", "3pm junk",
         "in 2 daysss",
+        "December 31, 2030", "Dec 31st 2030", "31 December 2030",
+        "December 15, 2030", "December 15th, 2030", "15 Dec 2030 at 3pm",
+        "12/31/2030", "2030-12-31", "2030-12-31 at 15:30",
+        "December 31, 2030 3pm", "12/31/2030 9:15 am",
+        "January 31", "Jan 31st", "31 January", "1/31", "February 2 at 3pm",
+        "yesterday", "day before yesterday", "the day before yesterday at 6pm",
+        "day after tomorrow", "the day after tomorrow at 3pm",
     ];
     for (zone, offset) in [("UTC", "+00:00"), ("Etc/GMT-2", "+02:00")] {
         let mut cases = vec![];
