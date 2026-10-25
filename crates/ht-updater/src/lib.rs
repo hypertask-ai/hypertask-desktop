@@ -227,9 +227,11 @@ impl Install {
 
     pub fn mark_healthy(&self) -> Result<()> {
         let trial = self.metadata("trial.json")?;
-        let mut file = File::create(self.path("healthy"))?;
+        let mut file = File::create(self.path("healthy-new"))?;
         file.write_all(trial.tag.as_bytes())?;
         file.sync_all()?;
+        drop(file);
+        fs::rename(self.path("healthy-new"), self.path("healthy"))?;
         Ok(())
     }
 
@@ -278,11 +280,14 @@ impl Install {
     }
 
     fn wait_for_start(&self, child: &mut Child, timeout: Duration) -> Result<bool> {
+        let tag = self.metadata("trial.json")?.tag;
         let start = Instant::now();
         loop {
             let status = child.try_wait()?;
             if status.is_some_and(|s| !s.success()) { return Ok(false); }
-            if self.path("healthy").exists() { return Ok(true); }
+            if fs::read_to_string(self.path("healthy")).ok().as_deref() == Some(tag.as_str()) {
+                return Ok(true);
+            }
             if status.is_some() || start.elapsed() >= timeout { return Ok(false); }
             std::thread::sleep(Duration::from_millis(100));
         }
@@ -448,6 +453,10 @@ mod tests {
     fn startup_probe() {
         let Some(root) = std::env::var_os("HT_UPDATER_PROBE_ROOT") else { return; };
         if std::env::var("HT_UPDATER_PROBE_FAIL").is_ok() { std::process::exit(17); }
+        if std::env::var("HT_UPDATER_PROBE_HANG").is_ok() {
+            std::thread::park_timeout(Duration::from_secs(60));
+            return;
+        }
         Install::new(PathBuf::from(root).join("app.exe")).mark_healthy().unwrap();
     }
 
@@ -459,24 +468,29 @@ mod tests {
             stage(&install, &bytes);
             assert!(install.begin_swap(&current(), X64).unwrap());
             let args = ["--exact", "tests::startup_probe", "--nocapture"].map(Into::into);
-            let healthy = install.supervise(&args, Duration::from_secs(10)).unwrap();
-            assert_eq!(healthy, std::env::var("HT_UPDATER_PROBE_FAIL").is_err());
+            let hang = std::env::var("HT_UPDATER_PROBE_HANG").is_ok();
+            let timeout = if hang { Duration::from_millis(300) } else { Duration::from_secs(10) };
+            let healthy = install.supervise(&args, timeout).unwrap();
+            assert_eq!(healthy, !hang && std::env::var("HT_UPDATER_PROBE_FAIL").is_err());
             assert!(install.exe.exists());
             return;
         }
-        for fail in [false, true] {
+        for mode in ["ready", "fail", "hang"] {
+            let fail = mode != "ready";
             let dir = tempfile::tempdir().unwrap();
             let exe = dir.path().join("app.exe");
             fs::copy(std::env::current_exe().unwrap(), &exe).unwrap();
             let mut command = Command::new(&exe);
             command.args(["--exact", "tests::running_executable_swap_and_failed_start_rollback", "--nocapture"])
                 .env("HT_UPDATER_SWAP_ROOT", dir.path()).env("HT_UPDATER_PROBE_ROOT", dir.path());
-            if fail { command.env("HT_UPDATER_PROBE_FAIL", "1"); }
+            if mode == "fail" { command.env("HT_UPDATER_PROBE_FAIL", "1"); }
+            if mode == "hang" { command.env("HT_UPDATER_PROBE_HANG", "1"); }
             assert!(command.status().unwrap().success());
             let install = Install::new(exe);
             assert_eq!(install.path("rejected").exists(), fail);
             assert_eq!(install.path("previous.exe").exists(), !fail);
         }
         println!("UPDATER_RUNNING_EXE_HANDOFF_AND_ROLLBACK_VERIFIED");
+        println!("UPDATER_STARTUP_TIMEOUT_ROLLBACK_VERIFIED");
     }
 }

@@ -30,3 +30,9 @@ No UI values are added. Preserve the web surfaces at `/home/valentin/projects/hy
 ## Evidence
 
 Pending exact-head GitHub CI. This branch does not merge or touch an installed laptop executable. The first updater-capable binary must already be installed before later releases can arrive through this mechanism; existing binaries without an updater cannot bootstrap themselves.
+
+## First verified unit
+
+`d2975fbfae9c6cd6380b8c463a0aa51dbc008aeb` passed both focused updater jobs in https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40237833642 . Windows job `121303300171` and Linux job `121303300458` both concluded success. The preceding run exposed missing Unix executable permissions during subprocess handoff; the stage now preserves them. These are protocol-unit results, not final integration proof.
+
+Self-review found a startup-health publication race. Health is now synced into a temporary file, then renamed into place; supervision also requires the matching trial identity. A hung child joins the subprocess rollback cases. No independent review is claimed.
