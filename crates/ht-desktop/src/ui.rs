@@ -93,6 +93,10 @@ mod board;
 #[path = "interactions.rs"]
 mod interactions;
 
+#[cfg(test)]
+#[path = "keyboard_parity_tests.rs"]
+mod keyboard_parity_tests;
+
 pub struct Desktop {
     pub focus: FocusHandle,
     shell: shell::Shell,
