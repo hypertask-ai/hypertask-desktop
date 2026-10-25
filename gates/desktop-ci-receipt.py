@@ -11,7 +11,7 @@ REQUIRED_JOBS = (
     "windows-arm64", "Windows memory receipt and budget",
 )
 REQUIRED_ARTIFACTS = (
-    "pstack-contract", "desktop-input", "layout-dumps", "web-source-fonts",
+    "pstack-contract", "desktop-input", "windows-input", "layout-dumps", "web-source-fonts",
     "windows-memory", "windows-memory-heavy", "hypertask-desktop-windows",
     "hypertask-desktop-linux", "hypertask-desktop-mac-arm64",
     "hypertask-desktop-windows-arm64",

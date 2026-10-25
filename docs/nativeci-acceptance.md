@@ -29,4 +29,7 @@ The case table is the data shape. Each case maps a native key sequence to a visi
 
 ## Evidence
 
-Pending hosted CI. No acceptance claim yet.
+- Baseline `97d0f04c16d7b80c7ab7165a00246e7b8c3acd0e` passed all six required jobs. Hosted run: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40238507075.
+- Downloaded `windows-input` receipts showed four passed cases, exact pending writes, graceful exits, and removed temporary databases.
+- Screenshot review caught pre-presentation capture. The follow-up waits two further frame boundaries and flushes the desktop compositor. Final screenshots still require inspection.
+- Deliberate source suppressions and restored proof are enforced in CI. Final exact-head output is pending.

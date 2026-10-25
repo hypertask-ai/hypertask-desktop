@@ -122,6 +122,7 @@ class NativeWindow:
             self.send(scan=ord(char), flags=6)
 
     def capture(self, path):
+        assert C.WinDLL("dwmapi").DwmFlush() == 0, "Desktop compositor did not flush"
         rect, point = W.RECT(), W.POINT()
         assert self.api.GetClientRect(self.hwnd, C.byref(rect))
         assert self.api.ClientToScreen(self.hwnd, C.byref(point))
@@ -136,6 +137,14 @@ def snapshot(path):
         return json.loads(path.read_text())
     except (FileNotFoundError, json.JSONDecodeError, PermissionError):
         return None
+
+
+def presented_frames(behavior):
+    # A snapshot is written before its frame presents. Cross two more frame boundaries.
+    for _ in range(2):
+        previous = behavior.stat().st_mtime_ns
+        wait_for(lambda: behavior.stat().st_mtime_ns, lambda stamp: stamp > previous,
+                 "No fresh native presentation frames")
 
 
 def visible(data, key, text=None):
@@ -202,6 +211,7 @@ def run_case(case, app, core, out, env):
                 task_id = before["state"]["task_id"]
                 result["task_id"] = task_id
                 assert task_id is not None
+                presented_frames(behavior)
                 first_hash = window.capture(out / "before.png")
                 notification_id = None
 
@@ -249,6 +259,7 @@ def run_case(case, app, core, out, env):
 
                 after = wait_for(lambda: snapshot(behavior), effect, f"{case}: visible effect missing", EffectMissing)
                 (out / "after.json").write_text(json.dumps(after, indent=2))
+                presented_frames(behavior)
                 assert window.capture(out / "after.png") != first_hash, "Visible effect must change presented pixels"
                 if case == "inbox-archive-notification":
                     with closing(sqlite3.connect(db)) as conn, conn:
