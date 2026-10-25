@@ -1,0 +1,464 @@
+{
+  "revision": "b738c4fea93518fad7aa69192920ee91a58bdc77",
+  "run": "https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40236374765",
+  "artifactId": 12615022402,
+  "artifactDigest": "sha256:69e1ebce4fe912d8dfc4a31e8aa6ffb932d4aaaf63a329ba1dcdea9cde984f8e",
+  "records": [
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.1",
+        "x": 5.5,
+        "y": 32.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Boards"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.2",
+        "x": 5.5,
+        "y": 82.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#ffffff",
+        "bg": "#3a3d45",
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Inbox"
+      },
+      "paintedHoverBackground": true
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.3",
+        "x": 5.5,
+        "y": 120.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Board"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.4",
+        "x": 5.5,
+        "y": 158.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Table"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.5",
+        "x": 5.5,
+        "y": 196.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Calendar"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.6",
+        "x": 5.5,
+        "y": 234.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "AI Chat"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.7",
+        "x": 5.5,
+        "y": 272.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Search"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.8",
+        "x": 5.5,
+        "y": 702.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Agents"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.9",
+        "x": 5.5,
+        "y": 740.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Invite"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.10",
+        "x": 5.5,
+        "y": 778.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "News"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.11",
+        "x": 5.5,
+        "y": 816.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Feedback"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": false,
+      "element": {
+        "key": "rail.icon.12",
+        "x": 5.5,
+        "y": 854.0,
+        "w": 36.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 16.0,
+        "fontWeight": 400.0,
+        "lineHeight": 24.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Settings"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.1",
+        "x": 6.5,
+        "y": 32.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Boards"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.2",
+        "x": 6.5,
+        "y": 82.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#ffffff",
+        "bg": "#3a3d45",
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Inbox"
+      },
+      "paintedHoverBackground": true
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.3",
+        "x": 6.5,
+        "y": 120.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Board"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.4",
+        "x": 6.5,
+        "y": 158.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Table"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.5",
+        "x": 6.5,
+        "y": 196.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Calendar"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.6",
+        "x": 6.5,
+        "y": 234.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "AI Chat"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.7",
+        "x": 6.5,
+        "y": 272.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Search"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.8",
+        "x": 6.5,
+        "y": 702.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Agents"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.9",
+        "x": 6.5,
+        "y": 740.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Invite"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.10",
+        "x": 6.5,
+        "y": 778.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "News"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.11",
+        "x": 6.5,
+        "y": 816.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Feedback"
+      },
+      "paintedHoverBackground": false
+    },
+    {
+      "expanded": true,
+      "element": {
+        "key": "rail.icon.12",
+        "x": 6.5,
+        "y": 854.0,
+        "w": 116.0,
+        "h": 34.0,
+        "color": "#8e9093",
+        "bg": null,
+        "fontSize": 14.0,
+        "fontWeight": 400.0,
+        "lineHeight": 21.0,
+        "radius": 5.0,
+        "borderColor": null,
+        "text": "Settings"
+      },
+      "paintedHoverBackground": false
+    }
+  ]
+}
