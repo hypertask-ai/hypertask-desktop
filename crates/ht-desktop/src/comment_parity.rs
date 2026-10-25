@@ -142,7 +142,7 @@ fn long_thread_reply_and_comment_shortcut_reveal_the_focused_composer(
     let mut cx = VisualTestContext::from_window(view.into(), cx);
     draw(view, &mut cx);
     view.read_with(&mut cx, |this, _| {
-        assert!(this.detail_scroll.max_offset().height > px(0.));
+        assert!(this.detail_scroll.max_offset().y > px(0.));
     }).unwrap();
     assert!(measured(view, &mut cx, "task.composer")["y"].as_f64().unwrap() > 900.);
 
