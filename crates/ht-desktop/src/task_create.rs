@@ -848,7 +848,7 @@ impl Desktop {
                 let title = file["title"].as_str().unwrap_or("").to_owned();
                 let url = file["urlString"].as_str().unwrap_or("").to_owned();
                 div().id(("create-task-attachment",index)).p(px(8.)).bg(color(self.colors.container)).rounded(px(4.)).flex().gap(px(8.))
-                    .child(div().cursor_pointer().child(title).on_click(move |_,_,cx| { if url.starts_with("https://") || url.starts_with("http://") { cx.open_url(&url); } })))
+                    .child(div().cursor_pointer().child(title).on_click(move |_,_,cx| { if url.starts_with("https://") || url.starts_with("http://") { cx.open_url(&url); } }))
                     .child(div().id(("create-task-attachment-remove",index)).cursor_pointer().child("×").layout_key(&self.layout, &format!("create.attachment.remove.{index}"), None).on_click(cx.listener(move |this,_,_,cx| {
                         if this.create_task.pending.is_none() {
                             if let Some(files)=this.create_task.fields["urlsToAdd"].as_array_mut() { if index < files.len() { files.remove(index); } }
