@@ -88,7 +88,7 @@ def main():
                 assert signatures[0] != signatures[1], "Archive must change the presented pixels"
                 with sqlite3.connect(db) as conn, sqlite3.connect(OUT / "result.db") as saved:
                     conn.backup(saved)
-                subprocess.run(["xdotool", "key", "--clearmodifiers", "Return", "ctrl+m", "ctrl+a"], env=env, check=True)
+                subprocess.run(["xdotool", "key", "--clearmodifiers", "2", "Return", "ctrl+m", "ctrl+a"], env=env, check=True)
                 subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "1", "Native highlighted text"], env=env, check=True)
                 subprocess.run(["xdotool", "sleep", "0.3"], env=env, check=True)
                 subprocess.run(["import", "-window", window, str(OUT / "editor-plain.png")], env=env, check=True)
