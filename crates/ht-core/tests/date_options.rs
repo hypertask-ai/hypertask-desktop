@@ -132,3 +132,47 @@ fn phrase_date_options_match_web_sugar_ranking_edges_clamping_start_direction_an
         assert!(mismatches.is_empty(), "{} mismatches\n{}", mismatches.len(), mismatches.into_iter().take(24).collect::<Vec<_>>().join("\n"));
     }
 }
+
+#[test]
+fn everyday_time_queries_match_real_web_sugar_options_and_refuse_malformed_input() {
+    use std::{io::Write, process::{Command, Stdio}};
+    use serde_json::{Value, json};
+    let queries = [
+        "tomorrow at 3pm", "tomorrow 15:30", "today at 8am", "today at 11:59pm",
+        "next friday at 9:15 am", "monday at 14:30", "next week at 4pm",
+        "next month at 10am", "yesterday at 6pm", "in 2 hours", "in 30 minutes",
+        "in 2 days", "in 1 week", "in 1 month", "in 1 year", "2 hours ago",
+        "3 days ago", "1 month ago", "2 weeks from now", "2 days later",
+        "2 hours", "1 month", "30 minutes", "3pm", "15:30", "9:15 am",
+        "tomorrow at 25:00", "in bananas", "tomorrow at 3pm junk", "3pm junk",
+    ];
+    for (zone, offset) in [("UTC", "+00:00"), ("Etc/GMT-2", "+02:00")] {
+        let mut cases = vec![];
+        let mut actual = vec![];
+        for day in ["2026-01-31", "2026-02-02", "2028-02-29"] {
+            for time in ["00:00:00", "08:42:17", "18:42:17"] {
+                let now = DateTime::parse_from_rfc3339(&format!("{day}T{time}{offset}")).unwrap();
+                for past in [false, true] { for query in queries {
+                    cases.push(json!({"query":query,"now":now.to_rfc3339(),"past":past}));
+                    actual.push(ht_core::date_options::relative_options(query, now, past)
+                        .or_else(|| ht_core::date_options::phrase_options(query, now, past)).unwrap_or_default());
+                }}
+            }
+        }
+        let mut oracle = Command::new("node").arg(format!("{}/tests/date_reference.cjs", env!("CARGO_MANIFEST_DIR")))
+            .env("TZ", zone).env("LANG", "en_US.UTF-8").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+            .spawn().expect("hosted CI must provide Node for the real Sugar reference");
+        oracle.stdin.take().unwrap().write_all(serde_json::to_string(&cases).unwrap().as_bytes()).unwrap();
+        let output = oracle.wait_with_output().unwrap();
+        assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+        let expected: Vec<Vec<Value>> = serde_json::from_slice(&output.stdout).unwrap();
+        assert_eq!(expected.len(), actual.len());
+        let mut mismatches = vec![];
+        for ((case, actual), expected) in cases.iter().zip(actual).zip(expected) {
+            let actual: Vec<_> = actual.into_iter().map(|row| (row.display, DateTime::parse_from_rfc3339(&row.date).unwrap().timestamp_millis())).collect();
+            let expected: Vec<_> = expected.into_iter().map(|row| (row["display"].as_str().unwrap().to_owned(), DateTime::parse_from_rfc3339(row["date"].as_str().unwrap()).unwrap().timestamp_millis())).collect();
+            if actual != expected { mismatches.push(format!("{zone} {case}\nactual {actual:?}\nweb {expected:?}")); }
+        }
+        assert!(mismatches.is_empty(), "{} mismatches\n{}", mismatches.len(), mismatches.into_iter().take(40).collect::<Vec<_>>().join("\n"));
+    }
+}
