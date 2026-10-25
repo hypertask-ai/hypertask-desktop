@@ -726,7 +726,7 @@ mod tests {
         draw(view, &mut cx);
         (view, cx)
     }
-    fn palette(view: WindowHandle<Desktop>, cx: &mut gpui::VisualTestContext, name: &str) {
+    fn palette(view: gpui::WindowHandle<Desktop>, cx: &mut gpui::VisualTestContext, name: &str) {
         draw(view, cx);
         cx.simulate_keystrokes("ctrl-k");
         draw(view, cx);
