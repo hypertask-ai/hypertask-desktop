@@ -1718,9 +1718,16 @@ mod tests {
             )
         })
         .unwrap();
-        click(view, &mut cx, "settings.instructions");
+        draw(view, &mut cx);
+        let bounds = view.read_with(&cx, |this, cx| {
+            this.shell.settings_state.draft.read(cx).input_bounds().unwrap()
+        }).unwrap();
+        cx.simulate_click(bounds.center(), Default::default());
         cx.simulate_keystrokes("ctrl-a");
         cx.simulate_input("New Beta guidance");
+        view.read_with(&cx, |this, cx| {
+            assert_eq!(this.shell.settings_state.draft.read(cx).content.as_ref(), "New Beta guidance");
+        }).unwrap();
         click(view, &mut cx, "settings.instructions.save");
         let request = reply(view, &mut cx, serde_json::json!({"success": true}));
         assert_eq!(request.method, "PUT");
