@@ -293,11 +293,11 @@ Written before production changes. Web source root: `/home/valentin/projects/hyp
 | `shareTaskPublicly` | Share task | `components/Modals/commands/HTC/taskCommands.ts:425` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `copyTaskId` | Copy task ID | `components/Modals/commands/HTC/taskCommands.ts:438` | Existing action; audit order, context, label, shortcut, group. |
 | `copyTaskTitleId` | Copy task title and ID | `components/Modals/commands/HTC/taskCommands.ts:445` | Existing action; audit order, context, label, shortcut, group. |
-| `copyBranchName` | Copy branch name | `components/Modals/commands/HTC/taskCommands.ts:452` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
+| `copyBranchName` | Copy branch name | `components/Modals/commands/HTC/taskCommands.ts:452` | Gap. Implement from loaded ticket/title using the web branch-name utility. |
 | `toggleHistory` | ${taskProps?.showHistory ? "Hide" : "Show"} agent log | `components/Modals/commands/HTC/taskCommands.ts:460` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `taskDescriptionVersions` | Description version history | `components/Modals/commands/HTC/taskCommands.ts:469` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `toggleAllComments` | Expand / collapse all comments | `components/Modals/commands/HTC/taskCommands.ts:477` | Gap. Correct native expandCollapseAllComments key and label; existing expand action. |
-| `removeTaskNotification` | Remove task notification | `components/Modals/commands/HTC/taskCommands.ts:486` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
+| `removeTaskNotification` | Remove task notification | `components/Modals/commands/HTC/taskCommands.ts:486` | Gap. Existing inbox archive action supports tasks with cached notifications. |
 | `removeSubtask` | Remove a sub-task | `components/Modals/commands/HTC/taskCommands.ts:495` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `removeParenttask` | Remove as sub-task | `components/Modals/commands/HTC/taskCommands.ts:503` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `showInInbox` | Move task to inbox | `components/Modals/commands/HTC/taskCommands.ts:511` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
@@ -350,4 +350,27 @@ Unsupported web commands stay omitted. The inventory does not claim complete web
 
 Before fix, [CI 40236357225](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40236357225) at `384298cbf6c495155341e9c7bd6b725b6425948c` fails `cmdk_task_commands_match_web_order_labels_and_groups` on Linux, Windows, and macOS. The macOS result is 181 passed, 1 failed. Actual first row is native `expandCollapseAllComments`; expected first row is web `assignUser`. The output also exposes the wrong move key, rename keycap, and copy keycaps.
 
-The table records pre-fix support. Implemented gaps above still require exact-head CI. Saved-comment toggle labels remain limited by cached state. AI writer remains a native draft workflow, not the web creation modal. Full pixel identity is not claimed.
+The table records pre-fix support. Implemented gaps above still require exact-head CI. Saved-comment toggle labels use cached `savedContent`; remote refresh remains required after pending actions. AI writer remains a native draft workflow, not the web creation modal. Full pixel identity is not claimed.
+
+## Additional supported state
+
+- Pin/Unpin and Star/Unstar labels read cached comment `savedContent`, matching `hooks/Task Detail/useTaskDetailGlobalStates.ts:692-703`.
+- Copy branch name uses the loaded ticket and title. The ASCII slug, 50-character limit, and trailing-dash removal match `utils/branchName.ts:1-13`. The clipboard action matches `components/generalCommandActions.ts:61-77` and `components/commandDispatcher.ts:786-788`.
+- Card-command clicks retain Task context without turning ordinary Board Ctrl+K into a task menu. Web context selects Task when a current card exists. `components/PageComponents/Kanban/KanbanHomepageComponents/Homepage.tsx:775-789`.
+- Archived task assignment/column edits remain omitted because the native operation rejects archived targets. The web registry exposes them; this capability gap is not promoted to parity.
+- Comment-to-AI requires a cached creator ID. Without that input, the native quote action cannot run, so no inert row is shown.
+
+## CI-discovered data boundaries
+
+The first fix run catches a missing `uniqueIndex` panic in comment-command
+assembly. Optional cached links now use `get`, and the comment URL row stays
+absent without its input. The archived-task notification expectation was wrong:
+`crates/ht-core/src/db.rs:382-383` intentionally excludes archived tasks from
+native inbox rows. Tests now cover the notification command while active and
+its omission after archiving. No core filtering rule was changed.
+
+The initial fix run is https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40237015308.
+Its macOS result is 187 passed, two failed. Both failures have targeted input
+coverage in the follow-up. GPUI heading letter spacing has no native style
+property; web `tracking-wider` remains a presentation gap. No exact pixel
+parity claim is made.

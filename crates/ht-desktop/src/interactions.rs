@@ -44,6 +44,7 @@ enum ChoiceAction {
 pub(super) struct Interaction {
     pub modal: Option<Modal>,
     pub agents_only: bool,
+    pub command_task: bool,
     pub query: Entity<TextInput>,
     pub description: Entity<TextInput>,
     pub choice: usize,
@@ -80,6 +81,7 @@ impl Interaction {
         Self {
             modal: None,
             agents_only: false,
+            command_task: false,
             query,
             description,
             choice: 0,
@@ -690,6 +692,7 @@ impl Desktop {
     pub(super) fn show_modal(&mut self, modal: Modal, window: &mut Window, cx: &mut Context<Self>) {
         self.task_fields.summary_open = false;
         self.interaction.agents_only = false;
+        self.interaction.command_task = false;
         if !matches!(
             modal,
             Modal::Commands | Modal::Search | Modal::LocalSearch | Modal::Boards
@@ -750,7 +753,8 @@ impl Desktop {
             .unwrap_or_else(|| serde_json::json!({}))
     }
     fn command_rows(&self) -> Vec<command_center::Command> {
-        let mut rows = command_center::commands(self.screen, self.selected_task().is_some());
+        let context = if self.interaction.command_task { Screen::Task } else { self.screen };
+        let mut rows = command_center::commands(context, self.selected_task().is_some());
         self.add_comment_commands(&mut rows);
         self.add_board_commands(&mut rows);
         if self.ai_sidebar.is_some() {
@@ -771,11 +775,17 @@ impl Desktop {
         if self.selected_task().and_then(|id| self.db.task(id).ok().flatten())
             .is_some_and(|t| t.status == Status::Archive)
         {
+            rows.retain(|row| !matches!(row.action, CommandAction::Shortcut(Action::Assign | Action::MoveColumn)));
             if let Some(row) = rows.iter_mut().find(|r| r.key == "archiveTask") {
                 row.name = "Unarchive task".into();
             }
         }
-        command_center::order(&mut rows, self.screen);
+        if context == Screen::Task && self.selected_task().and_then(|id| self.db.task(id).ok().flatten())
+            .is_some_and(|task| !task.title.is_empty() && task.ticket_number.as_deref().is_some_and(|ticket| !ticket.is_empty()))
+        {
+            rows.push(command_center::Command { key: "copyBranchName".into(), name: "Copy branch name".into(), group: "Task", keys: String::new(), keywords: "git branch name copy github", action: CommandAction::Shell(command_center::ShellCommand::CopyBranchName) });
+        }
+        command_center::order(&mut rows, context);
         let context_groups = if rows.first().is_some_and(|row| row.group == "Comment") { 2 } else { 1 };
         let mut groups = 0;
         let insert = rows.windows(2).position(|pair| {
@@ -814,7 +824,7 @@ impl Desktop {
             }
             start = end;
         }
-        if self.screen == Screen::Task || !self.interaction.bulk.is_empty() {
+        if context == Screen::Task || !self.interaction.bulk.is_empty() {
             return rows;
         }
         let mut frequent: Vec<_> = rows.iter().filter(|r| usage[&r.key]["frequency"].as_u64().unwrap_or(0) > 0).cloned().collect();
@@ -1459,6 +1469,7 @@ mod cmdk_parity_tests {
                 ("copyLink", "Copy private task URL", "CTRL SHIFT :"),
                 ("copyTaskId", "Copy task ID", "CTRL SHIFT I"),
                 ("copyTaskTitleId", "Copy task title and ID", "CTRL I"),
+                ("copyBranchName", "Copy branch name", ""),
                 ("toggleAllComments", "Expand / collapse all comments", "SHIFT O"),
                 ("renameTask", "Rename task", ""),
                 ("deleteTask", "Delete task", "SHIFT 3"),
@@ -1592,20 +1603,23 @@ mod cmdk_parity_tests {
 
 
     #[gpui::test]
-    fn cmdk_archived_task_keeps_web_actions_and_notification_row(cx: &mut gpui::TestAppContext) {
+    fn cmdk_notification_row_and_archived_edits_follow_native_capabilities(cx: &mut gpui::TestAppContext) {
         cx.update(crate::input::init);
         let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
         view.update(cx, |this, _, _| {
-            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Archived","status":"Archive"})).unwrap();
             this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[{"id":20,"taskId":1,"projectId":15,"status":"Normal","createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
             this.reload();
             let rows = this.command_rows();
-            assert_eq!(rows.iter().find(|row| row.key == "archiveTask").unwrap().name, "Unarchive task");
-            for key in ["assignUser", "moveToColumn", "removeTaskNotification"] { assert!(rows.iter().any(|row|row.key == key), "missing {key}"); }
-            assert!(!rows.iter().any(|row| row.key == "setReminder"));
             let position = |key| rows.iter().position(|row|row.key == key).unwrap();
             assert!(position("toggleAllComments") < position("removeTaskNotification"));
             assert!(position("removeTaskNotification") < position("renameTask"));
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Archived","status":"Archive"})).unwrap();
+            this.reload();
+            let rows = this.command_rows();
+            assert_eq!(rows.iter().find(|row| row.key == "archiveTask").unwrap().name, "Unarchive task");
+            for key in ["assignUser", "moveToColumn", "removeTaskNotification", "setReminder"] {
+                assert!(!rows.iter().any(|row|row.key == key), "unsupported archived action {key}");
+            }
         }).unwrap();
     }
 
@@ -1638,6 +1652,52 @@ mod cmdk_parity_tests {
         assert_eq!(measured(view, &mut cx, "command.search.icon")["w"], 13.);
         assert_eq!(measured(view, &mut cx, "command.new.0")["text"], "New");
         assert!(measured(view, &mut cx, "command.results")["h"].as_f64().unwrap() <= 364.);
+    }
+
+
+    #[gpui::test]
+    fn cmdk_saved_comment_labels_match_cached_web_state(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            this.db.apply_comments(1, &serde_json::json!({"success":true,"comments":[{"id":7,"text":"Saved","creatorId":42,"createdAt":"2026-01-01T00:00:00Z","savedContent":[{"type":"Public"},{"type":"Private"}]}]})).unwrap();
+            this.reload();
+            this.interaction.task_part = 1;
+            let rows = this.command_rows();
+            assert_eq!(rows.iter().find(|row|row.key == "pinComment").unwrap().name, "Unpin comment");
+            assert_eq!(rows.iter().find(|row|row.key == "starComment").unwrap().name, "Unstar comment");
+            assert!(!rows.iter().any(|row|row.key == "copyCommentToAiChat"));
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_copy_branch_name_uses_web_slug_and_only_loaded_ticket_data(cx: &mut gpui::TestAppContext) {
+        use crate::ui::shell::tests::{draw, measured};
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
+        for (title, expected) in [
+            ("  Fix é BUG / edge___case!  ".to_owned(), "ht-1-fix-bug-edge-case".to_owned()),
+            (format!("{} tail", "A".repeat(49)), format!("ht-1-{}", "a".repeat(49))),
+            ("🙂".to_owned(), "ht-1".to_owned()),
+        ] {
+            view.update(&mut cx, |this, _, cx| {
+                this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":title,"ticketNumber":" HT-1 ","status":"Normal"})).unwrap();
+                this.reload();
+                cx.notify();
+            }).unwrap();
+            cx.simulate_keystrokes("ctrl-k");
+            cx.simulate_input("Copy branch name");
+            draw(view, &mut cx);
+            assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "Copy branch name");
+            cx.simulate_keystrokes("enter");
+            view.read_with(&mut cx, |_, cx| assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap(), expected)).unwrap();
+        }
+        view.update(&mut cx, |this, _, _| {
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"No ticket","status":"Normal"})).unwrap();
+            this.reload();
+            assert!(!this.command_rows().iter().any(|row|row.key == "copyBranchName"));
+        }).unwrap();
     }
 
 }

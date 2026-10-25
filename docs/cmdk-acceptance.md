@@ -41,3 +41,16 @@ The latter is the smaller fix. No new transport or feature screen is needed.
 
 Native task reminders only target existing inbox notifications. They cannot
 stand in for the web's arbitrary task reminder. That row remains blocked.
+
+## CI proof recorded
+
+The initial regression at `384298cbf6c495155341e9c7bd6b725b6425948c`
+fails on Linux, Windows, and macOS in
+https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40236357225.
+macOS reports 181 passed and one failed. The failure lists the native command
+sequence against the web sequence, including wrong keys, labels, and keycaps.
+
+Follow-up coverage includes loaded-ticket branch copying through real Ctrl+K
+input, cached Pin/Star labels, and explicit card versus Board context. Archived
+edits remain omitted because the native operation rejects them. Evidence uses
+GitHub only. No local build, test, lint, or app launch was run.

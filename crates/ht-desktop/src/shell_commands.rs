@@ -9,6 +9,22 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::CopyBranchName => {
+                if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
+                    if let Some(ticket) = task.ticket_number {
+                        let mut slug = String::new();
+                        for c in task.title.trim().to_lowercase().chars() {
+                            if c.is_ascii_alphanumeric() { slug.push(c); }
+                            else if !slug.ends_with('-') { slug.push('-'); }
+                        }
+                        let mut slug = slug.trim_matches('-').to_owned();
+                        slug.truncate(50);
+                        let ticket = ticket.trim().to_lowercase();
+                        let branch = [ticket.as_str(), slug.trim_end_matches('-')].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("-");
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(branch));
+                    }
+                }
+            }
             ShellCommand::ToggleRail => self.toggle_rail(cx),
             ShellCommand::ToggleAi => self.toggle_ai(window, cx),
             ShellCommand::ToggleAiMode => {
