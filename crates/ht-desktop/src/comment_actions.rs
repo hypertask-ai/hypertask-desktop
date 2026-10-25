@@ -169,7 +169,7 @@ impl Desktop {
                     )));
                 }
             }
-            Action::CopyCommentToAiChat | Action::BranchCommentToAiChat => {
+            Action::CopyCommentToAiChat | Action::BranchCommentToAiChat | Action::SummarizeComment => {
                 let Some(creator) = comment.extra.get("creator") else {
                     return;
                 };
@@ -183,7 +183,7 @@ impl Desktop {
                 );
                 if let Some(sidebar) = &self.ai_sidebar {
                     sidebar.update(cx, |sidebar, cx| {
-                        if action==Action::BranchCommentToAiChat{sidebar.branch_comment(quote,window,cx);}else{sidebar.insert_comment_quote(quote, window, cx)}
+                        if action==Action::SummarizeComment {sidebar.summarize_comment(quote,window,cx);} else if action==Action::BranchCommentToAiChat{sidebar.branch_comment(quote,window,cx);}else{sidebar.insert_comment_quote(quote, window, cx)}
                     });
                     self.shell.ai_open = true;
                 }
@@ -432,6 +432,7 @@ impl Desktop {
                 ),
                 ("branchInNewChat","Branch in new chat","",Action::BranchCommentToAiChat,self.ai_sidebar.is_some()),
                 ("createTaskFromComment", "Create task from comment", "", Action::CreateTaskFromComment, true),
+                ("summarizeComment", "Summarize comment", "", Action::SummarizeComment, self.ai_sidebar.is_some()),
                 (
                     "fastLikeComment",
                     "Like comment",

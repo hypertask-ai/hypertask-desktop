@@ -152,7 +152,7 @@ fn incoming_stream_keeps_user_scroll_position_until_latest_is_clicked(
 }
 
 #[gpui::test]
-fn summarize_ticket_uses_web_prompt_and_bearer_stream_and_never_fakes_refused_replies(cx: &mut gpui::TestAppContext) {
+fn summarize_ticket_and_comment_use_web_prompts_and_bearer_stream_and_never_fake_refused_replies(cx: &mut gpui::TestAppContext) {
     use serde_json::json;
     use std::io::{BufRead, BufReader, Read, Write};
     use std::net::TcpListener;
@@ -160,6 +160,9 @@ fn summarize_ticket_uses_web_prompt_and_bearer_stream_and_never_fakes_refused_re
         let focus = cx.focus_handle();
         AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx)
     });
+    for comment in [false, true] {
+    let quote = "<span data-type=\"mention\" class=\"mention\" data-id=\"7\" data-label=\"name\" uniqueindex=\"\" projectid=\"\" text=\"Alex &amp; Bea\" contenteditable=\"false\">Alex &amp; Bea</span> said <blockquote><p>Keep <strong>this</strong></p></blockquote><p></p>";
+    let expected = if comment { format!("{quote}<p>Summarize this comment concisely.</p>") } else { "Summarize this ticket, its description and the key points from the comments, concisely.".into() };
     for status in [401, 403, 200] {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let base = format!("http://{}", listener.local_addr().unwrap());
@@ -198,12 +201,13 @@ fn summarize_ticket_uses_web_prompt_and_bearer_stream_and_never_fakes_refused_re
             this.chats[0].id = "existing-chat".into();
             this.chats[0].persisted = true;
             this.input.update(cx, |input, cx| input.set_content("Unsent note".into(), cx));
-            this.summarize_ticket(window, cx);
-            this.summarize_ticket(window, cx);
+            this.draft_quotes.push(("An unrelated unsent quote".into(),"<blockquote>Unsent</blockquote>".into()));
+            if comment { this.summarize_comment(quote.into(), window, cx); this.summarize_comment("Do not replace this summary".into(), window, cx); }
+            else { this.summarize_ticket(window, cx); this.summarize_ticket(window, cx); }
             assert!(this.is_open());
-            assert_eq!(this.summary_task, Some(1));
-            assert!(!this.finish_ticket_summary(std::time::Instant::now() + Duration::from_secs(5), window, cx));
-            assert!(this.summary_task.is_none());
+            assert_eq!(this.summary.as_ref().map(|summary| summary.task), Some(1));
+            assert!(!this.finish_summary(std::time::Instant::now() + Duration::from_secs(5), window, cx));
+            assert!(this.summary.is_none());
             let active = this.active.as_mut().unwrap();
             let (send, receive) = mpsc::channel();
             loop {
@@ -217,7 +221,8 @@ fn summarize_ticket_uses_web_prompt_and_bearer_stream_and_never_fakes_refused_re
             assert!(this.active.is_none());
             let chat = &this.chats[0];
             assert_eq!(chat.messages.len(), 2);
-            assert_eq!(chat.messages[0].message.content, "Summarize this ticket, its description and the key points from the comments, concisely.");
+            if comment { assert!(chat.messages[0].message.content.contains("Summarize this comment concisely.")); assert!(!chat.messages[0].message.content.contains("Unsent note")); }
+            else { assert_eq!(chat.messages[0].message.content, expected); }
             if status == 200 {
                 assert!(chat.error.is_none());
                 assert_eq!(chat.messages[1].message.content, "Actual ticket summary");
@@ -230,8 +235,9 @@ fn summarize_ticket_uses_web_prompt_and_bearer_stream_and_never_fakes_refused_re
         assert!(headers.starts_with("POST /api/ai/chat/stream HTTP/1.1\r\n"));
         assert!(headers.to_lowercase().contains("authorization: bearer desktop-summary-token\r\n"));
         assert!(!headers.to_lowercase().contains("cookie:"));
-        assert_eq!(body["message"], "Summarize this ticket, its description and the key points from the comments, concisely.");
+        assert_eq!(body["message"], expected);
         assert_eq!(body["default_context"]["task_id"], 1);
+    }
     }
 }
 
@@ -249,14 +255,14 @@ fn summarize_ticket_waits_for_session_and_cancels_on_navigation_timeout_or_accou
         this.input.update(cx, |input, cx| input.set_content("Preserved draft".into(), cx));
         this.summarize_ticket(window, cx);
         let later = std::time::Instant::now() + Duration::from_secs(5);
-        assert!(this.finish_ticket_summary(later, window, cx));
+        assert!(this.finish_summary(later, window, cx));
         this.scope = Some(Scope::load(&db, Screen::Task, 15, Some(2)));
-        assert!(!this.finish_ticket_summary(later, window, cx));
+        assert!(!this.finish_summary(later, window, cx));
         this.summarize_ticket(window, cx);
-        assert!(!this.finish_ticket_summary(std::time::Instant::now(), window, cx));
+        assert!(!this.finish_summary(std::time::Instant::now(), window, cx));
         this.summarize_ticket(window, cx);
         this.set_token(None, cx);
-        assert!(this.summary_task.is_none());
+        assert!(this.summary.is_none());
         assert!(this.active.is_none());
         assert!(this.chats[0].messages.is_empty());
     }).unwrap();

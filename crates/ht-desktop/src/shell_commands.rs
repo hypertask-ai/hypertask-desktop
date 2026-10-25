@@ -158,6 +158,27 @@ mod tests {
     }
 
     #[gpui::test]
+    fn shell_palette_summarize_comment_requires_real_focused_comment_and_opens_current_chat(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view=cx.open_window(gpui::size(px(1440.),px(900.)),crate::ui::task_fields::tests::desktop);
+        let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
+        view.update(&mut cx,|this,window,cx| {
+            assert!(!this.command_rows().iter().any(|row|row.key=="summarizeComment"));
+            this.db.apply_comments(1,&serde_json::json!({"success":true,"comments":[{"id":71,"taskId":1,"text":"<p>Keep <strong>this</strong></p>","createdAt":"2026-10-01T00:00:00Z","creatorId":7,"creator":{"id":7,"displayName":"Alex & Bea"}}]})).unwrap();
+            this.reload();this.interaction.task_part=1;window.focus(&this.focus,cx);
+            assert!(this.command_rows().iter().any(|row|row.key=="summarizeComment"));
+        }).unwrap();
+        draw(view,&mut cx);
+        cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Summarize comment");cx.simulate_keystrokes("enter");
+        draw(view,&mut cx);
+        view.read_with(&cx,|this,cx| {
+            assert!(this.interaction.modal.is_none());
+            assert!(this.ai_sidebar.as_ref().unwrap().read(cx).is_open());
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+    }
+
+    #[gpui::test]
     fn shell_palette_query_keeps_j_and_k_while_arrows_navigate(cx: &mut gpui::TestAppContext) {
         let (view, mut cx) = setup(cx);
         cx.simulate_keystrokes("ctrl-k");
