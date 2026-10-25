@@ -741,6 +741,7 @@ mod tests {
         let (view,mut cx)=setup(cx);
         for start in [false,true] { for status in [401,403,200] {
             view.update(&mut cx,|this,window,cx| {
+                assert_eq!(this.screen, Screen::Task, "date query must stay on its task");
                 this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Task","status":"Normal","dueDate":null,"startDate":null})).unwrap();
                 this.reload();window.focus(&this.focus,cx);
             }).unwrap();
@@ -758,7 +759,8 @@ mod tests {
                 assert_eq!(if start {task.extra["startDate"].is_string()} else {task.due_date.is_some()},status==200);
                 if status!=200 {assert_eq!(this.error.as_deref(),Some(change.failure()));}
             }).unwrap();
-            cx.simulate_keystrokes("escape");
+            if !start || status != 200 { cx.simulate_keystrokes("escape"); }
+            view.read_with(&cx, |this, _| assert_eq!(this.screen, Screen::Task)).unwrap();
         }}
     }
 
@@ -768,6 +770,7 @@ mod tests {
         let (view, mut cx) = setup(cx);
         for start in [false, true] { for relative in [false, true] { for status in [401, 403, 200] {
             view.update(&mut cx, |this, window, cx| {
+                assert_eq!(this.screen, Screen::Task, "date query must stay on its task");
                 this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Task","status":"Normal","dueDate":null,"startDate":null})).unwrap();
                 this.reload(); window.focus(&this.focus, cx);
             }).unwrap();
@@ -796,7 +799,8 @@ mod tests {
                 assert_eq!(if start { task.extra["startDate"].is_string() } else { task.due_date.is_some() }, status == 200);
                 if status != 200 { assert_eq!(this.error.as_deref(), Some(change.failure())); }
             }).unwrap();
-            cx.simulate_keystrokes("escape");
+            if !start || status != 200 { cx.simulate_keystrokes("escape"); }
+            view.read_with(&cx, |this, _| assert_eq!(this.screen, Screen::Task)).unwrap();
         }}}
     }
 
@@ -811,6 +815,7 @@ mod tests {
             (true, "the day before yesterday at 6pm", None, 18),
         ] { for status in [401, 403, 200] {
             view.update(&mut cx, |this, window, cx| {
+                assert_eq!(this.screen, Screen::Task, "date query must stay on its task");
                 this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Task","status":"Normal","dueDate":null,"startDate":null})).unwrap();
                 this.reload(); window.focus(&this.focus, cx);
             }).unwrap();
@@ -832,7 +837,8 @@ mod tests {
                 assert_eq!(if start { task.extra["startDate"].is_string() } else { task.due_date.is_some() }, status == 200);
                 if status != 200 { assert_eq!(this.error.as_deref(), Some(change.failure())); }
             }).unwrap();
-            cx.simulate_keystrokes("escape");
+            if !start || status != 200 { cx.simulate_keystrokes("escape"); }
+            view.read_with(&cx, |this, _| assert_eq!(this.screen, Screen::Task)).unwrap();
         }}
     }
 
