@@ -18,7 +18,7 @@ def require_box(live, native):
     assert delta <= 1.5, f'{native["key"]}: box delta {delta}'
 
 
-before = json.loads((ROOT / "gates/fixtures/layout-reference/regression-before.json").read_text())
+before = json.loads((ROOT / "gates/fixtures/layout-reference/regressions/ticket-space-before.json").read_text())
 inbox_live = {e["key"]: e for e in json.loads((LIVE / "inbox.json").read_text())["elements"]}
 assert {e["key"] for e in before["elements"]} == {"inbox.row.0.taskid", "inbox.row.0.title", "inbox.row.0.kind"}
 for element in before["elements"]:
