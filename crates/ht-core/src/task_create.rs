@@ -106,7 +106,7 @@ impl Db {
         if let Some(files) = body.get("urlsToAdd") {
             for file in files.as_array().context("Invalid attachments")? {
                 ensure!(file["Attachment"] == true && file["title"].is_string() && file["attachmentType"].is_string()
-                    && file["fileSize"].as_f64().is_some_and(|size| size >= 0.)
+                    && file.get("fileSize").is_none_or(|size| size.as_u64().is_some_and(|size| size <= 9_007_199_254_740_991))
                     && file["urlString"].as_str().and_then(|source| url::Url::parse(source).ok()).is_some_and(|url| matches!(url.scheme(), "http" | "https")), "Invalid attachment");
             }
         }

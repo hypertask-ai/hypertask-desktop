@@ -207,3 +207,11 @@ fn source_comment_create_rejects_malformed_or_mismatched_context_before_any_opti
         assert!(db.mutations().unwrap().is_empty());
     }
 }
+
+#[test]
+fn source_attachments_allow_unmeasured_sizes_but_never_send_invented_byte_counts() {
+    let mut db=Db::memory().unwrap();seed(&mut db,false);
+    let id=db.enqueue(Write::CreateTaskForm {project_id:15,section_id:10,title:"Task".into(),fields:json!({"urlsToAdd":[{"urlString":"https://files.example/a","Attachment":true,"title":"a","attachmentType":"text/plain"}]})},100).unwrap();
+    assert!(db.mutations().unwrap()[0].payload_json["body"]["urlsToAdd"][0].get("fileSize").is_none());
+    assert!(db.task(-id).unwrap().is_some());
+}

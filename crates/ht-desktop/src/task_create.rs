@@ -82,7 +82,12 @@ impl Desktop {
         let description = format!("<p><span data-type=\"mention\" class=\"mention\" data-id=\"{name}\" data-label=\"name-{}\" uniqueindex=\"\" projectid=\"\">{name}</span> said in <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"/detail/project-{}/{unique}#comment-{index}\">{}</a><blockquote>{}</blockquote></p>", creator["id"], task.project_id, escape(task.ticket_number.as_deref().unwrap_or("")), comment.text);
         let files: Vec<_> = comment.extra.get("attachments").and_then(Value::as_array).into_iter().flatten()
             .filter(|file| file["fileSource"].as_str().is_some_and(|source| !source.is_empty()))
-            .map(|file| json!({"urlString":file["fileSource"],"Attachment":true,"fileSize":file["fileSize"],"title":file["fileName"],"attachmentType":file["fileType"]})).collect();
+            .map(|file| {
+                let mut value = json!({"urlString":file["fileSource"],"Attachment":true,"title":file["fileName"],"attachmentType":file["fileType"]});
+                let size = file["fileSize"].as_u64().or_else(|| file["fileSize"].as_str().filter(|size| !size.is_empty() && size.bytes().all(|byte| byte.is_ascii_digit())).and_then(|size| size.parse::<u64>().ok()));
+                if let Some(size) = size.filter(|size| *size <= 9_007_199_254_740_991) { value["fileSize"] = json!(size); }
+                value
+            }).collect();
         self.invalidate_task_create(cx);
         self.create_task.project = task.project_id;
         self.create_task.section = task.section_id.unwrap_or(0);
@@ -1008,7 +1013,7 @@ mod tests {
             view.update(&mut cx,|this,window,cx| {
                 this.invalidate_task_create(cx);
                 this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Source","uniqueIndex":7,"ticketNumber":"HT-7","status":"Normal"})).unwrap();
-                this.db.apply_comments(1,&json!({"success":true,"comments":[{"id":71,"taskId":1,"text":"<p>Keep <strong>this</strong></p>","createdAt":"2026-10-01T00:00:00Z","creatorId":7,"creator":{"id":7,"displayName":"Alex & Bea"},"attachments":[{"id":"file-1","fileName":"source.pdf","fileSize":1024,"fileSource":"https://files.example/source.pdf","fileType":"application/pdf"}]}]})).unwrap();
+                this.db.apply_comments(1,&json!({"success":true,"comments":[{"id":71,"taskId":1,"text":"<p>Keep <strong>this</strong></p>","createdAt":"2026-10-01T00:00:00Z","creatorId":7,"creator":{"id":7,"displayName":"Alex & Bea"},"attachments":[{"id":"file-1","fileName":"source.pdf","fileSize":"1024","fileSource":"https://files.example/source.pdf","fileType":"application/pdf"}]}]})).unwrap();
                 this.reload();this.interaction.task_part=1;window.focus(&this.focus,cx);
             }).unwrap();
             draw(view,&mut cx);
