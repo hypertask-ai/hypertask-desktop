@@ -181,7 +181,7 @@ def run_case(case, app, core, out, env):
     with tempfile.TemporaryDirectory(prefix="ht-nativeci-") as tmp:
         db = Path(tmp) / "local.db"
         dump = out / "layout.json"
-        behavior = dump.with_suffix("behavior.json")
+        behavior = dump.with_suffix(".behavior.json")
         subprocess.run([core, "--db", db, "import-fixtures", ROOT / "fixtures/demo"], env=env, check=True)
         with closing(sqlite3.connect(db)) as conn, conn:
             conn.execute("DELETE FROM Comment WHERE taskId=58006")
