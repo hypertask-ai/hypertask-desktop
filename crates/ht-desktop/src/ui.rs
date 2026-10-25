@@ -1764,7 +1764,7 @@ impl Render for Desktop {
             .bg(color(t.page))
             .track_focus(&self.focus)
             .relative()
-            .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
+            .on_any_mouse_down(cx.listener(|this, _, window, cx| {
                 if this.interaction.modal.is_none() {
                     this.editing = Editing::None;
                     window.focus(&this.focus, cx);

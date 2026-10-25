@@ -175,3 +175,36 @@ fn long_thread_reply_and_comment_shortcut_reveal_the_focused_composer(
         }).unwrap();
     }
 }
+
+#[gpui::test]
+fn editor_pointer_formatting_preserves_shell_editing_on_all_three_surfaces(
+    cx: &mut gpui::TestAppContext,
+) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(desktop);
+    for surface in 0..3 {
+        let input = view.update_in(cx, |this, window, cx| {
+            match surface {
+                0 => { this.edit_comment(window, cx); this.comment_input.clone() }
+                1 => { this.interaction.task_part = 1; this.run_comment_action(Action::EditComment, window, cx); this.comment_actions.input.clone() }
+                _ => { this.edit_description(window, cx); this.interaction.description.clone() }
+            }
+        });
+        cx.simulate_keystrokes("ctrl-a");
+        cx.simulate_input("Pointer sample");
+        cx.simulate_keystrokes("ctrl-a");
+        cx.run_until_parked();
+        let bounds = input.read_with(cx, |input, _| input.input_bounds().unwrap());
+        // First-row B in the actual painted selection bubble, below the text row.
+        cx.simulate_click(point(bounds.left() + px(60.), bounds.bottom() + px(19.)), gpui::Modifiers::default());
+        view.read_with(cx, |this, cx| {
+            assert_eq!(this.editing, match surface { 0 => Editing::Comment, 1 => Editing::ExistingComment, _ => Editing::Description });
+            assert_eq!(input.read(cx).html(), "<p><strong>Pointer sample</strong></p>");
+        });
+        let bounds = input.read_with(cx, |input, _| input.input_bounds().unwrap());
+        cx.simulate_click(point(bounds.left() + px(12.), bounds.top() + px(8.)), gpui::Modifiers::default());
+        view.read_with(cx, |this, _| assert_ne!(this.editing, Editing::None));
+        cx.simulate_click(point(px(1400.), px(850.)), gpui::Modifiers::default());
+        view.read_with(cx, |this, _| assert_eq!(this.editing, Editing::None));
+    }
+}

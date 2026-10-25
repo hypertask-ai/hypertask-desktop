@@ -1101,6 +1101,7 @@ impl Render for TextInput {
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, event, window, cx| {
+                    cx.stop_propagation();
                     window.focus(&this.focus_handle, cx);
                     this.on_mouse_down(event, window, cx);
                 }),
