@@ -766,6 +766,30 @@ mod summary_tests {
     use gpui::VisualTestContext;
     use serde_json::json;
     #[gpui::test]
+    fn task_header_without_summary_keeps_web_bottom_spacing(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1920.), px(1009.)), desktop);
+        let mut cx = VisualTestContext::from_window(view.into(), cx);
+        for title in ["Needle".to_owned(), "A wrapping task title ".repeat(12)] {
+            view.update(&mut cx, |this, _, cx| {
+                this.db.apply_task(&json!({
+                    "id": 1, "projectId": 15, "title": title,
+                    "status": "Normal", "Task_Summary": []
+                })).unwrap();
+                this.reload();
+                cx.notify();
+            }).unwrap();
+            draw(view, &mut cx);
+            let title = measured(view, &mut cx, "task.title");
+            let header = measured(view, &mut cx, "task.header");
+            // BaseTitleContainer.tsx:44-46 imports Bootstrap's pb-3 via tailwind-entry.css:7-8.
+            let expected = 36. + title["h"].as_f64().unwrap().max(37.) + 16.;
+            assert_eq!(header["h"].as_f64().unwrap(), expected, "{header}");
+        }
+    }
+    #[gpui::test]
     fn task_summary_i_click_escape_preserve_full_markdown_without_requesting_ai(
         cx: &mut gpui::TestAppContext,
     ) {
