@@ -33,3 +33,5 @@ The case table is the data shape. Each case maps a native key sequence to a visi
 - Downloaded `windows-input` receipts showed four passed cases, exact pending writes, graceful exits, and removed temporary databases.
 - Screenshot review caught pre-presentation capture. The follow-up waits two further frame boundaries and flushes the desktop compositor. Every final screenshot requires direct inspection.
 - CI enforces deliberate source suppressions and restored proof. Record final SHA, run URL, per-case markers, and job conclusions on https://github.com/hypertask-ai/hypertask-desktop/pull/31. Require the current-head receipt before acceptance.
+
+A first rejection run suppressed writes correctly, but its 30-second absence wait produced a corrupted board capture. The gate now observes completed native input plus two frames before checking synchronous effects. It keeps the full acknowledgement timeout and rejects empty captures. Negative SQLite queues must stay empty.

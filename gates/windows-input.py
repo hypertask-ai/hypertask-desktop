@@ -219,6 +219,18 @@ def run_case(case, app, core, out, env):
                     result["actions"].append({"key": chord})
                     window.key(chord)
 
+                def finish(chord):
+                    previous = snapshot(behavior)["state"]["key_events"]
+                    key(chord)
+                    parts = chord.split("+")
+                    wait_for(lambda: snapshot(behavior), lambda s: s
+                             and s["state"]["key_events"] > previous
+                             and s["state"]["last_key"] == parts[-1].lower()
+                             and s["state"]["last_ctrl"] == ("Ctrl" in parts)
+                             and s["state"]["last_shift"] == ("Shift" in parts),
+                             f"Native action was not acknowledged: {chord}")
+                    presented_frames(behavior)
+
                 if edit_key:
                     key(edit_key)
                     field, mode = ("title_text", "title") if screen == "board" else (("description_text", "description") if case == "task-description" else ("comment_text", "comment"))
@@ -229,7 +241,7 @@ def run_case(case, app, core, out, env):
                     window.type(text)
                     wait_for(lambda: snapshot(behavior), lambda s: s and s["state"][field] == text,
                              "Native typed text did not reach focused editor")
-                    key("Enter" if screen == "board" else ("Ctrl+Enter" if case == "task-description" else "Ctrl+Shift+Enter"))
+                    finish("Enter" if screen == "board" else ("Ctrl+Enter" if case == "task-description" else "Ctrl+Shift+Enter"))
                 else:
                     with closing(sqlite3.connect(db)) as conn, conn:
                         tabs = json.loads(conn.execute("SELECT value FROM kv WHERE key='inbox-splits:0'").fetchone()[0])
@@ -241,7 +253,7 @@ def run_case(case, app, core, out, env):
                             f"AND n.id IN ({placeholders}) ORDER BY n.createdAt DESC,n.id DESC", members).fetchall()
                         notification_id = expected[before["state"]["selected"]][0]
                         original = {row[0] for row in conn.execute("SELECT id FROM Notification WHERE status='Archive'")}
-                    key("E")
+                    finish("E")
 
                 def effect(s):
                     if not s or s["state"]["screen"] != screen:
@@ -257,7 +269,10 @@ def run_case(case, app, core, out, env):
                         return visible(s, "task.description", text)
                     return state["comment_text"] == "" and visible(s, "task.comment.0.body", text)
 
-                after = wait_for(lambda: snapshot(behavior), effect, f"{case}: visible effect missing", EffectMissing)
+                # These four writes finish synchronously before the acknowledged input frame.
+                after = snapshot(behavior)
+                if not effect(after):
+                    raise EffectMissing(f"{case}: visible effect missing after acknowledged action")
                 (out / "after.json").write_text(json.dumps(after, indent=2))
                 presented_frames(behavior)
                 assert window.capture(out / "after.png") != first_hash, "Visible effect must change presented pixels"
@@ -325,6 +340,8 @@ def main():
         if args.expect_broken:
             assert not result["passed"] and result.get("error_type") == "EffectMissing", result
             assert f'NATIVECI_BROKEN {result["case"]}' in (args.out / result["case"] / "stderr.txt").read_text(), result
+            with closing(sqlite3.connect(args.out / result["case"] / "result.db")) as conn:
+                assert conn.execute("SELECT count(*) FROM mutation_queue").fetchone()[0] == 0, result
             print(f'NATIVE_INPUT_REJECTED {result["case"]} reason=visible_effect_missing cleanup=complete')
         else:
             assert result["passed"], result
