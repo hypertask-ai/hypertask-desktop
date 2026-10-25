@@ -92,11 +92,25 @@ impl Db {
         let project_row=self.board_project(project)?;let column=self.raw("Section",&json!(section))?.context("column is not cached")?;
         let body=&mut payload["body"];
         for (key,value) in fields.as_object().context("Invalid task form")?{
-            ensure!(matches!(key.as_str(),"description"|"assignees"|"priority"|"estimate"|"dueDate"|"startDate"|"tags"),"Unsupported task form field");body[key]=value.clone();
+            ensure!(matches!(key.as_str(),"description"|"assignees"|"priority"|"estimate"|"dueDate"|"startDate"|"tags"|"createTaskFromComment"|"urlsToAdd"),"Unsupported task form field");body[key]=value.clone();
         }
         for key in ["assignees","tags"]{ensure!(body[key].is_null() || body[key].is_array(),"Invalid {key}");}
         for key in ["dueDate","startDate"]{ensure!(body[key].is_null() || body[key].as_str().is_some_and(|date|chrono::DateTime::parse_from_rfc3339(date).is_ok()),"Invalid {key}");}
         ensure!(body["description"].is_null() || body["description"].is_string(),"Invalid description");
+        if let Some(source) = body.get("createTaskFromComment") {
+            let task = self.task(source["task"]["id"].as_i64().filter(|id| *id > 0).context("Invalid source task")?)?.context("Source task is unavailable")?;
+            ensure!(source["commentIndex"].as_u64().is_some() && source["task"]["projectId"] == task.project_id
+                && source["task"]["uniqueIndex"].as_i64().is_some_and(|index| index > 0)
+                && source["task"]["uniqueIndex"] == task.extra["uniqueIndex"], "Invalid source comment");
+        }
+        if let Some(files) = body.get("urlsToAdd") {
+            for file in files.as_array().context("Invalid attachments")? {
+                ensure!(file["Attachment"] == true && file["title"].is_string() && file["attachmentType"].is_string()
+                    && file["fileSize"].as_f64().is_some_and(|size| size >= 0.)
+                    && file["urlString"].as_str().and_then(|source| url::Url::parse(source).ok()).is_some_and(|url| matches!(url.scheme(), "http" | "https")), "Invalid attachment");
+            }
+        }
+
         for key in ["priority","estimate","dueDate","startDate","tags"]{if body[key].is_null(){body.as_object_mut().unwrap().remove(key);}}
         body.as_object_mut().unwrap().remove("section");body.as_object_mut().unwrap().remove("index");
         body["section_title"]=column["section_title"].clone();body["projectIdentifier"]=project_row["uniqueIdentifier"].as_str().map(|id|json!(id)).unwrap_or(json!("TASK"));body["fullScreenTask"]=json!(true);

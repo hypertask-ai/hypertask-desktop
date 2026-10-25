@@ -71,6 +71,28 @@ impl Create {
     }
 }
 impl Desktop {
+    pub(super) fn open_comment_task(&mut self, comment: &ht_core::CommentView, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        if self.create_task.open || self.create_task.pending.is_some() || self.create_task.source_loading { return; }
+        let Some(task) = self.detail.as_ref().map(|detail| detail.task.clone()) else { return; };
+        if comment.task_id != task.id { return; }
+        let Some(unique) = task.extra["uniqueIndex"].as_i64().filter(|index| *index > 0) else { return; };
+        let Some(creator) = comment.extra.get("creator").filter(|creator| creator["id"].as_i64().is_some()) else { return; };
+        let escape = ht_core::desktop_cli::escape;
+        let name = escape(creator["displayName"].as_str().unwrap_or(""));
+        let description = format!("<p><span data-type=\"mention\" class=\"mention\" data-id=\"{name}\" data-label=\"name-{}\" uniqueindex=\"\" projectid=\"\">{name}</span> said in <a target=\"_blank\" rel=\"noopener noreferrer nofollow\" href=\"/detail/project-{}/{unique}#comment-{index}\">{}</a><blockquote>{}</blockquote></p>", creator["id"], task.project_id, escape(task.ticket_number.as_deref().unwrap_or("")), comment.text);
+        let files: Vec<_> = comment.extra.get("attachments").and_then(Value::as_array).into_iter().flatten()
+            .filter(|file| file["fileSource"].as_str().is_some_and(|source| !source.is_empty()))
+            .map(|file| json!({"urlString":file["fileSource"],"Attachment":true,"fileSize":file["fileSize"],"title":file["fileName"],"attachmentType":file["fileType"]})).collect();
+        self.invalidate_task_create(cx);
+        self.create_task.project = task.project_id;
+        self.create_task.section = task.section_id.unwrap_or(0);
+        self.create_task.fields = json!({"createTaskFromComment":{"task":task,"commentIndex":index},"urlsToAdd":files});
+        self.reset_create_destination(cx);
+        self.create_task.section = task.section_id.unwrap_or(0);
+        self.create_task.initial = self.create_task.fields.clone();
+        self.create_task.description.update(cx, |input, cx| input.set_html(&description, cx));
+        self.open_create_task(window, cx);
+    }
     pub(super) fn open_template_task(&mut self,id:i64,window:&mut Window,cx:&mut Context<Self>) {
         if self.create_task.open || self.create_task.pending.is_some(){return;}
         let project=self.task_actions.templates_project;
@@ -816,6 +838,20 @@ impl Desktop {
                 }),
             ),
         );
+        content = content.child(div().flex().flex_wrap().gap(px(8.)).children(
+            self.create_task.fields["urlsToAdd"].as_array().into_iter().flatten().enumerate().map(|(index,file)| {
+                let title = file["title"].as_str().unwrap_or("").to_owned();
+                let url = file["urlString"].as_str().unwrap_or("").to_owned();
+                div().id(("create-task-attachment",index)).p(px(8.)).bg(color(self.colors.container)).rounded(px(4.)).flex().gap(px(8.))
+                    .child(div().cursor_pointer().child(title).on_click(move |_,_,cx| { if url.starts_with("https://") || url.starts_with("http://") { cx.open_url(&url); } })))
+                    .child(div().id(("create-task-attachment-remove",index)).cursor_pointer().child("×").on_click(cx.listener(move |this,_,_,cx| {
+                        if this.create_task.pending.is_none() {
+                            if let Some(files)=this.create_task.fields["urlsToAdd"].as_array_mut() { if index < files.len() { files.remove(index); } }
+                            cx.notify();
+                        }
+                    })))
+            })
+        ));
         if matches!(
             self.create_task.picker,
             Some(Field::DueDate | Field::StartDate)
@@ -942,6 +978,69 @@ mod tests {
             })
         }
     }
+    #[gpui::test]
+    fn comment_palette_create_quotes_the_source_keeps_files_and_preserves_refused_draft(cx: &mut gpui::TestAppContext) {
+        use crate::ui::shell::tests::draw;
+        struct CommentCreate(u16);
+        impl ht_core::Transport for CommentCreate {
+            fn get(&mut self, path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
+                assert_eq!(path,"/user/context");
+                Ok(ht_core::http::Response {status:200,body:json!({"success":true,"user":{"id":42}})})
+            }
+            fn post(&mut self,path:&str,body:&Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
+                assert_eq!(path,"/api/tasks/createGlobally");
+                assert_eq!(body["title"],"Follow up");
+                assert_eq!(body["createTaskFromComment"]["task"]["id"],1);
+                assert_eq!(body["createTaskFromComment"]["task"]["uniqueIndex"],7);
+                assert_eq!(body["createTaskFromComment"]["commentIndex"],0);
+                assert_eq!(body["urlsToAdd"],json!([{"urlString":"https://files.example/source.pdf","Attachment":true,"fileSize":1024,"title":"source.pdf","attachmentType":"application/pdf"}]));
+                assert!(body["description"].as_str().unwrap().contains("<blockquote><p>Keep <strong>this</strong></p></blockquote>"));
+                assert!(body["description"].as_str().unwrap().contains("/detail/project-15/7#comment-0"));
+                assert!(body.get("parentTask").is_none());
+                let mut task=body.clone();task["id"]=json!(500);task["status"]=json!("Normal");
+                Ok(ht_core::http::Response {status:self.0,body:if self.0==200 {json!({"newTask":task})} else {json!({"message":"Forbidden"})}})
+            }
+        }
+        cx.update(crate::input::init);
+        let view=cx.open_window(gpui::size(px(1440.),px(900.)),desktop);
+        let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
+        for status in [401,403,200] {
+            view.update(&mut cx,|this,window,cx| {
+                this.invalidate_task_create(cx);
+                this.db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","title":"Source","uniqueIndex":7,"ticketNumber":"HT-7","status":"Normal"})).unwrap();
+                this.db.apply_comments(1,&json!({"success":true,"comments":[{"id":71,"taskId":1,"text":"<p>Keep <strong>this</strong></p>","createdAt":"2026-10-01T00:00:00Z","creatorId":7,"creator":{"id":7,"displayName":"Alex & Bea"},"attachments":[{"id":"file-1","fileName":"source.pdf","fileSize":1024,"fileSource":"https://files.example/source.pdf","fileType":"application/pdf"}]}]})).unwrap();
+                this.reload();this.interaction.task_part=1;window.focus(&this.focus,cx);
+            }).unwrap();
+            draw(view,&mut cx);
+            cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Create task from comment");cx.simulate_keystrokes("enter");
+            draw(view,&mut cx);
+            view.read_with(&cx,|this,cx| {
+                assert!(this.create_task.open);
+                assert_eq!(this.create_task.section,10);
+                assert!(this.create_task.title.read(cx).content.is_empty());
+                assert!(this.create_task.description.read(cx).html().contains("Alex &amp; Bea"));
+                assert_eq!(this.create_task.fields["urlsToAdd"].as_array().unwrap().len(),1);
+                assert!(this.db.mutations().unwrap().iter().all(|row|row.status=="failed"));
+            }).unwrap();
+            cx.simulate_input("Follow up");cx.simulate_keystrokes("ctrl-enter");
+            view.update(&mut cx,|this,window,cx| {
+                let id=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap().id;
+                assert!(this.db.task(-id).unwrap().is_some());
+                this.interaction.task_part=0;
+                this.db.drain_once(&mut CommentCreate(status),chrono::Utc::now().timestamp()+1).unwrap();
+                assert!(!this.poll_create_task(window,cx));
+                assert!(this.db.task(-id).unwrap().is_none());
+                if status!=200 {
+                    assert!(this.create_task.open);
+                    assert_eq!(this.create_task.title.read(cx).content.as_ref(),"Follow up");
+                    assert_eq!(this.create_task.fields["createTaskFromComment"]["commentIndex"],0);
+                    assert_eq!(this.create_task.fields["urlsToAdd"][0]["title"],"source.pdf");
+                    assert_eq!(this.create_task.error.as_deref(),Some("Task could not be created"));
+                } else {assert!(!this.create_task.open);assert!(this.db.task(500).unwrap().is_some());}
+            }).unwrap();
+        }
+    }
+
     #[gpui::test]
     fn delayed_board_defaults_merge_only_untouched_fields_and_refusal_keeps_the_form(
         cx: &mut gpui::TestAppContext,

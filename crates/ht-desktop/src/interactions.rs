@@ -254,7 +254,7 @@ impl Desktop {
                 if !self.summary.is_empty() { self.task_fields.summary_open = !self.task_fields.summary_open; }
             }
             PinAiChat | FullscreenAiChat | DeleteAllAiChats => self.ai_command(action, cx),
-            StarComment | PinComment | CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | BranchCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
+            CreateTaskFromComment | StarComment | PinComment | CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | BranchCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
             | ExpandComment | ExpandComments => self.run_comment_action(action, window, cx),
             Commands => self.show_modal(Modal::Commands, window, cx),
             Inbox | Board => {

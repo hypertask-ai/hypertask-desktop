@@ -489,3 +489,19 @@ fn template_picker_catalog_uses_web_route_and_desktop_bearer_without_cookies() {
         let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();assert!(wire.starts_with("GET /api/task-templates?projectId=15 HTTP/1.1\r\n"));assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-template-token\r\n"));assert!(!wire.to_ascii_lowercase().contains("cookie:"));thread.join().unwrap();
     }
 }
+
+#[test]
+fn source_comment_global_create_sends_original_web_context_and_files_with_bearer_on_accept_and_refusal() {
+    let body=json!({"userId":42,"projectId":15,"sectionId":10,"section_title":"Todo","projectIdentifier":"HT","fullScreenTask":true,"title":"Follow up","description":"<p>Quoted source</p>","assignees":[],"createTaskFromComment":{"task":{"id":1,"projectId":15,"uniqueIndex":7},"commentIndex":2},"urlsToAdd":[{"urlString":"https://files.example/source.pdf","Attachment":true,"fileSize":1024,"title":"source.pdf","attachmentType":"application/pdf"}]});
+    for status in [200,401,403] {
+        let (url,thread,receive)=server(status,"{}");
+        let mut http=Http::with_base(&url,"desktop-source-comment-token".into()).unwrap();
+        assert_eq!(http.post("/api/tasks/createGlobally",&body,"source-key").unwrap().status,status);
+        let wire=receive.recv_timeout(Duration::from_secs(5)).unwrap();
+        assert!(wire.starts_with("POST /api/tasks/createGlobally HTTP/1.1"));
+        assert!(wire.to_ascii_lowercase().contains("authorization: bearer desktop-source-comment-token\r\n"));
+        assert!(!wire.to_ascii_lowercase().contains("cookie:"));
+        assert_eq!(serde_json::from_str::<Value>(wire.split_once("\r\n\r\n").unwrap().1).unwrap(),body);
+        thread.join().unwrap();
+    }
+}

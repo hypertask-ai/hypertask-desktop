@@ -60,6 +60,7 @@ pub enum Action {
     CopyCommentContent,
     CopyCommentLink,
     CopyCommentToAiChat,
+    CreateTaskFromComment,
     BranchCommentToAiChat,
     DeleteAllAiChats,
     ReplyComment,

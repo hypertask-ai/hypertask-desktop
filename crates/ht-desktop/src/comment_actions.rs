@@ -146,6 +146,7 @@ impl Desktop {
         };
         let id = comment.id;
         match action {
+            Action::CreateTaskFromComment => self.open_comment_task(&comment, self.interaction.task_part - 1, window, cx),
             Action::StarComment | Action::PinComment => {
                 self.comment_actions.collapsed.remove(&id);
                 if self.enqueue(Write::CommentAction {task_id:self.options.task,comment_id:id,change:CommentWrite::Saved {public:action == Action::PinComment}},cx) {
@@ -430,6 +431,7 @@ impl Desktop {
                     self.ai_sidebar.is_some(),
                 ),
                 ("branchInNewChat","Branch in new chat","",Action::BranchCommentToAiChat,self.ai_sidebar.is_some()),
+                ("createTaskFromComment", "Create task from comment", "", Action::CreateTaskFromComment, true),
                 (
                     "fastLikeComment",
                     "Like comment",

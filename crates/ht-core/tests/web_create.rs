@@ -163,3 +163,47 @@ fn duplicate_reads_the_web_single_task_route_and_refusals_never_become_a_source(
     }
     assert!(ht_core::task_create::duplicate_source(&mut Source{status:200,body:json!({"id":2,"projectId":15,"sectionId":10,"title":"Wrong task"})},1).is_err());
 }
+
+#[test]
+fn source_comment_create_preserves_web_context_and_attachments_through_restart_acceptance_or_refusal() {
+    for status in [200, 401, 403, 0] {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut db = Db::open(file.path()).unwrap();
+        seed(&mut db, false);
+        db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"section":"Todo","uniqueIndex":7,"ticketNumber":"HT-7","title":"Source","status":"Normal"})).unwrap();
+        let fields = json!({"description":"<p>Quoted source</p>","createTaskFromComment":{"task":{"id":1,"projectId":15,"uniqueIndex":7},"commentIndex":2},"urlsToAdd":[{"urlString":"https://files.example/source.pdf","Attachment":true,"fileSize":1024,"title":"source.pdf","attachmentType":"application/pdf"}]});
+        let id = db.enqueue(Write::CreateTaskForm { project_id:15, section_id:10, title:"Follow up".into(), fields:fields.clone() }, 100).unwrap();
+        let key = db.mutations().unwrap()[0].client_id.clone();
+        assert_eq!(db.task(-id).unwrap().unwrap().description, "<p>Quoted source</p>");
+        drop(db);
+        let mut db = Db::open(file.path()).unwrap();
+        let mut server = Server { status, calls:vec![] };
+        assert_eq!(db.drain_once(&mut server, 101).unwrap(), if status==200 {Drain::Applied(id)} else {Drain::Failed(id)});
+        assert_eq!(server.calls[0].0, "/api/tasks/createGlobally");
+        for (field,value) in fields.as_object().unwrap() { assert_eq!(&server.calls[0].1[field], value); }
+        assert!(server.calls[0].1.get("parentTask").is_none());
+        assert!(db.task(-id).unwrap().is_none());
+        assert_eq!(db.task(51).unwrap().is_some(), status==200);
+        let receipt:Value=serde_json::from_str(&db.kv_get(&format!("create-result:{key}")).unwrap().unwrap()).unwrap();
+        assert_eq!(receipt["error"].is_null(), status==200);
+        assert_eq!(db.drain_once(&mut server, 1000).unwrap(), Drain::Empty);
+        assert_eq!(server.calls.len(), 1);
+    }
+}
+
+#[test]
+fn source_comment_create_rejects_malformed_or_mismatched_context_before_any_optimistic_write() {
+    let valid = json!({"task":{"id":1,"projectId":15,"uniqueIndex":7},"commentIndex":0});
+    for context in [json!(null),json!({"task":{"id":1,"projectId":16,"uniqueIndex":7},"commentIndex":0}),json!({"task":{"id":999,"projectId":15,"uniqueIndex":7},"commentIndex":0}),json!({"task":{"id":1,"projectId":15,"uniqueIndex":8},"commentIndex":0}),json!({"task":{"id":1,"projectId":15,"uniqueIndex":7},"commentIndex":-1}),json!({"task":{"id":1,"projectId":15,"uniqueIndex":7},"commentIndex":"0"})] {
+        let mut db=Db::memory().unwrap();seed(&mut db,false);
+        db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"title":"Source","uniqueIndex":7,"status":"Normal"})).unwrap();
+        assert!(db.enqueue(Write::CreateTaskForm {project_id:15,section_id:10,title:"Task".into(),fields:json!({"createTaskFromComment":context})},100).is_err());
+        assert!(db.mutations().unwrap().is_empty());
+    }
+    for attachment in [json!({"urlString":"javascript:alert(1)","Attachment":true,"fileSize":1,"title":"bad","attachmentType":"text/plain"}),json!({"urlString":"https://files.example/a","Attachment":true,"fileSize":-1,"title":"bad","attachmentType":"text/plain"}),json!({"urlString":"https://files.example/a","Attachment":true,"fileSize":1,"attachmentType":"text/plain"})] {
+        let mut db=Db::memory().unwrap();seed(&mut db,false);
+        db.apply_task(&json!({"id":1,"projectId":15,"sectionId":10,"title":"Source","uniqueIndex":7,"status":"Normal"})).unwrap();
+        assert!(db.enqueue(Write::CreateTaskForm {project_id:15,section_id:10,title:"Task".into(),fields:json!({"createTaskFromComment":valid,"urlsToAdd":[attachment]})},100).is_err());
+        assert!(db.mutations().unwrap().is_empty());
+    }
+}
