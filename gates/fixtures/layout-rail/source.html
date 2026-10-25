@@ -1,0 +1,40 @@
+<!doctype html>
+<!-- Source projection, not a live-app capture. See source.md for every rule. -->
+<html class="graphite"><meta charset="utf-8"><style>
+  * { box-sizing: border-box; border: 0 solid #e5e7eb; }
+  html { font-size: 16px; line-height: 1.5; font-weight: 400; color: #ffffff; }
+  body { margin: 0; line-height: inherit; }
+  button, a { font: inherit; color: inherit; margin: 0; padding: 0; background: transparent; text-decoration: none; }
+  .app-shell-rail { position: fixed; left: 0; top: 0; display: flex; height: 100svh; width: 48px; flex-direction: column; align-items: center; border-right-width: 1.3px; border-color: #3a3f47; background: #1a1d21; padding-top: 8px; padding-bottom: 8px; }
+  .toggle { position: relative; display: flex; height: 20px; align-items: center; justify-content: center; margin-bottom: 4px; color: #8e9093; }
+  .group { display: flex; flex-direction: column; gap: 4px; align-items: center; }
+  .navigation { margin-top: 12px; }
+  .bottom { margin-top: auto; padding-bottom: 4px; }
+  .item { display: flex; height: 34px; width: 36px; align-items: center; justify-content: center; border-radius: 5px; }
+  .item:hover { background: #3a3d45; }
+  .control { position: relative; display: flex; height: 100%; width: 100%; align-items: center; justify-content: center; color: #8e9093; }
+  .rounded { border-radius: 5px; }
+  .control:hover, .toggle:hover { color: #ffffff; }
+  .selected { background: #3a3d45; color: #ffffff; }
+</style><body>
+<aside class="app-shell-rail">
+  <button class="toggle" aria-label="Expand sidebar"><svg width="16" height="16"></svg></button>
+  <div class="group">
+    <div class="item"><button class="control rounded" aria-label="Your Kanban boards"><svg width="18" height="18"></svg></button></div>
+  </div>
+  <div class="group navigation">
+    <div class="item"><a href="#inbox" class="control rounded" aria-label="Go to inbox"><svg width="18" height="18"></svg></a></div>
+    <div class="item"><button class="control rounded" aria-label="Board layout"><svg width="18" height="18"></svg></button></div>
+    <div class="item"><button class="control rounded" aria-label="Table layout"><svg width="18" height="18"></svg></button></div>
+    <div class="item"><button class="control rounded" aria-label="Go to calendar"><svg width="18" height="18"></svg></button></div>
+    <div class="item"><button class="control rounded" aria-label="AI Chat"><svg width="18" height="18"></svg></button></div>
+    <div class="item"><button class="control rounded" aria-label="Search"><svg width="18" height="18"></svg></button></div>
+  </div>
+  <div class="group bottom">
+    <div class="item"><a href="#agents" class="control rounded" aria-label="Agents"><svg width="18" height="18"></svg></a></div>
+    <div class="item"><button class="control" aria-label="Invite team members"><svg width="18" height="18"></svg></button></div>
+    <div class="item"><button class="control" aria-label="Latest updates"><svg width="18" height="18"></svg></button></div>
+    <div class="item"><button class="control" aria-label="Send feedback"><svg width="18" height="18"></svg></button></div>
+    <div class="item"><button class="control" data-testid="app-shell-settings"><svg width="18" height="18"></svg></button></div>
+  </div>
+</aside></body></html>
