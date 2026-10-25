@@ -35,3 +35,5 @@ The case table is the data shape. Each case maps a native key sequence to a visi
 - CI enforces deliberate source suppressions and restored proof. Record final SHA, run URL, per-case markers, and job conclusions on https://github.com/hypertask-ai/hypertask-desktop/pull/31. Require the current-head receipt before acceptance.
 
 A first rejection run suppressed writes correctly, but its 30-second absence wait produced a corrupted board capture. The gate now observes completed native input plus two frames before checking synchronous effects. It keeps the full acknowledgement timeout and rejects empty captures. Negative SQLite queues must stay empty.
+
+Premise under review: desktop BitBlt copying reliably observes the owned GPUI window. Two hosted runs produced blank/corrupted desktop copies despite acknowledged state and fresh frames, including before any input. Capture now uses the existing Windows memory gate's PrintWindow flags and retains simultaneous desktop copies plus both color counts. Native captures still must be nonblank and change after the action. Final artifacts must establish whether the methods disagree.

@@ -28,7 +28,7 @@ Synthetic text and demo identities are test data. They are not product defaults.
 
 ## Evidence and cleanup
 
-`gates/windows-input.py` uses foreground Win32 SendInput, not internal actions. Each case imports `fixtures/demo` into a fresh temporary database. It retains screenshots, measured elements, action logs, SQLite backups, executable digest, and process/database cleanup results. Before/after screenshots must contain presented content and different pixels. The database is checked again after owned-process shutdown.
+`gates/windows-input.py` uses foreground Win32 SendInput, not internal actions. Each case imports `fixtures/demo` into a fresh temporary database. It retains screenshots, measured elements, action logs, SQLite backups, executable digest, and process/database cleanup results. Before/after native PrintWindow screenshots must contain presented content and different pixels. This is the existing Windows memory capture method. Desktop copies and per-method color counts survive alongside them for capture diagnosis. The database is checked again after owned-process shutdown.
 
 Baseline proof passed for all four cases at `97d0f04c16d7b80c7ab7165a00246e7b8c3acd0e`.
 [Baseline hosted run](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40238507075) passed all six required jobs. Its receipts retain exact pending writes and successful owned cleanup. Reviewing its images exposed early capture before the saved frame presented. The suite now crosses two further frame boundaries and flushes the desktop compositor before capture.

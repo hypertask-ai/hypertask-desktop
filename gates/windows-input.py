@@ -126,9 +126,49 @@ class NativeWindow:
         rect, point = W.RECT(), W.POINT()
         assert self.api.GetClientRect(self.hwnd, C.byref(rect))
         assert self.api.ClientToScreen(self.hwnd, C.byref(point))
-        image = self.grab(bbox=(point.x, point.y, point.x + rect.right, point.y + rect.bottom))
+        screen = self.grab(bbox=(point.x, point.y, point.x + rect.right, point.y + rect.bottom))
+        screen.save(path.with_name(path.stem + "-desktop.png"))
+        from PIL import Image
+        gdi = C.WinDLL("gdi32")
+        self.api.GetDC.argtypes = [W.HWND]
+        self.api.GetDC.restype = W.HDC
+        self.api.ReleaseDC.argtypes = [W.HWND, W.HDC]
+        self.api.PrintWindow.argtypes = [W.HWND, W.HDC, W.UINT]
+        gdi.CreateCompatibleDC.argtypes = [W.HDC]
+        gdi.CreateCompatibleDC.restype = W.HDC
+        gdi.CreateCompatibleBitmap.argtypes = [W.HDC, C.c_int, C.c_int]
+        gdi.CreateCompatibleBitmap.restype = W.HBITMAP
+        gdi.SelectObject.argtypes = [W.HDC, W.HANDLE]
+        gdi.SelectObject.restype = W.HANDLE
+        gdi.DeleteObject.argtypes = [W.HANDLE]
+        gdi.DeleteDC.argtypes = [W.HDC]
+        gdi.GetDIBits.argtypes = [W.HDC, W.HBITMAP, W.UINT, W.UINT, C.c_void_p, C.c_void_p, W.UINT]
+        dc = self.api.GetDC(self.hwnd)
+        memory = gdi.CreateCompatibleDC(dc)
+        bitmap = gdi.CreateCompatibleBitmap(dc, rect.right, rect.bottom)
+        assert dc and memory and bitmap, "Cannot allocate owned capture surface"
+        previous = gdi.SelectObject(memory, bitmap)
+        try:
+            assert self.api.PrintWindow(self.hwnd, memory, 3), "Native PrintWindow failed"
+            gdi.SelectObject(memory, previous)
+            header = struct.pack("IiiHHIIiiII", 40, rect.right, -rect.bottom, 1, 32, 0,
+                                 rect.right * rect.bottom * 4, 0, 0, 0, 0)
+            info = C.create_string_buffer(header)
+            pixels = C.create_string_buffer(rect.right * rect.bottom * 4)
+            assert gdi.GetDIBits(dc, bitmap, 0, rect.bottom, pixels, info, 0) == rect.bottom, "Native pixel readback failed"
+            image = Image.frombytes("RGB", (rect.right, rect.bottom), pixels.raw, "raw", "BGRX")
+        finally:
+            gdi.SelectObject(memory, previous)
+            gdi.DeleteObject(bitmap)
+            gdi.DeleteDC(memory)
+            self.api.ReleaseDC(self.hwnd, dc)
         image.save(path)
-        assert len(image.getcolors(image.width * image.height) or []) > 32, "Blank/unpresented screenshot"
+        colors = len(image.getcolors(image.width * image.height) or [])
+        (path.with_suffix(".capture.json")).write_text(json.dumps({
+            "method": "PrintWindow client/render-full-content, same as windows-memory.ps1",
+            "window_colors": colors,
+            "desktop_colors": len(screen.getcolors(screen.width * screen.height) or [])}) + "\n")
+        assert colors > 32, "Blank/unpresented native window screenshot"
         return hashlib.sha256(image.tobytes()).hexdigest()
 
 
