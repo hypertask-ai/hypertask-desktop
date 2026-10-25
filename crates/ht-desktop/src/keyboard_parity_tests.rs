@@ -294,7 +294,7 @@ fn cmdk_assign_to_me_preserves_people_agents_and_reopens_assignment(cx: &mut Tes
             {"id":"agent-a","displayName":"Runner"}
         ]).to_string()).unwrap();
         this.db.apply_response(&serde_json::json!({"success":true,"tasks":[
-            {"id":1,"assignees":[{"id":7,"displayName":"Alex"},{"id":"agent-a","agent":{"id":"agent-a","displayName":"Runner"}}],"assigneeCount":2}
+            {"id":1,"projectId":15,"sectionId":10,"title":"Needle","status":"Normal","assignees":[{"id":7,"displayName":"Alex"},{"id":"agent-a","agent":{"id":"agent-a","displayName":"Runner"}}],"assigneeCount":2}
         ]})).unwrap();
         this.reload();
     });
@@ -318,4 +318,48 @@ fn cmdk_assign_to_me_preserves_people_agents_and_reopens_assignment(cx: &mut Tes
         });
         cx.simulate_keystrokes("escape");
     }
+}
+
+#[gpui::test]
+fn cmdk_assign_to_me_is_absent_without_account_member_or_active_task(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for (user, members, status) in [
+        ("", serde_json::json!([{"id":42,"displayName":"Me"}]), "Normal"),
+        ("42", serde_json::json!([{"id":7,"displayName":"Alex"}]), "Normal"),
+        ("42", serde_json::json!([{"id":42,"displayName":"Me"}]), "Archive"),
+    ] {
+        let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+        view.update_in(cx, |this, _, _| {
+            this.db.kv_set("current-user-id", user).unwrap();
+            this.db.kv_set("members:15", &members.to_string()).unwrap();
+            this.db.apply_response(&serde_json::json!({"success":true,"tasks":[
+                {"id":1,"projectId":15,"sectionId":10,"title":"Needle","status":status}
+            ]})).unwrap();
+            this.reload();
+        });
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Assign to me");
+        view.read_with(cx, |this, cx| {
+            assert!(!this.choices(cx).iter().any(|row| row.name == "Assign to me"));
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
+    }
+}
+
+#[gpui::test]
+fn keyboard_escape_keeps_description_when_lossless_save_is_refused(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    cx.simulate_keystrokes("ctrl-d ctrl-a ctrl-shift-h");
+    cx.simulate_input("Highlighted draft");
+    cx.simulate_keystrokes("escape");
+    view.update_in(cx, |this, window, cx| {
+        assert!(matches!(this.editing, Editing::Description));
+        assert!(this.interaction.description.focus_handle(cx).is_focused(window));
+        assert!(this.interaction.description.read(cx).html().contains("<mark"));
+        assert!(this.interaction.description.read(cx).content.contains("Highlighted draft"));
+        assert!(this.error.as_deref().unwrap().contains("strips highlights"));
+        assert_eq!(this.db.task(1).unwrap().unwrap().description, "<p>Hidden</p>");
+        assert!(this.db.mutations().unwrap().is_empty());
+    });
 }
