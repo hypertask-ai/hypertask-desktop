@@ -4,7 +4,7 @@ use serde_json::Value;
 
 #[derive(Default)]
 pub(super) struct TaskActions {
-    pending: Option<(String, i64, i64, TaskAction)>,
+    pub(super) pending: Option<(String, i64, i64, TaskAction)>,
     pub relations: Vec<Value>,
     pub decline_duplicate: bool,
     pub templates: Value,
@@ -698,6 +698,7 @@ mod tests {
                 }
                 TaskAction::Recurrence(rule) => json!({"id":1,"recurrence":rule}),
                 TaskAction::StartDate(date) => json!({"id":1,"startDate":date}),
+                TaskAction::DueDate(date) => json!({"id":1,"dueDate":date}),
                 TaskAction::WaitingOn(user) => {
                     json!({"id":1,"waitingOnUserId":user,"waitingOnSetById":user.map(|_|42),"waitingOnSetAt":user.map(|_|"2026-10-01T09:00:00Z")})
                 }

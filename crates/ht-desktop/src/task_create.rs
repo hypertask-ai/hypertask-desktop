@@ -367,7 +367,9 @@ impl Desktop {
                     choices.extend(super::task_fields::due_presets(chrono::Local::now()).into_iter().map(|(name, value)| (name, json!(value))));
                     choices
                 } else {
-                    super::task_fields::parse_due(query, chrono::Local::now().date_naive()).map(|value| vec![(query.into(), json!(value))]).unwrap_or_default()
+                    ht_core::date_options::relative_options(query, chrono::Local::now(), field == Field::StartDate)
+                        .map(|rows| rows.into_iter().map(|row| (row.display, json!(row.date))).collect())
+                        .unwrap_or_else(|| super::task_fields::parse_due(query, chrono::Local::now().date_naive()).map(|value| vec![(query.into(), json!(value))]).unwrap_or_default())
                 };
                 if field == Field::DueDate { choices.push(("Pick a custom date".into(), json!({"custom":true}))); }
                 choices

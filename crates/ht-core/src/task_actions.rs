@@ -10,6 +10,7 @@ use serde_json::{Value, json};
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TaskAction {
     StartDate(Option<String>),
+    DueDate(Option<String>),
     WaitingOn(Option<i64>),
     AssignMe,
     Accept {
@@ -30,6 +31,16 @@ impl TaskAction {
     pub fn request(&self, task: i64, user: i64) -> Result<(&'static str, Value)> {
         ensure!(task > 0 && user > 0, "Unauthorized");
         Ok(match self {
+            Self::DueDate(date) => {
+                if let Some(date) = date {
+                    chrono::DateTime::parse_from_rfc3339(date)?;
+                }
+                let mut body = json!({"taskId":task});
+                if let Some(date) = date {
+                    body["dueDate"] = json!(date);
+                }
+                ("/api/tasks/setDueDate", body)
+            }
             Self::StartDate(date) => {
                 if let Some(date) = date {
                     chrono::DateTime::parse_from_rfc3339(date)?;
@@ -106,6 +117,7 @@ impl TaskAction {
             Self::Decline => &["status", "archivedAt", "dueDate"],
             Self::SaveTemplate => &[],
             Self::StartDate(_) => &["startDate"],
+            Self::DueDate(_) => &["dueDate"],
             Self::Recurrence(_) => &["recurrence"],
             Self::Relation { .. } => &["relatedFromTasks"],
             Self::RemoveRelation(_) => &["relatedFromTasks", "relatedToTasks"],
@@ -119,6 +131,7 @@ impl TaskAction {
             Self::Decline => "Unable to archive task",
             Self::SaveTemplate => "Could not save the template",
             Self::StartDate(_) => "Could not update the start date. Try again.",
+            Self::DueDate(_) => "Unable to update due date",
             Self::WaitingOn(_) => "Unable to update blocked by person",
             Self::AssignMe => "Unable to assign this task",
             Self::Recurrence(_) => "Could not update the repeat rule",
@@ -271,6 +284,7 @@ impl Db {
                 );
             }
             TaskAction::StartDate(date) => task["startDate"] = json!(date),
+            TaskAction::DueDate(date) => task["dueDate"] = json!(date),
             TaskAction::Recurrence(rule) => task["recurrence"] = json!(rule),
             TaskAction::WaitingOn(user) => {
                 task["waitingOnUserId"] = json!(user);
@@ -522,16 +536,21 @@ impl TaskAction {
             Self::Recurrence(rule) => {
                 value["id"] == payload["task_id"] && value.get("recurrence") == Some(&json!(rule))
             }
-            Self::StartDate(date) => {
+            Self::StartDate(date) | Self::DueDate(date) => {
+                let field = if matches!(self, Self::StartDate(_)) {
+                    "startDate"
+                } else {
+                    "dueDate"
+                };
                 value["id"] == payload["task_id"]
                     && if let Some(date) = date {
-                        value["startDate"]
+                        value[field]
                             .as_str()
                             .and_then(|ack| chrono::DateTime::parse_from_rfc3339(ack).ok())
                             .zip(chrono::DateTime::parse_from_rfc3339(date).ok())
                             .is_some_and(|(ack, date)| ack == date)
                     } else {
-                        value.get("startDate") == Some(&Value::Null)
+                        value.get(field) == Some(&Value::Null)
                     }
             }
             Self::WaitingOn(user) => {

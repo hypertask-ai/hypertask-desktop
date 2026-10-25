@@ -38,6 +38,7 @@ fn ack(change: &TaskAction) -> Value {
         TaskAction::SaveTemplate => json!({"success":true,"template":{"id":81,"name":"Task"}}),
         TaskAction::Recurrence(rule) => json!({"id":1,"recurrence":rule}),
         TaskAction::StartDate(date) => json!({"id":1,"startDate":date}),
+        TaskAction::DueDate(date) => json!({"id":1,"dueDate":date}),
         TaskAction::WaitingOn(user) => {
             json!({"id":1,"waitingOnUserId":user,"waitingOnSetById":user.map(|_|42),"waitingOnSetAt":user.map(|_|"2026-10-01T09:00:00Z")})
         }
@@ -104,6 +105,8 @@ fn changes() -> Vec<TaskAction> {
         TaskAction::SaveTemplate,
         TaskAction::StartDate(Some("2026-10-01T09:00:00+02:00".into())),
         TaskAction::StartDate(None),
+        TaskAction::DueDate(Some("2026-10-01T09:00:00+02:00".into())),
+        TaskAction::DueDate(None),
         TaskAction::WaitingOn(Some(7)),
         TaskAction::WaitingOn(None),
         TaskAction::AssignMe,
@@ -141,9 +144,9 @@ fn task_daily_commands_persist_optimistically_and_accept_or_rollback_exact_web_w
             seed(&mut db);
             if matches!(
                 change,
-                TaskAction::StartDate(None) | TaskAction::WaitingOn(None)
+                TaskAction::StartDate(None) | TaskAction::DueDate(None) | TaskAction::WaitingOn(None)
             ) {
-                db.apply_task(&json!({"id":1,"title":"Task","projectId":15,"sectionId":10,"section":"Triage","ranking":"a","status":"Normal","startDate":"2026-09-01T09:00:00Z","waitingOnUserId":7,"waitingOnSetById":8,"waitingOnSetAt":"2026-09-01T09:00:00Z"})).unwrap();
+                db.apply_task(&json!({"id":1,"title":"Task","projectId":15,"sectionId":10,"section":"Triage","ranking":"a","status":"Normal","startDate":"2026-09-01T09:00:00Z","dueDate":"2026-10-03T09:00:00Z","waitingOnUserId":7,"waitingOnSetById":8,"waitingOnSetAt":"2026-09-01T09:00:00Z"})).unwrap();
             }
             let before = serde_json::to_value(db.task(1).unwrap().unwrap()).unwrap();
             let id = db
@@ -185,6 +188,7 @@ fn task_daily_commands_persist_optimistically_and_accept_or_rollback_exact_web_w
                 ),
                 TaskAction::Recurrence(rule) => assert_eq!(optimistic["recurrence"], json!(rule)),
                 TaskAction::StartDate(date) => assert_eq!(optimistic["startDate"], json!(date)),
+                TaskAction::DueDate(date) => assert_eq!(optimistic["dueDate"], json!(date)),
                 TaskAction::WaitingOn(user) => {
                     assert_eq!(optimistic["waitingOnUserId"], json!(user))
                 }

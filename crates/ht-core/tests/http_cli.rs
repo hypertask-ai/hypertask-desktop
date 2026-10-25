@@ -412,6 +412,8 @@ fn task_timer_routes_send_the_desktop_bearer_and_preserve_start_stop_setting_ref
 fn daily_task_action_routes_send_desktop_bearer_without_cookies_and_preserve_refusals() {
     for (change,path,body) in [
         (ht_core::TaskAction::StartDate(Some("2026-10-01T09:00:00+02:00".into())),"/api/tasks/setStartDate",json!({"taskId":1,"startDate":"2026-10-01T09:00:00+02:00"})),
+        (ht_core::TaskAction::DueDate(Some("2026-10-01T09:00:00+02:00".into())),"/api/tasks/setDueDate",json!({"taskId":1,"dueDate":"2026-10-01T09:00:00+02:00"})),
+        (ht_core::TaskAction::DueDate(None),"/api/tasks/setDueDate",json!({"taskId":1})),
         (ht_core::TaskAction::StartDate(None),"/api/tasks/setStartDate",json!({"taskId":1,"startDate":null})),
         (ht_core::TaskAction::WaitingOn(Some(7)),"/api/tasks/waiting-on",json!({"taskId":1,"userId":7})),
         (ht_core::TaskAction::WaitingOn(None),"/api/tasks/waiting-on",json!({"taskId":1,"userId":null})),
