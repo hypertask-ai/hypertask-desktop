@@ -1407,3 +1407,39 @@ impl Desktop {
             .into_any_element()
     }
 }
+
+#[cfg(test)]
+mod cmdk_parity_tests {
+    use super::*;
+    use crate::ui::shell::tests::setup;
+
+    #[gpui::test]
+    fn cmdk_task_commands_match_web_order_labels_and_groups(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx, |this, _, _| {
+            this.screen = Screen::Task;
+            this.reload();
+            let rows = this.command_rows();
+            let task: Vec<_> = rows.iter().filter(|row| row.group == "Task")
+                .map(|row| (row.key.as_str(), row.name.as_str(), row.keys.as_str())).collect();
+            assert_eq!(task, vec![
+                ("assignUser", "Assign task", "A"),
+                ("setDueDate", "Set due date", "D"),
+                ("priorityModal", "Set priority", "P"),
+                ("labelmodal", "Set tags", "T"),
+                ("estimateModal", "Set task size", "S"),
+                ("moveToColumn", "Move task to column", "M"),
+                ("movetasktodifferentboard", "Move task to board", "SHIFT M"),
+                ("archiveTask", "Archive task", "CTRL E"),
+                ("setReminder", "Set reminder", "H"),
+                ("copyformattedTaskLink", "Copy private task link (title + URL)", "CTRL :"),
+                ("copyLink", "Copy private task URL", "CTRL SHIFT :"),
+                ("copyTaskId", "Copy task ID", "CTRL SHIFT I"),
+                ("copyTaskTitleId", "Copy task title and ID", "CTRL I"),
+                ("toggleAllComments", "Expand / collapse all comments", "SHIFT O"),
+                ("renameTask", "Rename task", ""),
+                ("deleteTask", "Delete task", "SHIFT 3"),
+            ]);
+        }).unwrap();
+    }
+}
