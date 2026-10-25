@@ -1556,6 +1556,57 @@ mod tests {
         }
     }
     #[gpui::test]
+    fn bottom_editor_menus_leave_text_visible_and_last_ai_command_clickable(cx: &mut gpui::TestAppContext) {
+        use std::{cell::RefCell, rc::Rc};
+        cx.update(init);
+        let (host, cx) = cx.add_window_view(|_, cx| {
+            struct Host(Entity<TextInput>);
+            impl Render for Host {
+                fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+                    div().size_full().flex().flex_col().justify_end().p(px(40.)).child(self.0.clone())
+                }
+            }
+            Host(cx.new(|cx| TextInput::new(String::new(), "", gpui::black(), cx).comment_editor()))
+        });
+        let input = host.read_with(cx, |host, _| host.0.clone());
+        let events = Rc::new(RefCell::new(vec![]));
+        let received = events.clone();
+        cx.update(|_, cx| cx.subscribe(&input, move |_, event: &EditorRequest, _| {
+            received.borrow_mut().push(event.clone());
+        }).detach());
+        let height = input.update_in(cx, |input, window, cx| {
+            input.set_html("<p>Whole <strong>selected</strong> draft</p>", cx);
+            input.selected_range = 0..input.content.len();
+            window.focus(&input.focus_handle, cx);
+            window.viewport_size().height
+        });
+        cx.run_until_parked();
+        let (text, toggle) = input.read_with(cx, |input, _| {
+            (input.last_bounds.unwrap(), input.editor_control_bounds("editor-ai-toggle").unwrap())
+        });
+        assert!(text.top() > height / 2. && text.bottom() <= height, "fixture must place visible input near the bottom");
+        assert!(toggle.bottom() <= text.top(), "selection toolbar covers the selected text");
+        cx.simulate_click(toggle.center(), Default::default());
+        cx.run_until_parked();
+        let last = input.read_with(cx, |input, _| {
+            for i in 0..9 {
+                let bounds = input.editor_control_bounds(&format!("ai-command-{i}")).unwrap();
+                assert!(bounds.top() >= px(0.) && bounds.bottom() <= text.top(), "AI choice {i} is clipped or covers selected text: {bounds:?}");
+            }
+            input.editor_control_bounds("ai-command-8").unwrap()
+        });
+        cx.simulate_click(last.center(), Default::default());
+        input.read_with(cx, |input, _| {
+            assert_eq!(input.selected_range, 0..input.content.len());
+            assert_eq!(input.html(), "<p>Whole <strong>selected</strong> draft</p>");
+            assert!(!input.editor.as_ref().unwrap().ai_menu);
+        });
+        let events = events.borrow();
+        let EditorRequest::Improve { command, html } = events.last().expect("last visible AI choice must execute");
+        assert_eq!(*command, ht_core::ImproveCommand::French);
+        assert_eq!(html, "<p>Whole <strong>selected</strong> draft</p>");
+    }
+    #[gpui::test]
     fn unsupported_web_services_are_not_inert_slash_commands_and_video_html_is_real(
         cx: &mut gpui::TestAppContext,
     ) {
