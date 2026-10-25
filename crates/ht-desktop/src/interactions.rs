@@ -772,6 +772,7 @@ impl Desktop {
         self.add_comment_commands(&mut rows);
         self.add_board_commands(&mut rows);
         self.add_time_commands(&mut rows);
+        if self.ai_sidebar.is_none() { rows.retain(|row| row.key != "summarizeTicket"); }
         if let Some(row) = rows.iter_mut().find(|row| row.key == "toggleArchivedOnBoard") { row.name = if self.show_archived_on_board() { "Hide archived tasks on board" } else { "Show archived tasks on board" }.into(); }
         if let Some(row)=rows.iter_mut().find(|row|row.key=="toggleEmptyColumns"){row.name=if self.view_settings()["board_empty_sections"]=="Hidden"{"Show empty board columns"}else{"Hide empty board columns"}.into();}
         if self.ai_sidebar.is_some() {

@@ -198,6 +198,7 @@ pub struct AiSidebar {
     collapsed: bool,
     scroll: ScrollHandle,
     active: Option<ActiveTurn>,
+    summary_task: Option<i64>,
 }
 
 impl AiSidebar {
@@ -290,6 +291,7 @@ impl AiSidebar {
             collapsed: false,
             scroll: ScrollHandle::new(),
             active: None,
+            summary_task: None,
         };
         sidebar.load_memory_history(cx);
         sidebar
@@ -299,6 +301,7 @@ impl AiSidebar {
         self.stop(cx);
         self.session_pending=None;self.rename_open=false;self.scope=None;
         self.active = None;
+        self.summary_task = None;
         self.chats = vec![Chat::new()];
         self.selected = 0;
         self.history.clear();
@@ -522,6 +525,39 @@ impl AiSidebar {
             }
         }
         message
+    }
+
+    pub fn summarize_ticket(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.active.is_some() || self.summary_task.is_some() { return; }
+        let Some(task) = self.scope.as_ref().and_then(|scope| scope.context.task_id) else { return; };
+        self.summary_task = Some(task);
+        self.set_open(true, cx);
+        window.focus(&self.input.focus_handle(cx), cx);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        cx.spawn_in(window, async move |view, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(50)).await;
+                if !view.update_in(cx, |this, window, cx| {
+                    this.finish_ticket_summary(deadline, window, cx)
+                }).unwrap_or(false) { break; }
+            }
+        }).detach();
+    }
+
+    fn finish_ticket_summary(&mut self, deadline: std::time::Instant, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(task) = self.summary_task else { return false; };
+        if !self.is_open() || self.scope.as_ref().and_then(|scope| scope.context.task_id) != Some(task)
+            || self.active.is_some() || std::time::Instant::now() >= deadline {
+            self.summary_task = None;
+            return false;
+        }
+        if self.session_pending.is_some() || self.chat_pending.is_some() || self.history_pending.is_some()
+            || (self.client.is_some() && self.models.configuration.is_none() && self.models.error.is_none()) {
+            return true;
+        }
+        self.summary_task = None;
+        self.send("Summarize this ticket, its description and the key points from the comments, concisely.".into(), window, cx);
+        false
     }
 
     fn send(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {

@@ -53,6 +53,7 @@ pub enum ShellCommand {
     DeclineTask,
     DeclineDuplicate,
     TaskWriter,
+    SummarizeTicket,
     SaveTemplate,
     NewFromTemplate,
     Recurrence,
@@ -143,6 +144,9 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     }
     if task && screen == Screen::Task {
         rows.push(Command { key: "openAiTaskWriter".into(), name: "Open AI task writer".into(), group: "Task", keys: String::new(), keywords: "open ai task writer write generate draft create improve description", action: CommandAction::Shell(ShellCommand::TaskWriter) });
+    }
+    if task && screen == Screen::Task {
+        rows.push(Command { key: "summarizeTicket".into(), name: "Summarize ticket".into(), group: "Task", keys: String::new(), keywords: "summarize summary ticket task ai chat recap tldr overview digest brief", action: CommandAction::Shell(ShellCommand::SummarizeTicket) });
     }
     if task {
         for (key, name, pick_board) in [("duplicateTask", "Duplicate task", false), ("duplicateTaskToBoard", "Duplicate task to board", true)] {
@@ -498,6 +502,16 @@ mod tests {
         let keys=["assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","priorityModal","labelmodal","estimateModal","moveToColumn","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask"];
         let rows=commands(Screen::Task,true);let actual:Vec<_>=rows.iter().filter(|row|keys.contains(&row.key.as_str())).map(|row|row.key.as_str()).collect();assert_eq!(actual,keys);
         let rows=commands(Screen::Inbox,false);for key in keys{assert!(!rows.iter().any(|row|row.key==key));}
+    }
+    #[test]
+    fn summarize_ticket_command_matches_web_label_and_only_detail_has_a_callback() {
+        let rows = commands(Screen::Task, true);
+        let row = rows.iter().find(|row| row.key == "summarizeTicket").unwrap();
+        assert_eq!(row.name, "Summarize ticket");
+        assert_eq!(row.action, CommandAction::Shell(ShellCommand::SummarizeTicket));
+        for (screen, task) in [(Screen::Task, false), (Screen::Board, true), (Screen::Inbox, true)] {
+            assert!(!commands(screen, task).iter().any(|row| row.key == "summarizeTicket"));
+        }
     }
     #[test]
     fn no_task_commands_without_target_and_no_hidden_noops() {

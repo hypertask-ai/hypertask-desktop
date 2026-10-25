@@ -10,6 +10,13 @@ impl Desktop {
     ) {
         match action {
             ShellCommand::TaskWriter => self.open_compose(window, cx),
+            ShellCommand::SummarizeTicket => {
+                if self.screen != Screen::Task { return; }
+                if let Some(sidebar) = &self.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.summarize_ticket(window, cx));
+                    self.shell.ai_open = sidebar.read(cx).is_open();
+                }
+            }
             ShellCommand::DeclineDuplicate => {
                 self.show_modal(crate::ui::interactions::Modal::Relation(ht_core::RelationKind::Duplicate), window, cx);
                 self.task_actions.decline_duplicate = true;
@@ -130,6 +137,24 @@ mod tests {
         for _ in 0..index { cx.simulate_keystrokes("down"); }
         cx.simulate_keystrokes("enter");
         draw(view, cx);
+    }
+
+    #[gpui::test]
+    fn shell_palette_summarize_ticket_opens_existing_chat_only_on_task_detail(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| crate::ui::task_fields::tests::desktop(window, cx));
+        let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
+        draw(view, &mut cx);
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Summarize ticket");
+        view.read_with(&cx, |this, _| assert!(this.command_rows().iter().any(|row| row.key == "summarizeTicket"))).unwrap();
+        cx.simulate_keystrokes("enter");
+        draw(view, &mut cx);
+        view.read_with(&cx, |this, cx| {
+            assert!(this.interaction.modal.is_none());
+            assert!(this.ai_sidebar.as_ref().unwrap().read(cx).is_open());
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
     }
 
     #[gpui::test]
