@@ -141,7 +141,7 @@ def visible(data, key, text=None):
         return False
     return any(e["key"] == key and e["w"] > 0 and e["h"] > 0
                and e["x"] >= 0 and 0 <= e["y"] < 850
-               and (text is None or e.get("text") == text) for e in data["elements"])
+               and (text is None or e.get("text", "").strip() == text) for e in data["elements"])
 
 
 def verify_database(db, case, task_id, notification_id, text):
@@ -220,6 +220,14 @@ def run_case(case, app, core, out, env):
                     key("Enter" if screen == "board" else ("Ctrl+Enter" if case == "task-description" else "Ctrl+Shift+Enter"))
                 else:
                     with sqlite3.connect(db) as conn:
+                        tabs = json.loads(conn.execute("SELECT value FROM kv WHERE key='inbox-splits:0'").fetchone()[0])
+                        members = tabs[before["state"]["split"]]["ids"]
+                        placeholders = ",".join("?" for _ in members)
+                        expected = conn.execute(
+                            f"SELECT n.id FROM Notification n LEFT JOIN Task t ON t.id=n.taskId "
+                            f"WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') "
+                            f"AND n.id IN ({placeholders}) ORDER BY n.createdAt DESC,n.id DESC", members).fetchall()
+                        notification_id = expected[before["state"]["selected"]][0]
                         original = {row[0] for row in conn.execute("SELECT id FROM Notification WHERE status='Archive'")}
                     key("E")
 
@@ -243,8 +251,7 @@ def run_case(case, app, core, out, env):
                 if case == "inbox-archive-notification":
                     with sqlite3.connect(db) as conn:
                         changed = {row[0] for row in conn.execute("SELECT id FROM Notification WHERE status='Archive'")} - original
-                    assert len(changed) == 1, "One key must archive one notification"
-                    notification_id = changed.pop()
+                    assert changed == {notification_id}, "One key must archive only the selected notification"
                 result["mutation"] = verify_database(db, case, task_id, notification_id, text)
                 result["notification_id"] = notification_id
                 result["passed"] = True
