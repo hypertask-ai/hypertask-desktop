@@ -145,7 +145,7 @@ fn everyday_time_queries_match_real_web_sugar_options_and_refuse_malformed_input
         "3 days ago", "1 month ago", "2 weeks from now", "2 days later",
         "2 hours", "1 month", "30 minutes", "3pm", "15:30", "9:15 am",
         "tomorrow at 25:00", "in bananas", "tomorrow at 3pm junk", "3pm junk",
-        "tomorrow at 1 5:30", "in 2 daysss",
+        "in 2 daysss",
     ];
     for (zone, offset) in [("UTC", "+00:00"), ("Etc/GMT-2", "+02:00")] {
         let mut cases = vec![];
@@ -175,4 +175,22 @@ fn everyday_time_queries_match_real_web_sugar_options_and_refuse_malformed_input
         }
         assert!(mismatches.is_empty(), "{} mismatches\n{}", mismatches.len(), mismatches.into_iter().take(40).collect::<Vec<_>>().join("\n"));
     }
+}
+
+#[test]
+fn legacy_js_date_fallback_is_an_explicit_gap_not_a_concatenated_clock() {
+    use std::{io::Write, process::{Command, Stdio}};
+    use serde_json::{Value, json};
+    let now = DateTime::parse_from_rfc3339("2026-01-31T08:42:17Z").unwrap();
+    let query = "tomorrow at 1 5:30";
+    let mut oracle = Command::new("node").arg(format!("{}/tests/date_reference.cjs", env!("CARGO_MANIFEST_DIR")))
+        .env("TZ", "UTC").env("LANG", "en_US.UTF-8").stdin(Stdio::piped()).stdout(Stdio::piped()).stderr(Stdio::piped())
+        .spawn().expect("hosted CI must provide Node for the real Sugar reference");
+    oracle.stdin.take().unwrap().write_all(serde_json::to_string(&json!([{"query":query,"now":now.to_rfc3339(),"past":true}])).unwrap().as_bytes()).unwrap();
+    let output = oracle.wait_with_output().unwrap();
+    assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
+    let web: Vec<Vec<Value>> = serde_json::from_slice(&output.stdout).unwrap();
+    assert_eq!(web[0].len(), 1);
+    assert_eq!(web[0][0]["date"], "2001-01-01T05:30:00.000Z");
+    assert!(ht_core::date_options::query_options(query, now, true).is_none(), "legacy JS fallback is not implemented; never join split clock digits into tomorrow at 15:30");
 }
