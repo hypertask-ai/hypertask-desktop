@@ -2,6 +2,61 @@ use super::*;
 use crate::{ai_sidebar::DisplayMode, shortcuts::Action};
 
 impl Desktop {
+    pub(super) fn bind_ai_sessions(&mut self,window:&mut Window,cx:&mut Context<Self>) {
+        let Some(sidebar)=self.ai_sidebar.clone() else{return;};
+        sidebar.update(cx,|sidebar,cx|{sidebar.restore_sessions(&self.db,cx);sidebar.restore_session_work(&self.db,cx);});
+        cx.subscribe_in(&sidebar,window,|this,sidebar,event:&crate::ai_sidebar::PreferenceRequest,window,cx|{
+            use crate::ai_sidebar::PreferenceRequest;
+            match event {
+                PreferenceRequest::Settings{team,section}=>this.open_model_settings(team.clone(),section,window,cx),
+                PreferenceRequest::Cache{user,settings}=>{if !this.db.mutations().unwrap_or_default().iter().any(|row|row.kind=="web_preferences" && row.status!="failed"){let _=this.db.cache_web_preferences(*user,settings);}}
+                PreferenceRequest::Save{user,settings,updates}=>{
+                    let result=this.db.enqueue_web_preferences(*user,settings,updates.clone(),chrono::Utc::now().timestamp());
+                    match result{
+                        Ok(key)=>{
+                            sidebar.update(cx,|sidebar,cx|sidebar.preference_queued(key,cx));this.request_sync();
+                            cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(100)).await;if !view.update(cx,|this,cx|this.poll_ai_preferences(cx)).unwrap_or(false){break;}}}).detach();
+                        }
+                        Err(error)=>sidebar.update(cx,|sidebar,cx|sidebar.preference_finished(serde_json::json!({"error":error.to_string()}),cx)),
+                    }
+                }
+            }
+        }).detach();
+        cx.subscribe_in(&sidebar,window,|this,sidebar,event:&crate::ai_sidebar::SessionRequest,window,cx|{
+            let result=this.db.enqueue_ai_session(event.change.clone(),&event.sessions,&event.continuation,chrono::Utc::now().timestamp());
+            match result {
+                Ok(key)=>{
+                    sidebar.update(cx,|sidebar,cx|sidebar.session_queued(key,cx));
+                    this.request_sync();
+                    cx.spawn_in(window,async move|view,cx|{
+                        loop {
+                            cx.background_executor().timer(Duration::from_millis(100)).await;
+                            if !view.update_in(cx,|this,window,cx|this.poll_ai_sessions(window,cx)).unwrap_or(false){break;}
+                        }
+                    }).detach();
+                }
+                Err(error)=>sidebar.update(cx,|sidebar,cx|sidebar.session_finished(serde_json::json!({"error":error.to_string()}),window,cx)),
+            }
+        }).detach();
+        if sidebar.read(cx).session_key().is_some(){
+            cx.spawn_in(window,async move|view,cx|{loop{cx.background_executor().timer(Duration::from_millis(100)).await;if !view.update_in(cx,|this,window,cx|this.poll_ai_sessions(window,cx)).unwrap_or(false){break;}}}).detach();
+        }
+    }
+    fn poll_ai_preferences(&mut self,cx:&mut Context<Self>)->bool{
+        let Some(sidebar)=self.ai_sidebar.clone() else{return false;};
+        let Some(key)=sidebar.read(cx).preference_key().map(|key|format!("preference-result:{key}")) else{return false;};
+        let Some(result)=self.db.kv_get(&key).ok().flatten().and_then(|s|serde_json::from_str::<serde_json::Value>(&s).ok()) else{return true;};
+        let _=self.db.kv_set(&key,"null");sidebar.update(cx,|sidebar,cx|sidebar.preference_finished(result,cx));false
+    }
+    pub(super) fn poll_ai_sessions(&mut self,window:&mut Window,cx:&mut Context<Self>)->bool {
+        let Some(sidebar)=self.ai_sidebar.clone() else{return false;};
+        let Some(key)=sidebar.read(cx).session_key().map(|key|format!("ai-session-result:{key}")) else{return false;};
+        let Some(result)=self.db.kv_get(&key).ok().flatten().and_then(|s|serde_json::from_str::<serde_json::Value>(&s).ok()) else{return true;};
+        let _=self.db.kv_set(&key,"null");
+        if let Some(user)=self.db.current_user_id(){let _=self.db.kv_set(&format!("ai-session-pending:{user}"),"null");}
+        sidebar.update(cx,|sidebar,cx|sidebar.session_finished(result,window,cx));
+        false
+    }
     pub(super) fn ai_panel(&self, window: &Window, cx: &mut Context<Self>) -> AnyElement {
         let Some(sidebar) = self.ai_sidebar.clone().filter(|_| self.shell.ai_open) else {
             return div().into_any_element();
@@ -50,6 +105,7 @@ impl Desktop {
     pub(super) fn ai_command(&mut self, action: Action, cx: &mut Context<Self>) {
         if let Some(sidebar) = &self.ai_sidebar {
             sidebar.update(cx, |sidebar, cx| match action {
+                Action::DeleteAllAiChats => sidebar.delete_all_sessions(cx),
                 Action::PinAiChat => sidebar.toggle_pin(cx),
                 Action::FullscreenAiChat => sidebar.set_mode(DisplayMode::Fullscreen, cx),
                 _ => (),

@@ -146,6 +146,7 @@ impl Desktop {
         };
         let id = comment.id;
         match action {
+            Action::CreateTaskFromComment => self.open_comment_task(&comment, self.interaction.task_part - 1, window, cx),
             Action::StarComment | Action::PinComment => {
                 self.comment_actions.collapsed.remove(&id);
                 if self.enqueue(Write::CommentAction {task_id:self.options.task,comment_id:id,change:CommentWrite::Saved {public:action == Action::PinComment}},cx) {
@@ -168,7 +169,7 @@ impl Desktop {
                     )));
                 }
             }
-            Action::CopyCommentToAiChat => {
+            Action::CopyCommentToAiChat | Action::BranchCommentToAiChat | Action::SummarizeComment => {
                 let Some(creator) = comment.extra.get("creator") else {
                     return;
                 };
@@ -182,7 +183,7 @@ impl Desktop {
                 );
                 if let Some(sidebar) = &self.ai_sidebar {
                     sidebar.update(cx, |sidebar, cx| {
-                        sidebar.insert_comment_quote(quote, window, cx)
+                        if action==Action::SummarizeComment {sidebar.summarize_comment(quote,window,cx);} else if action==Action::BranchCommentToAiChat{sidebar.branch_comment(quote,window,cx);}else{sidebar.insert_comment_quote(quote, window, cx)}
                     });
                     self.shell.ai_open = true;
                 }
@@ -435,6 +436,9 @@ impl Desktop {
                     Action::CopyCommentToAiChat,
                     self.ai_sidebar.is_some() && comment.extra.get("creator").is_some_and(|creator| creator["id"].as_i64().is_some()),
                 ),
+                ("branchInNewChat","Branch in new chat","",Action::BranchCommentToAiChat,self.ai_sidebar.is_some()),
+                ("createTaskFromComment", "Create task from comment", "", Action::CreateTaskFromComment, self.detail.as_ref().is_some_and(|detail| detail.task.extra.get("uniqueIndex").and_then(Value::as_i64).is_some_and(|index| index > 0))),
+                ("summarizeComment", "Summarize comment", "", Action::SummarizeComment, self.ai_sidebar.is_some()),
                 (
                     "deletemessage",
                     "Delete comment",

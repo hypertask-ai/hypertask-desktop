@@ -9,6 +9,56 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::TaskWriter => self.open_compose(window, cx),
+            ShellCommand::SummarizeTicket => {
+                if self.screen != Screen::Task { return; }
+                if let Some(sidebar) = &self.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.summarize_ticket(window, cx));
+                    self.shell.ai_open = sidebar.read(cx).is_open();
+                }
+            }
+            ShellCommand::DeclineDuplicate => {
+                self.show_modal(crate::ui::interactions::Modal::Relation(ht_core::RelationKind::Duplicate), window, cx);
+                self.task_actions.decline_duplicate = true;
+            }
+            ShellCommand::Relation(kind) => self.show_modal(crate::ui::interactions::Modal::Relation(kind), window, cx),
+            ShellCommand::Recurrence => self.show_modal(crate::ui::interactions::Modal::Recurrence, window, cx),
+            ShellCommand::StartDate => self.show_start_date(window, cx),
+            ShellCommand::WaitingOn => self.show_modal(crate::ui::interactions::Modal::WaitingOn, window, cx),
+            ShellCommand::AssignMe => {
+                if let Some(task) = self.selected_task() { self.queue_task_action(task, ht_core::TaskAction::AssignMe, window, cx); }
+            }
+            ShellCommand::NewFromTemplate => self.open_task_templates(window,cx),
+            ShellCommand::AcceptTask => {
+                if let Some(task) = self.selected_task() {
+                    match self.db.accept_task_action(task) {
+                        Ok(change) => self.queue_task_action(task, change, window, cx),
+                        Err(error) => { self.error = Some(error.to_string()); cx.notify(); }
+                    }
+                }
+            }
+            ShellCommand::DeclineTask | ShellCommand::SaveTemplate => {
+                if let Some(task) = self.selected_task() {
+                    self.queue_task_action(task, if action == ShellCommand::DeclineTask { ht_core::TaskAction::Decline } else { ht_core::TaskAction::SaveTemplate }, window, cx);
+                }
+            }
+            ShellCommand::TaskTimer => self.toggle_task_timer(window,cx),
+            ShellCommand::BoardTime => self.toggle_board_time(window,cx),
+            ShellCommand::AutoAssignColumn => { self.views.column_auto_select = true; self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx); },
+            ShellCommand::SmartSplit => self.open_smart_split(None,window,cx),
+            ShellCommand::DuplicateTask(pick_board)=>self.open_duplicate_task(pick_board,window,cx),
+            ShellCommand::ArchivedOnBoard=>self.toggle_archived_on_board(window,cx),
+            ShellCommand::HideColumn=>self.hide_current_column(window,cx),
+            ShellCommand::Columns=>{self.views.column_auto_select=false;self.open_view_panel(crate::ui::board_views::Panel::Columns,window,cx);},
+            ShellCommand::Subtasks=>self.open_view_panel(crate::ui::board_views::Panel::Subtasks,window,cx),
+            ShellCommand::EmptyColumns=>self.toggle_empty_columns(window,cx),
+            ShellCommand::CreateTask=>self.open_create_task(window,cx),
+            ShellCommand::Sort=>self.open_view_panel(crate::ui::board_views::Panel::Sort,window,cx),
+            ShellCommand::Filters=>self.open_view_panel(crate::ui::board_views::Panel::Filters,window,cx),
+            ShellCommand::ValueMatch=>self.open_view_panel(crate::ui::board_views::Panel::ValueMatch,window,cx),
+            ShellCommand::SortTimeInColumn|ShellCommand::SortLastComment=>self.command_sort(if action==ShellCommand::SortTimeInColumn{"TimeInColumn"}else{"TimeWithoutComment"},window,cx),
+            ShellCommand::Views => self.open_view_panel(crate::ui::board_views::Panel::Manage,window,cx),
+            ShellCommand::Favorites => self.open_favorites(window, cx),
             ShellCommand::CopyBranchName => {
                 if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
                     if let Some(ticket) = task.ticket_number {
@@ -110,13 +160,79 @@ mod tests {
         let rows = crate::command_center::commands(Screen::Inbox, false);
         let name = &rows.iter().find(|row| row.key == key).expect(key).name;
         cx.simulate_input(name);
-        let index = view.read_with(cx, |this, _| {
+        let index = view.read_with(cx, |this, cx| {
+            assert_eq!(this.interaction.modal, Some(crate::ui::interactions::Modal::Commands), "{key}: Ctrl+K must open the palette");
+            assert_eq!(this.interaction.query.read(cx).content.as_ref(), name, "{key}: query must reach the palette input");
+            let rows = this.command_rows();
             let usage = this.db.kv_get("command-usage").unwrap().and_then(|value| serde_json::from_str::<Value>(&value).ok()).unwrap_or(Value::Null);
             crate::command_center::ranked(&rows, name, &usage, chrono::Utc::now().timestamp_millis()).iter().position(|row| row.key == key).expect("command must match its web name")
         }).unwrap();
         for _ in 0..index { cx.simulate_keystrokes("down"); }
         cx.simulate_keystrokes("enter");
         draw(view, cx);
+    }
+
+    #[gpui::test]
+    fn shell_palette_summarize_ticket_opens_existing_chat_only_on_task_detail(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| crate::ui::task_fields::tests::desktop(window, cx));
+        let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
+        draw(view, &mut cx);
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Summarize ticket");
+        view.read_with(&cx, |this, _| assert!(this.command_rows().iter().any(|row| row.key == "summarizeTicket"))).unwrap();
+        cx.simulate_keystrokes("enter");
+        draw(view, &mut cx);
+        view.read_with(&cx, |this, cx| {
+            assert!(this.interaction.modal.is_none());
+            assert!(this.ai_sidebar.as_ref().unwrap().read(cx).is_open());
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn shell_palette_summarize_comment_requires_real_focused_comment_and_opens_current_chat(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view=cx.open_window(gpui::size(px(1440.),px(900.)),crate::ui::task_fields::tests::desktop);
+        let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
+        view.update(&mut cx,|this,window,cx| {
+            assert!(!this.command_rows().iter().any(|row|row.key=="summarizeComment"));
+            this.db.apply_comments(1,&serde_json::json!({"success":true,"comments":[{"id":71,"taskId":1,"text":"<p>Keep <strong>this</strong></p>","createdAt":"2026-10-01T00:00:00Z","creatorId":7,"creator":{"id":7,"displayName":"Alex & Bea"}}]})).unwrap();
+            this.reload();this.interaction.task_part=1;window.focus(&this.focus,cx);
+            assert!(this.command_rows().iter().any(|row|row.key=="summarizeComment"));
+        }).unwrap();
+        draw(view,&mut cx);
+        cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Summarize comment");cx.simulate_keystrokes("enter");
+        draw(view,&mut cx);
+        view.read_with(&cx,|this,cx| {
+            assert!(this.interaction.modal.is_none());
+            assert!(this.ai_sidebar.as_ref().unwrap().read(cx).is_open());
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn shell_palette_query_keeps_j_and_k_while_arrows_navigate(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("j k");
+        view.read_with(&cx, |this, cx| assert_eq!(this.interaction.query.read(cx).content.as_ref(), "j k")).unwrap();
+        cx.simulate_keystrokes("ctrl-a backspace");
+        cx.simulate_input("Settings");
+        cx.simulate_keystrokes("down");
+        view.read_with(&cx, |this, _| assert_eq!(this.interaction.choice, 1)).unwrap();
+        cx.simulate_keystrokes("up");
+        view.read_with(&cx, |this, _| assert_eq!(this.interaction.choice, 0)).unwrap();
+    }
+
+    #[gpui::test]
+    fn shell_palette_favorites_opens_the_web_ten_slot_panel_without_a_write(cx: &mut gpui::TestAppContext) {
+        let(view,mut cx)=setup(cx);
+        command(view,&mut cx,"manageFavorites");
+        measured(view,&mut cx,"shell.favorites.manager");
+        view.read_with(&cx,|this,_|assert!(this.db.mutations().unwrap().is_empty())).unwrap();
+        cx.simulate_keystrokes("escape");
+        measured(view,&mut cx,"inbox.tabs");
     }
 
     #[gpui::test]
@@ -130,6 +246,18 @@ mod tests {
             ("settingsShortcuts", "shortcuts"),
             ("settingsGeneral", "general"),
             ("settingsAppearance", "appearance"),
+            ("settingsPlans", "plans"),
+            ("settingsApiKeys", "apiKeys"),
+            ("settingsApiKeysOpenaiApiKey", "apiKeys"),
+            ("settingsApiKeysAnthropicApiKey", "apiKeys"),
+            ("settingsApiKeysGoogleApiKey", "apiKeys"),
+            ("settingsApiKeysDeepseekApiKey", "apiKeys"),
+            ("settingsApiKeysMoonshotKimiApiKey", "apiKeys"),
+            ("settingsApiKeysZAiGlmApiKey", "apiKeys"),
+            ("settingsApiKeysAlibabaQwenApiKey", "apiKeys"),
+            ("settingsApiKeysOpenrouterApiKey", "apiKeys"),
+            ("settingsApiKeysVercelAiGatewayApiKey", "apiKeys"),
+            ("settingsApiKeysCustomEndpointOperatesUnderAnEuUsDataAgreement", "apiKeys"),
             ("settingsSkills", "skills"),
             ("settingsBoardMembers", "board-members"),
             ("settingsBoardAi", "board-ai"),
@@ -139,8 +267,8 @@ mod tests {
         ] {
             command(view, &mut cx, key);
             view.read_with(&cx, |this, _| {
-                assert!(this.shell.settings);
-                assert_eq!(this.shell.settings_state.section, section);
+                assert!(this.shell.settings, "{key} must open native settings");
+                assert_eq!(this.shell.settings_state.section, section, "{key}");
                 assert_eq!(this.shell.settings_state.board, 15);
                 assert!(!this.shell.settings_state.calendar_weekends);
                 assert!(this.footer);

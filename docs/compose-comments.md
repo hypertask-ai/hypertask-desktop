@@ -1,5 +1,9 @@
 # HTPR-7381: compose and focused comments
 
+Full-sign-in client follow-up: see [prewire-parity.md](prewire-parity.md) for
+newly wired portions and native gaps; historical auth blockers below are not
+claims that server approval alone completes these rows.
+
 Web contract inspected at `hypertask` commit `6f9901764d355aba7bfc76e4e62ff255e0b68b31`. Web paths below are relative to that repository. No web changes, authenticated application requests, VPS builds/tests/test copies, or owner-laptop access.
 
 ## HTPR-7699: native CLI contracts implemented; QA live authorization pending

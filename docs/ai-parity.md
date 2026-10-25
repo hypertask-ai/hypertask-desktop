@@ -1,5 +1,10 @@
 # HTPR-7381 AI and focused-comment parity
 
+Full-sign-in client follow-up: see [prewire-followup.md](prewire-followup.md) and
+[prewire-parity.md](prewire-parity.md) for
+newly wired portions and native gaps; historical auth blockers below are not
+claims that server approval alone completes these rows.
+
 Scope: F227/F228, F368-F373, F579/F581/F583, F606-F620. Web paths below
 are relative to `hypertask/src`. This is not a claim of complete AI parity.
 Proof is GitHub CI only: workspace request/queue unit tests, GPUI TestAppContext
@@ -37,17 +42,18 @@ MCP token, and switching token exchange alone does not unlock cookie history.
 | F228 | Fullscreen command opens the existing conversation without changing the workspace return target. Fullscreen server history rail is A2, not claimed. | `ai_workspace.rs`; `components/commandDispatcher.ts:742-749`, `lib/aiChatDisplayMode.ts:14-27`, `app/chat/Chat.tsx:493-500,646-683`. |
 | F606 | Implemented resize edge, persisted width, 340px minimum, min(900, floor(viewport × .85)) maximum. | `ai_presentation.rs`; `lib/configs/style.config.ts:1-15`, `components/AI_CHAT/AiChatSidebarResizeHandle.tsx:29-56`. |
 | F608 | Local sidebar/floating/fullscreen transitions preserve conversation/draft, fullscreen uses the web's 48px header/800px content column and exits to its prior presentation; close suppresses automatic reopening, floating minimize preserves the chat. Presentation behavior is implemented; server history/rename are tracked separately under F614/F615 (A2/A3). | `ai_workspace.rs`, `ai_sidebar.rs`; `components/AI_CHAT/ChatHeader.tsx:455-515,582-601`, `components/AI_CHAT/ChatWindow.tsx:16-52`, `components/AI_CHAT/AI_Chat_Layout.tsx:126-133`. |
-| F609 | Partial retained main model/request implementation; full configured picker A4. | `ai_sidebar.rs`, `ht-core/src/ai_chat.rs`; `lib/aiModelOptions.ts:246-523`. |
+| F609 | Model/provider/custom-endpoint reads, family/effort/reset picker, verified last-team fallback, actual public legacy billing mapping and queued team preferences are wired; native team-targeted Plans/API keys handoff, key/checkout queue/refusal handling and viewport-anchored popup are now wired; full visual acceptance and live A4 remain. | `ai_sidebar.rs`, `ht-core/src/ai_chat.rs`; `lib/aiModelOptions.ts:246-523`. |
 | F610, F616 | Existing scope/request and local starter-suggestion paths retained and regression-tested; live requests remain A1. Generated task suggestions use cookie-only `POST /api/ai/task-questions`, `getSessionUser` (`app/api/ai/task-questions/route.ts:60`). | `Scope::load`, `ht-core/src/ai_chat.rs`; `hooks/MultiPages/AIChat/aiChatSend.ts:159-194`, `components/AI_CHAT/WelcomeScreen.tsx:24-72`. |
-| F611, F612 | Full scope/add-context pickers blocked A5; do not invent ungrouped board/team relationships or a flag state. | `components/AI_CHAT/AI_Tiptap_Container.tsx:540-685`. |
+| F611, F612 | Native grouped/recent scope, flag-gated ticket scope and full entity search now wired; live requests remain A5. See the follow-up for mocked refusal and exact payload evidence. | `components/AI_CHAT/AI_Tiptap_Container.tsx:540-685`. |
 | F613 | End-to-end attachments/screenshot delivery blocked A1; no decorative attachment button added. | `hooks/MultiPages/AIChat/aiChatSend.ts:100-151,189-193`. |
-| F614 | Existing lazy background legacy history is retained; paged/durable history blocked A2. | `ai_sidebar.rs`; `components/AI_CHAT/ChatHeader.tsx:148-162,220-290`. |
-| F615 | Blocked A3. | No fake rename/delete UI. |
+| F614 | Paged/lazy history and durable session lifecycle now wired; fullscreen history rail remains native work, and live authorization remains A2. | `ai_sidebar.rs`; `components/AI_CHAT/ChatHeader.tsx:148-162,220-290`. |
+| F615 | Queued rename/delete/delete-all with optimism, rollback and restart recovery now wired; live authorization remains A3. | `ai_sessions.rs`; see follow-up for exact web requests and accepting/refusing tests. |
 | F617 | Existing incremental SSE/status/markdown/error/cancel paths retained; successful live parity blocked A1. | `ai_sidebar.rs`, `ht-core/src/ai_chat.rs`. |
 | F618 | Plain-text response copy (web clipboard fallback) implemented. Full row blocked A7: web top-position create-task contract unavailable; response branch/add-to-comment controls are **not in the inspected web MessageItem**, so are not invented. | `components/AI_CHAT/MessageItem.tsx:159-227`; `hooks/MultiPages/AIChat/useAiChatPresentation.ts:119-168`. |
 | F619 | Implemented 4px bottom threshold, preserve user position while streaming, scroll-to-latest button. | `ai_sidebar.rs`; `hooks/MultiPages/AIChat/useAiChatPresentation.ts:103-125`, `components/AI_CHAT/MessageList.tsx:71-91`. |
 | F620 | Blocked A6. | No invented human-to-agent token conversion. |
-| F368, F372 | Blocked A1/A2. | Summary submits quote + “Summarize this comment concisely.”; branch awaits server session creation (`hooks/MultiPages/AIChat/useCommentToAiChat.ts:90-108`, `app/detail/[...slug]/useTaskDetailCommandActions.tsx:94-118`). |
+| F368 | Live summary remains A1. | Quote + “Summarize this comment concisely.” (`hooks/MultiPages/AIChat/useCommentToAiChat.ts:90-108`). |
+| F372 | Queued server-session branch now wired, including durable quote continuation, refusal rollback and late-intent rejection; live authorization remains A2. | `app/detail/[...slug]/useTaskDetailCommandActions.tsx:94-118`; native `ai_sessions.rs`. |
 | F369, F370, F373 | Implemented focused content/plain-text clipboard fallback, URL with displayed comment-index fragment (not database ID), quote insertion into the existing AI composer without sending or creating a session. | `comment_actions.rs`; `app/detail/[...slug]/useTaskDetailCommentActions.tsx:85-134`, `hooks/MultiPages/AIChat/useCommentToAiChat.ts:78-87`, `utils/helperFunctions/TaskDetail/index.ts:88-109`. |
 | F371 | Blocked A7. | No partial plain-task substitute. |
 | F579 | Per-task/user durable local restore and 750ms debounced queued bearer autosave; server drafts cached separately from published comments. Discard queues a delete; successful comment acknowledgement queues draft cleanup, failed sends restore drafts, newer edits are not cleared. | `comment_drafts.rs`, `ht-core/src/comment_draft.rs`; `components/RTE/useTaskDetailEditorDrafts.tsx:75-161,179-181`. Bearer `POST/GET /api/mcp/drafts`, `DELETE /api/mcp/drafts/<id>` use `validateMcpRouteAuth` (`lib/mcp/operations/drafts/operation.ts:53-67,87-89,123-157,194-204`; `lib/mcp/operations/drafts/[draft_id]/operation.ts:179-200,237-265`). |

@@ -1,3 +1,4 @@
+use anyhow::Context as _;
 use crate::layout::LayoutKey;
 use crate::{
     input::TextInput,
@@ -28,6 +29,18 @@ mod memory;
 #[path = "ai_skills.rs"]
 mod skills;
 
+#[path = "ai_sessions.rs"]
+mod sessions;
+pub use sessions::SessionRequest;
+use sessions::SessionPending;
+
+#[path = "ai_context.rs"]
+mod context_picker;
+
+#[path = "ai_models.rs"]
+mod configured_models;
+pub use configured_models::PreferenceRequest;
+
 #[path = "ai_presentation.rs"]
 mod presentation;
 pub use presentation::DisplayMode;
@@ -37,8 +50,10 @@ use presentation::Presentation;
 pub struct Scope {
     context: DefaultContext,
     team_id: Option<String>,
+    last_team: Option<String>,
     label: String,
     suggestions: Vec<String>,
+    model_default: Option<String>,
 }
 
 impl Scope {
@@ -46,6 +61,9 @@ impl Scope {
         let task = task_id.and_then(|id| db.task(id).ok().flatten());
         let project = task.as_ref().map_or(project, |t| t.project_id);
         let (board_name, team_id) = ai_chat::project_metadata(db, project);
+        let team_id=if screen==Screen::Inbox {None}else{team_id};
+        if let Some(team)=&team_id {let _=db.kv_set("lastBoardTeamId",team);}
+        let last_team=db.kv_get("lastBoardTeamId").ok().flatten();
         let columns = if screen == Screen::Board {
             db.board_cards(project).unwrap_or_default()
         } else {
@@ -96,17 +114,22 @@ impl Scope {
                 view_name: (screen != Screen::Inbox).then_some(board_name),
             },
             team_id,
+            last_team,
             label,
             suggestions,
+            model_default:(screen!=Screen::Inbox).then(||db.board_project(project).ok()).flatten().and_then(|p|p["ai_custom_instructions"][0]["model_selected"].as_str().map(str::to_owned)),
         }
     }
 }
 
+#[derive(Clone)]
 struct ChatMessage {
     message: Message,
     rich: RichText,
 }
+#[derive(Clone)]
 struct Chat {
+    persisted: bool,
     id: String,
     title: String,
     messages: Vec<ChatMessage>,
@@ -118,6 +141,7 @@ impl Chat {
     fn new() -> Self {
         Self {
             id: ai_chat::session_id(),
+            persisted: false,
             title: "New AI Chat".into(),
             messages: vec![],
             status: String::new(),
@@ -132,12 +156,16 @@ enum Update {
 }
 struct ActiveTurn {
     ids: TurnIds,
-    chat: usize,
     assistant: usize,
     updates: Receiver<Update>,
     cancel_reply: Option<Receiver<Result<(), String>>>,
     stopping: bool,
     client: Client,
+}
+
+struct SummaryIntent {
+    task: i64,
+    prompt: String,
 }
 
 pub struct AiSidebar {
@@ -154,20 +182,28 @@ pub struct AiSidebar {
     client: Option<Client>,
     scope: Option<Scope>,
     include_context: bool,
+    context_picker: context_picker::ContextPicker,
     chats: Vec<Chat>,
     selected: usize,
     model: usize,
+    models: configured_models::Models,
     model_menu: bool,
     history_menu: bool,
     history: Vec<Arc<Session>>,
-    history_pending: Option<Receiver<Result<Vec<Arc<Session>>, String>>>,
+    history_pending: Option<Receiver<Result<(Vec<Arc<Session>>, Option<String>), String>>>,
     history_error: Option<String>,
     history_limit: usize,
-    chat_pending: Option<Receiver<Chat>>,
+    history_next: Option<String>,
+    history_append: bool,
+    chat_pending: Option<Receiver<Result<Chat,String>>>,
+    session_pending: Option<SessionPending>,
+    rename_open: bool,
+    rename_input: Entity<TextInput>,
     more_menu: bool,
     collapsed: bool,
     scroll: ScrollHandle,
     active: Option<ActiveTurn>,
+    summary: Option<SummaryIntent>,
 }
 
 impl AiSidebar {
@@ -201,6 +237,8 @@ impl AiSidebar {
             )
             .multiline()
         });
+        let rename_input=cx.new(|cx|TextInput::new(String::new(),"Chat name",color(colors.muted),cx));
+        cx.observe(&rename_input,|_,_,cx|cx.notify()).detach();
         let input_scroll = ScrollHandle::new();
         let scroll = input_scroll.clone();
         let mut draft = String::new();
@@ -234,6 +272,8 @@ impl AiSidebar {
             focus: cx.focus_handle(),
             previous_focus: Some(workspace_focus),
             skills: skills::Skills::new(token.clone()),
+            models: configured_models::Models::new(token.clone()),
+            context_picker: context_picker::ContextPicker::new(token.clone()),
             client: token.and_then(|t| Client::new(t).ok()),
             scope: None,
             include_context: true,
@@ -246,11 +286,17 @@ impl AiSidebar {
             history_pending: None,
             history_error: None,
             history_limit: 30,
+            history_next: None,
+            history_append: false,
             chat_pending: None,
+            session_pending: None,
+            rename_open: false,
+            rename_input,
             more_menu: false,
             collapsed: false,
             scroll: ScrollHandle::new(),
             active: None,
+            summary: None,
         };
         sidebar.load_memory_history(cx);
         sidebar
@@ -258,10 +304,14 @@ impl AiSidebar {
 
     pub fn set_token(&mut self, token: Option<String>, cx: &mut Context<Self>) {
         self.stop(cx);
+        self.session_pending=None;self.rename_open=false;self.scope=None;
         self.active = None;
+        self.summary = None;
         self.chats = vec![Chat::new()];
         self.selected = 0;
         self.history.clear();
+        self.history_next=None;
+        self.history_append=false;
         self.draft_quotes.clear();
         self.history_pending = None;
         self.history_error = None;
@@ -270,6 +320,8 @@ impl AiSidebar {
         self.input
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.skills = skills::Skills::new(token.clone());
+        self.models=configured_models::Models::new(token.clone());
+        self.context_picker=context_picker::ContextPicker::new(token.clone());
         self.client = token.and_then(|t| Client::new(t).ok());
         cx.notify();
     }
@@ -282,6 +334,7 @@ impl AiSidebar {
                     || old.context.surface != scope.context.surface
             });
             self.scope = Some(scope);
+            self.load_models(cx);
             if changed_context {
                 self.include_context = true;
             }
@@ -320,40 +373,43 @@ impl AiSidebar {
     }
 
     fn toggle_history(&mut self, cx: &mut Context<Self>) {
+        if self.session_pending.is_some(){return;}
         self.history_menu = !self.history_menu;
         self.model_menu = false;
         self.more_menu = false;
-        if self.history_menu && self.history_pending.is_none() {
-            self.history_error = None;
-            self.history_limit = 30;
-            if let Some(client) = self.client.clone() {
-                let (send, receive) = mpsc::channel();
-                match thread::Builder::new()
-                    .name("ht-ai-history".into())
-                    .spawn(move || {
-                        let result = client
-                            .sessions()
-                            .map(|sessions| sessions.into_iter().map(Arc::new).collect())
-                            .map_err(|e| e.to_string());
-                        let _ = send.send(result);
-                    }) {
-                    Ok(_) => self.history_pending = Some(receive),
-                    Err(error) => self.history_error = Some(error.to_string()),
-                }
-            } else {
-                self.history_error = Some("Sign in to load server history".into());
-            }
-        }
+        if self.history_menu && self.history_pending.is_none() { self.load_history(false,cx); }
+        cx.notify();
+    }
+
+    fn load_history(&mut self, append:bool, cx:&mut Context<Self>) {
+        if self.history_pending.is_some(){return;}
+        self.history_error=None;self.history_append=append;
+        if !append {self.history_limit=30;self.history_next=None;}
+        let cursor=self.history_next.clone();
+        if let Some(client)=self.client.clone(){
+            let(send,receive)=mpsc::channel();
+            match thread::Builder::new().name("ht-ai-history".into()).spawn(move||{
+                let result=client.session_page(cursor.as_deref()).map(|page|(page.sessions.into_iter().map(Arc::new).collect(),page.next_cursor)).map_err(|e|e.to_string());
+                let _=send.send(result);
+            }){Ok(_)=>self.history_pending=Some(receive),Err(error)=>self.history_error=Some(error.to_string())}
+        }else{self.history_error=Some("Sign in to load server history".into());}
         cx.notify();
     }
 
     fn open_history_chat(&mut self, index: usize, cx: &mut Context<Self>) {
         let session = Arc::clone(&self.history[index]);
         let colors = self.colors;
+        let client = self.client.clone();
         let (send, receive) = mpsc::channel();
         match thread::Builder::new()
             .name("ht-ai-transcript".into())
             .spawn(move || {
+                let session = if session.has_messages.is_some() {
+                    match client.context("Sign in to load server history").and_then(|client|client.transcript(&session.id)) {
+                        Ok(session)=>Arc::new(session),
+                        Err(error)=>{let _=send.send(Err(error.to_string()));return;}
+                    }
+                }else{session};
                 let id = session.id.clone();
                 let title = session.title.clone().unwrap_or_else(|| "AI Chat".into());
                 let messages = session
@@ -369,13 +425,14 @@ impl AiSidebar {
                         ChatMessage { message, rich }
                     })
                     .collect();
-                let _ = send.send(Chat {
+                let _ = send.send(Ok(Chat {
+                    persisted: true,
                     id,
                     title,
                     messages,
                     status: String::new(),
                     error: None,
-                });
+                }));
             }) {
             Ok(_) => self.chat_pending = Some(receive),
             Err(error) => self.history_error = Some(error.to_string()),
@@ -389,7 +446,11 @@ impl AiSidebar {
                 Ok(result) => {
                     self.history_pending = None;
                     match result {
-                        Ok(sessions) => self.history = sessions,
+                        Ok((sessions,next)) => {
+                            if self.history_append {for session in sessions{if !self.history.iter().any(|s|s.id==session.id){self.history.push(session);}}self.history_limit=self.history.len();}
+                            else{self.history=sessions;}
+                            self.history_next=next;
+                        },
                         Err(error) => self.history_error = Some(error),
                     }
                     cx.notify();
@@ -404,7 +465,8 @@ impl AiSidebar {
         }
         if let Some(pending) = &self.chat_pending {
             match pending.try_recv() {
-                Ok(chat) => {
+                Ok(Err(error)) => {self.chat_pending=None;self.history_error=Some(error);cx.notify();}
+                Ok(Ok(chat)) => {
                     self.chat_pending = None;
                     self.chats.push(chat);
                     self.selected = self.chats.len() - 1;
@@ -423,6 +485,12 @@ impl AiSidebar {
     }
 
     pub(crate) fn new_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.session_pending.is_some(){return;}
+        if self.client.is_some(){
+            self.request_session(self.create_scope(),None,None,cx);
+            window.focus(&self.input.focus_handle(cx),cx);
+            return;
+        }
         self.chat_pending = None;
         self.draft_quotes.clear();
         self.chats.push(Chat::new());
@@ -452,6 +520,10 @@ impl AiSidebar {
     }
 
     fn prompt_body(&self, text: &str) -> String {
+        if let [(plain, html)] = self.draft_quotes.as_slice() {
+            if plain == text { return html.clone(); }
+        }
+        if !self.draft_quotes.iter().any(|(plain, _)| text.contains(plain)) { return text.to_owned(); }
         let mut message = text.to_owned();
         if !self.draft_quotes.is_empty() {
             message = quote_text_html(text);
@@ -464,6 +536,52 @@ impl AiSidebar {
         message
     }
 
+    pub fn summarize_ticket(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.begin_summary("Summarize this ticket, its description and the key points from the comments, concisely.".into(), window, cx);
+    }
+
+    pub fn summarize_comment(&mut self, quote: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.active.is_some() || self.summary.is_some() || self.scope.as_ref().and_then(|scope| scope.context.task_id).is_none() { return; }
+        let message = format!("{quote}<p>Summarize this comment concisely.</p>");
+        let prompt = RichText::parse(&message, self.colors).text;
+        self.draft_quotes = vec![(prompt.clone(), message)];
+        self.input.update(cx, |input, cx| input.set_content(prompt.clone(), cx));
+        self.begin_summary(prompt, window, cx);
+    }
+
+    fn begin_summary(&mut self, prompt: String, window: &mut Window, cx: &mut Context<Self>) {
+        if self.active.is_some() || self.summary.is_some() { return; }
+        let Some(task) = self.scope.as_ref().and_then(|scope| scope.context.task_id) else { return; };
+        self.summary = Some(SummaryIntent { task, prompt });
+        self.set_open(true, cx);
+        window.focus(&self.input.focus_handle(cx), cx);
+        let deadline = std::time::Instant::now() + Duration::from_secs(5);
+        cx.spawn_in(window, async move |view, cx| {
+            loop {
+                cx.background_executor().timer(Duration::from_millis(50)).await;
+                if !view.update_in(cx, |this, window, cx| {
+                    this.finish_summary(deadline, window, cx)
+                }).unwrap_or(false) { break; }
+            }
+        }).detach();
+    }
+
+    fn finish_summary(&mut self, deadline: std::time::Instant, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        let Some(summary) = &self.summary else { return false; };
+        if !self.is_open() || self.scope.as_ref().and_then(|scope| scope.context.task_id) != Some(summary.task)
+            || self.active.is_some() || std::time::Instant::now() >= deadline {
+            self.summary = None;
+            return false;
+        }
+        if self.session_pending.is_some() || self.chat_pending.is_some() || self.history_pending.is_some()
+            || (self.client.is_some() && self.models.configuration.is_none() && self.models.error.is_none()) {
+            return true;
+        }
+        let summary = self.summary.take().unwrap();
+        self.send(summary.prompt, window, cx);
+        false
+    }
+
     fn send(&mut self, text: String, window: &mut Window, cx: &mut Context<Self>) {
         let message = self.prompt_body(if self.draft_quotes.is_empty() {
             text.trim()
@@ -471,9 +589,19 @@ impl AiSidebar {
             &text
         });
         let text = text.trim().to_owned();
-        if text.is_empty() || self.active.is_some() {
+        if text.is_empty() || self.active.is_some() || self.session_pending.is_some() {
             return;
         }
+        if self.client.is_some() && self.scope.is_some() && self.models.configuration.is_none(){
+            if let Some(error)=&self.models.error{self.chats[self.selected].error=Some(error.clone());}
+            cx.notify();return;
+        }
+        if self.client.is_some() && !self.chats[self.selected].persisted {
+            self.request_session(self.create_scope(),None,Some(text),cx);
+            return;
+        }
+        let context=self.request_context();
+        let ticket_scope=self.mode()!=DisplayMode::Fullscreen && self.context_picker.scope=="ticket";
         let chat = &mut self.chats[self.selected];
         chat.error = None;
         let Some(client) = self.client.clone() else {
@@ -483,18 +611,8 @@ impl AiSidebar {
             return;
         };
         let ids = TurnIds::new(chat.id.clone());
-        let mut context = self
-            .scope
-            .as_ref()
-            .map(|s| s.context.clone())
-            .unwrap_or_default();
-        if !self.include_context {
-            context.project_id = None;
-            context.task_id = None;
-            context.view_name = None;
-        }
         let history: Vec<Message> = chat.messages.iter().map(|m| m.message.clone()).collect();
-        let body = ai_chat::request(
+        let mut body = ai_chat::request(
             &message,
             &ids,
             &ai_chat::session_id(),
@@ -503,6 +621,11 @@ impl AiSidebar {
             self.scope.as_ref().and_then(|s| s.team_id.as_deref()),
             &history,
         );
+        if let (Some(config),Some(id))=(&self.models.configuration,&self.models.selected){
+            if let Err(error)=config.apply(&mut body,id){chat.error=Some(error.to_string());cx.notify();return;}
+        }
+        body["context_list"]=serde_json::json!(self.context_picker.selected);
+        if ticket_scope && context.task_id.is_some(){body["default_context"]["scope"]=serde_json::json!("ticket");}
         let (send, updates) = mpsc::sync_channel(64);
         let worker_client = client.clone();
         if let Err(error) = thread::Builder::new()
@@ -538,7 +661,6 @@ impl AiSidebar {
         self.scroll.scroll_to_bottom();
         self.active = Some(ActiveTurn {
             ids,
-            chat: self.selected,
             assistant,
             updates,
             cancel_reply: None,
@@ -568,9 +690,9 @@ impl AiSidebar {
             Ok(_) => {
                 active.stopping = true;
                 active.cancel_reply = Some(receive);
-                self.chats[active.chat].status = "Stopping…".into();
+                if let Some(chat)=self.chats.iter_mut().find(|chat|chat.id==active.ids.session_id).or_else(||self.session_pending.as_mut().and_then(|pending|pending.chats.iter_mut().find(|chat|chat.id==active.ids.session_id))){chat.status="Stopping…".into();}
             }
-            Err(error) => self.chats[active.chat].error = Some(error.to_string()),
+            Err(error) => {if let Some(chat)=self.chats.iter_mut().find(|chat|chat.id==active.ids.session_id){chat.error=Some(error.to_string());}},
         }
         cx.notify();
     }
@@ -581,12 +703,15 @@ impl AiSidebar {
 
     fn poll(&mut self, cx: &mut Context<Self>) {
         self.poll_skills(cx);
+        self.poll_models(cx);
+        self.poll_context(cx);
         self.poll_history(cx);
         let follow_latest = !self.away_from_latest();
         let Some(active) = &mut self.active else {
             return;
         };
-        let chat = &mut self.chats[active.chat];
+        let selected_id=self.chats[self.selected].id.clone();
+        let Some(chat)=self.chats.iter_mut().find(|chat|chat.id==active.ids.session_id).or_else(||self.session_pending.as_mut().and_then(|pending|pending.chats.iter_mut().find(|chat|chat.id==active.ids.session_id))) else{self.active=None;return;};
         let mut changed = false;
         let mut terminal = false;
         let mut content_changed = false;
@@ -654,7 +779,7 @@ impl AiSidebar {
                 &chat.messages[active.assistant].message.content,
                 self.colors,
             );
-            if active.chat == self.selected && follow_latest {
+            if active.ids.session_id == selected_id && follow_latest {
                 self.scroll.scroll_to_bottom();
             }
         }
@@ -672,6 +797,10 @@ impl AiSidebar {
     fn key_down(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) {
         let key = event.keystroke.key.as_str();
         let modifiers = event.keystroke.modifiers;
+        if self.rename_open {
+            match key {"enter"=>self.rename_session(cx),"escape"=>{self.rename_open=false;cx.notify();},_=>return}
+            cx.stop_propagation();return;
+        }
         if modifiers.control && !modifiers.platform && !modifiers.shift && !modifiers.alt
             && key == "q" && !event.is_held
         {
@@ -681,7 +810,8 @@ impl AiSidebar {
         {
             self.new_chat(window, cx);
         } else if key == "escape" {
-            if self.model_menu || self.history_menu || self.more_menu {
+            if self.model_menu || self.history_menu || self.more_menu || self.context_picker.scope_open {
+                self.context_picker.scope_open=false;
                 self.model_menu = false;
                 self.history_menu = false;
                 self.more_menu = false;
@@ -901,7 +1031,7 @@ impl Render for AiSidebar {
         let status = if self
             .active
             .as_ref()
-            .is_some_and(|a| a.chat != self.selected)
+            .is_some_and(|a| a.ids.session_id != self.chats[self.selected].id)
         {
             "Replying in another chat…".into()
         } else {
@@ -1028,6 +1158,7 @@ impl Render for AiSidebar {
             .flex()
             .flex_col()
             .track_focus(&self.focus)
+            .capture_key_down(cx.listener(Self::context_key))
             .capture_key_down(cx.listener(Self::skill_key))
             .on_key_down(cx.listener(Self::key_down))
             .relative();
@@ -1076,15 +1207,14 @@ impl Render for AiSidebar {
                         .child(session.title.clone().unwrap_or_else(|| "AI Chat".into())),
                 );
             }
-            if self.history.len() > self.history_limit {
+            if self.history_next.is_some() || self.history.len() > self.history_limit {
                 menu = menu.child(
                     div()
                         .id("ai-history-more")
                         .p(px(6.))
                         .cursor_pointer()
                         .on_click(cx.listener(|this, _, _, cx| {
-                            this.history_limit += 30;
-                            cx.notify();
+                            if this.history_next.is_some(){this.load_history(true,cx);}else{this.history_limit+=30;cx.notify();}
                         }))
                         .child("Show more"),
                 );
@@ -1153,6 +1283,15 @@ impl Render for AiSidebar {
                                 .layout_key(&self.capture, id.replace('-', "."), None)
                         }),
                     )
+                    .when(self.chats[self.selected].persisted,|d|d
+                        .child(div().id("ai-rename").p(px(6.)).cursor_pointer().child("Rename chat").on_click(cx.listener(|this,_,window,cx|{
+                            this.more_menu=false;this.rename_open=true;
+                            let title=this.chats[this.selected].title.clone();this.rename_input.update(cx,|input,cx|input.set_content(title,cx));
+                            window.focus(&this.rename_input.focus_handle(cx),cx);cx.notify();
+                        })))
+                        .child(div().id("ai-delete").p(px(6.)).cursor_pointer().child("Delete chat").on_click(cx.listener(|this,_,_,cx|{
+                            this.request_session(ht_core::AiSessionWrite::Delete{id:this.chats[this.selected].id.clone()},None,None,cx);
+                        }))))
                     .child(
                         div()
                             .id("ai-new-menu")
@@ -1166,6 +1305,7 @@ impl Render for AiSidebar {
         }
         panel = panel
             .child(header_area)
+            .child(self.session_controls(cx))
             .child(transcript)
             .when(self.away_from_latest(), |d| {
                 d.child(
@@ -1203,11 +1343,9 @@ impl Render for AiSidebar {
             });
         let mut composer = div()
             .id("ai-composer")
-            .on_mouse_down_out(cx.listener(|this, _, _, cx| {
-                if this.model_menu {
-                    this.model_menu = false;
-                    cx.notify();
-                }
+            .on_mouse_down_out(cx.listener(|this, event: &gpui::MouseDownEvent, _, cx| {
+                if this.model_menu && !this.models.menu_bounds.get().is_some_and(|bounds| bounds.contains(&event.position)) { this.model_menu=false;cx.notify(); }
+                if this.context_picker.scope_open { this.context_picker.scope_open=false;cx.notify(); }
             }))
             .mx(px(12.))
             .mb(px(8.))
@@ -1225,50 +1363,16 @@ impl Render for AiSidebar {
                     .max_h(px(160.))
                     .overflow_y_scroll()
                     .text_size(px(14.))
-                    .child(self.input.clone()),
+                    .child(self.input.clone())
+                    .layout_key(&self.capture,"ai.models.composer",None),
             );
         if !self.skill_choices(cx).is_empty() { composer = composer.child(self.skill_menu(cx)); }
         if self.model_menu {
-            let mut menu = div()
-                .id("ai-model-options")
-                .max_h(px(210.))
-                .overflow_y_scroll()
-                .flex()
-                .flex_col();
-            for (index, model) in MODELS.iter().enumerate() {
-                menu = menu.child(
-                    div()
-                        .id(("ai-model", index))
-                        .p(px(6.))
-                        .text_size(px(12.))
-                        .cursor_pointer()
-                        .hover(|d| d.bg(color(t.hover)))
-                        .when(index == self.model, |d| d.bg(color(t.active)))
-                        .on_click(cx.listener(move |this, _, _, cx| {
-                            this.model = index;
-                            this.model_menu = false;
-                            cx.notify();
-                        }))
-                        .child(model.label),
-                );
-            }
-            composer = composer.child(
-                menu.child(
-                    div()
-                        .text_size(px(11.))
-                        .text_color(color(t.muted))
-                        .child("Availability is server-checked"),
-                ),
-            );
+            let position=self.models.anchor.get().map(|bounds|gpui::point(bounds.left(),bounds.top()-px(6.))).unwrap_or(gpui::point(px(8.),window.viewport_size().height-px(48.)));
+            composer=composer.child(gpui::deferred(gpui::anchored().position(position).anchor(gpui::Anchor::BottomLeft).snap_to_window_with_margin(px(8.)).child(self.model_options(window,cx))).with_priority(2));
         }
-        let label = if self.include_context {
-            self.scope
-                .as_ref()
-                .map(|s| s.label.clone())
-                .unwrap_or_else(|| "Current board".into())
-        } else {
-            "All boards".into()
-        };
+        composer=composer.child(self.context_menu(cx));
+        let label=self.context_label();
         let controls = div()
             .flex()
             .items_center()
@@ -1283,10 +1387,16 @@ impl Render for AiSidebar {
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.model_menu = !this.model_menu;
+                        this.models.submenu=None;
+                        this.context_picker.scope_open=false;
+                        if this.model_menu {this.retry_models(cx);}
                         cx.notify();
                     }))
-                    .child(MODELS[self.model].label)
-                    .child(icon("chevron-down", t.muted)),
+                    .relative()
+                    .child(self.model_label())
+                    .child(icon("chevron-down", t.muted))
+                    .child(gpui::canvas({let anchor=self.models.anchor.clone();move|bounds,_,_|anchor.set(Some(bounds))},|_,_,_,_|{}).absolute().inset_0())
+                    .layout_key(&self.capture,"ai.models.toggle",Some(self.model_label())),
             )
             .child(
                 div()
@@ -1298,19 +1408,11 @@ impl Render for AiSidebar {
                     .gap(px(5.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
-                        this.include_context = !this.include_context;
-                        cx.notify();
+                        this.open_scopes(cx);
                     }))
                     .child(icon("columns-2", t.muted))
                     .child(div().truncate().child(label))
-                    .child(icon(
-                        if self.include_context {
-                            "x"
-                        } else {
-                            "chevron-down"
-                        },
-                        t.muted,
-                    )),
+                    .child(icon("chevron-down",t.muted)),
             )
             .child(
                 div()
@@ -1329,7 +1431,14 @@ impl Render for AiSidebar {
                         div().child(icon("send", t.muted))
                     }),
             );
-        composer = composer.child(controls);
+        composer = composer.child(controls).child(div().id("ai-add-context").cursor_pointer().text_size(px(12.)).child("Add context").on_click(cx.listener(|this,_,window,cx|{
+            use gpui::EntityInputHandler;
+            this.input.update(cx,|input,cx|{let prefix=if input.content.is_empty(){"@"}else{" @"};input.replace_text_in_range(None,prefix,window,cx);});
+            window.focus(&this.input.focus_handle(cx),cx);cx.notify();
+        })));
+        for(index,context)in self.context_picker.selected.iter().enumerate(){
+            composer=composer.child(div().id(("ai-attached-context",index)).text_size(px(12.)).child(context["name"].as_str().unwrap_or("").to_owned()).child(div().id(("ai-remove-context",index)).cursor_pointer().child("×").on_click(cx.listener(move|this,_,_,cx|{this.context_picker.selected.remove(index);cx.notify();}))));
+        }
         if self.mode() == DisplayMode::Fullscreen {
             composer = composer.w_full().max_w(px(800.)).mx_auto();
         }
@@ -1502,14 +1611,15 @@ mod tests {
             assert_eq!(sidebar.width(), 420.);
             let (send, receive) = mpsc::channel();
             sidebar.history_pending = Some(receive);
-            send.send(Ok(vec![Arc::new(Session {
+            send.send(Ok((vec![Arc::new(Session {
                 id: "remote-session".into(),
+                has_messages: None,
                 title: Some("Web history".into()),
                 messages: vec![Message {
                     role: "assistant".into(),
                     content: "Saved reply".into(),
                 }],
-            })]))
+            })],None)))
             .unwrap();
             sidebar.poll(cx);
             assert_eq!(sidebar.history.len(), 1);
@@ -1558,7 +1668,6 @@ mod tests {
             });
             sidebar.active = Some(ActiveTurn {
                 ids: TurnIds::new(sidebar.chats[0].id.clone()),
-                chat: 0,
                 assistant: 0,
                 updates,
                 cancel_reply: None,
@@ -1597,3 +1706,19 @@ mod tests {
 #[cfg(test)]
 #[path = "ai_message_tests.rs"]
 mod message_tests;
+
+#[cfg(test)]
+mod paged_history_tests {
+    use super::*;
+    #[gpui::test]
+    fn history_pages_append_without_duplicates_and_denied_transcripts_do_not_open_empty_chats(cx:&mut gpui::TestAppContext){
+        let view=cx.add_window(|window,cx|AiSidebar::new(crate::theme::THEMES[1],None,cx.focus_handle(),window,cx));
+        view.update(cx,|sidebar,_,cx|{
+            let summary=||Arc::new(Session{id:"saved".into(),title:Some("Saved".into()),messages:vec![],has_messages:Some(true)});
+            let(send,receive)=mpsc::channel();sidebar.history_pending=Some(receive);send.send(Ok((vec![summary()],Some("cursor".into())))).unwrap();sidebar.poll_history(cx);
+            assert_eq!(sidebar.history_next.as_deref(),Some("cursor"));
+            let(send,receive)=mpsc::channel();sidebar.history_append=true;sidebar.history_pending=Some(receive);send.send(Ok((vec![summary()],None))).unwrap();sidebar.poll_history(cx);assert_eq!(sidebar.history.len(),1);assert!(sidebar.history_next.is_none());
+            let before=sidebar.chats.len();let(send,receive)=mpsc::channel();sidebar.chat_pending=Some(receive);send.send(Err("HTTP 403: History denied".into())).unwrap();sidebar.poll_history(cx);assert_eq!(sidebar.chats.len(),before);assert_eq!(sidebar.history_error.as_deref(),Some("HTTP 403: History denied"));
+        });
+    }
+}

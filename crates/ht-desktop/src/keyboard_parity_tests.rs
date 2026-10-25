@@ -81,7 +81,12 @@ fn keyboard_task_field_shortcuts_commit_the_selected_target_on_every_surface(cx:
                 let rows = this.db.mutations().unwrap();
                 assert_eq!(rows.len(), 1, "{screen:?} {chord}");
                 assert_eq!(rows[0].payload_json["task_id"], 1, "{screen:?} {chord}");
-                assert_eq!(rows[0].payload_json[field], expected, "{screen:?} {chord}");
+                if chord == "d" {
+                    assert_eq!(rows[0].payload_json["change"]["DueDate"], expected, "{screen:?} {chord}");
+                    assert_eq!(this.db.task(1).unwrap().unwrap().due_date.as_deref(), expected.as_str(), "{screen:?} {chord}");
+                } else {
+                    assert_eq!(rows[0].payload_json[field], expected, "{screen:?} {chord}");
+                }
                 assert_eq!(this.screen, screen);
             });
             cx.simulate_keystrokes("escape");

@@ -1,5 +1,9 @@
 # HTPR-7381: remaining P1, board/task/inbox and keyboard rows
 
+Full-sign-in client follow-up: see [prewire-parity.md](prewire-parity.md) for
+newly wired portions and native gaps; historical auth blockers below are not
+claims that server approval alone completes these rows.
+
 Web contract: `hypertask` at `6f9901764d355aba7bfc76e4e62ff255e0b68b31`.
 Read the four existing parity ledgers before this follow-up. Existing Done and
 Blocked rows were not reimplemented. Calendar/table operations are excluded.

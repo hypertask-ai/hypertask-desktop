@@ -50,6 +50,13 @@ impl Db {
                     db.request_refetch("comments", task_id)?;
                     db.request_refetch("task", task_id)?;
                 }
+                "time:changed" => {
+                    if event.channel.as_deref().is_some_and(|channel| channel.starts_with("private-time-task-")) {
+                        db.request_refetch("time-task", channel_id(&event, "private-time-task-")?)?;
+                    } else {
+                        db.request_refetch("time-board", channel_id(&event, "private-time-project-")?)?;
+                    }
+                }
                 "inbox:changed" => {
                     channel_id(&event, "private-user-")?;
                     db.request_refetch("inbox", 0)?;

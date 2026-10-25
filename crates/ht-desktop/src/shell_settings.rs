@@ -4,6 +4,9 @@ use std::collections::BTreeMap;
 #[cfg(not(test))]
 use std::sync::mpsc;
 
+#[path = "shell_billing.rs"]
+mod billing;
+
 #[derive(Clone, Debug)]
 struct Request {
     serial: u64,
@@ -18,6 +21,7 @@ struct Request {
 
 pub(super) struct Settings {
     webhooks: webhooks::Webhooks,
+    billing: billing::Billing,
     section: &'static str,
     return_to_workspace: bool,
     calendar_sunday: bool,
@@ -68,6 +72,7 @@ impl Settings {
         cx.observe(&import_url, |_, _, cx| cx.notify()).detach();
         Self {
             webhooks: webhooks::Webhooks::new(cx),
+            billing: billing::Billing::new(cx),
             section: "general",
             return_to_workspace: false,
             calendar_sunday: calendar["weekStartsOn"] == "sunday",
@@ -101,6 +106,8 @@ const SECTIONS: &[(&str, &str, &str)] = &[
     ("profile", "general", "General"),
     ("profile", "appearance", "Appearance"),
     ("profile", "calendar", "Calendar"),
+    ("team", "plans", "Plans"),
+    ("team", "apiKeys", "API keys"),
     ("team", "skills", "Skills"),
     ("board", "board-general", "General"),
     ("board", "board-members", "Members"),
@@ -501,6 +508,7 @@ impl Desktop {
     fn settings_content(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = self.colors;
         match self.shell.settings_state.section {
+            "plans" | "apiKeys" => self.billing_content(cx),
             "shortcuts" => self.shortcut_settings(cx),
             "webhooks" => self.webhook_settings(cx),
             "learn" => self.learn_settings(cx),
@@ -706,6 +714,7 @@ impl Desktop {
     }
 
     fn load_settings(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if matches!(self.shell.settings_state.section, "plans" | "apiKeys") { self.load_billing(window, cx); return; }
         if let Some(path) = self.settings_path() {
             self.settings_request("GET", path, None, window, cx);
         }
@@ -815,7 +824,9 @@ impl Desktop {
         let Some(request) = self.shell.settings_state.pending.clone().filter(|request| request.client_id.is_some()) else { return false; };
         match self.db.take_shell_result(request.client_id.as_deref().unwrap()) {
             Ok(Some(result)) => {
-                let result = if let Some(error) = result["error"].as_str() { Err(error.to_owned()) } else { Ok(result["value"].clone()) };
+                let result = if let Some(error) = result["error"].as_str() {
+                    Err(if request.path.starts_with("/api/") { result["status"].as_u64().map(|status| format!("HTTP {status}: {error}")).unwrap_or_else(|| error.to_owned()) } else { error.to_owned() })
+                } else { Ok(result["value"].clone()) };
                 self.settings_result(request, result, window, cx);
                 false
             }
@@ -844,6 +855,7 @@ impl Desktop {
         if s.board != request.board || s.section != request.section {
             return;
         }
+        if matches!(request.section, "plans" | "apiKeys") { self.billing_result(&request, result, window, cx); return; }
         match result {
             Err(error) => {
                 s.error = Some(error);
@@ -2161,6 +2173,7 @@ impl Desktop {
 
 impl Desktop {
     pub(in super::super) fn clear_settings_identity(&mut self, cx: &mut Context<Self>) {
+        self.clear_billing(cx);
         let s = &mut self.shell.settings_state;
         s.data.clear();
         s.pending = None;

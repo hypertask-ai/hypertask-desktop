@@ -2,7 +2,6 @@ use super::*;
 use crate::shortcuts::Action;
 use chrono::{Datelike, Local, NaiveDate, TimeZone, Timelike};
 use gpui::MouseButton;
-use ht_core::TaskPatch;
 
 pub(super) struct TaskFields {
     query: Entity<TextInput>,
@@ -13,6 +12,7 @@ pub(super) struct TaskFields {
 struct DuePicker {
     task: i64,
     custom: bool,
+    start: bool,
     month: NaiveDate,
     selected: NaiveDate,
     choice: usize,
@@ -48,7 +48,7 @@ fn at_local(date: NaiveDate, hour: u32, minute: u32) -> Option<String> {
         .earliest()
         .map(|date| date.to_rfc3339())
 }
-fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
+pub(super) fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
     if let Ok(date) = chrono::DateTime::parse_from_rfc3339(query) {
         return Some(date.to_rfc3339());
     }
@@ -68,7 +68,7 @@ fn parse_due(query: &str, today: NaiveDate) -> Option<String> {
     };
     at_local(date, 9, 0)
 }
-fn due_presets(now: chrono::DateTime<Local>) -> Vec<(String, Option<String>)> {
+pub(super) fn due_presets(now: chrono::DateTime<Local>) -> Vec<(String, Option<String>)> {
     let today = now.date_naive();
     let (name, date, hour) = match now.hour() {
         0..=8 => ("Today", today, 9),
@@ -119,6 +119,7 @@ impl Desktop {
         let action = match label {
             "Assignees" | "Agents" => Action::Assign,
             "Priority" => Action::Priority,
+            "Start date" => { self.show_start_date(window, cx); return; }
             "Due date" => Action::DueDate,
             "Tags" => Action::Tags,
             "Task size" => Action::Size,
@@ -234,6 +235,15 @@ impl Desktop {
             .layout_key(&self.layout, "task.summary.full", Some(markdown.to_owned()))
     }
     pub(super) fn show_due_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_task_date(false, window, cx);
+    }
+    pub(super) fn show_start_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        self.show_task_date(true, window, cx);
+    }
+    pub(super) fn finish_start_date(&mut self, task: i64, window: &mut Window, cx: &mut Context<Self>) {
+        if self.task_fields.due.as_ref().is_some_and(|due| due.start && due.task == task) { self.close_due(window, cx); }
+    }
+    fn show_task_date(&mut self, start: bool, window: &mut Window, cx: &mut Context<Self>) {
         self.task_fields.summary_open = false;
         let Some(task) = self
             .selected_task()
@@ -241,15 +251,14 @@ impl Desktop {
         else {
             return;
         };
-        let selected = task
-            .due_date
-            .as_deref()
+        let selected = (if start { task.extra.get("startDate").and_then(|value| value.as_str()) } else { task.due_date.as_deref() })
             .and_then(|date| chrono::DateTime::parse_from_rfc3339(date).ok())
             .map(|date| date.with_timezone(&Local).date_naive())
             .unwrap_or_else(|| Local::now().date_naive());
         self.task_fields.due = Some(DuePicker {
             task: task.id,
             custom: false,
+            start,
             month: selected.with_day(1).unwrap(),
             selected,
             choice: 0,
@@ -272,7 +281,7 @@ impl Desktop {
                 .task(due.task)
                 .ok()
                 .flatten()
-                .is_some_and(|task| task.due_date.is_some())
+                .is_some_and(|task| if due.start { task.extra.get("startDate").is_some_and(|value| value.is_string()) } else { task.due_date.is_some() })
             {
                 choices.push(("Reset".into(), None));
             }
@@ -280,18 +289,18 @@ impl Desktop {
                 "due-last:{}",
                 self.db.current_user_id().unwrap_or(0)
             )) {
-                if chrono::DateTime::parse_from_rfc3339(&last).is_ok() {
+                if !due.start && chrono::DateTime::parse_from_rfc3339(&last).is_ok() {
                     choices.push(("last used".into(), Some(last)));
                 }
             }
             choices.extend(due_presets(Local::now()));
             choices
         } else {
-            parse_due(query, Local::now().date_naive())
-                .map(|date| vec![(query.to_owned(), Some(date))])
-                .unwrap_or_default()
+            ht_core::date_options::query_options(query, Local::now(), due.start)
+                .map(|rows| rows.into_iter().map(|row| (row.display, Some(row.date))).collect())
+                .unwrap_or_else(|| parse_due(query, Local::now().date_naive()).map(|date| vec![(query.to_owned(), Some(date))]).unwrap_or_default())
         };
-        choices.push(("Pick a custom date".into(), None));
+        if !due.start { choices.push(("Pick a custom date".into(), None)); }
         choices
     }
     fn close_due(&mut self, window: &mut Window, cx: &mut Context<Self>) {
@@ -300,18 +309,17 @@ impl Desktop {
         cx.notify();
     }
     fn save_due(&mut self, date: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.task_actions.pending.is_some() { return; }
         let Some(due) = &self.task_fields.due else {
             return;
         };
-        if !self.enqueue(
-            Write::TaskPatch {
-                task_id: due.task,
-                patch: TaskPatch::DueDate(date.clone()),
-            },
-            cx,
-        ) {
+        if due.start {
+            self.queue_task_action(due.task, ht_core::TaskAction::StartDate(date), window, cx);
             return;
         }
+        let task = due.task;
+        self.queue_task_action(task, ht_core::TaskAction::DueDate(date.clone()), window, cx);
+        if self.task_actions.pending.is_none() { return; }
         if let Some(date) = date {
             let _ = self.db.kv_set(
                 &format!("due-last:{}", self.db.current_user_id().unwrap_or(0)),
@@ -393,7 +401,7 @@ impl Desktop {
             return div().into_any_element();
         };
         let t = self.colors;
-        let mut content = div().flex().flex_col().gap(px(8.)).child("Due date");
+        let mut content = div().flex().flex_col().gap(px(8.)).child(if due.start { "Start date" } else { "Due date" });
         if due.custom {
             let month = due.month;
             content = content.child(
@@ -585,6 +593,46 @@ pub(super) mod tests {
         draw(view, &mut cx);
         (view, cx)
     }
+    struct DueServer(u16);
+    impl ht_core::Transport for DueServer {
+        fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
+            assert_eq!(path,"/user/context");Ok(ht_core::http::Response {status:200,body:json!({"success":true,"user":{"id":42}})})
+        }
+        fn post(&mut self,path:&str,body:&serde_json::Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
+            assert_eq!(path,"/api/tasks/setDueDate");assert_eq!(body["taskId"],1);assert!(!key.is_empty());
+            Ok(ht_core::http::Response {status:self.0,body:if self.0==200 {json!({"id":1,"dueDate":body["dueDate"]})}else{json!({"message":"Forbidden"})}})
+        }
+    }
+    fn acknowledge_due(view:WindowHandle<Desktop>,cx:&mut VisualTestContext,status:u16) {
+        view.update(cx,|this,window,cx| {
+            this.db.drain_once(&mut DueServer(status),chrono::Utc::now().timestamp()+1).unwrap();
+            this.poll_task_action(window,cx);
+        }).unwrap();
+    }
+    #[gpui::test]
+    fn relative_due_options_use_web_route_and_restore_accepting_and_refusing_mocked_writes(cx:&mut gpui::TestAppContext) {
+        let (view,mut cx)=visual(cx);
+        for status in [401,403,200] {
+            click(view,&mut cx,"task.meta.4");
+            cx.simulate_input("10 m");
+            view.read_with(&cx,|this,cx| {
+                let choices=this.due_choices(cx);
+                assert_eq!(choices[0].0,"10 minutes");assert_eq!(choices[1].0,"10 months");
+            }).unwrap();
+            cx.simulate_keystrokes("enter enter");
+            view.read_with(&cx,|this,_| {
+                assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);
+                let due=this.db.task(1).unwrap().unwrap().due_date.unwrap();
+                let seconds=chrono::DateTime::parse_from_rfc3339(&due).unwrap().timestamp()-chrono::Utc::now().timestamp();
+                assert!((590..=610).contains(&seconds));
+            }).unwrap();
+            acknowledge_due(view,&mut cx,status);
+            view.read_with(&cx,|this,_| {
+                if status==200 {assert!(this.error.is_none());assert!(this.db.task(1).unwrap().unwrap().due_date.is_some());}
+                else {assert_eq!(this.error.as_deref(),Some("Unable to update due date"));assert!(this.db.task(1).unwrap().unwrap().due_date.is_none());}
+            }).unwrap();
+        }
+    }
     #[gpui::test]
     fn inline_priority_click_sets_and_clears_without_navigation(cx: &mut gpui::TestAppContext) {
         let (view, mut cx) = visual(cx);
@@ -665,17 +713,19 @@ pub(super) mod tests {
         cx.simulate_keystrokes("enter");
         view.read_with(&mut cx, |this, _| {
             assert_eq!(
-                this.db.mutations().unwrap()[0].payload_json["due_date"],
+                this.db.mutations().unwrap()[0].payload_json["change"]["DueDate"],
                 "2030-12-31T14:30:00+02:00"
             )
         })
         .unwrap();
+        acknowledge_due(view, &mut cx, 200);
         click(view, &mut cx, "task.meta.4");
         click(view, &mut cx, "due.choice.0");
         view.read_with(&mut cx, |this, _| {
             assert!(this.db.task(1).unwrap().unwrap().due_date.is_none())
         })
         .unwrap();
+        acknowledge_due(view, &mut cx, 200);
         click(view, &mut cx, "task.meta.4");
         let last = view
             .read_with(&mut cx, |this, cx| this.due_choices(cx).len() - 1)
@@ -709,7 +759,7 @@ pub(super) mod tests {
             .with_timezone(&Local);
             assert_eq!(actual.date_naive(), date);
             assert_eq!(actual.hour(), 9);
-            assert_eq!(this.db.mutations().unwrap().len(), 3);
+            assert_eq!(this.db.mutations().unwrap().len(), 1);
             assert!(this.task_fields.due.is_none());
         })
         .unwrap();

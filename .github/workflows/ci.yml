@@ -9,6 +9,15 @@ on:
         description: QA-only temporary contract comment ID
         default: "7"
         type: string
+env:
+  NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_01: ${{ vars.NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_01 }}
+  NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_02: ${{ vars.NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_02 }}
+  NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_BYOK: ${{ vars.NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_BYOK }}
+  NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_PRO: ${{ vars.NEXT_PUBLIC_STRIPE_MONTHLY_PRICE_ID_PRO }}
+  NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_01: ${{ vars.NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_01 }}
+  NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_02: ${{ vars.NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_02 }}
+  NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_BYOK: ${{ vars.NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_BYOK }}
+  NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_PRO: ${{ vars.NEXT_PUBLIC_STRIPE_YEARLY_PRICE_ID_PRO }}
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
@@ -63,7 +72,7 @@ jobs:
           if-no-files-found: error
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
-      - run: cargo test --workspace --release
+      - run: cargo test --workspace --release --no-fail-fast
         env:
           HT_QA_COMMENT_ID: ${{ inputs.qa_comment_id || '7' }}
       - name: Upload Rust AI request fixture

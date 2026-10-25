@@ -103,7 +103,6 @@ fn incoming_stream_keeps_user_scroll_position_until_latest_is_clicked(
         let (send, updates) = mpsc::sync_channel(64);
         this.active = Some(ActiveTurn {
             ids: TurnIds::new(this.chats[0].id.clone()),
-            chat: 0,
             assistant: 0,
             updates,
             cancel_reply: None,
@@ -150,4 +149,121 @@ fn incoming_stream_keeps_user_scroll_position_until_latest_is_clicked(
     );
     cx.run_until_parked();
     view.read_with(cx, |this, _| assert!(!this.away_from_latest()));
+}
+
+#[gpui::test]
+fn summarize_ticket_and_comment_use_web_prompts_and_bearer_stream_and_never_fake_refused_replies(cx: &mut gpui::TestAppContext) {
+    use serde_json::json;
+    use std::io::{BufRead, BufReader, Read, Write};
+    use std::net::TcpListener;
+    let view = cx.add_window(|window, cx| {
+        let focus = cx.focus_handle();
+        AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx)
+    });
+    for comment in [false, true] {
+    let quote = "<span data-type=\"mention\" class=\"mention\" data-id=\"7\" data-label=\"name\" uniqueindex=\"\" projectid=\"\" text=\"Alex &amp; Bea\" contenteditable=\"false\">Alex &amp; Bea</span> said <blockquote><p>Keep <strong>this</strong></p></blockquote><p></p>";
+    let expected = if comment { format!("{quote}<p>Summarize this comment concisely.</p>") } else { "Summarize this ticket, its description and the key points from the comments, concisely.".into() };
+    for status in [401, 403, 200] {
+        let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+        let base = format!("http://{}", listener.local_addr().unwrap());
+        let server = thread::spawn(move || {
+            let (mut socket, _) = listener.accept().unwrap();
+            socket.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+            let mut reader = BufReader::new(socket.try_clone().unwrap());
+            let mut headers = String::new();
+            let mut length = 0;
+            loop {
+                let mut line = String::new();
+                assert!(reader.read_line(&mut line).unwrap() > 0);
+                headers.push_str(&line);
+                if line == "\r\n" { break; }
+                if let Some(value) = line.to_lowercase().strip_prefix("content-length:") {
+                    length = value.trim().parse::<usize>().unwrap();
+                }
+            }
+            let mut body = vec![0; length];
+            reader.read_exact(&mut body).unwrap();
+            let reply = if status == 200 {
+                "event: content\ndata: {\"content\":\"Actual ticket summary\"}\n\nevent: done\ndata: {\"status\":\"complete\",\"user_message_persisted\":true,\"assistant_persisted\":true}\n\n"
+            } else { "{\"error\":\"Not authenticated\"}" };
+            write!(socket, "HTTP/1.1 {status} Result\r\nContent-Type: {}\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{reply}", if status == 200 { "text/event-stream" } else { "application/json" }, reply.len()).unwrap();
+            (headers, serde_json::from_slice::<serde_json::Value>(&body).unwrap())
+        });
+        view.update(cx, |this, window, cx| {
+            this.set_token(None, cx);
+            let mut db = Db::memory().unwrap();
+            db.apply_response(&json!({"success":true,"projects":[{"id":15,"title":"Board","teamId":"team"}]})).unwrap();
+            db.apply_task(&json!({"id":1,"projectId":15,"title":"Ticket","uniqueIndex":1,"status":"Normal"})).unwrap();
+            this.scope = Some(Scope::load(&db, Screen::Task, 15, Some(1)));
+            this.client = Some(Client::with_base(&base, "desktop-summary-token".into()).unwrap());
+            this.models.configuration = Some(ht_core::ai_models::Configuration { user:42, team:"team".into(), options:ht_core::ai_models::catalog().to_vec(), selected:"gpt-6-luna".into(), settings:json!({}), byok:json!([]), plan:Some("Pro".into()), default:"gpt-6-luna".into(), custom_label:None });
+            this.models.selected = Some("gpt-6-luna".into());
+            this.chats[0].id = "existing-chat".into();
+            this.chats[0].persisted = true;
+            this.input.update(cx, |input, cx| input.set_content("Unsent note".into(), cx));
+            this.draft_quotes.push(("An unrelated unsent quote".into(),"<blockquote>Unsent</blockquote>".into()));
+            if comment { this.summarize_comment(quote.into(), window, cx); this.summarize_comment("Do not replace this summary".into(), window, cx); }
+            else { this.summarize_ticket(window, cx); this.summarize_ticket(window, cx); }
+            assert!(this.is_open());
+            assert_eq!(this.summary.as_ref().map(|summary| summary.task), Some(1));
+            assert!(!this.finish_summary(std::time::Instant::now() + Duration::from_secs(5), window, cx));
+            assert!(this.summary.is_none());
+            let active = this.active.as_mut().unwrap();
+            let (send, receive) = mpsc::channel();
+            loop {
+                let update = active.updates.recv_timeout(Duration::from_secs(10)).unwrap();
+                let terminal = matches!(&update, Update::Failed(_) | Update::Event(Event::Done(_)));
+                send.send(update).unwrap();
+                if terminal { break; }
+            }
+            active.updates = receive;
+            this.poll(cx);
+            assert!(this.active.is_none());
+            let chat = &this.chats[0];
+            assert_eq!(chat.messages.len(), 2);
+            if comment { assert!(chat.messages[0].message.content.contains("Summarize this comment concisely.")); assert!(!chat.messages[0].message.content.contains("Unsent note")); }
+            else { assert_eq!(chat.messages[0].message.content, expected); }
+            if status == 200 {
+                assert!(chat.error.is_none());
+                assert_eq!(chat.messages[1].message.content, "Actual ticket summary");
+            } else {
+                assert!(chat.error.as_deref().unwrap().contains(&format!("HTTP {status}: Not authenticated")));
+                assert!(chat.messages[1].message.content.is_empty());
+            }
+        }).unwrap();
+        let (headers, body) = server.join().unwrap();
+        assert!(headers.starts_with("POST /api/ai/chat/stream HTTP/1.1\r\n"));
+        assert!(headers.to_lowercase().contains("authorization: bearer desktop-summary-token\r\n"));
+        assert!(!headers.to_lowercase().contains("cookie:"));
+        assert_eq!(body["message"], expected);
+        assert_eq!(body["default_context"]["task_id"], 1);
+    }
+    }
+}
+
+#[gpui::test]
+fn summarize_ticket_waits_for_session_and_cancels_on_navigation_timeout_or_account_change(cx: &mut gpui::TestAppContext) {
+    let view = cx.add_window(|window, cx| {
+        let focus = cx.focus_handle();
+        AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx)
+    });
+    view.update(cx, |this, window, cx| {
+        let mut db = Db::memory().unwrap();
+        for id in [1, 2] { db.apply_task(&serde_json::json!({"id":id,"projectId":15,"title":"Ticket","status":"Normal"})).unwrap(); }
+        this.scope = Some(Scope::load(&db, Screen::Task, 15, Some(1)));
+        this.client = Some(Client::new("never-contacted-token".into()).unwrap());
+        this.input.update(cx, |input, cx| input.set_content("Preserved draft".into(), cx));
+        this.summarize_ticket(window, cx);
+        let later = std::time::Instant::now() + Duration::from_secs(5);
+        assert!(this.finish_summary(later, window, cx));
+        this.scope = Some(Scope::load(&db, Screen::Task, 15, Some(2)));
+        assert!(!this.finish_summary(later, window, cx));
+        this.summarize_ticket(window, cx);
+        assert!(!this.finish_summary(std::time::Instant::now(), window, cx));
+        this.summarize_ticket(window, cx);
+        this.set_token(None, cx);
+        assert!(this.summary.is_none());
+        assert!(this.active.is_none());
+        assert!(this.chats[0].messages.is_empty());
+    }).unwrap();
 }

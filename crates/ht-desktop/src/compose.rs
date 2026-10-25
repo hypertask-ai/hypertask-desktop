@@ -11,6 +11,8 @@ pub(super) struct Compose {
     picker: bool,
     choice: usize,
     project: i64,
+    explicit_board: bool,
+    boards: Option<Vec<Value>>,
     pending: Option<String>,
     identity_loading: bool,
     identity_generation: u64,
@@ -38,6 +40,8 @@ impl Compose {
             picker: false,
             choice: 0,
             project: 0,
+            explicit_board: false,
+            boards: None,
             pending: None,
             identity_loading: false,
             identity_generation: 0,
@@ -97,21 +101,35 @@ impl Desktop {
         self.compose.identity_generation += 1;
         let generation = self.compose.identity_generation;
         self.compose.identity_loading = true;
+        self.compose.boards = None;
+        let expected = token.clone();
         let (send, receive) = std::sync::mpsc::channel();
         std::thread::spawn(move || {
-            let result = ht_core::Http::new(token)
-                .and_then(|http| http.json_request("GET", "/user/context", None))
-                .ok()
-                .filter(|v| v["success"] == true)
-                .and_then(|v| v["user"]["id"].as_i64().filter(|id| *id > 0));
+            let result = ht_core::Http::new(token).and_then(|mut http| {
+                let identity=http.json_request("GET","/user/context",None)?;
+                let user=identity["user"]["id"].as_i64().filter(|id|*id>0).ok_or_else(||anyhow::anyhow!("Unauthorized"))?;
+                let boards=ht_core::compose_routing::boards(&mut http)?;
+                Ok((user,boards))
+            }).map_err(|error|error.to_string());
             let _ = send.send(result);
         });
         cx.spawn_in(window, async move |view, cx| {
             loop {
                 match receive.try_recv() {
-                    Ok(user) => {
+                    Ok(result) => {
                         let _ = view.update(cx, |this, cx| {
-                            this.apply_compose_identity(generation, user, cx)
+                            if this.compose.identity_generation!=generation || this.cli_token().as_deref()!=Some(expected.as_str()) {return;}
+                            match result {
+                                Ok((user,boards)) => {
+                                    this.apply_compose_identity(generation,Some(user),cx);
+                                    match this.db.apply_response(&serde_json::json!({"success":true,"projects":boards})) {
+                                        Ok(())=>this.compose.boards=Some(boards),
+                                        Err(error)=>this.compose.error=Some(error.to_string()),
+                                    }
+                                }
+                                Err(error)=>{this.compose.identity_loading=false;this.compose.error=Some(error);}
+                            }
+                            cx.notify();
                         });
                         break;
                     }
@@ -171,11 +189,16 @@ impl Desktop {
         }
         cx.notify();
     }
+    fn compose_project(&self,cx:&App)->i64 {
+        if !self.compose.explicit_board {
+            let boards=self.compose.boards.clone().unwrap_or_else(||if self.options.offline{self.db.projects().unwrap_or_default()}else{vec![]});
+            if let Some(project)=ht_core::compose_routing::match_board(self.compose.input.read(cx).content.as_ref(),&boards){return project;}
+        }
+        self.compose.project
+    }
     fn compose_boards(&self, cx: &App) -> Vec<Value> {
         let query = self.compose.board_query.read(cx).content.to_lowercase();
-        self.db
-            .projects()
-            .unwrap_or_default()
+        self.compose.boards.clone().unwrap_or_else(||if self.options.offline {self.db.projects().unwrap_or_default()}else{vec![]})
             .into_iter()
             .filter(|p| {
                 p["title"]
@@ -193,6 +216,7 @@ impl Desktop {
             .and_then(|p| p["id"].as_i64())
         {
             self.compose.project = id;
+            self.compose.explicit_board = true;
             self.compose.picker = false;
             window.focus(&self.compose.input.focus_handle(cx), cx);
             cx.notify();
@@ -239,6 +263,8 @@ impl Desktop {
                 self.compose.open = false;
                 self.show_modal(interactions::Modal::Commands, window, cx);
             }
+        } else if ctrl && key.modifiers.shift && !key.modifiers.alt && key.key=="b" && self.compose.writing {
+            self.compose_picker(window,cx);
         } else if self.compose.pending.is_some() {
             // A queued send belongs to this captured note, not any later editor contents.
         } else if self.compose.picker {
@@ -286,19 +312,20 @@ impl Desktop {
     fn send_compose(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.compose.pending.is_some()
             || self.compose.identity_loading
+            || (!self.options.offline && self.compose.boards.is_none())
             || self.compose.input.read(cx).content.trim().is_empty()
         {
             return;
         }
         let text = self.compose.input.read(cx).content.to_string();
-        match self.db.enqueue(
-            Write::ComposeTask {
-                project_id: self.compose.project,
-                text,
-                time_zone: iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".into()),
-            },
-            chrono::Utc::now().timestamp(),
-        ) {
+        self.compose.project = self.compose_project(cx);
+        let time_zone = iana_time_zone::get_timezone().unwrap_or_else(|_| "UTC".into());
+        let write = if let Some(task) = self.detail.as_ref().filter(|detail| self.screen == Screen::Task && detail.task.project_id == self.compose.project) {
+            Write::ComposeTaskInTask { project_id: self.compose.project, task_id: task.task.id, text, time_zone }
+        } else {
+            Write::ComposeTask { project_id: self.compose.project, text, time_zone }
+        };
+        match self.db.enqueue(write, chrono::Utc::now().timestamp()) {
             Ok(id) => {
                 self.compose.pending = self
                     .db
@@ -348,9 +375,8 @@ impl Desktop {
         };
         self.compose.pending = None;
         if let Some(error) = value["error"].as_str() {
-            self.compose.error = Some(format!(
-                "Couldn’t create the task ({error}). Your note is still here."
-            ));
+            let _ = error;
+            self.compose.error = Some("Couldn’t create the task. Your note is still here. Try again.".into());
         } else if let Some(id) = value["tasks"][0]["id"].as_i64() {
             let _ = self
                 .db
@@ -359,6 +385,8 @@ impl Desktop {
                 .input
                 .update(cx, |input, cx| input.reset(window, cx));
             self.compose.open = false;
+            self.compose.explicit_board = false;
+            self.compose.project = 0;
             self.shell.settings = false;
             self.interaction.modal = None;
             self.open_task(id, cx);
@@ -425,7 +453,7 @@ impl Desktop {
             return div().into_any_element();
         }
         let t = self.colors;
-        let title = ht_core::ai_chat::project_metadata(&self.db, self.compose.project).0;
+        let title = ht_core::ai_chat::project_metadata(&self.db, self.compose_project(cx)).0;
         let content = if self.compose.pending.is_some() {
             div()
                 .p(px(24.))
@@ -560,6 +588,50 @@ mod tests {
         let view = Desktop::new(db, options, window, cx);
         window.focus(&view.focus, cx);
         view
+    }
+    #[gpui::test]
+    fn task_writer_palette_and_ctrlj_fill_empty_task_with_mocked_acceptance_and_refusals(cx: &mut gpui::TestAppContext) {
+        struct FillServer(u16);
+        impl ht_core::Transport for FillServer {
+            fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                Ok(ht_core::http::Response { status:200, body:match path {
+                    "/user/context" => json!({"success":true,"user":{"id":985}}),
+                    "/api/flags" => json!({"flags":{"htpr-6929-compose-task-writer":true,"htpr-6937-new-task-window":true}}),
+                    "/api/tasks/single?id=1" => json!({"id":1,"projectId":7283,"title":"New task","description":"<p></p>","status":"Normal"}),
+                    _ => panic!("unexpected {path}"),
+                } })
+            }
+            fn post(&mut self,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
+                assert!(!key.is_empty());assert_eq!(body["existingTaskId"],1);
+                Ok(ht_core::http::Response { status:if path=="/api/ai/task-writer" {200}else{self.0}, body:match path {
+                    "/api/ai/task-writer" => json!({"tasks":[{"title":"Written","description":"<p>Body</p>"}]}),
+                    "/api/tasks/createGlobally" => if self.0==200 {json!({"newTask":{"id":1,"projectId":7283,"title":"Written","description":"<p>Body</p>","status":"Normal"}})}else{json!({"message":"Forbidden"})},
+                    _ => panic!("unexpected {path}"),
+                } })
+            }
+        }
+        cx.update(crate::input::init);
+        let (view,cx)=cx.add_window_view(desktop);
+        for status in [401,403,200] {
+            view.update_in(cx,|this,_,cx| {
+                this.db.apply_task(&json!({"id":1,"projectId":7283,"title":"New task","description":"<p></p>","status":"Normal"})).unwrap();
+                this.open_task(1,cx);
+            });
+            if status==401 {
+                cx.simulate_keystrokes("ctrl-k");cx.simulate_input("Open AI task writer");cx.simulate_keystrokes("enter");
+            } else { cx.simulate_keystrokes("ctrl-j"); }
+            view.read_with(cx,|this,_|assert!(this.compose.open));
+            cx.simulate_input("Original note");cx.simulate_keystrokes("enter enter");
+            view.update_in(cx,|this,window,cx| {
+                assert_eq!(this.db.mutations().unwrap().iter().filter(|row|row.status!="failed").count(),1);
+                this.db.drain_once(&mut FillServer(status),chrono::Utc::now().timestamp()+1).unwrap();
+                this.poll_compose(window,cx);
+                assert_eq!(this.db.task(1).unwrap().unwrap().title,if status==200 {"Written"}else{"New task"});
+                if status==200 {assert!(!this.compose.open);assert_eq!(this.selected_task(),Some(1));}
+                else {assert!(this.compose.open);assert_eq!(this.compose.input.read(cx).content.as_ref(),"Original note");assert!(this.compose.error.is_some());}
+            });
+            if status!=200 {cx.simulate_keystrokes("escape");view.update_in(cx,|this,_,cx|this.compose.input.update(cx,|input,cx|input.set_content(String::new(),cx)));}
+        }
     }
     #[gpui::test]
     fn ctrlj_tabs_prompt_board_chip_picker_and_send_newline_are_real_keys(
@@ -719,4 +791,33 @@ mod tests {
         })
         .unwrap();
     }
+    #[gpui::test]
+    fn typed_compose_board_and_manual_override_use_real_queue_and_keep_notes_on_both_refusals(cx:&mut gpui::TestAppContext) {
+        struct Server {status:u16,project:i64,creates:usize}
+        impl ht_core::Transport for Server {
+            fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{
+                let body=if path=="/user/context" {json!({"success":true,"user":{"id":985}})}else{assert_eq!(path,ht_core::desktop_cli::defaults_request(self.project).path);json!({"sectionId":11,"section":"Todo","ranking":"a"})};Ok(ht_core::http::Response{status:200,body})
+            }
+            fn post(&mut self,path:&str,body:&Value,key:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{
+                assert!(!key.is_empty());assert_eq!(body["projectId"],self.project);
+                if path=="/api/ai/task-writer" {return Ok(ht_core::http::Response{status:200,body:json!({"tasks":[{"title":"Written","description":"<p>Body</p>"}]})});}
+                assert_eq!(path,"/api/tasks/createGlobally");self.creates+=1;Ok(ht_core::http::Response{status:self.status,body:if self.status==200{json!({"newTask":{"id":9,"projectId":self.project,"title":"Written","status":"Normal"}})}else{json!({"message":"Unauthorized"})}})
+            }
+        }
+        cx.update(crate::input::init);let(view,cx)=cx.add_window_view(desktop);
+        for manual in [false,true] {for status in [401,403,200] {
+            view.update_in(cx,|this,_,_|{this.screen=Screen::Board;this.compose.project=0;this.compose.explicit_board=false;this.options.board=7283;});
+            cx.simulate_keystrokes("ctrl-j ctrl-a backspace");cx.simulate_input("Add release note in Other");
+            view.read_with(cx,|this,cx|assert_eq!(this.compose_project(cx),7284));
+            if manual {cx.simulate_keystrokes("ctrl-shift-b");cx.simulate_input("QA");cx.simulate_keystrokes("enter");}
+            let project=if manual{7283}else{7284};cx.simulate_keystrokes("enter enter");
+            view.update_in(cx,|this,window,cx|{
+                let rows=this.db.mutations().unwrap();let pending:Vec<_>=rows.iter().filter(|row|row.status!="failed").collect();assert_eq!(pending.len(),1);assert_eq!(pending[0].payload_json["project"]["id"],project);
+                let mut server=Server{status,project,creates:0};this.db.drain_once(&mut server,chrono::Utc::now().timestamp()+1).unwrap();assert_eq!(server.creates,1);this.poll_compose(window,cx);
+                if status==200 {assert!(!this.compose.open);assert_eq!(this.db.task(9).unwrap().unwrap().project_id,project);assert!(!this.compose.explicit_board);}
+                else{assert!(this.compose.open);assert_eq!(this.compose.input.read(cx).content.as_ref(),"Add release note in Other");assert!(this.compose.error.is_some());this.close_compose(window,cx);}
+            });
+        }}
+    }
+
 }
