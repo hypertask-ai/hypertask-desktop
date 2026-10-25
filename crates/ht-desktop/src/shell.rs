@@ -1392,6 +1392,47 @@ mod rail_detail_tests {
     }
 
     #[gpui::test]
+    fn rail_pointer_states_match_web_colors_without_changing_labels(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx, |this, _, cx| this.apply_shell_theme(ThemeName::Graphite, cx)).unwrap();
+        let mut records = Vec::new();
+        for expanded in [false, true] {
+            if expanded {
+                click(view, &mut cx, "rail.icon.0");
+            }
+            for index in 1..13 {
+                let key = format!("rail.icon.{index}");
+                let bounds = measured(view, &mut cx, &key);
+                let center = point(
+                    px((bounds["x"].as_f64().unwrap() + bounds["w"].as_f64().unwrap() / 2.) as f32),
+                    px((bounds["y"].as_f64().unwrap() + bounds["h"].as_f64().unwrap() / 2.) as f32),
+                );
+                cx.simulate_mouse_move(center, None, Default::default());
+                let hovered = measured(view, &mut cx, &key);
+                let background_matches = cx.update(|window, _| {
+                    let center = center.scale(window.scale_factor());
+                    window.painted_quads().iter().filter(|quad| {
+                        !quad.background.is_transparent() && quad.bounds.contains(&center) && quad.content_mask.bounds.contains(&center)
+                    }).max_by_key(|quad| quad.order).is_some_and(|quad| {
+                        quad.background == gpui::Background::from(color(0x3a3d45))
+                    })
+                });
+                records.push(serde_json::json!({"expanded": expanded, "element": hovered, "paintedHoverBackground": background_matches}));
+            }
+        }
+        if cfg!(target_os = "linux") && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+            let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/layout");
+            std::fs::create_dir_all(&out).unwrap();
+            std::fs::write(out.join("rail-pointer-states.json"), serde_json::to_vec_pretty(&records).unwrap()).unwrap();
+        }
+        for record in records {
+            assert_eq!(record["element"]["color"], "#ffffff", "{record}");
+            assert_eq!(record["element"]["bg"], "#3a3d45", "{record}");
+            assert_eq!(record["paintedHoverBackground"], true, "{record}");
+        }
+    }
+
+    #[gpui::test]
     fn rail_hover_tooltips_paint_above_workspace_in_both_rail_widths(cx: &mut gpui::TestAppContext) {
         let (view, mut cx) = setup(cx);
         for expanded in [false, true] {
