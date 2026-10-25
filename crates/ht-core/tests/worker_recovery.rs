@@ -4,7 +4,7 @@ use std::{
     io::{Read, Write},
     net::TcpListener,
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, AtomicU16, Ordering},
         mpsc,
     },
@@ -15,6 +15,7 @@ use std::{
 struct Server {
     base: String,
     status: Arc<AtomicU16>,
+    inbox: Arc<Mutex<serde_json::Value>>,
     requests: mpsc::Receiver<String>,
     stop: Arc<AtomicBool>,
     thread: Option<thread::JoinHandle<()>>,
@@ -29,6 +30,8 @@ impl Server {
         let stop = Arc::new(AtomicBool::new(false));
         let (send, requests) = mpsc::channel();
         let server_status = status.clone();
+        let inbox = Arc::new(Mutex::new(json!({"success":true,"user_notifications":[]})));
+        let server_inbox = inbox.clone();
         let server_stop = stop.clone();
         let thread = thread::spawn(move || {
             while !server_stop.load(Ordering::Acquire) {
@@ -79,7 +82,7 @@ impl Server {
                 let body = if status != 200 {
                     json!({"success":false,"error":"fixture-secret-server-body"})
                 } else if path == "/inbox/list" {
-                    json!({"success":true,"user_notifications":[]})
+                    server_inbox.lock().unwrap().clone()
                 } else if path == "/tasks?task_id=1" {
                     json!({"success":true,"tasks":[{"id":1,"title":"server","projectId":15,"status":"Normal"}]})
                 } else if path == "/tasks/update" {
@@ -96,6 +99,7 @@ impl Server {
         Self {
             base,
             status,
+            inbox,
             requests,
             stop,
             thread: Some(thread),
@@ -292,5 +296,38 @@ fn malformed_realtime_frame_is_logged_once_and_reconciled_without_false_outage()
             .count(),
         1
     );
+    assert!(!log.contains("fixture-secret"));
+}
+
+#[test]
+fn synthetic_inbox_http_200_clears_a_real_outage_only_after_durable_sync() {
+    let dir = tempfile::tempdir().unwrap();
+    let db = dir.path().join("local.db");
+    let server = Server::new(503);
+    *server.inbox.lock().unwrap() = json!({
+        "success":true,
+        "user_notifications":[
+            {"id":7,"status":"Normal","createdAt":"2026-10-20T00:00:00Z"},
+            {"id":"-42","taskId":42,"waitingOnSynthetic":true,"status":"Normal","seen":true,"createdAt":"2026-10-21T00:00:00Z"}
+        ],
+        "structuredData":{"tabs":[{"project":"Important"},{"project":"Blocked by you"}],"data":[[0],[1]]}
+    });
+    let http = Http::with_base(&server.base, "fixture-secret-token".into()).unwrap();
+    let unauthorized = http.unauthorized_flag();
+    let worker = Worker::start(&db, http).unwrap();
+    worker.handle().sync_inbox().unwrap();
+    wait_status(&worker, SyncStatus::Unavailable);
+    server.status.store(200, Ordering::Release);
+    worker.handle().wake().unwrap();
+    wait_status(&worker, SyncStatus::Healthy);
+    assert_eq!(worker.status().message(), None);
+    assert!(!unauthorized.load(Ordering::Acquire));
+    drop(worker);
+    let local = Db::open(&db).unwrap();
+    assert_eq!(local.inbox().unwrap().iter().map(|n| n.id).collect::<Vec<_>>(), vec![-42, 7]);
+    assert_eq!(local.inbox_splits().unwrap().unwrap()[1]["ids"], json!([-42]));
+    let log = std::fs::read_to_string(db.with_extension("sync.log")).unwrap();
+    assert!(log.contains("event=recovered operation=inbox"));
+    assert!(!log.contains("code=invalid-data"));
     assert!(!log.contains("fixture-secret"));
 }

@@ -162,6 +162,7 @@ impl Db {
                 (format!("task:{task_id}"), "task_patch", fields)
             }
             Write::InboxSeen { notification_id } => {
+                ensure!(*notification_id > 0, "Synthetic Inbox items do not support notification actions");
                 let before = db.raw("Notification", &json!(notification_id))?.context("notification is not cached")?;
                 (format!("notification:{notification_id}"), "inbox_seen", json!({"notification_ids":[notification_id],"before":[before]}))
             }
@@ -182,6 +183,7 @@ impl Db {
                 (format!("inbox-reminder:{}", ids[0]), "inbox_remind", json!({"notification_ids":ids,"remind_at":remind_at,"before":before}))
             }
             Write::InboxArchive { notification_id } => {
+                ensure!(*notification_id > 0, "Synthetic Inbox items do not support notification actions");
                 ensure!(db.raw("Notification", &json!(notification_id))?.is_some(), "notification is not cached");
                 (format!("notification:{notification_id}"), "inbox_archive", json!({"notification_ids":[notification_id]}))
             }

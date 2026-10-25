@@ -46,3 +46,35 @@ The regression exercises `Sync::inbox`, durable SQLite rows and compact/expanded
 Run its pre-fix rejection and fixed workspace tests on GitHub, never on the VPS.
 Cursor control/deslop tools and independent reviewers are unavailable in this session; use serial self-review and the existing native CI instead.
 The installed application will not be restarted or replaced, so live post-install recovery remains unverified.
+
+## Pre-fix CI rejection
+
+Commit `87a5a8eb48a6398cdd7a18682425ee559c947ca1` contains the regression without the production fix.
+GitHub run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40183084063, Ubuntu job 121138067251, returned:
+
+```text
+test inbox_synthetic_string_ids_sync_without_losing_rows_or_split_membership ... FAILED
+HTTP 200 synthetic inbox must sync: inbox split index is invalid
+test result: FAILED. 20 passed; 1 failed; 0 ignored; 0 measured; 0 filtered out
+error: test failed, to rerun pass `-p ht-core --test sync`
+Process completed with exit code 101.
+```
+
+## Fix and self-review
+
+`inbox::notification_id` accepts existing integer IDs or the explicit synthetic form whose canonical negative ID matches its task ID.
+SQLite rows, raw JSON and split membership share the normalized integer identity.
+The generic integer parser, other entity IDs, bearer handling, worker retry policy and banner thresholds are unchanged.
+Malformed IDs still fail transactionally rather than discarding rows or claiming recovery.
+
+Both compact index splits and expanded notification splits retain synthetic rows after a database reopen and repeated snapshot.
+The HTTP worker regression starts with a real 503 outage, then requires HTTP 200 synthetic data to commit durably before the banner clears.
+It also checks that the unauthorized flag stays false and secret fixture text never reaches the log.
+Import and mutation tests cover normalization, malformed-ID rollback and refusal of unsupported synthetic notification writes.
+Normal positive-ID notification actions retain their existing coverage.
+
+Serial self-review considered auth, partial snapshots, namespace collisions, persisted raw IDs, retries and unsupported notification actions.
+No independent reviewer or local test/lint ran.
+The Fix Root Causes principle selected response-boundary normalization over banner suppression.
+Test Behavior, Not Implementation selected durable rows, split membership and worker recovery as the assertions.
+Model the Domain kept the existing integer identity internally instead of changing every notification and queue interface.
