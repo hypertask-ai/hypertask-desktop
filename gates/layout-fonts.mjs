@@ -25,7 +25,10 @@ try {
     p { font-size: 11px; font-weight: 400; margin: 0; }
   </style><span id="footer">Command center</span>
   <div id="important" class="tab"><div class="label selected"><span>Important</span><p>1</p></div></div>
-  <div id="agents" class="tab"><div class="label"><span>Agents</span><p>1</p></div></div>`);
+  <div id="agents" class="tab"><div class="label"><span>Agents</span><p>1</p></div></div>
+  <div style="display:flex;align-items:baseline;gap:4px;font-size:13px;line-height:19.5px">
+    <span id="ticket" style="font-size:11px">QABO-5 </span><span id="ticket-title">HTPR-7175 QA reminder check (safe to delete)</span>
+  </div>`);
   await page.evaluate(async () => {
     await document.fonts.load('400 14px WebPlex');
     await document.fonts.load('600 14px WebPlex');
@@ -34,6 +37,11 @@ try {
   const web = await page.evaluate(() => Object.fromEntries(
     ['footer', 'important', 'agents'].map(id => [id, document.getElementById(id).getBoundingClientRect().width]),
   ));
+  const ticketWeb = await page.evaluate(() => {
+    const ticket = document.getElementById('ticket').getBoundingClientRect();
+    const title = document.getElementById('ticket-title').getBoundingClientRect();
+    return { width: ticket.width, titleWidth: title.width, gap: title.x - ticket.right };
+  });
   const diagnostics = await page.evaluate(async fonts => {
     for (const [family, weights] of Object.entries(fonts)) {
       for (const [weight, data] of Object.entries(weights)) {
@@ -81,7 +89,12 @@ try {
     ['important', 'inbox.tab.0', 96],
     ['agents', 'inbox.tab.1', 72],
   ].map(([id, key, frozenWidth]) => ({ key, webWidth: web[id], nativeWidth: elements[key].w, frozenWidth, fullStaticWidth: diagnostics.WebFullStatic[id], latinStaticWidth: diagnostics.WebLatinStatic[id], withoutKerningWidth: diagnostics.withoutKerning[id] }));
-  const receipt = { font: url, digest, width: 1920, height: 1009, scale: 1, probes, diagnostics };
+  const reference = JSON.parse(readFileSync('evidence/layout/reference/inbox.json', 'utf8'));
+  const referenceElements = Object.fromEntries(reference.elements.map(e => [e.key, e]));
+  const ticket = referenceElements['inbox.row.0.taskid'];
+  const title = referenceElements['inbox.row.0.title'];
+  const ticketProbe = { web: ticketWeb, native: { width: ticket.w, titleWidth: title.w, gap: title.x - ticket.x - ticket.w } };
+  const receipt = { font: url, digest, width: 1920, height: 1009, scale: 1, probes, diagnostics, ticketProbe };
   writeFileSync('evidence/layout/font-metrics.json', JSON.stringify(receipt, null, 2) + '\n');
   for (const probe of probes) console.log(`FONT_METRIC ${JSON.stringify(probe)}`);
   for (const probe of probes) {
@@ -89,6 +102,13 @@ try {
     // Equivalent full-face agreement cannot waive the actual live-web contract.
     assert.ok(Math.abs(probe.webWidth - probe.nativeWidth) <= 1.5, JSON.stringify(probe));
   }
+  console.log(`TICKET_WHITESPACE_METRIC ${JSON.stringify(ticketProbe)}`);
+  assert.equal(ticketWeb.width, 44);
+  assert.equal(ticketWeb.gap, 4);
+  for (const field of ['width', 'titleWidth', 'gap']) {
+    assert.ok(Math.abs(ticketProbe.native[field] - ticketWeb[field]) <= 1.5, JSON.stringify(ticketProbe));
+  }
+  console.log('LAYOUT_TICKET_WHITESPACE_OK');
   console.log('LAYOUT_WEB_FONT_METRICS_OK');
 } finally {
   await browser.close();
