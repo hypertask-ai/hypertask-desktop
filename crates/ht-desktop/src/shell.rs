@@ -296,6 +296,8 @@ impl Desktop {
                 11 => ("Send feedback", ""),
                 _ => ("Settings", "\\"),
             };
+            let hovered = self.shell.hovered == Some(i);
+            let tint = if selected || hovered { t.text } else { t.muted };
             div()
                 .id(("rail-button", i))
                 .relative()
@@ -315,10 +317,13 @@ impl Desktop {
                 .when(wide, |d| d.pl(px(10.)).gap(px(10.)))
                 .rounded(px(5.))
                 .when(wide, |d| d.text_size(px(14.)))
-                .text_color(color(if selected { t.text } else { t.muted }))
-                .when(selected, |d| d.bg(color(t.hover)))
-                .child(icon(name, if selected { t.text } else { t.muted }, 18.))
-                .when(wide, |d| d.child(label))
+                .text_color(color(tint))
+                .when(selected || hovered, |d| d.bg(color(t.hover)))
+                .child(icon(name, tint, 18.))
+                .when(wide, |d| d.child(
+                    div().text_color(color(t.muted)).child(label)
+                        .layout_key(&self.layout, format!("rail.label.{i}"), Some(label.into())),
+                ))
                 .when(i == 2 && self.inbox.iter().any(|n| !n.seen), |d| {
                     d.child(
                         div()
@@ -1417,7 +1422,8 @@ mod rail_detail_tests {
                         quad.background == gpui::Background::from(color(0x3a3d45))
                     })
                 });
-                records.push(serde_json::json!({"expanded": expanded, "element": hovered, "paintedHoverBackground": background_matches}));
+                let label = expanded.then(|| measured(view, &mut cx, &format!("rail.label.{index}")));
+                records.push(serde_json::json!({"expanded": expanded, "element": hovered, "label": label, "paintedHoverBackground": background_matches}));
             }
         }
         if cfg!(target_os = "linux") && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
@@ -1429,7 +1435,15 @@ mod rail_detail_tests {
             assert_eq!(record["element"]["color"], "#ffffff", "{record}");
             assert_eq!(record["element"]["bg"], "#3a3d45", "{record}");
             assert_eq!(record["paintedHoverBackground"], true, "{record}");
+            if record["expanded"] == true {
+                assert_eq!(record["label"]["color"], "#8e9093", "{record}");
+            }
         }
+        cx.simulate_mouse_move(point(px(200.), px(400.)), None, Default::default());
+        assert_eq!(measured(view, &mut cx, "rail.icon.12")["color"], "#8e9093");
+        assert!(measured(view, &mut cx, "rail.icon.12")["bg"].is_null());
+        assert_eq!(measured(view, &mut cx, "rail.icon.2")["bg"], "#3a3d45");
+        assert_eq!(measured(view, &mut cx, "rail.label.2")["color"], "#8e9093");
     }
 
     #[gpui::test]
