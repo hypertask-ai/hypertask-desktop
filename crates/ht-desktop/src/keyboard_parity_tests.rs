@@ -146,7 +146,8 @@ fn keyboard_archive_command_and_platform_aliases_archive_tasks_not_notifications
                 assert_eq!(rows[0].kind, "task_patch");
                 assert_eq!(rows[0].payload_json["task_id"], 1);
                 assert_eq!(rows[0].payload_json["status"], "Archive");
-                assert_eq!(this.db.inbox().unwrap().iter().find(|n| n.id == 101).unwrap().raw_json["status"], "Normal");
+                assert_eq!(this.db.task(1).unwrap().unwrap().status, ht_core::generated::Status::Archive);
+                assert!(!rows.iter().any(|row| row.kind == "inbox_archive"));
             });
         }
     }
@@ -219,4 +220,36 @@ fn keyboard_g_i_returns_to_the_default_inbox_split(cx: &mut TestAppContext) {
         assert_eq!(this.selected, 0);
         assert!(this.db.mutations().unwrap().is_empty());
     });
+}
+
+#[gpui::test]
+fn keyboard_alt_enter_sends_an_inbox_reply_without_archiving_or_advancing(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for chord in ["ctrl-alt-enter", "cmd-alt-enter"] {
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let mut this = super::task_fields::tests::desktop(window, cx);
+            this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[
+                {"id":101,"taskId":1,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-02T00:00:00Z"},
+                {"id":102,"taskId":2,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-01T00:00:00Z"}
+            ]})).unwrap();
+            this.screen = Screen::Inbox;
+            this.reload();
+            this.split = this.splits.iter().position(|s| s == "All").unwrap();
+            this.filter_inbox();
+            this
+        });
+        cx.simulate_keystrokes("ctrl-m");
+        cx.simulate_input("Keep this task");
+        cx.simulate_keystrokes(chord);
+        view.read_with(cx, |this, _| {
+            let rows = this.db.mutations().unwrap();
+            let comments: Vec<_> = rows.iter().filter(|row| row.kind == "task_comment").collect();
+            assert_eq!(comments.len(), 1, "{chord}");
+            assert_eq!(comments[0].payload_json["task_id"], 1);
+            assert_eq!(comments[0].payload_json["text"], "<p>Keep this task</p>");
+            assert!(!rows.iter().any(|row| matches!(row.kind.as_str(), "inbox_archive" | "task_patch")));
+            assert_eq!(this.screen, Screen::Task);
+            assert_eq!(this.options.task, 1);
+        });
+    }
 }

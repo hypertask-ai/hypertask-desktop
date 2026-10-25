@@ -234,7 +234,7 @@ Conflicting hints stay explicit below.
 | Inbox | Shift+J/Down, Shift+K/Up | Extend selected rows | Supported cached rows | `hooks/MultiPages/useBulkActions.ts:132-164` |
 | Inbox | H | Reminder | Supported for cached notification IDs, not arbitrary task reminders | `components/notifications/inboxSplit/RemindMeInbox.tsx:39-54` |
 | Inbox | Shift+S | Subtask hint | Unavailable subtask flow B11; hint only | `lib/configs/inbox.config.ts:71` |
-| Inbox | G then I | Default inbox split | Partial. Native opens Inbox but retains current split. | `app/inbox/Inbox.tsx:343-356` |
+| Inbox | G then I | Default inbox split | Added. Native returns to the default inbox split. | `app/inbox/Inbox.tsx:343-356` |
 | Inbox/board/task | Z, Ctrl/Cmd+Z | Last global undo outside text inputs | Blocked B9; editor undo supported separately | `app/inbox/Inbox.tsx:333-336`, `hooks/Homepage/useHandleKeyDownOperations.ts:182-184`, `app/detail/[...slug]/taskDetailNavigationKeymap.ts:28-34`, `hooks/General/useUndo.tsx:194-220` |
 | Task | Ctrl/Cmd+Shift+Alt+Enter | Send, complete task, advance inbox | Supported existing comment save mode | `components/RTE/useTaskDetailEditorKeyboard.tsx:121-140`, `lib/taskDetailInboxFlow.ts:89-109` |
 | Task | Up/Down, Tab/Shift+Tab | Description, comment and composer focus | Supported | `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:607,662-701` |
@@ -257,7 +257,54 @@ Conflicting hints stay explicit below.
 | AI sidebar | /, Up/Down, Enter, Escape | Skill picker navigation | Supported cached bearer skills; not editor format catalog | `components/RTE/Extensions/SlashCommands/CommandsList.tsx:92-157` |
 | Any applicable surface | G then T/H/I/;/S/P/E/R/A/M/D/U/B/C/# | Global routes | Inbox and task board only. Other destinations excluded/unavailable, never mapped to Board. | `lib/keyboard/globalGShortcuts.ts:33-49,52-66` |
 
+## Remaining handler-only keys
+
+| Surface | Web shortcut | Runtime action | Native status | Web source |
+| --- | --- | --- | --- | --- |
+| Inbox | Ctrl/Cmd+R | Open focused task for reply | Supported native composer focus | `components/notifications/inboxSplit/index.tsx:729-735` |
+| Inbox | Alt+V | Open focused task for audio reply | Blocked microphone flow B11 | `components/notifications/inboxSplit/index.tsx:737-743` |
+| Inbox | Ctrl/Cmd+Shift+O | Link subtask | Blocked subtask flow B11. Visible AI reset has separate context. | `components/notifications/inboxSplit/index.tsx:771-774` |
+| Inbox | U | Toggle notification unread | Blocked unread mutation B10; native seen-only write is not a toggle | `components/notifications/inboxSplit/index.tsx:776-789` |
+| Inbox | Alt+S | Star notification's task | Blocked saved-task mutation B8 | `components/notifications/inboxSplit/index.tsx:798-800` |
+| Inbox | gg / GG | First/last notification | Supported cached row boundaries | `components/notifications/inboxSplit/index.tsx:647-670` |
+| Inbox | G then T | Focused notification's board | Supported legacy route; conflicts with global timers route | `components/notifications/inboxSplit/index.tsx:673-687` |
+| Board selection | X, Escape | Toggle selection, clear selection | Supported native selection | `lib/contexts/Kanban/BulkSelectionContext.tsx:299-318` |
+| Board selection | Ctrl/Cmd+A | Select board tasks, flag-gated | Native selection retained; no assumed server flag | `lib/contexts/Kanban/BulkSelectionContext.tsx:287-296` |
+| Board selection | Ctrl/Cmd+E, A, T, M | Bulk archive, assign, tags, column | Supported existing bulk actions | `lib/contexts/Kanban/BulkSelectionContext.tsx:321-358` |
+| Rich editor | Ctrl/Cmd+Shift+1, Ctrl/Cmd+Shift+2 | Heading overrides | Supported native format actions | `components/RTE/useTaskDetailEditorKeyboard.tsx:61-69` |
+| Rich editor | Ctrl/Cmd+Shift+A | Upload attachment | Blocked staged upload flow; not outside-editor selection | `components/RTE/useTaskDetailEditorKeyboard.tsx:70-73` |
+| Comment editor | Ctrl/Cmd+Alt+Enter | Send without inbox advance | Added. Existing durable send-and-stay action. | `lib/taskDetailInboxFlow.ts:89-109`, `components/RTE/useTaskDetailEditorKeyboard.tsx:121-140` |
+| Rich editor | Ctrl/Cmd+J | AI writer or flagged compose tab | Native flagged compose alternative. Legacy writer remains partial. | `components/RTE/useTaskDetailEditorKeyboard.tsx:156-159` |
+| Rich editor | Escape | Save description or leave comment editor | Partial. Native leaves editing; does not auto-publish description on Escape. | `components/RTE/useTaskDetailEditorKeyboard.tsx:44-56` |
+| Rich editor | Enter inside reply quote | Leave quoted block | Supported native reply-block handling | `components/RTE/Extensions/ReplyBlockquote.ts:201-220` |
+| Rich editor | Ctrl/Cmd+Alt+0 | Normal text block | Supported native paragraph action | `components/RTE/Extensions/dBlock/dBlock.ts:82-85` |
+
+Task creation remains deliberately unavailable for plain keys.
+Its defaults require active filters and exact ranks.
+AI compose cannot replace that user promise.
+No fake quick-add UI was introduced.
+
 ## Native input evidence
+
+| Input contract | GPUI behavior test |
+| --- | --- |
+| Shift+T board/table | `keyboard_shift_t_toggles_existing_board_table_without_changing_board` |
+| Ctrl/Cmd+Shift+O/J from workspace | `keyboard_ai_reset_aliases_work_from_workspace_and_focus_a_clean_composer` |
+| Same reset aliases inside AI | `keyboard_reset_platform_aliases_create_distinct_chats_and_clear_the_draft` |
+| Exact Ctrl+Q | `keyboard_ctrl_q_ignores_extra_modifiers_and_preserves_workspace_focus` |
+| A/M/P/S/T/D, all three surfaces | `keyboard_task_field_shortcuts_commit_the_selected_target_on_every_surface` |
+| J/K/arrows/Tab/Shift+Tab/gg/GG/Enter/Escape | `keyboard_board_navigation_aliases_focus_columns_rows_and_open_the_selected_task` |
+| Ctrl/Cmd+E, all three surfaces | `keyboard_archive_command_and_platform_aliases_archive_tasks_not_notifications` |
+| Plain keys inside F2/Ctrl+M/Ctrl+D editors | `keyboard_plain_shortcuts_do_not_escape_title_comment_or_description_inputs` |
+| /, 6, Ctrl/Cmd+B | `keyboard_search_and_board_switch_shortcuts_use_existing_controls` |
+| G then I default split | `keyboard_g_i_returns_to_the_default_inbox_split` |
+| Comment Ctrl/Cmd+Alt+Enter | `keyboard_alt_enter_sends_an_inbox_reply_without_archiving_or_advancing` |
+| Every formatting chord and slash choice | Existing `every_format_keyboard_and_slash_choice_is_a_real_editor_action` |
+| I summary | Existing `task_summary_i_click_escape_preserve_full_markdown_without_requesting_ai` |
+| O/Shift+O comment expansion | Existing `comment_single_all_expansion_keeps_latest_open_and_does_not_fire_in_editor` |
+| Shift+M board/column choice | Existing `move_board_shortcut_uses_search_then_destination_column_and_never_guesses` |
+| Inbox E durability | Existing GitHub native X11 `DESKTOP_INPUT_ARCHIVE_VERIFIED` receipt |
+
 
 `crates/ht-desktop/src/keyboard_parity_tests.rs` drives keystrokes.
 Field assertions check target IDs and durable payloads.

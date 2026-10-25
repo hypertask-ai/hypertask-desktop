@@ -34,3 +34,25 @@ Principle choices: Model the Domain keeps typed actions. Sequence Verifiable Uni
 ## Evidence
 
 Pending GitHub CI. No local execution permitted.
+
+### Rejection proof
+
+- Draft PR: https://github.com/hypertask-ai/hypertask-desktop/pull/30.
+- Test-only SHA `fc430cecb25f6390364afb15f2d5260815ada2d8`.
+- GitHub run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40237032592.
+- Linux, Windows and macOS desktop suites each reported `185 passed; 5 failed`.
+- Real rejections: Shift+T had no `shell.table.title`; G then I kept split `2` rather than `0`; Ctrl+Alt+Q wrongly changed focus; two Ctrl+Q presses failed to return to workspace, preventing the reset test from reaching its next assertion.
+- One test-observation mistake also failed: task archive correctly hides that notification from the active inbox query, so querying that filtered list cannot prove the raw notification was unchanged. The corrected check asserts the task's Archive status and the exact sole task_patch, with no inbox_archive write. No application behavior was weakened.
+- Initial SHA `4585a98a6ace21419f6a570942648342df7b2bd4` had test visibility/context compile errors. Those were fixed before this behavior rejection. It is not counted as red behavior proof.
+- Native ARM64 build and Pstack contract passed in the rejection run. Downstream input/memory jobs could not run after intentional test failures.
+
+### Implementation and self-review
+
+- Shift+T uses existing board/table navigation, with editor/modal guards.
+- G then I selects the existing default inbox split.
+- Ctrl+Q consumes its handled event once. Extra modifiers and held repeats cannot steal focus.
+- Visible AI Ctrl/Cmd+Shift+O/J uses the existing new-chat action from workspace or chat. Standalone GPUI tests also assert distinct chat identity and empty focused draft.
+- Comment Ctrl/Cmd+Alt+Enter reuses durable send-and-stay, matching the live comment helper rather than the new-task help label.
+- The cited inventory retains creation, ranking, active-view, sharing, timer, history-feed and microphone blockers. Quick add remains B3; no new product UI or guessed defaults.
+- Source/diff self-review only. No independent helper requested. Unbundled deslop/Comment Sicko tooling unavailable; no successful run claimed.
+- GitHub CLI read commands hit the user's depleted quota. The existing `/usr/bin/gh` wrapper's repository credential successfully watched/read the same public runs without printing or copying credentials. No laptop or VPS execution fallback.

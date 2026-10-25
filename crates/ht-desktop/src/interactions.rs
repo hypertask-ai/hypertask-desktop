@@ -180,6 +180,9 @@ impl Desktop {
             {
                 let action = shortcuts::sequence(&key.key, shift, self.screen);
                 if let Some(action) = action {
+                    if action == Action::Inbox {
+                        self.split = 0;
+                    }
                     self.run_shortcut(action, window, cx);
                     cx.stop_propagation();
                     return;
