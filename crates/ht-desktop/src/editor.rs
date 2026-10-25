@@ -805,23 +805,23 @@ impl TextInput {
             return vec![];
         }
         let theme = editor_theme(window.text_style().color);
-        let top = self.last_layout.as_ref().map_or(px(0.), |l| {
-            let row = l.row(self.cursor_offset().min(l.text.len()));
-            l.rows[row].top + l.rows[row].height
+        let (row_top, row_height) = self.last_layout.as_ref().map_or((px(0.), px(0.)), |layout| {
+            let row = &layout.rows[layout.row(self.cursor_offset().min(layout.text.len()))];
+            (row.top, row.height)
         });
-        let top = if self
-            .last_bounds
-            .is_some_and(|b| b.top() + top + px(320.) > window.viewport_size().height)
-        {
-            (top - px(320.)).max(px(0.))
-        } else {
-            top
+        let anchor = self.last_bounds.map(|bounds| point(bounds.left(), bounds.top() + row_top));
+        let overlay = |menu: AnyElement| {
+            let mut anchored = gpui::anchored().offset(point(px(0.), row_height));
+            if let Some(anchor) = anchor {
+                anchored = anchored.position(anchor);
+            }
+            anchored.child(menu).into_any_element()
         };
         if self.read_only {
             if self.selected_range.is_empty() {return vec![];}
-            return vec![div().id("quote-selection").absolute().left_0().top(top).p(px(8.)).bg(crate::theme::color(theme.comment)).text_color(crate::theme::color(theme.text)).shadow_md().cursor_pointer().child("Quote ↵")
+            return vec![overlay(div().id("quote-selection").p(px(8.)).bg(crate::theme::color(theme.comment)).text_color(crate::theme::color(theme.text)).shadow_md().cursor_pointer().child("Quote ↵")
                 .on_mouse_down(MouseButton::Left,cx.listener(|this,_,_,cx|{cx.stop_propagation();this.quote_selection(cx);}))
-                .layout_key(&e.capture,"quote-selection",None).into_any_element()];
+                .layout_key(&e.capture,"quote-selection",None).into_any_element())];
         }
         let mut out = vec![];
         if let Some(dialog) = &e.dialog {
@@ -904,14 +904,7 @@ impl TextInput {
                         ),
                 );
             }
-            return vec![
-                body.absolute()
-                    .left_0()
-                    .top(top)
-                    .w(px(360.))
-                    .shadow_md()
-                    .into_any_element(),
-            ];
+            return vec![overlay(body.w(px(360.)).shadow_md().into_any_element())];
         }
         let items = self.slash_items();
         if !items.is_empty() {
@@ -950,23 +943,13 @@ impl TextInput {
                         .text_size(px(12.))
                         .child("↑ ↓ to navigate    Enter to select"),
                 );
-            out.push(
-                list.absolute()
-                    .left_0()
-                    .top(top)
-                    .w(px(360.))
-                    .shadow_md()
-                    .into_any_element(),
-            );
+            out.push(overlay(list.w(px(360.)).shadow_md().into_any_element()));
         } else if !self.selected_range.is_empty()
             && e.document.block_at(self.selected_range.start).tag.name != "pre"
         {
             if e.palette {
                 let palette = div()
                     .id("editor-highlight-colors")
-                    .absolute()
-                    .left_0()
-                    .top(top)
                     .flex()
                     .gap(px(8.))
                     .p(px(8.))
@@ -1007,10 +990,10 @@ impl TextInput {
                                     )
                             }),
                     );
-                return vec![palette.into_any_element()];
+                return vec![overlay(palette.into_any_element())];
             }
             if e.ai_menu {
-                return vec![div().id("editor-ai-dropdown").absolute().left_0().top(top).w(px(260.)).p(px(8.)).flex().flex_col().bg(crate::theme::color(theme.comment)).text_color(crate::theme::color(theme.text)).shadow_md()
+                return vec![overlay(div().id("editor-ai-dropdown").w(px(260.)).p(px(8.)).flex().flex_col().bg(crate::theme::color(theme.comment)).text_color(crate::theme::color(theme.text)).shadow_md()
                     .children(AI_DROPDOWN.iter().enumerate().map(|(i,(label,command))| {
                         let command=*command;
                         div().id(("editor-ai-command",i)).p(px(6.)).cursor_pointer().child(*label)
@@ -1018,7 +1001,7 @@ impl TextInput {
                                 cx.stop_propagation();this.editor.as_mut().unwrap().ai_menu=false;
                                 cx.emit(EditorRequest::Improve{command,html:this.html()});cx.notify();
                             })).layout_key(&e.capture,format!("ai-command-{i}"),None)
-                    })).into_any_element()];
+                    })).into_any_element())];
             }
             let buttons = [
                 ("B", Format::Bold),
@@ -1095,18 +1078,15 @@ impl TextInput {
                             }),
                         ),
                 );
-            out.push(
+            out.push(overlay(
                 toolbar
-                    .absolute()
-                    .left_0()
-                    .top(top)
                     .max_w(px(560.))
                     .p(px(8.))
                     .bg(crate::theme::color(theme.comment))
                     .text_color(crate::theme::color(theme.text))
                     .shadow_md()
                     .into_any_element(),
-            );
+            ));
         }
         out
     }
