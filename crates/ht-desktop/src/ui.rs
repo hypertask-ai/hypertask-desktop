@@ -1864,6 +1864,8 @@ fn ready_after_presentation(
                 std::process::exit(1);
             }
         }
+        #[cfg(windows)]
+        crate::updater::mark_ready();
         println!("READY");
         if print_memory {
             if let Err(error) = crate::memory::print() {

@@ -41,6 +41,14 @@ impl ReleaseId {
     }
 }
 
+pub fn compiled_release() -> ReleaseId {
+    ReleaseId {
+        version: Version::parse(env!("CARGO_PKG_VERSION")).expect("package version"),
+        sequence: env!("HT_RELEASE_SEQUENCE").parse().unwrap_or(0),
+        sha: env!("HT_RELEASE_SHA").chars().take(12).collect(),
+    }
+}
+
 pub fn parse_manifest(text: &str) -> Result<BTreeMap<String, String>> {
     let mut hashes = BTreeMap::new();
     for line in text.lines() {
@@ -70,7 +78,8 @@ struct Release {
 fn release_url(tag: &str, name: &str, value: &str) -> Result<()> {
     ReleaseId::parse(tag)?;
     ensure!([X64, ARM64, MANIFEST].contains(&name), "unknown asset");
-    ensure!(value == format!("https://github.com/{REPO}/releases/download/{tag}/{name}"), "untrusted release URL");
+    let expected = format!("https://github.com/{REPO}/releases/download/{tag}/{name}");
+    ensure!(value == expected || value == expected.replace('+', "%2B"), "untrusted release URL");
     Ok(())
 }
 
@@ -256,7 +265,7 @@ impl Install {
             Ok(child) => child,
             Err(_) => { self.recover()?; return Ok(false); }
         };
-        let healthy = self.wait_for_start(&mut child, timeout)?;
+        let healthy = self.wait_for_start(&mut child, timeout).unwrap_or(false);
         if healthy {
             self.accept()?;
         } else {
@@ -352,6 +361,7 @@ mod tests {
     fn only_this_repositories_release_assets_are_allowed() {
         let good = format!("https://github.com/{REPO}/releases/download/{TAG}/{X64}");
         assert!(release_url(TAG, X64, &good).is_ok());
+        assert!(release_url(TAG, X64, &good.replace('+', "%2B")).is_ok());
         for bad in [good.replace(REPO, "attacker/repo"), good.replace("https:", "http:"),
             format!("{good}?redirect=bad"), good.replace("github.com", "github.com.attacker.test")] {
             assert!(release_url(TAG, X64, &bad).is_err());
@@ -410,6 +420,28 @@ mod tests {
             assert!(!install.begin_swap(&now, arch).unwrap());
             assert_eq!(fs::read(&install.exe).unwrap(), b"old");
         }
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn install_lock_excludes_other_process_writers() {
+        let (_dir, install) = fixture();
+        let guard = install.lock().unwrap();
+        assert!(install.lock().is_err());
+        drop(guard);
+        assert!(install.lock().is_ok());
+        println!("UPDATER_INSTALL_LOCK_VERIFIED");
+    }
+
+    #[test]
+    fn spawn_failure_restores_old_executable() {
+        let (_dir, install) = fixture();
+        stage(&install, b"not an executable");
+        assert!(install.begin_swap(&current(), X64).unwrap());
+        assert!(!install.supervise(&[], Duration::from_secs(1)).unwrap());
+        assert_eq!(fs::read(&install.exe).unwrap(), b"old");
+        assert_eq!(fs::read_to_string(install.path("rejected")).unwrap(), TAG);
+        println!("UPDATER_SPAWN_FAILURE_ROLLBACK_VERIFIED");
     }
 
     #[test]

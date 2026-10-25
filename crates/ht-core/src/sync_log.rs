@@ -7,12 +7,12 @@ use std::{
 
 const MAX_BYTES: u64 = 128 * 1024;
 
-pub(crate) struct SyncLog {
+pub struct SyncLog {
     path: PathBuf,
 }
 
 impl SyncLog {
-    pub(crate) fn new(db: &Path) -> Self {
+    pub fn new(db: &Path) -> Self {
         Self {
             path: db.with_extension("sync.log"),
         }
@@ -43,7 +43,7 @@ impl SyncLog {
         self.record("failed", operation, &code, attempts);
     }
 
-    pub(crate) fn record(
+    pub fn record(
         &mut self,
         event: &'static str,
         operation: &'static str,
@@ -58,6 +58,8 @@ impl SyncLog {
     }
 
     fn append(&self, line: &[u8]) -> std::io::Result<()> {
+        static WRITER: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        let _writer = WRITER.lock().unwrap_or_else(|e| e.into_inner());
         if fs::metadata(&self.path).is_ok_and(|m| m.len() + line.len() as u64 > MAX_BYTES) {
             let previous = self.path.with_extension("log.1");
             match fs::remove_file(&previous) {

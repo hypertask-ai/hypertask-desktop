@@ -26,6 +26,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
       - run: cargo test --locked --release -p ht-updater -- --nocapture
+      - run: python gates/updater-release-tests.py
   pstack:
     name: Pstack contract
     runs-on: ubuntu-24.04

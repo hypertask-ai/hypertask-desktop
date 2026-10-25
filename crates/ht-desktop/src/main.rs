@@ -16,6 +16,8 @@ mod signin;
 mod store;
 mod theme;
 mod ui;
+#[cfg(windows)]
+mod updater;
 
 use anyhow::{Context as _, Result, bail};
 use gpui::{
@@ -188,6 +190,10 @@ fn run() -> Result<()> {
     let options = Options::parse(std::env::args().skip(1))?;
     if let Some(parent) = options.db.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent)?;
+    }
+    #[cfg(windows)]
+    if !options.offline && updater::start(&options.db) {
+        return Ok(());
     }
     let db = ht_core::Db::open(&options.db)?;
     gpui_platform::application()
