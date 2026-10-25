@@ -25,7 +25,7 @@
 
 ## Web source boundary
 
-No UI values are added. Preserve the web surfaces at `/home/valentin/projects/hypertask/src/components/PageComponents/Kanban/HeaderComponents/AppShellRail.tsx:55` (board/global rail) and `/home/valentin/projects/hypertask/src/components/AI_CHAT/AI_Chat_Layout.tsx:55` (AI panels). Timing, hashes and release identities are updater protocol choices, not copied UI values.
+No UI values are added. Preserve the web surfaces at `/home/valentin/projects/hypertask/src/components/PageComponents/Kanban/HeaderComponents/AppShellRail.tsx:58` (board/global rail) and `/home/valentin/projects/hypertask/src/components/AI_CHAT/AI_Chat_Layout.tsx:55` (AI panels). Timing, hashes and release identities are updater protocol choices, not copied UI values.
 
 ## Evidence
 
