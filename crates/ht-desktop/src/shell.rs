@@ -1410,7 +1410,7 @@ mod rail_detail_tests {
                     let center = point(
                         px((tooltip["x"].as_f64().unwrap() + tooltip["w"].as_f64().unwrap() / 2.) as f32),
                         px((tooltip["y"].as_f64().unwrap() + tooltip["h"].as_f64().unwrap() / 2.) as f32),
-                    ) * window.scale_factor();
+                    ).scale(window.scale_factor());
                     let quads = window.painted_quads();
                     let topmost = quads.iter().filter(|quad| {
                         !quad.background.is_transparent() && quad.bounds.contains(&center) && quad.content_mask.bounds.contains(&center)
