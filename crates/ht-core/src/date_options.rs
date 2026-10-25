@@ -205,13 +205,13 @@ pub fn phrase_options<Tz: TimeZone>(input: &str, now: DateTime<Tz>, past: bool) 
 }
 
 fn parse_clock(input: &str) -> Option<chrono::NaiveTime> {
-    let input: String = input.chars().filter(|c| !c.is_whitespace()).collect();
+    let input = input.trim();
     let (clock, period) = if let Some(clock) = input.strip_suffix("am") {
-        (clock, Some(false))
+        (clock.trim_end(), Some(false))
     } else if let Some(clock) = input.strip_suffix("pm") {
-        (clock, Some(true))
+        (clock.trim_end(), Some(true))
     } else {
-        (input.as_str(), None)
+        (input, None)
     };
     if period.is_none() && !clock.contains(':') { return None; }
     let parts: Vec<_> = clock.split(':').collect();
@@ -239,15 +239,13 @@ fn explicit_date<Tz: TimeZone>(query: &str, now: &DateTime<Tz>, past: bool) -> O
         Some((&words[..words.len() - 2], 1))
     } else if words.last() == Some(&"later") {
         Some((&words[..words.len() - 1], 1))
-    } else if words.len() == 2 && words[0].parse::<i32>().is_ok() {
-        Some((words.as_slice(), 1))
     } else { None };
     if let Some((words, direction)) = relative_expression {
         if words.len() != 2 { return None; }
         let amount = words[0].parse::<i32>().ok()?;
         if amount < 0 || words[0] != amount.to_string() { return None; }
         let amount_signed = amount.checked_mul(direction)?;
-        let unit = words[1].trim_end_matches('s');
+        let unit = words[1].strip_suffix('s').unwrap_or(words[1]);
         let date = match unit {
             "month" => {
                 let months = chrono::Months::new(amount as u32);
@@ -259,7 +257,8 @@ fn explicit_date<Tz: TimeZone>(query: &str, now: &DateTime<Tz>, past: bool) -> O
                 let date = NaiveDate::from_ymd_opt(year, now.month(), 1)?.checked_add_signed(Duration::days(now.day0() as i64))?;
                 local(now, date.and_time(now.time()))?
             }
-            _ => relative(now, amount_signed, unit)?,
+            "minute" | "hour" | "day" | "week" => relative(now, amount_signed, unit)?,
+            _ => return None,
         };
         // The web's time-detection regex treats only standalone numbers 0..23 as explicit times.
         return if amount <= 23 { Some(date) } else { at(now, date.date_naive(), 9) };

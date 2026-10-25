@@ -336,7 +336,9 @@ impl Desktop {
                 }
                 TimeEntryChange::Update { .. } => {
                     self.time_log.editing = None;
-                    window.focus(&self.time_log.add.hours.focus_handle(cx), cx);
+                    if self.time_log.open {
+                        window.focus(&self.time_log.add.hours.focus_handle(cx), cx);
+                    }
                 },
                 _ => (),
             }
@@ -925,6 +927,26 @@ mod tests {
             }
         }
     }
+    #[gpui::test]
+    fn time_log_closed_edit_ack_keeps_workspace_focus_outside_the_removed_modal(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        let mut cx = gpui::VisualTestContext::from_window(view.into(), cx);
+        view.update(&mut cx, |this, _, _| seed(this)).unwrap(); draw(view, &mut cx);
+        cx.simulate_keystrokes("b"); click(view, &mut cx, "time-log.edit.5");
+        cx.simulate_keystrokes("ctrl-a"); cx.simulate_input("2"); click(view, &mut cx, "time-log.edit.save");
+        click(view, &mut cx, "time-log.close");
+        view.update(&mut cx, |this, window, cx| {
+            assert!(!this.time_log.open); assert!(this.focus.is_focused(window));
+            let change = this.time_log.pending.clone().expect("save must enqueue before close");
+            let mut ack = this.db.time_entries(1).unwrap().unwrap()["entries"][0].clone(); ack["taskId"] = json!(1);
+            this.db.drain_once(&mut Server { status: 200, change, reply: json!({"success":true,"entry":ack}) }, chrono::Utc::now().timestamp() + 1).unwrap();
+            assert!(!this.poll_time(window, cx)); assert!(this.time_log.error.is_none());
+            assert!(!this.time_log.open); assert!(this.focus.is_focused(window), "late acknowledgement must not focus an unmounted input");
+            assert_eq!(this.db.time_entries(1).unwrap().unwrap()["entries"][0]["seconds"], 7200);
+        }).unwrap();
+    }
+
     #[gpui::test]
     fn time_log_range_user_filters_permissions_cancel_validation_and_account_fence(
         cx: &mut gpui::TestAppContext,
