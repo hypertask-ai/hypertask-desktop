@@ -2673,6 +2673,7 @@ dependencies = [
  "gpui",
  "gpui_platform",
  "ht-core",
+ "ht-updater",
  "iana-time-zone",
  "keyring",
  "open",
@@ -2687,6 +2688,20 @@ dependencies = [
 [[package]]
 name = "ht-schema-gen"
 version = "0.1.0"
+
+[[package]]
+name = "ht-updater"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "semver",
+ "serde",
+ "serde_json",
+ "sha2",
+ "tempfile",
+ "ureq",
+ "url",
+]
 
 [[package]]
 name = "html5ever"

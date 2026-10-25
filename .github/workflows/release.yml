@@ -1,0 +1,77 @@
+name: Release
+on:
+  workflow_run:
+    workflows: [CI]
+    branches: [main]
+    types: [completed]
+permissions:
+  contents: read
+concurrency:
+  group: windows-releases
+  cancel-in-progress: false
+jobs:
+  publish:
+    if: >-
+      github.event.workflow_run.conclusion == 'success' &&
+      github.event.workflow_run.event == 'push' &&
+      github.event.workflow_run.head_branch == 'main' &&
+      github.event.workflow_run.head_repository.full_name == github.repository &&
+      github.repository == 'hypertask-ai/hypertask-desktop'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          persist-credentials: false
+      - uses: actions/download-artifact@v4
+        with:
+          name: hypertask-desktop-windows
+          path: release-artifacts/hypertask-desktop-windows
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - uses: actions/download-artifact@v4
+        with:
+          name: hypertask-desktop-windows-arm64
+          path: release-artifacts/hypertask-desktop-windows-arm64
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+      - name: Package verified CI artifacts
+        id: package
+        run: python3 gates/updater-release.py
+      - name: Publish complete release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: hypertask-ai/hypertask-desktop
+          TAG: ${{ steps.package.outputs.tag }}
+          SOURCE_SHA: ${{ github.event.workflow_run.head_sha }}
+          SOURCE_RUN: ${{ github.event.workflow_run.html_url }}
+          SOURCE_SEQUENCE: ${{ github.event.workflow_run.run_number }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          # Re-runs converge; a public release is never edited in place.
+          existing=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null || true)
+          if [ "$existing" = false ]; then exit 0; fi
+          if [ "$existing" != true ]; then
+            gh release create "$TAG" --draft --target "$SOURCE_SHA" --title "$TAG" \
+              --notes "Windows x64 and ARM64. SHA-256 manifest included. CI: $SOURCE_RUN"
+          fi
+          gh release upload "$TAG" release-assets/* --clobber
+          tags=$(gh api repos/$GH_REPO/releases --paginate --jq '.[].tag_name')
+          promote=true
+          while IFS= read -r published; do
+            if [[ "$published" =~ ^v[0-9]+\.[0-9]+\.[0-9]+\+([0-9]+)\. ]]; then
+              if [ "${BASH_REMATCH[1]}" -gt "$SOURCE_SEQUENCE" ]; then promote=false; fi
+            fi
+          done <<< "$tags"
+          gh release edit "$TAG" --draft=false --latest="$promote"
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: release-manifest
+          path: release-assets/SHA256SUMS
+          if-no-files-found: error

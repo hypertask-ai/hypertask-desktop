@@ -18,6 +18,7 @@ mod task_patch;
 mod shell_write;
 pub mod worker;
 mod sync_log;
+pub use sync_log::SyncLog;
 
 pub use comment_write::CommentWrite;
 pub use db::{BoardColumn, CommentView, Db, InboxItem, TaskDetail, TaskView};

@@ -26,3 +26,5 @@ launch, doctor and teardown. No VPS or laptop drive commands are authorized.
 This is a focused initial map, not the full feature inventory. A path without
 real native driving remains a coverage gap, even when its unit tests pass.
 Maintenance checks index equality, source links, actual CI steps and artifacts.
+
+- [Silent Windows updates](./updater.md) maps release packaging and supervised swaps.
