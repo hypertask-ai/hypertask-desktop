@@ -25,3 +25,19 @@
 ## Verification limits
 
 Unavailable Cursor built-ins use serial self-review instead. Prove It Works requires actual CI results. Sequence Verifiable Units requires red/green commits. Model the Domain preserves typed actions rather than adding inert UI rows. Remote authorization gaps stay explicit.
+
+## Source-driven design
+
+`command_center.rs` produces supported base metadata. `board.rs` and
+`comment_actions.rs` add context-specific actions. `interactions.rs` currently
+appends these after its base sort, splitting groups and losing web order.
+The final assembly must order all producers before inserting board navigation
+and recommendations. Usage must sort within groups, not just recommendations.
+
+Two serial alternatives were considered. A second complete web registry would
+repeat labels/actions and introduce unsupported rows. A final stable group/key
+ordering table preserves the existing typed commands and action handlers.
+The latter is the smaller fix. No new transport or feature screen is needed.
+
+Native task reminders only target existing inbox notifications. They cannot
+stand in for the web's arbitrary task reminder. That row remains blocked.

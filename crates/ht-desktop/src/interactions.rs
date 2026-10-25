@@ -1441,4 +1441,129 @@ mod cmdk_parity_tests {
             ]);
         }).unwrap();
     }
+
+    #[gpui::test]
+    fn cmdk_board_and_inbox_groups_have_complete_web_sequences(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            for screen in [Screen::Inbox, Screen::Board] {
+                this.screen = screen;
+                this.reload();
+                let rows = this.command_rows();
+                let keys = |group| rows.iter().filter(|row| row.group == group)
+                    .map(|row| row.key.as_str()).collect::<Vec<_>>();
+                assert_eq!(keys("Navigate"), ["copyCurrentPageUrl", "GotoInbox", "searchTask"]);
+                assert_eq!(keys("App shell surfaces"), ["appShellInbox", "appShellBoard", "appShellAIChat", "appShellAIChatAlternative"]);
+                assert_eq!(keys("AI"), ["aiChatInterface", "pinAiChatOpen", "fullScreenAiChat", "toggleAIChatView"]);
+                assert_eq!(keys("Appearance"), ["lightTheme", "darkTheme", "amoledTheme", "paperTheme"]);
+                assert_eq!(keys("Settings"), ["settingsCalendarShowWeekends", "settingsLearnQuickTips", "settingsGeneral", "settingsAppearance", "settingsSkills", "settingsBoardMembers", "settingsBoardAi", "settingsBoardSkills", "settingsBoardFiles", "settingsCli", "settingsShortcuts", "settingsLearn"]);
+                assert_eq!(keys("Help"), ["shortcuts", "settings", "boardSettings", "helpCenter", "quickTips", "cliInstall"]);
+                assert!(keys("Task").is_empty());
+                if screen == Screen::Board {
+                    assert_eq!(keys("Board"), ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"]);
+                    assert_eq!(keys("Get started"), ["createTaskWithAiWriter", "inviteBoard", "addColumn"]);
+                } else {
+                    assert_eq!(keys("Inbox"), ["swipeThroughUnread"]);
+                    assert_eq!(keys("Board"), ["createTaskWithAiWriter", "sendFeedback", "inviteBoard", "manageMembers", "toggleRailExpanded"]);
+                    assert_eq!(keys("Get started"), ["createTaskWithAiWriter", "inviteBoard"]);
+                }
+                let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
+                groups.dedup();
+                assert_eq!(groups, if screen == Screen::Board {
+                    vec!["Get started", "Board", "Navigate", "App shell surfaces", "AI", "Appearance", "Settings", "Help"]
+                } else {
+                    vec!["Get started", "Navigate", "Inbox", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]
+                });
+            }
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_comment_context_has_web_group_order_and_owner_actions(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            this.db.apply_comments(1, &serde_json::json!({"success":true,"comments":[
+                {"id":7,"text":"One","creatorId":42,"creator":{"id":42},"createdAt":"2026-01-01T00:00:00Z"},
+                {"id":8,"text":"Two","creatorId":43,"creator":{"id":43},"createdAt":"2026-01-02T00:00:00Z"}
+            ]})).unwrap();
+            this.reload();
+            for (part, own) in [(1, true), (2, false)] {
+                this.interaction.task_part = part;
+                let rows = this.command_rows();
+                let comments = rows.iter().filter(|row| row.group == "Comment")
+                    .map(|row| (row.key.as_str(), row.name.as_str(), row.keys.as_str())).collect::<Vec<_>>();
+                let mut expected = vec![
+                    ("fastLikeComment", "Fast like", ""),
+                    ("replyToComment", "Reply to comment", "ENTER"),
+                    ("reactToComment", "React to comment", "R"),
+                    ("pinComment", "Pin comment", "CTRL SHIFT P"),
+                    ("copyCommentContent", "Copy comment content", ""),
+                    ("starComment", "Star comment", "CTRL SHIFT S"),
+                    ("copyCommentToAiChat", "Copy comment to AI chat", ""),
+                ];
+                if own { expected.insert(0, ("editcomment", "Edit comment", "")); expected.push(("deletemessage", "Delete comment", "")); }
+                assert_eq!(comments, expected);
+                let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
+                groups.dedup();
+                assert_eq!(groups, ["Comment", "Task", "Navigate", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]);
+            }
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_usage_and_bulk_recommendations_follow_web_context(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            let now = chrono::Utc::now().timestamp_millis();
+            this.db.kv_set("command-usage", &serde_json::json!({"copyTaskId":{"frequency":10,"lastUsedAt":now},"searchTask":{"frequency":20,"lastUsedAt":now}}).to_string()).unwrap();
+            let rows = this.command_rows();
+            assert_eq!(rows[0].key, "copyTaskId");
+            assert!(!rows.iter().any(|row| row.group == "Frequently used"));
+            let navigate = rows.iter().filter(|row| row.group == "Navigate").map(|row|row.key.as_str()).collect::<Vec<_>>();
+            assert_eq!(navigate, ["searchTask", "copyCurrentPageUrl", "GotoInbox"]);
+            this.screen = Screen::Board;
+            this.reload();
+            assert_eq!(this.command_rows()[0].group, "Frequently used");
+            this.interaction.bulk.insert(1);
+            let rows = this.command_rows();
+            assert_eq!(rows.iter().take(4).map(|row|row.key.as_str()).collect::<Vec<_>>(), ["bulkMoveToColumn", "bulkAssignUser", "bulkSetLabels", "bulkArchive"]);
+            assert!(!rows.iter().any(|row| matches!(row.group, "Get started" | "Frequently used")));
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_ai_and_sidebar_actions_run_from_keyboard_and_persist_usage(cx: &mut gpui::TestAppContext) {
+        use crate::ui::shell::tests::{draw, measured, setup};
+        use crate::ai_sidebar::DisplayMode;
+        let (view, mut cx) = setup(cx);
+        for (name, key) in [
+            ("Switch AI chat mode", "toggleAIChatView"),
+            ("Chat with AI", "aiChatInterface"),
+            ("Pin AI chat open", "pinAiChatOpen"),
+            ("Collapse / expand sidebar", "toggleRailExpanded"),
+        ] {
+            cx.simulate_keystrokes("ctrl-k");
+            cx.simulate_input(name);
+            draw(view, &mut cx);
+            assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], name);
+            cx.simulate_keystrokes("enter");
+            draw(view, &mut cx);
+            view.read_with(&mut cx, |this, cx| {
+                assert_eq!(this.command_usage()[key]["frequency"], 1);
+                assert!(this.interaction.modal.is_none());
+                let sidebar = this.ai_sidebar.as_ref().unwrap().read(cx);
+                match key {
+                    "toggleAIChatView" => assert_eq!(sidebar.mode(), DisplayMode::Floating),
+                    "aiChatInterface" => assert!(!this.shell.ai_open),
+                    "pinAiChatOpen" => assert!(this.shell.ai_open && sidebar.is_open()),
+                    "toggleRailExpanded" => assert_eq!(this.shell.width(), 130.),
+                    _ => unreachable!(),
+                }
+            }).unwrap();
+        }
+    }
+
 }
