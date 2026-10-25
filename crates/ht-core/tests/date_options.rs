@@ -154,8 +154,7 @@ fn everyday_time_queries_match_real_web_sugar_options_and_refuse_malformed_input
                 let now = DateTime::parse_from_rfc3339(&format!("{day}T{time}{offset}")).unwrap();
                 for past in [false, true] { for query in queries {
                     cases.push(json!({"query":query,"now":now.to_rfc3339(),"past":past}));
-                    actual.push(ht_core::date_options::relative_options(query, now, past)
-                        .or_else(|| ht_core::date_options::phrase_options(query, now, past)).unwrap_or_default());
+                    actual.push(ht_core::date_options::query_options(query, now, past).unwrap_or_default());
                 }}
             }
         }
