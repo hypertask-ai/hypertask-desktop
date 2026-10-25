@@ -463,3 +463,23 @@ All three must be rejected before current shared boxes can pass. The full
 before/after comparison and exact-head all-job receipt belong to
 [draft PR 24](https://github.com/hypertask-ai/hypertask-desktop/pull/24).
 F011 remains out of scope; no native control is added or removed.
+
+Hosted comparison at SHA `2810c660db5056c4c2939514094c302e34a66a7a`, CI
+[40148850357](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40148850357),
+confirms reference-content **27 → 24**, closing all three real shared-box
+defects. The 24 unsampled rail-key differences remain unfiltered. Chromium and
+native agree exactly on ticket width **44px**, title width **283px** and gap
+**4px**. All three original box records are rejected by the regression. Dense
+stays **68**; sparse is **34**, since the different synthetic ticket no longer
+has an accidental width agreement with the live ticket. This does not count
+fixture/content changes as layout wins. Artifact `12582007428`, digest
+`sha256:b71fd507f88266507052eb5c70fcb2eb0cb762cad2e3f3715eb376273a91c20b`,
+retains the full comparisons and browser receipt.
+
+That intermediate run passes Linux layout, strict fonts, native keyboard input
+and ARM64, but is not an all-green receipt. Its macOS worker-recovery test server
+fails with `WouldBlock` on a newly accepted socket. macOS inherits nonblocking
+mode from the listener, unlike Linux. The test server now explicitly restores
+blocking mode on accepted streams before its existing read timeout. No test
+assertion, timeout or product transport changes. The final exact-head receipt
+on PR 24 must also prove this correction on all three test platforms.
