@@ -1411,14 +1411,14 @@ impl Desktop {
 #[cfg(test)]
 mod cmdk_parity_tests {
     use super::*;
-    use crate::ui::shell::tests::setup;
+    use crate::ui::task_fields::tests::desktop;
 
     #[gpui::test]
     fn cmdk_task_commands_match_web_order_labels_and_groups(cx: &mut gpui::TestAppContext) {
-        let (view, mut cx) = setup(cx);
-        view.update(&mut cx, |this, _, _| {
-            this.screen = Screen::Task;
-            this.reload();
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            assert!(this.selected_task().is_some());
             let rows = this.command_rows();
             let task: Vec<_> = rows.iter().filter(|row| row.group == "Task")
                 .map(|row| (row.key.as_str(), row.name.as_str(), row.keys.as_str())).collect();
@@ -1431,7 +1431,6 @@ mod cmdk_parity_tests {
                 ("moveToColumn", "Move task to column", "M"),
                 ("movetasktodifferentboard", "Move task to board", "SHIFT M"),
                 ("archiveTask", "Archive task", "CTRL E"),
-                ("setReminder", "Set reminder", "H"),
                 ("copyformattedTaskLink", "Copy private task link (title + URL)", "CTRL :"),
                 ("copyLink", "Copy private task URL", "CTRL SHIFT :"),
                 ("copyTaskId", "Copy task ID", "CTRL SHIFT I"),

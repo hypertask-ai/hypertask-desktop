@@ -288,7 +288,7 @@ Written before production changes. Web source root: `/home/valentin/projects/hyp
 | `copyLink` | Copy private task URL | `components/Modals/commands/HTC/taskCommands.ts:357` | Existing action; audit order, context, label, shortcut, group. |
 | `copypublicformattedTaskLink` | Copy public task link (title + URL) | `components/Modals/commands/HTC/taskCommands.ts:364` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `copyPublicLink` | Copy public task URL | `components/Modals/commands/HTC/taskCommands.ts:371` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
-| `setReminder` | Set reminder | `components/Modals/commands/HTC/taskCommands.ts:410` | Gap. Reuse native task reminder picker and queue. |
+| `setReminder` | Set reminder | `components/Modals/commands/HTC/taskCommands.ts:410` | Blocked. Native reminder targets inbox notifications, not arbitrary tasks. Omit rather than expose a no-op. |
 | `starTask` | ${taskProps?.isStarred ? "Unstar" : "Star"} task | `components/Modals/commands/HTC/taskCommands.ts:418` | Blocked. No matching native operation/authorization contract. Omit, never fake. |
 | `shareTaskPublicly` | Share task | `components/Modals/commands/HTC/taskCommands.ts:425` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `copyTaskId` | Copy task ID | `components/Modals/commands/HTC/taskCommands.ts:438` | Existing action; audit order, context, label, shortcut, group. |
