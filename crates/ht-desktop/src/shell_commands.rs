@@ -59,6 +59,39 @@ impl Desktop {
             ShellCommand::SortTimeInColumn|ShellCommand::SortLastComment=>self.command_sort(if action==ShellCommand::SortTimeInColumn{"TimeInColumn"}else{"TimeWithoutComment"},window,cx),
             ShellCommand::Views => self.open_view_panel(crate::ui::board_views::Panel::Manage,window,cx),
             ShellCommand::Favorites => self.open_favorites(window, cx),
+            ShellCommand::CopyBranchName => {
+                if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
+                    if let Some(ticket) = task.ticket_number {
+                        let mut slug = String::new();
+                        for c in task.title.trim().to_lowercase().chars() {
+                            if c.is_ascii_alphanumeric() { slug.push(c); }
+                            else if !slug.ends_with('-') { slug.push('-'); }
+                        }
+                        let mut slug = slug.trim_matches('-').to_owned();
+                        slug.truncate(50);
+                        let ticket = ticket.trim().to_lowercase();
+                        let branch = [ticket.as_str(), slug.trim_end_matches('-')].into_iter().filter(|s| !s.is_empty()).collect::<Vec<_>>().join("-");
+                        cx.write_to_clipboard(gpui::ClipboardItem::new_string(branch));
+                    }
+                }
+            }
+            ShellCommand::ToggleRail => self.toggle_rail(cx),
+            ShellCommand::ToggleAi => self.toggle_ai(window, cx),
+            ShellCommand::ToggleAiMode => {
+                if self.shell.ai_open {
+                    if let Some(sidebar) = &self.ai_sidebar {
+                        sidebar.update(cx, |sidebar, cx| {
+                            let mode = if sidebar.mode() == crate::ai_sidebar::DisplayMode::Sidebar {
+                                crate::ai_sidebar::DisplayMode::Floating
+                            } else {
+                                crate::ai_sidebar::DisplayMode::Sidebar
+                            };
+                            sidebar.set_mode(mode, cx);
+                        });
+                    }
+                    cx.notify();
+                }
+            }
             ShellCommand::Settings(section) => {
                 self.open_settings(window, cx);
                 self.select_settings(section, window, cx);

@@ -106,7 +106,7 @@ impl Shell {
 }
 
 impl Desktop {
-    fn toggle_rail(&mut self, cx: &mut Context<Self>) {
+    pub(super) fn toggle_rail(&mut self, cx: &mut Context<Self>) {
         self.shell.expanded = !self.shell.expanded;
         if let Err(error) = self.db.kv_set(
             "appShellRailExpanded",
@@ -117,7 +117,7 @@ impl Desktop {
         cx.notify();
     }
 
-    fn toggle_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(super) fn toggle_ai(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.shell.ai_open = !self.shell.ai_open;
         if let Some(sidebar) = &self.ai_sidebar {
             sidebar.update(cx, |sidebar, cx| sidebar.set_open(self.shell.ai_open, cx));
@@ -283,6 +283,13 @@ impl Desktop {
             ("?", false, _, false) => self.open_shortcuts(window, cx),
             ("2", false, false, false) => self.navigate_board(cx),
             ("3", false, false, false) => self.navigate_table(cx),
+            ("t", false, true, false) if self.screen == Screen::Board => {
+                if self.shell.destination == Destination::Table {
+                    self.navigate_board(cx);
+                } else {
+                    self.navigate_table(cx);
+                }
+            }
             ("/" | "6", false, false, false) => self.navigate_search(window, cx),
             ("b", true, false, false) => self.toggle_boards(window, cx),
             ("\\", false, false, false) => self.open_settings(window, cx),
@@ -322,6 +329,8 @@ impl Desktop {
                 11 => ("Send feedback", ""),
                 _ => ("Settings", "\\"),
             };
+            let hovered = self.shell.hovered == Some(i);
+            let tint = if selected || hovered { t.text } else { t.muted };
             div()
                 .id(("rail-button", i))
                 .relative()
@@ -341,10 +350,13 @@ impl Desktop {
                 .when(wide, |d| d.pl(px(10.)).gap(px(10.)))
                 .rounded(px(5.))
                 .when(wide, |d| d.text_size(px(14.)))
-                .text_color(color(if selected { t.text } else { t.muted }))
-                .when(selected, |d| d.bg(color(t.hover)))
-                .child(icon(name, if selected { t.text } else { t.muted }, 18.))
-                .when(wide, |d| d.child(label))
+                .text_color(color(tint))
+                .when(selected || hovered, |d| d.bg(color(t.hover)))
+                .child(icon(name, tint, 18.))
+                .when(wide, |d| d.child(
+                    div().text_color(color(t.muted)).child(label)
+                        .layout_key(&self.layout, format!("rail.label.{i}"), Some(label.into())),
+                ))
                 .when(i == 2 && self.inbox.iter().any(|n| !n.seen), |d| {
                     d.child(
                         div()
@@ -1383,6 +1395,56 @@ mod rail_detail_tests {
             measured(view, &mut cx, "rail.tooltip")["text"],
             "Collapse sidebar   ["
         );
+    }
+
+    #[gpui::test]
+    fn rail_pointer_states_match_web_colors_without_changing_labels(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx, |this, _, cx| this.apply_shell_theme(ThemeName::Graphite, cx)).unwrap();
+        let mut records = Vec::new();
+        for expanded in [false, true] {
+            if expanded {
+                click(view, &mut cx, "rail.icon.0");
+            }
+            for index in 1..13 {
+                let key = format!("rail.icon.{index}");
+                let bounds = measured(view, &mut cx, &key);
+                let center = point(
+                    px((bounds["x"].as_f64().unwrap() + bounds["w"].as_f64().unwrap() / 2.) as f32),
+                    px((bounds["y"].as_f64().unwrap() + bounds["h"].as_f64().unwrap() / 2.) as f32),
+                );
+                cx.simulate_mouse_move(center, None, Default::default());
+                let hovered = measured(view, &mut cx, &key);
+                let background_matches = cx.update(|window, _| {
+                    let center = center.scale(window.scale_factor());
+                    window.painted_quads().iter().filter(|quad| {
+                        !quad.background.is_transparent() && quad.bounds.contains(&center) && quad.content_mask.bounds.contains(&center)
+                    }).max_by_key(|quad| quad.order).is_some_and(|quad| {
+                        quad.background == gpui::Background::from(color(0x3a3d45))
+                    })
+                });
+                let label = expanded.then(|| measured(view, &mut cx, &format!("rail.label.{index}")));
+                records.push(serde_json::json!({"expanded": expanded, "element": hovered, "label": label, "paintedHoverBackground": background_matches}));
+            }
+        }
+        if cfg!(target_os = "linux") && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+            let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/layout");
+            std::fs::create_dir_all(&out).unwrap();
+            std::fs::write(out.join("rail-pointer-states.json"), serde_json::to_vec_pretty(&records).unwrap()).unwrap();
+        }
+        for record in records {
+            assert_eq!(record["element"]["color"], "#ffffff", "{record}");
+            assert_eq!(record["element"]["bg"], "#3a3d45", "{record}");
+            assert_eq!(record["paintedHoverBackground"], true, "{record}");
+            if record["expanded"] == true {
+                assert_eq!(record["label"]["color"], "#8e9093", "{record}");
+            }
+        }
+        cx.simulate_mouse_move(point(px(200.), px(400.)), None, Default::default());
+        assert_eq!(measured(view, &mut cx, "rail.icon.12")["color"], "#8e9093");
+        assert!(measured(view, &mut cx, "rail.icon.12")["bg"].is_null());
+        assert_eq!(measured(view, &mut cx, "rail.icon.2")["bg"], "#3a3d45");
+        assert_eq!(measured(view, &mut cx, "rail.label.2")["color"], "#8e9093");
     }
 
     #[gpui::test]

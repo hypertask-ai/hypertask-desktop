@@ -104,6 +104,10 @@ mod task_time_log;
 #[path = "interactions.rs"]
 mod interactions;
 
+#[cfg(test)]
+#[path = "keyboard_parity_tests.rs"]
+mod keyboard_parity_tests;
+
 pub struct Desktop {
     pub focus: FocusHandle,
     shell: shell::Shell,
@@ -643,9 +647,19 @@ impl Desktop {
             return;
         }
         if let Some(sidebar) = &self.ai_sidebar {
-            if event.keystroke.modifiers.control && event.keystroke.key == "q" {
+            let key = &event.keystroke;
+            let m = key.modifiers;
+            if m.control && !m.platform && !m.shift && !m.alt && key.key == "q" && !event.is_held {
                 self.shell.ai_open = true;
                 sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
+                cx.stop_propagation();
+                return;
+            }
+            if self.shell.ai_open && (m.control || m.platform) && m.shift && !m.alt
+                && matches!(key.key.as_str(), "o" | "j")
+            {
+                sidebar.update(cx, |sidebar, cx| sidebar.new_chat(window, cx));
+                cx.stop_propagation();
                 return;
             }
             let commands = (event.keystroke.modifiers.control || event.keystroke.modifiers.platform)

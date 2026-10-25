@@ -159,7 +159,7 @@ impl Desktop {
             }
             Action::CopyCommentLink => {
                 if let Some(task) = self.detail.as_ref().map(|d| &d.task)
-                    && let Some(index) = task.extra["uniqueIndex"].as_i64()
+                    && let Some(index) = task.extra.get("uniqueIndex").and_then(Value::as_i64)
                 {
                     // Web fragments identify the displayed comment index, not its database id.
                     cx.write_to_clipboard(gpui::ClipboardItem::new_string(format!(
@@ -403,10 +403,15 @@ impl Desktop {
         if let Some(comment) = self.focused_comment() {
             let own =
                 comment.creator_id.is_some() && comment.creator_id == self.db.current_user_id();
+            let saved = comment.extra.get("savedContent").and_then(Value::as_array);
+            let pinned = saved.is_some_and(|rows| rows.iter().any(|row| row["type"] == "Public"));
+            let starred = saved.is_some_and(|rows| rows.iter().any(|row| row["type"] == "Private"));
             for (key, name, keys, action, enabled) in [
-                ("starComment", "Star comment", "CTRL SHIFT S", Action::StarComment, true),
-                ("pinComment", "Pin comment", "CTRL SHIFT P", Action::PinComment, true),
                 ("editcomment", "Edit comment", "", Action::EditComment, own),
+                ("fastLikeComment", "Fast like", "", Action::LikeComment, true),
+                ("replyToComment", "Reply to comment", "ENTER", Action::ReplyComment, true),
+                ("reactToComment", "React to comment", "R", Action::ReactComment, true),
+                ("pinComment", if pinned { "Unpin comment" } else { "Pin comment" }, "CTRL SHIFT P", Action::PinComment, true),
                 (
                     "copyCommentContent",
                     "Copy comment content",
@@ -423,41 +428,21 @@ impl Desktop {
                         .as_ref()
                         .is_some_and(|d| d.task.extra.get("uniqueIndex").and_then(Value::as_i64).is_some()),
                 ),
+                ("starComment", if starred { "Unstar comment" } else { "Star comment" }, "CTRL SHIFT S", Action::StarComment, true),
                 (
                     "copyCommentToAiChat",
                     "Copy comment to AI chat",
                     "",
                     Action::CopyCommentToAiChat,
-                    self.ai_sidebar.is_some(),
+                    self.ai_sidebar.is_some() && comment.extra.get("creator").is_some_and(|creator| creator["id"].as_i64().is_some()),
                 ),
                 ("branchInNewChat","Branch in new chat","",Action::BranchCommentToAiChat,self.ai_sidebar.is_some()),
                 ("createTaskFromComment", "Create task from comment", "", Action::CreateTaskFromComment, self.detail.as_ref().is_some_and(|detail| detail.task.extra.get("uniqueIndex").and_then(Value::as_i64).is_some_and(|index| index > 0))),
                 ("summarizeComment", "Summarize comment", "", Action::SummarizeComment, self.ai_sidebar.is_some()),
                 (
-                    "fastLikeComment",
-                    "Like comment",
-                    "L",
-                    Action::LikeComment,
-                    true,
-                ),
-                (
-                    "replyToComment",
-                    "Reply to comment",
-                    "ENTER",
-                    Action::ReplyComment,
-                    true,
-                ),
-                (
-                    "reactToComment",
-                    "React to comment",
-                    "R",
-                    Action::ReactComment,
-                    true,
-                ),
-                (
-                    "deleteComment",
+                    "deletemessage",
                     "Delete comment",
-                    "CTRL SHIFT 3",
+                    "",
                     Action::DeleteComment,
                     own,
                 ),
@@ -466,7 +451,7 @@ impl Desktop {
                     commands.push(Command {
                         key: key.into(),
                         name: name.into(),
-                        group: "Task",
+                        group: "Comment",
                         keys: keys.into(),
                         keywords: "comment",
                         action: CommandAction::Shortcut(action),
@@ -475,13 +460,8 @@ impl Desktop {
             }
         }
         commands.push(Command {
-            key: "expandCollapseAllComments".into(),
-            name: if self.comment_actions.all_open {
-                "Collapse all comments"
-            } else {
-                "Expand all comments"
-            }
-            .into(),
+            key: "toggleAllComments".into(),
+            name: "Expand / collapse all comments".into(),
             group: "Task",
             keys: "SHIFT O".into(),
             keywords: "comment",

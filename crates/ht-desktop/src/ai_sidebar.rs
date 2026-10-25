@@ -484,7 +484,7 @@ impl AiSidebar {
         }
     }
 
-    fn new_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(crate) fn new_chat(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         if self.session_pending.is_some(){return;}
         if self.client.is_some(){
             self.request_session(self.create_scope(),None,None,cx);
@@ -801,9 +801,13 @@ impl AiSidebar {
             match key {"enter"=>self.rename_session(cx),"escape"=>{self.rename_open=false;cx.notify();},_=>return}
             cx.stop_propagation();return;
         }
-        if modifiers.control && key == "q" {
+        if modifiers.control && !modifiers.platform && !modifiers.shift && !modifiers.alt
+            && key == "q" && !event.is_held
+        {
             self.focus_composer(window, cx);
-        } else if modifiers.control && modifiers.shift && matches!(key, "o" | "j") {
+        } else if (modifiers.control || modifiers.platform) && modifiers.shift && !modifiers.alt
+            && matches!(key, "o" | "j")
+        {
             self.new_chat(window, cx);
         } else if key == "escape" {
             if self.model_menu || self.history_menu || self.more_menu || self.context_picker.scope_open {
@@ -1513,6 +1517,30 @@ mod tests {
             );
             assert_eq!(sidebar.input.read(cx).content.as_ref(), "First\nSecond");
         });
+    }
+
+    #[gpui::test]
+    fn keyboard_reset_platform_aliases_create_distinct_chats_and_clear_the_draft(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let workspace = cx.focus_handle();
+            let mut sidebar = AiSidebar::new(crate::theme::THEMES[0], None, workspace, window, cx);
+            sidebar.focus_composer(window, cx);
+            sidebar
+        });
+        for (index, chord) in ["ctrl-shift-o", "cmd-shift-o", "ctrl-shift-j", "cmd-shift-j"].iter().enumerate() {
+            cx.simulate_input("old draft");
+            let old = view.read_with(cx, |sidebar, _| sidebar.chats[sidebar.selected].id.clone());
+            cx.simulate_keystrokes(chord);
+            view.update_in(cx, |sidebar, window, cx| {
+                assert_eq!(sidebar.chats.len(), index + 2, "{chord}");
+                assert_ne!(sidebar.chats[sidebar.selected].id, old, "{chord}");
+                assert!(sidebar.input.read(cx).content.is_empty(), "{chord}");
+                assert!(sidebar.input.focus_handle(cx).is_focused(window), "{chord}");
+            });
+        }
     }
 
     #[gpui::test]

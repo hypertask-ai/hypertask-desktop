@@ -19,6 +19,8 @@ Implementation candidate `c602785279bae55cf8fe000d7c92375900b1403d` passed all s
 
 The final continuation head additionally includes the short-year safeguard and this ledger update. Its exact-head CI run, artifact receipts, named test log lines and SHA-256 fingerprints are recorded in `.unlazy/prewire/evidence/round13-continuation-final-{ci.json,proof.txt}` and the final handoff. Those local receipts are not application execution. All builds, tests, runtime negative controls and app launches run on public GitHub-hosted runners only. No VPS tests or laptop access. PR https://github.com/hypertask-ai/hypertask-desktop/pull/17 stays draft.
 
+Concurrent main integration retains the separately merged keyboard, command-center and rail changes from `badac6363bc3ee23bd96f0fd1f9bfa6287167f61`. The combined command assertions include every prewire date, relation, template, AI/comment and board control rather than treating them as unsupported. Exact final suite counts come from the integrated hosted logs, not the earlier 266-test inventory.
+
 ## Still open
 
 - Full arbitrary Sugar grammar, short years, named timezones, native-JavaScript legacy fallback and complete dynamic-filter date parsing remain OPEN. This continuation does not claim the whole date row.

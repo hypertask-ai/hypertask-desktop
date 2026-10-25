@@ -106,6 +106,10 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
                 stay: true,
                 complete: true,
             }),
+            ("enter", true, false, true) => Some(Action::Save {
+                stay: true,
+                complete: false,
+            }),
             ("enter", true, stay, false) => Some(Action::Save {
                 stay,
                 complete: false,
@@ -348,7 +352,10 @@ mod tests {
             assert_eq!(key("ctrl-<", screen, true), Some(Action::DiscardDraft));
             assert_eq!(key("ctrl-;", screen, false), Some(Action::CopyTitleUrl));
             assert_eq!(key("ctrl-:", screen, true), None);
-            assert_eq!(key("ctrl-alt-enter", screen, true), None);
+            assert_eq!(key("ctrl-alt-enter", screen, true), Some(Action::Save {
+                stay: true,
+                complete: false,
+            }));
         }
         assert_eq!(key("cmd-d", Screen::Task, false), None);
         assert_eq!(key("shift-h", Screen::Inbox, false), Some(Action::BulkRemind));

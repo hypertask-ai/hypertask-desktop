@@ -60,6 +60,10 @@ pub enum ShellCommand {
     Relation(ht_core::RelationKind),
     BoardTime,
     DuplicateTask(bool),
+    ToggleRail,
+    ToggleAi,
+    ToggleAiMode,
+    CopyBranchName,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -79,10 +83,11 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     if task && screen == Screen::Task {
         task_commands(&mut add);
     }
-    if screen == Screen::Inbox {
-        add("swipeThroughUnread","Swipe through unread","Inbox","","review unread notifications",ReviewUnread);
+    add("swipeThroughUnread","Swipe through unread","Inbox","","inbox unread catch up review swipe triage notifications",ReviewUnread);
+    if screen == Screen::Inbox && task {
+        add("remindMe", "Remind me", "Task", "H", "remind me reminder alert notify later snooze schedule followup", Remind);
     }
-    add("composeTask", "New Task", "Navigate", "CTRL J", "compose create task AI writer", Compose);
+    add("createTaskWithAiWriter", "Create task with AI Task Writer", "Board", "CTRL J", "create add new task ai writer prompt generate draft describe", Compose);
     add(
         "copyCurrentPageUrl",
         "Copy current page URL",
@@ -110,7 +115,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     add(
         "appShellInbox",
         "App shell: Inbox",
-        "App shell",
+        "App shell surfaces",
         "1",
         "inbox",
         Inbox,
@@ -118,15 +123,12 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     add(
         "appShellBoard",
         "App shell: Board",
-        "App shell",
+        "App shell surfaces",
         "2",
         "board kanban",
         Board,
     );
-    if task && screen != Screen::Task {
-        task_commands(&mut add);
-    }
-    if task {
+    if task && screen == Screen::Task {
         for (key, name, keys, keywords, action) in [
             ("addRelatedTask", "Add related task", "", "add link related task relation associate connect", ShellCommand::Relation(ht_core::RelationKind::RelatedTo)),
             ("markBlockedBy", "Mark blocked by", "", "mark blocked by dependency waiting prerequisite task relation", ShellCommand::Relation(ht_core::RelationKind::BlockedBy)),
@@ -148,7 +150,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     if task && screen == Screen::Task {
         rows.push(Command { key: "summarizeTicket".into(), name: "Summarize ticket".into(), group: "Task", keys: String::new(), keywords: "summarize summary ticket task ai chat recap tldr overview digest brief", action: CommandAction::Shell(ShellCommand::SummarizeTicket) });
     }
-    if task {
+    if task && screen == Screen::Task {
         for (key, name, pick_board) in [("duplicateTask", "Duplicate task", false), ("duplicateTaskToBoard", "Duplicate task to board", true)] {
             rows.push(Command { key:key.into(), name:name.into(), group:"Task", keys:String::new(), keywords:"duplicate copy clone task ticket board", action:CommandAction::Shell(ShellCommand::DuplicateTask(pick_board)) });
         }
@@ -209,29 +211,41 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
     if screen == Screen::Board {
         rows.push(Command { key:"autoAssignColumn".into(), name:"Auto-assign for this column".into(), group:"Board", keys:String::new(), keywords:"auto assign column section member owner default workflow", action:CommandAction::Shell(ShellCommand::AutoAssignColumn) });
     }
-    rows.sort_by_key(|row| match row.group {
-        "Task" if screen == Screen::Task => 0,
-        "Board" if screen == Screen::Board => 0,
-        "Navigate" => 1,
-        "App shell" => 2,
-        "Task" => 3,
-        "Board" => 4,
-        "Appearance" => 5,
-        "Settings" => 6,
-        "Help" => 7,
-        _ => 8,
-    });
-    let task_order: &[&str] = if screen == Screen::Task {
-        &["acceptTask","declineTask","declineAsDuplicateOf","assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","priorityModal","labelmodal","estimateModal","moveToColumn","movetasktodifferentboard","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask","followtask","unfollowtask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId","duplicateTask","duplicateTaskToBoard"]
+    order(&mut rows, screen);
+    rows
+}
+
+// Context producers append rows; order the complete list, not just the base registry.
+pub fn order(rows: &mut [Command], screen: Screen) {
+    let task: &[&str] = if screen == Screen::Task {
+        &["acceptTask","declineTask","declineAsDuplicateOf","assignUser","blockedByPerson","assignToMe","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","priorityModal","labelmodal","estimateModal","moveToColumn","movetasktodifferentboard","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","archiveTask","followtask","unfollowtask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId","copyBranchName","duplicateTask","duplicateTaskToBoard","toggleAllComments","removeTaskNotification","renameTask","deleteTask","openAiTaskWriter","summarizeTicket"]
     } else {
         &["createTask","setDueDate","setStartDate","setRecurrence","saveTaskTemplate","assignUser","blockedByPerson","assignToMe","addSubTask","viewSubTask","addRelatedTask","markBlockedBy","markAsBlocking","markDuplicateOf","labelmodal","estimateModal","priorityModal","moveToColumn","movetasktodifferentboard","followtask","unfollowtask","renameTask","duplicateTask","duplicateTaskToBoard","archiveTask","deleteTask","copyformattedTaskLink","copyLink","copyTaskId","copyTaskTitleId"]
     };
-    // Keep other groups stable while using the web's context-specific task order.
-    let task_positions: Vec<_> = rows.iter().enumerate().filter(|(_,row)|row.group=="Task").map(|(index,_)|index).collect();
-    let mut task_rows: Vec<_> = task_positions.iter().map(|index|rows[*index].clone()).collect();
-    task_rows.sort_by_key(|row|task_order.iter().position(|key|*key==row.key).unwrap_or(usize::MAX));
-    for (index,row) in task_positions.into_iter().zip(task_rows) {rows[index]=row;}
-    rows
+    let board = ["createTask", "createTaskWithAiWriter", "newTaskFromTemplate", "sendFeedback", "sortBoard", "toggleFilterValueMatch", "sortByTimeInColumn", "sortByLastComment", "autoAssignColumn", "manageColumns", "renameColumn", "hideColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "manageViews", "createSmartSplit", "toggleEmptyColumns", "toggleArchivedOnBoard", "renameBoard", "archiveBoards", "toggleRailExpanded"];
+    let comment = ["editcomment", "summarizeComment", "fastLikeComment", "replyToComment", "reactToComment", "pinComment", "copyCommentContent", "copyCommentLink", "starComment", "createTaskFromComment", "branchInNewChat", "copyCommentToAiChat", "deletemessage"];
+    let has_comment = rows.iter().any(|row| row.group == "Comment");
+    rows.sort_by_key(|row| {
+        let group = match row.group {
+            "Selected tasks" | "Comment" => 0,
+            "Task" if screen == Screen::Task => 10,
+            "Board" if screen == Screen::Board => 10,
+            "Time" if screen == Screen::Task && !has_comment => 11,
+            "Navigate" => 20,
+            "Inbox" => 30,
+            "Time" => 35,
+            "App shell surfaces" => 40,
+            "Task" => 50,
+            "Board" => 60,
+            "AI" => 70,
+            "Appearance" => 80,
+            "Settings" => 90,
+            "Help" => 100,
+            _ => 110,
+        };
+        let keys: &[&str] = match row.group { "Task" => task, "Board" => &board, "Comment" => &comment, _ => &[] };
+        (group, keys.iter().position(|key| *key == row.key).unwrap_or(keys.len()))
+    });
 }
 
 fn shell_commands(rows: &mut Vec<Command>) {
@@ -239,7 +253,9 @@ fn shell_commands(rows: &mut Vec<Command>) {
     for (key, name, group, keys, keywords, action) in [
         ("manageFavorites", "Manage favorites", "Navigate", "", "manage favorites favourites starred pinned sidebar boards reorder remove organize", Favorites),
         ("sendFeedback", "Send feedback", "Board", "", "send feedback bug idea issue report", Feedback),
-        ("inviteBoard", "Invite people", "Board", "", "invite people members email board team", Invite),
+        ("inviteBoard", "Invite people", "Board", "", "invite share add board member people coworker teammate team collaborate", Invite),
+        ("manageMembers", "Manage members", "Board", "", "members people remove kick board access permissions manage teammates users", Settings("board-members")),
+        ("toggleRailExpanded", "Collapse / expand sidebar", "Board", "[", "collapse expand sidebar rail labels narrow wide toggle show hide", ToggleRail),
         ("settingsCalendarShowWeekends", "Settings: Show weekends", "Settings", "", "settings show weekends profile", Settings("calendar")),
         ("settingsLearnQuickTips", "Settings: Quick tips", "Settings", "", "settings quick tips learning help", Settings("learn")),
         ("settingsGeneral", "Settings: General", "Settings", "", "settings general profile personal preferences application", Settings("general")),
@@ -326,8 +342,8 @@ fn task_commands(
         (
             "renameTask",
             "Rename task",
-            "F2",
-            "rename edit change task title",
+            "",
+            "rename edit change task title name subject heading update",
             Rename,
         ),
         (
@@ -347,14 +363,14 @@ fn task_commands(
         (
             "copyformattedTaskLink",
             "Copy private task link (title + URL)",
-            "CTRL ;",
+            "CTRL :",
             "copy private task link title URL clipboard",
             CopyTitleUrl,
         ),
         (
             "copyLink",
             "Copy private task URL",
-            "CTRL SHIFT ;",
+            "CTRL SHIFT :",
             "copy private task URL link clipboard",
             CopyUrl,
         ),
