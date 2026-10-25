@@ -255,6 +255,16 @@ impl Db {
                 self.cache_task_time(user, task, summary, now)?;
             }
         }
+        match serde_json::from_value::<TimeWrite>(payload["change"].clone())? {
+            TimeWrite::Board { project, .. } => {
+                self.request_refetch("time-board", project)?;
+                self.request_refetch("board", project)?;
+            }
+            TimeWrite::Start { task } | TimeWrite::Stop { task } | TimeWrite::Entry { task, .. } => {
+                self.request_refetch("time-task", task)?;
+                if let Some(task) = self.task(task)? { self.request_refetch("time-board", task.project_id)?; }
+            }
+        }
         Ok(())
     }
     pub(crate) fn rollback_time(&self, payload: &Value) -> Result<()> {

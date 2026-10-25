@@ -23,7 +23,11 @@ fn timer_start_stop_and_board_setting_are_queued_optimistically_with_restart_ref
             assert_eq!(db.drain_once(&mut Server{status,path,body:body.clone(),reply,user:42,calls:0},100).unwrap(),if status==200{Drain::Applied(id)}else{Drain::Failed(id)});
             let result:Value=serde_json::from_str(&db.kv_get(&format!("time-result:{key}")).unwrap().unwrap()).unwrap();
             if status!=200 {assert_eq!(db.task_time(1).unwrap().unwrap(),before);assert_eq!(db.board_project(15).unwrap()["timeTrackingEnabled"],true);assert_eq!(db.board_project(15).unwrap()["showTimeTotals"],true);assert_eq!(result["error"],"Time tracking is disabled for this board");}
-            else{assert!(result["error"].is_null());if matches!(change,TimeWrite::Start{..}){assert_eq!(db.task_time(1).unwrap().unwrap()["runningEntry"]["id"],5);}}
+            else{assert!(result["error"].is_null());if matches!(change,TimeWrite::Start{..}){assert_eq!(db.task_time(1).unwrap().unwrap()["runningEntry"]["id"],5);}
+                let refs=db.refetches().unwrap();
+                assert!(refs.iter().any(|(target,id,_)|target=="time-board" && *id==15));
+                assert!(refs.iter().any(|(target,id,_)|if matches!(change,TimeWrite::Board{..}) {target=="board" && *id==15}else{target=="time-task" && *id==1}));
+            }
         }
     }
 }

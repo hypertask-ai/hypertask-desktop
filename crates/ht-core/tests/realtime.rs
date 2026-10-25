@@ -60,12 +60,14 @@ fn realtime_rejects_wrong_channels_and_preserves_unknown_events() {
         json!({"event":"task:changed","channel":"private-project-1","data":{}}),
         json!({"event":"task:changed","channel":"private-task--1","data":{}}),
         json!({"event":"inbox:changed","data":{}}),
+        json!({"event":"time:changed","channel":"private-task-1","data":{}}),
+        json!({"event":"time:changed","channel":"private-time-task-0","data":{}}),
+        json!({"event":"time:changed","channel":"private-time-project--1","data":{}}),
         json!({"event":"comment:changed","channel":"private-task-1","data":{"comment":{"id":5,"text":"bad","taskId":2,"createdAt":"2026-01-01T00:00:00Z"}}}),
     ] {
         assert!(db.apply_event(&frame.to_string()).is_err());
     }
     for event in [
-        "time:changed",
         "feature-flags:changed",
         "agent-chat:changed",
         "pusher:ping",
@@ -147,4 +149,87 @@ fn realtime_refetch_failures_remain_durable() {
     assert!(sync.refetch_pending().is_err());
     drop(sync);
     assert_eq!(Db::open(file.path()).unwrap().refetches().unwrap().len(), 1);
+}
+
+struct TimeServer {
+    status: u16,
+    user: i64,
+    running: bool,
+    paths: Vec<String>,
+}
+impl Transport for TimeServer {
+    fn get(&mut self, path: &str) -> Result<Response, TransportError> {
+        self.paths.push(path.into());
+        if path == "/user/context" {
+            return Ok(Response { status:200, body:json!({"success":true,"user":{"id":self.user}}) });
+        }
+        let body = match path {
+            "/api/time/task?taskId=1" => json!({"success":true,"enabled":true,"runningEntry":null,"activeRunningEntryCount":if self.running {1}else{0},"taskTotalSeconds":900,"myTotalSeconds":300,"otherEntriesSeconds":600}),
+            "/api/time/entries?taskId=1" => json!({"success":true,"canManage":false,"entries":[{"id":5,"taskId":1,"userId":42,"userName":"Me","seconds":900,"startedAt":"2026-10-01T09:00:00Z","endedAt":"2026-10-01T09:15:00Z","pausedAt":null}]}),
+            "/api/time/board-summary?board=15" => json!({"success":true,"entries":if self.running {json!([{"taskId":1,"runningEntries":[{"startedAt":"2026-10-01T09:00:00Z","pausedAt":null,"userName":"Other person"}]}])}else{json!([])}}),
+            _ => panic!("unexpected time route: {path}"),
+        };
+        Ok(Response { status:self.status, body:if self.status==200 {body}else{json!({"success":false,"error":"Not authenticated"})} })
+    }
+    fn post(&mut self, _: &str, _: &Value, _: &str) -> Result<Response, TransportError> { panic!("invalidation must never write"); }
+}
+fn time_seed(db: &mut Db) {
+    db.kv_set("current-user-id", "42").unwrap();
+    db.apply_web_board(42, &json!({"project":{"id":15,"title":"Board","timeTrackingEnabled":true,"section":[{"id":10,"projectId":15,"section_title":"Todo","visibility":true,"ranking":"a","deleted":false}]},"allViews":[],"tasks":[{"id":1,"projectId":15,"sectionId":10,"title":"Task","status":"Normal","ranking":"a"}]})).unwrap();
+    db.cache_task_time(42,1,json!({"enabled":true,"runningEntry":null,"activeRunningEntryCount":0,"taskTotalSeconds":60}),1).unwrap();
+    db.cache_time_entries(42,1,&json!({"success":true,"canManage":false,"entries":[]})).unwrap();
+    db.kv_set("web-running-timers:42:15", "[]").unwrap();
+}
+#[test]
+fn time_events_refresh_summary_entries_and_live_board_timer_filter_or_preserve_refused_state() {
+    for status in [401, 403, 200] {
+        let file = tempfile::NamedTempFile::new().unwrap();
+        let mut db = Db::open(file.path()).unwrap();
+        time_seed(&mut db);
+        for channel in ["private-time-task-1", "private-time-project-15"] {
+            db.apply_event(&json!({"event":"time:changed","channel":channel,"data":"{}"}).to_string()).unwrap();
+        }
+        drop(db);
+        let mut sync = Sync::new(Db::open(file.path()).unwrap(), TimeServer {status,user:42,running:true,paths:vec![]});
+        let result = sync.refetch_pending();
+        if status == 200 {
+            result.unwrap();
+            assert!(sync.db.refetches().unwrap().is_empty());
+            assert_eq!(sync.db.task_time(1).unwrap().unwrap()["taskTotalSeconds"],900);
+            assert_eq!(sync.db.time_entries(1).unwrap().unwrap()["entries"][0]["id"],5);
+            assert!(sync.transport.paths.contains(&"/api/time/task?taskId=1".into()));
+            assert!(sync.transport.paths.contains(&"/api/time/entries?taskId=1".into()));
+            let view = json!({"board_columns_view":[{"id":10,"visibility":true}],"board_filters":{"addedFilters":[{"type":"RunningTimer","searchPayload":[]}]}});
+            assert_eq!(sync.db.view_task_count(15,&view).unwrap(),1);
+            sync.transport.running = false;
+            sync.db.apply_event(&json!({"event":"time:changed","channel":"private-time-project-15","data":{}}).to_string()).unwrap();
+            sync.refetch_pending().unwrap();
+            assert_eq!(sync.db.view_task_count(15,&view).unwrap(),0);
+        } else {
+            assert_eq!(result.unwrap_err().to_string(), "Not authenticated");
+            assert_eq!(sync.db.refetches().unwrap().len(),2);
+            assert_eq!(sync.db.task_time(1).unwrap().unwrap()["taskTotalSeconds"],60);
+            assert!(sync.db.time_entries(1).unwrap().unwrap()["entries"].as_array().unwrap().is_empty());
+            assert_eq!(sync.db.kv_get("web-running-timers:42:15").unwrap().as_deref(),Some("[]"));
+            sync.transport.status = 200;
+            sync.refetch_pending().unwrap();
+            assert!(sync.db.refetches().unwrap().is_empty());
+        }
+    }
+}
+
+#[test]
+fn time_event_reads_never_replace_pending_optimistic_writes_or_cross_account_caches() {
+    for user in [42,99] {
+        let mut db = Db::memory().unwrap();
+        time_seed(&mut db);
+        db.enqueue(ht_core::Write::Time {change:ht_core::TimeWrite::Start {task:1}},100).unwrap();
+        let before = db.task_time(1).unwrap().unwrap();
+        let mut sync = Sync::new(db,TimeServer {status:200,user,running:false,paths:vec![]});
+        sync.db.apply_event(&json!({"event":"time:changed","channel":"private-time-task-1","data":{}}).to_string()).unwrap();
+        assert!(sync.refetch_pending().is_err());
+        assert_eq!(sync.db.task_time(1).unwrap().unwrap(),before);
+        assert_eq!(sync.db.refetches().unwrap().len(),1);
+        if user == 99 { assert_eq!(sync.transport.paths,vec!["/user/context"]); }
+    }
 }

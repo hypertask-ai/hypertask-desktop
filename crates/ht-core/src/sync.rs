@@ -297,6 +297,33 @@ impl<T: Transport> Sync<T> {
         })
     }
 
+    pub fn task_time(&mut self, task: i64) -> Result<()> {
+        let user = self.db.current_user_id().context("Unauthorized")?;
+        let identity = successful(self.transport.get("/user/context")?)?;
+        ensure!(identity["user"]["id"] == user, "Unauthorized");
+        let summary = crate::task_time::summary(&mut self.transport, task)?;
+        let entries = self.db.time_entries(task)?.map(|_| crate::time_entries::load(&mut self.transport, task)).transpose()?;
+        self.db.transaction(|db| {
+            ensure!(db.current_user_id() == Some(user), "Unauthorized");
+            ensure!(!db.mutations()?.iter().any(|row| row.kind == "web_time" && row.status != "failed"), "Timer update still pending");
+            db.cache_task_time(user, task, summary, chrono::Utc::now().timestamp())?;
+            if let Some(entries) = entries { db.cache_time_entries(user, task, &entries)?; }
+            Ok(())
+        })
+    }
+
+    pub fn board_time(&mut self, project: i64) -> Result<()> {
+        let user = self.db.current_user_id().context("Unauthorized")?;
+        let identity = successful(self.transport.get("/user/context")?)?;
+        ensure!(identity["user"]["id"] == user, "Unauthorized");
+        let running = crate::board_views::running_timers(&mut self.transport, project)?;
+        self.db.transaction(|db| {
+            ensure!(db.current_user_id() == Some(user), "Unauthorized");
+            ensure!(!db.mutations()?.iter().any(|row| row.kind == "web_time" && row.status != "failed"), "Timer update still pending");
+            db.kv_set(&format!("web-running-timers:{user}:{project}"), &running.to_string())
+        })
+    }
+
     pub fn refetch_pending(&mut self) -> Result<()> {
         for (target, id, generation) in self.db.refetches()? {
             match target.as_str() {
@@ -304,6 +331,8 @@ impl<T: Transport> Sync<T> {
                 "task" => self.task(id)?,
                 "comments" => self.comments(id)?,
                 "drafts" => self.drafts(id)?,
+                "time-task" => self.task_time(id)?,
+                "time-board" => self.board_time(id)?,
                 "inbox" => self.inbox()?,
                 _ => bail!("unknown refetch target"),
             }

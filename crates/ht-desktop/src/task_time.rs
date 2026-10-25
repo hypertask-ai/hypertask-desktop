@@ -128,6 +128,36 @@ mod tests {
         }}
     }
     #[gpui::test]
+    fn accepted_native_timer_requests_durable_refresh_and_received_time_event_updates_task_controls(cx:&mut gpui::TestAppContext) {
+        struct TimeRead(u16);
+        impl ht_core::Transport for TimeRead {
+            fn get(&mut self,path:&str)->Result<ht_core::http::Response,ht_core::http::TransportError> {
+                if path=="/user/context" {return Ok(ht_core::http::Response{status:200,body:serde_json::json!({"success":true,"user":{"id":42}})});}
+                assert!(matches!(path,"/api/time/task?taskId=1"|"/api/time/board-summary?board=15"));
+                Ok(ht_core::http::Response{status:self.0,body:if self.0!=200{serde_json::json!({"error":"Not authenticated"})}else if path.starts_with("/api/time/task?"){serde_json::json!({"success":true,"enabled":true,"runningEntry":null,"activeRunningEntryCount":0,"taskTotalSeconds":900,"otherEntriesSeconds":900})}else{serde_json::json!({"success":true,"entries":[]})}})
+            }
+            fn post(&mut self,_:&str,_:&Value,_:&str)->Result<ht_core::http::Response,ht_core::http::TransportError>{panic!("event refresh is read only")}
+        }
+        cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|desktop(window,cx));let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
+        view.update(&mut cx,|this,_,_|seed(this,false)).unwrap();draw(view,&mut cx);
+        cx.simulate_keystrokes("w");
+        view.update(&mut cx,|this,_,cx| {
+            this.db.drain_once(&mut Server(200,false,false),chrono::Utc::now().timestamp()+1).unwrap();this.poll_time(cx);
+            assert!(this.db.task_time(1).unwrap().unwrap()["runningEntry"].is_object());
+            this.db.apply_event(&serde_json::json!({"event":"time:changed","channel":"private-time-task-1","data":{}}).to_string()).unwrap();
+            let db=std::mem::replace(&mut this.db,ht_core::Db::memory().unwrap());
+            let mut sync=ht_core::Sync::new(db,TimeRead(403));assert!(sync.refetch_pending().is_err());
+            assert!(sync.db.task_time(1).unwrap().unwrap()["runningEntry"].is_object());
+            sync.transport.0=200;sync.refetch_pending().unwrap();this.db=sync.db;
+            assert!(this.db.task_time(1).unwrap().unwrap()["runningEntry"].is_null());
+            assert_eq!(this.db.task_time(1).unwrap().unwrap()["taskTotalSeconds"],900);
+            assert!(this.db.refetches().unwrap().is_empty());
+        }).unwrap();
+        draw(view,&mut cx);measured(view,&mut cx,"task.time.toggle");measured(view,&mut cx,"task.time.log");
+        cx.simulate_keystrokes("w");
+        view.read_with(&cx,|this,_|assert!(this.db.task_time(1).unwrap().unwrap()["runningEntry"].is_object())).unwrap();
+    }
+    #[gpui::test]
     fn timer_palette_and_board_tracking_are_context_gated_and_restore_both_project_settings(cx:&mut gpui::TestAppContext) {
         cx.update(crate::input::init);let view=cx.open_window(gpui::size(px(1440.),px(900.)),|window,cx|desktop(window,cx));let mut cx=gpui::VisualTestContext::from_window(view.into(),cx);
         for status in [401,403,200] {
