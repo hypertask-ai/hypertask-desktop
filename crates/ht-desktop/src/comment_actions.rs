@@ -421,7 +421,7 @@ impl Desktop {
                     Action::CopyCommentLink,
                     self.detail
                         .as_ref()
-                        .is_some_and(|d| d.task.extra["uniqueIndex"].as_i64().is_some()),
+                        .is_some_and(|d| d.task.extra.get("uniqueIndex").and_then(Value::as_i64).is_some()),
                 ),
                 (
                     "copyCommentToAiChat",
@@ -431,7 +431,7 @@ impl Desktop {
                     self.ai_sidebar.is_some(),
                 ),
                 ("branchInNewChat","Branch in new chat","",Action::BranchCommentToAiChat,self.ai_sidebar.is_some()),
-                ("createTaskFromComment", "Create task from comment", "", Action::CreateTaskFromComment, true),
+                ("createTaskFromComment", "Create task from comment", "", Action::CreateTaskFromComment, self.detail.as_ref().is_some_and(|detail| detail.task.extra.get("uniqueIndex").and_then(Value::as_i64).is_some_and(|index| index > 0))),
                 ("summarizeComment", "Summarize comment", "", Action::SummarizeComment, self.ai_sidebar.is_some()),
                 (
                     "fastLikeComment",

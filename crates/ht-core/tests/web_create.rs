@@ -215,3 +215,10 @@ fn source_attachments_allow_unmeasured_sizes_but_never_send_invented_byte_counts
     assert!(db.mutations().unwrap()[0].payload_json["body"]["urlsToAdd"][0].get("fileSize").is_none());
     assert!(db.task(-id).unwrap().is_some());
 }
+
+#[test]
+fn source_comment_create_without_loaded_source_index_refuses_without_panicking_or_queuing() {
+    let mut db=Db::memory().unwrap();seed(&mut db,false);
+    assert!(db.enqueue(Write::CreateTaskForm {project_id:15,section_id:10,title:"Task".into(),fields:json!({"createTaskFromComment":{"task":{"id":1,"projectId":15,"uniqueIndex":7},"commentIndex":0}})},100).is_err());
+    assert!(db.mutations().unwrap().is_empty());
+}

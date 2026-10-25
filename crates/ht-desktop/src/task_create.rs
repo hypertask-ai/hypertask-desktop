@@ -13,7 +13,7 @@ enum Field {
     StartDate,
 }
 pub(super) struct Create {
-    open: bool,
+    pub(super) open: bool,
     title: Entity<TextInput>,
     description: Entity<TextInput>,
     date: Entity<TextInput>,
@@ -75,7 +75,7 @@ impl Desktop {
         if self.create_task.open || self.create_task.pending.is_some() || self.create_task.source_loading { return; }
         let Some(task) = self.detail.as_ref().map(|detail| detail.task.clone()) else { return; };
         if comment.task_id != task.id { return; }
-        let Some(unique) = task.extra["uniqueIndex"].as_i64().filter(|index| *index > 0) else { return; };
+        let Some(unique) = task.extra.get("uniqueIndex").and_then(Value::as_i64).filter(|index| *index > 0) else { return; };
         let Some(creator) = comment.extra.get("creator").filter(|creator| creator["id"].as_i64().is_some()) else { return; };
         let escape = ht_core::desktop_cli::escape;
         let name = escape(creator["displayName"].as_str().unwrap_or(""));
@@ -1032,7 +1032,8 @@ mod tests {
             click(view,&mut cx,"create.attachment.remove.1");
             cx.simulate_input("Follow up");cx.simulate_keystrokes("ctrl-enter");
             view.update(&mut cx,|this,window,cx| {
-                let id=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap().id;
+                assert_eq!(this.create_task.title.read(cx).content.as_ref(),"Follow up","attachment removal must preserve title focus");
+                let id=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap_or_else(|| panic!("create was not queued: {:?}",this.create_task.error)).id;
                 assert!(this.db.task(-id).unwrap().is_some());
                 this.interaction.task_part=0;
                 this.db.drain_once(&mut CommentCreate(status),chrono::Utc::now().timestamp()+1).unwrap();

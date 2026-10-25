@@ -1844,7 +1844,7 @@ impl Render for Desktop {
             .track_focus(&self.focus)
             .relative()
             .capture_any_mouse_down(cx.listener(|this, _, window, cx| {
-                if this.interaction.modal.is_none() {
+                if this.interaction.modal.is_none() && !this.create_task.open {
                     this.editing = Editing::None;
                     window.focus(&this.focus, cx);
                 }

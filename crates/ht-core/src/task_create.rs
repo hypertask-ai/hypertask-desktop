@@ -101,7 +101,7 @@ impl Db {
             let task = self.task(source["task"]["id"].as_i64().filter(|id| *id > 0).context("Invalid source task")?)?.context("Source task is unavailable")?;
             ensure!(source["commentIndex"].as_u64().is_some() && source["task"]["projectId"] == task.project_id
                 && source["task"]["uniqueIndex"].as_i64().is_some_and(|index| index > 0)
-                && source["task"]["uniqueIndex"] == task.extra["uniqueIndex"], "Invalid source comment");
+                && task.extra.get("uniqueIndex") == Some(&source["task"]["uniqueIndex"]), "Invalid source comment");
         }
         if let Some(files) = body.get("urlsToAdd") {
             for file in files.as_array().context("Invalid attachments")? {

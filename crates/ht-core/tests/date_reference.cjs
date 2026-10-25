@@ -75,7 +75,7 @@ const inputChange = (input, options_) => {
     }
   }
 
-  const seen = new Set<string>()
+  const seen = new Set()
   return [...phraseOptions, ...final].filter((o) => {
     const key = o?.date ? o.date.slice(0, 16) : `d:${o?.display}`
     if (seen.has(key)) return false
