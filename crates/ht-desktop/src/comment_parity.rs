@@ -114,3 +114,62 @@ fn overflow_ellipsis_click_sets_exact_comment_before_opening_command_palette(
         )
     });
 }
+
+#[gpui::test]
+fn long_thread_reply_and_comment_shortcut_reveal_the_focused_composer(
+    cx: &mut gpui::TestAppContext,
+) {
+    use crate::ui::shell::tests::{click, draw, measured};
+    use gpui::{VisualTestContext, WindowHandle};
+    cx.update(crate::input::init);
+    let view: WindowHandle<Desktop> = cx.add_window(|window, cx| {
+        let mut view = desktop(window, cx);
+        let comments: Vec<_> = (0..20)
+            .map(|i| json!({
+                "id": 100 + i,
+                "text": "<p>A long thread comment</p>",
+                "creatorId": 42,
+                "creator": {"id": 42, "displayName": "QA author"},
+                "createdAt": format!("2026-01-{:02}T00:00:00Z", i + 1)
+            }))
+            .collect();
+        view.db.apply_comments(1, &json!({"success": true, "comments": comments})).unwrap();
+        view.reload();
+        view.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+        view.ready_scheduled = true;
+        view
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    draw(view, &mut cx);
+    view.read_with(&mut cx, |this, _| {
+        assert!(this.detail_scroll.max_offset().height > px(0.));
+    }).unwrap();
+    assert!(measured(view, &mut cx, "task.composer")["y"].as_f64().unwrap() > 900.);
+
+    for reply in [false, true] {
+        view.update(&mut cx, |this, window, cx| {
+            this.detail_scroll.set_offset(point(px(0.), px(0.)));
+            this.editing = Editing::None;
+            window.focus(&this.focus, cx);
+            cx.notify();
+        }).unwrap();
+        draw(view, &mut cx);
+        if reply {
+            click(view, &mut cx, "task.comment.0.reply");
+        } else {
+            cx.simulate_keystrokes("ctrl-m");
+        }
+        cx.run_until_parked();
+        let composer = measured(view, &mut cx, "task.composer");
+        view.update(&mut cx, |this, window, cx| {
+            let viewport = this.detail_scroll.bounds();
+            let top = px(composer["y"].as_f64().unwrap() as f32);
+            let bottom = top + px(composer["h"].as_f64().unwrap() as f32);
+            assert!(top >= viewport.top() && bottom <= viewport.bottom(), "composer clipped: {composer}");
+            assert!(this.comment_input.focus_handle(cx).is_focused(window));
+            if reply {
+                assert!(this.comment_input.read(cx).content.contains("A long thread comment"));
+            }
+        }).unwrap();
+    }
+}
