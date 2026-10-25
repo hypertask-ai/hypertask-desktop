@@ -24,4 +24,12 @@ Before changing production code, add a focused native layout regression in the e
 
 ## Baseline
 
-CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40243346848, SHA 303d27bb9c62ea3b6c8dd521ea136f5cab1db2fa. Downloaded layout-dumps artifact 12617763359 to /tmp/look10-before. compare-complete-dense.txt reports inbox 13, board 17, task 14, TOTAL 44. compare-complete-parity.txt reports inbox 4, board 5, task 1, TOTAL 10. compare-complete-reference.txt reports zero on every screen. Digest and final results pending read-only GitHub receipt.
+CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40243346848, SHA 303d27bb9c62ea3b6c8dd521ea136f5cab1db2fa. Downloaded layout-dumps artifact 12617763359 to /tmp/look10-before. compare-complete-dense.txt reports inbox 13, board 17, task 14, TOTAL 44. compare-complete-parity.txt reports inbox 4, board 5, task 1, TOTAL 10. compare-complete-reference.txt reports zero on every screen. Artifact digest is sha256:a082c1c613ea25ddfefa1aed2fca216609f2d237e1659d7d6dc89bd07e2a7758.
+
+## Hosted red proof
+
+CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40246073718 at 6e48862abcaecc242389f025f7c1ec3ded841c23 rejects task_header_without_summary_keeps_web_bottom_spacing on Ubuntu, Windows x64 and macOS. The measured task.header height is 81px, while the source-backed expected height is 89px. Each platform reports 203 passed and this one failed native test. ARM64, Pstack contract and both updater jobs succeed. Missing memory receipts follow the intentionally failing workspace test, not a separate product failure. Full logs and failed receipt are retained in /tmp/look10-red-app-receipt.
+
+## Final proof location
+
+Final exact-head job results, supplied ci-wait-receipt.sh receipt, artifact identities and unfiltered comparison totals are attached to https://github.com/hypertask-ai/hypertask-desktop/pull/35 after hosted verification. The separate audit is docs/layout-round10.md. Self-review preserves the one-expression product change, source-backed native regression, all existing measurement fixtures, comparisons, controls, thresholds and memory budgets. No independent reviewer ran. The unavailable cursor-team-kit review is replaced with source/diff review and hosted checks, per the repository adapter.
