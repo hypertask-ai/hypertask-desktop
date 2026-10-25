@@ -1926,7 +1926,10 @@ impl Desktop {
         self.shell
             .settings_state
             .import_url
-            .update(cx, |input, cx| input.set_content(String::new(), cx));
+            .update(cx, |input, cx| {
+                input.set_content(String::new(), cx);
+                input.configure("Search shortcuts", false, cx);
+            });
         window.focus(&self.shell.settings_state.import_url.focus_handle(cx), cx);
     }
 }
