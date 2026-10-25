@@ -269,11 +269,10 @@ fn keyboard_escape_saves_description_but_never_publishes_comment(cx: &mut TestAp
         assert_eq!(writes.len(), 1);
         assert_eq!(writes[0].payload_json["task_id"], 1);
         assert!(writes[0].payload_json["description"].as_str().unwrap().contains("Saved on Escape é🙂"));
-        assert_eq!(this.editing, Editing::None);
+        assert!(matches!(this.editing, Editing::None));
         assert!(this.focus.is_focused(window));
         assert_eq!(this.screen, Screen::Task);
         assert!(this.interaction.modal.is_none());
-        let _ = cx;
     });
     cx.simulate_keystrokes("ctrl-m");
     cx.simulate_input("Unsent comment");
