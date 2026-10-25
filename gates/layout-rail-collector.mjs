@@ -82,6 +82,22 @@ const perturbed = compare(complete, negative);
 writeFileSync(`${out}/compare-collector-negative.txt`, perturbed.output);
 assert.equal(perturbed.differences, comparisons.reference + 1, perturbed.output);
 console.log('LAYOUT_COLLECTOR_BOX_PERTURBATION_REJECTED');
+const before = JSON.parse(readFileSync('gates/fixtures/layout-rail/radius-before.json', 'utf8'));
+assert.equal(before.records.length, 12);
+assert.equal(new Set(before.records.map(record => `${record.screen}/${record.element.key}`)).size, 12);
+const oldDirectory = `${out}/rail-radius-before`;
+mkdirSync(oldDirectory, { recursive: true });
+for (const screen of ['inbox', 'board', 'task']) {
+  const dump = JSON.parse(readFileSync(`${out}/reference/${screen}.json`, 'utf8'));
+  const old = new Map(before.records.filter(record => record.screen === screen).map(record => [record.element.key, record.element]));
+  assert.deepEqual([...old.keys()], expectedKeys.slice(9));
+  dump.elements = dump.elements.map(element => old.get(element.key) ?? element);
+  writeFileSync(`${oldDirectory}/${screen}.json`, JSON.stringify(dump, null, 2) + '\n');
+}
+const rejected = compare(complete, oldDirectory);
+writeFileSync(`${out}/compare-radius-before.txt`, rejected.output);
+assert.equal(rejected.differences, 12, rejected.output);
+console.log(`LAYOUT_OLD_RAIL_RADIUS_REJECTED ${before.revision}: ${rejected.differences} differences`);
 const receipt = {
   sourceRevision: '10377b20e8c338357fda306b025ef16699c9b4ab',
   source: 'src/components/PageComponents/Kanban/HeaderComponents/AppShellRail.tsx:65-87,151-360',

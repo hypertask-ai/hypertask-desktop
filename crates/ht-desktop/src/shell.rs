@@ -322,10 +322,10 @@ impl Desktop {
                 .items_center()
                 .when(!wide, |d| d.justify_center())
                 .when(wide, |d| d.pl(px(10.)).gap(px(10.)))
-                .rounded(px(5.))
+                .rounded(px(if i < 9 { 5. } else { 0. }))
                 .when(wide, |d| d.text_size(px(14.)))
                 .text_color(color(tint))
-                .when(selected || hovered, |d| d.bg(color(t.hover)))
+                .when(selected || (hovered && i < 9), |d| d.bg(color(t.hover)))
                 .child(icon(name, tint, 18.))
                 .when(wide, |d| d.child(
                     div().text_color(color(t.muted)).child(label)
@@ -534,12 +534,18 @@ impl Desktop {
                     .mb(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.open_invite(window, cx)))
-                    .child(button(9, "user-plus", "Invite", false, cx)),
+                    .rounded(px(5.))
+                    .when(self.shell.hovered == Some(9), |d| d.bg(color(t.hover)))
+                    .child(button(9, "user-plus", "Invite", false, cx))
+                    .layout_key(&self.layout, "rail.item.9", None),
             )
             .child(
                 div()
                     .mb(px(4.))
-                    .child(button(10, "rocket", "News", false, cx)),
+                    .rounded(px(5.))
+                    .when(self.shell.hovered == Some(10), |d| d.bg(color(t.hover)))
+                    .child(button(10, "rocket", "News", false, cx))
+                    .layout_key(&self.layout, "rail.item.10", None),
             )
             .child(
                 div()
@@ -547,7 +553,10 @@ impl Desktop {
                     .mb(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.open_feedback(window, cx)))
-                    .child(button(11, "message-circle", "Feedback", false, cx)),
+                    .rounded(px(5.))
+                    .when(self.shell.hovered == Some(11), |d| d.bg(color(t.hover)))
+                    .child(button(11, "message-circle", "Feedback", false, cx))
+                    .layout_key(&self.layout, "rail.item.11", None),
             )
             .child(
                 div()
@@ -555,7 +564,10 @@ impl Desktop {
                     .mb(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.open_settings(window, cx)))
-                    .child(button(12, "settings", "Settings", false, cx)),
+                    .rounded(px(5.))
+                    .when(self.shell.hovered == Some(12), |d| d.bg(color(t.hover)))
+                    .child(button(12, "settings", "Settings", false, cx))
+                    .layout_key(&self.layout, "rail.item.12", None),
             )
             .layout_key(&self.layout, "rail", None)
     }
@@ -1430,7 +1442,8 @@ mod rail_detail_tests {
                     })
                 });
                 let label = expanded.then(|| measured(view, &mut cx, &format!("rail.label.{index}")));
-                records.push(serde_json::json!({"expanded": expanded, "element": hovered, "label": label, "paintedHoverBackground": background_matches}));
+                let item = (index >= 9).then(|| measured(view, &mut cx, &format!("rail.item.{index}")));
+                records.push(serde_json::json!({"expanded": expanded, "element": hovered, "item": item, "label": label, "paintedHoverBackground": background_matches}));
             }
         }
         if cfg!(target_os = "linux") && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
@@ -1440,7 +1453,18 @@ mod rail_detail_tests {
         }
         for record in records {
             assert_eq!(record["element"]["color"], "#ffffff", "{record}");
-            assert_eq!(record["element"]["bg"], "#3a3d45", "{record}");
+            if record["item"].is_null() {
+                assert_eq!(record["element"]["bg"], "#3a3d45", "{record}");
+                assert_eq!(record["element"]["radius"], 5., "{record}");
+            } else {
+                assert!(record["element"]["bg"].is_null(), "{record}");
+                assert_eq!(record["element"]["radius"], 0., "{record}");
+                assert_eq!(record["item"]["bg"], "#3a3d45", "{record}");
+                assert_eq!(record["item"]["radius"], 5., "{record}");
+                for field in ["x", "y", "w", "h"] {
+                    assert_eq!(record["item"][field], record["element"][field], "{record}");
+                }
+            }
             assert_eq!(record["paintedHoverBackground"], true, "{record}");
             if record["expanded"] == true {
                 assert_eq!(record["label"]["color"], "#8e9093", "{record}");
