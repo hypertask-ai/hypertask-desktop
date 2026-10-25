@@ -1026,6 +1026,20 @@ impl Element for TextElement {
             line.paint(*point, *height, gpui::TextAlign::Left, None, window, cx)
                 .unwrap();
         }
+        for (row, line) in prepaint.layout.lines.iter().enumerate() {
+            line.paint_background(
+                point(
+                    bounds.left() + prepaint.layout.rows[row].indent,
+                    bounds.top() + prepaint.layout.rows[row].top,
+                ),
+                prepaint.layout.rows[row].height,
+                gpui::TextAlign::Left,
+                None,
+                window,
+                cx,
+            )
+            .unwrap();
+        }
         for selection in prepaint.selections.drain(..) {
             window.paint_quad(selection);
         }

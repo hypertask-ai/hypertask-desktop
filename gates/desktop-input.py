@@ -86,6 +86,27 @@ def main():
                     ["identify", "-format", "%#", str(OUT / name)], env=env, text=True)
                     for name in ("before.png", "after.png")]
                 assert signatures[0] != signatures[1], "Archive must change the presented pixels"
+                with sqlite3.connect(db) as conn, sqlite3.connect(OUT / "result.db") as saved:
+                    conn.backup(saved)
+                subprocess.run(["xdotool", "key", "--clearmodifiers", "Return", "ctrl+m", "ctrl+a"], env=env, check=True)
+                subprocess.run(["xdotool", "type", "--clearmodifiers", "--delay", "1", "Native highlighted text"], env=env, check=True)
+                subprocess.run(["xdotool", "sleep", "0.3"], env=env, check=True)
+                subprocess.run(["import", "-window", window, str(OUT / "editor-plain.png")], env=env, check=True)
+                subprocess.run(["xdotool", "key", "--clearmodifiers", "ctrl+a", "ctrl+shift+h", "Right"], env=env, check=True)
+                subprocess.run(["xdotool", "sleep", "0.3"], env=env, check=True)
+                subprocess.run(["import", "-window", window, str(OUT / "editor-highlight.png")], env=env, check=True)
+
+                def gold_pixels(name):
+                    pixels = subprocess.check_output(["convert", str(OUT / name), "-depth", "8", "rgb:-"], env=env)
+                    return sum(r >= 245 and 210 <= g <= 235 and 85 <= b <= 120
+                               for r, g, b in zip(pixels[0::3], pixels[1::3], pixels[2::3]))
+
+                plain_gold = gold_pixels("editor-plain.png")
+                highlighted_gold = gold_pixels("editor-highlight.png")
+                assert highlighted_gold - plain_gold >= 500, (
+                    f"Real highlighted glyphs need a painted yellow background: before={plain_gold}, after={highlighted_gold}")
+                with sqlite3.connect(db) as conn, sqlite3.connect(OUT / "editor.db") as saved:
+                    conn.backup(saved)
             finally:
                 process.terminate()
                 try:
@@ -95,15 +116,15 @@ def main():
                     process.communicate()
         with sqlite3.connect(db) as conn:
             assert conn.execute("SELECT status FROM Notification WHERE id=?", (row_id,)).fetchone()[0] == "Archive"
-            with sqlite3.connect(OUT / "result.db") as saved:
-                conn.backup(saved)
         proof = {"revision": os.environ["HT_VERIFY_REVISION"], "exe_sha256": hashlib.sha256(app.read_bytes()).hexdigest(),
                  "action": "native X11 key e", "notification_id": row_id, "queue_kinds": [k[0] for k in kinds],
                  "offline": True, "owned_pid": process.pid, "process_exited": process.poll() is not None,
-                 "temporary_db_removed_after_return": str(db)}
+                 "temporary_db_removed_after_return": str(db),
+                 "highlight_pixels": {"plain": plain_gold, "highlighted": highlighted_gold}}
         (OUT / "receipt.json").write_text(json.dumps(proof, indent=2) + "\n")
     assert not db.exists() and process.poll() is not None
     assert all((OUT / name).stat().st_size > 0 for name in ("before.png", "after.png", "result.db", "receipt.json", "app.log"))
+    print(f"DESKTOP_INPUT_HIGHLIGHT_VERIFIED plain_gold={plain_gold} highlighted_gold={highlighted_gold} selection=deselected")
     print("DESKTOP_INPUT_ARCHIVE_VERIFIED action=e persisted=Archive queue=inbox_archive cleanup=complete evidence=retained")
 
 
