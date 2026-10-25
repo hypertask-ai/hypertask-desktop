@@ -75,7 +75,7 @@ impl Desktop {
                 .child(div().id("review-close").cursor_pointer().child("Close").on_click(cx.listener(|this,_,window,cx|this.finish_unread_review(window,cx))).layout_key(&self.layout,"inbox.review.close",None))
                 .child(format!("{} left",review.rows.len()-review.decisions.len()))
                 .child(div().id("review-undo").cursor_pointer().child("Undo").on_click(cx.listener(|this,_,window,cx|this.undo_unread(window,cx))).layout_key(&self.layout,"inbox.review.undo",None)))
-            .child(div().w_full().max_w(px(720.)).flex_1().min_h_0().child(if current.is_none(){div().size_full().flex().items_center().justify_center().child("All caught up").into_any_element()}else if current.unwrap().task_id.is_none(){div().child("This notification has no task to display").into_any_element()}else{self.task_screen(cx)}))
+            .child(div().w_full().max_w(px(720.)).flex_1().min_h_0().layout_key(&self.layout,"inbox.review.task",None).child(if current.is_none(){div().size_full().flex().items_center().justify_center().child("All caught up").into_any_element()}else if current.unwrap().task_id.is_none(){div().child("This notification has no task to display").into_any_element()}else{self.task_screen(cx)}))
             .when(current.is_some(),|d|d.child(div().w_full().max_w(px(720.)).flex().gap(px(16.)).py(px(16.))
                 .child(div().id("review-keep").flex_1().p(px(12.)).rounded_full().bg(color(t.hover)).cursor_pointer().child("← Keep in inbox").on_click(cx.listener(|this,_,window,cx|this.decide_unread(false,window,cx))).layout_key(&self.layout,"inbox.review.keep",None))
                 .child(div().id("review-archive").flex_1().p(px(12.)).rounded_full().bg(color(t.accent)).cursor_pointer().child("Archive →").on_click(cx.listener(|this,_,window,cx|this.decide_unread(true,window,cx))).layout_key(&self.layout,"inbox.review.archive",None))))
@@ -99,5 +99,32 @@ mod tests {
         view.read_with(cx,|this,_|{assert_eq!(this.inbox_actions.review.as_ref().unwrap().decisions,vec![false]);assert!(this.db.mutations().unwrap().is_empty());});
         cx.simulate_keystrokes("right escape");
         view.read_with(cx,|this,_|{assert!(this.inbox_actions.review.is_none());assert_eq!(this.screen,Screen::Inbox);let rows=this.db.mutations().unwrap();assert_eq!(rows.len(),1);assert_eq!(rows[0].payload_json["notification_ids"],json!([102]));});
+    }
+}
+
+#[cfg(test)]
+mod layout_tests {
+    use super::*;
+    use crate::ui::shell::tests::{measured, setup};
+
+    #[gpui::test]
+    fn unread_embedded_task_columns_fit_the_review_card(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx, |this, window, cx| {
+            this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[
+                {"id":77,"taskId":101,"projectId":15,"seen":false,"status":"Normal","createdAt":"2026-01-01T00:00:00Z"}
+            ]})).unwrap();
+            this.reload();
+            this.start_unread_review(window, cx);
+        }).unwrap();
+        let card = measured(view, &mut cx, "inbox.review.task");
+        assert_eq!(card["w"], 720.);
+        let left = card["x"].as_f64().unwrap();
+        let right = left + card["w"].as_f64().unwrap();
+        for key in ["task.description", "task.composer", "task.meta.0", "task.meta.1", "task.meta.2", "task.meta.3", "task.meta.4", "task.meta.5"] {
+            let field = measured(view, &mut cx, key);
+            assert!(field["x"].as_f64().unwrap() >= left && field["x"].as_f64().unwrap() + field["w"].as_f64().unwrap() <= right,
+                "{key} is horizontally clipped by unread review: {field}");
+        }
     }
 }
