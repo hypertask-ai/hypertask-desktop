@@ -5,7 +5,8 @@ global.Date = class extends NativeDate {
   constructor(...args) { super(...(args.length ? args : [clock])); }
   static now() { return clock; }
 };
-const Sugar = require("./vendor/sugar/sugar.min.cjs");
+require("./vendor/sugar/sugar.min.cjs");
+const Sugar = global.Sugar;
 const createSugarDate = Sugar.Date.create;
 const defaultHour = 9, defaultMinutes = 0, defaultSeconds = 0;
 

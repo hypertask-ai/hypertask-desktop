@@ -13,7 +13,7 @@ enum Field {
     StartDate,
 }
 pub(super) struct Create {
-    pub(super) open: bool,
+    open: bool,
     title: Entity<TextInput>,
     description: Entity<TextInput>,
     date: Entity<TextInput>,
@@ -1029,10 +1029,13 @@ mod tests {
                 assert!(this.create_task.fields["urlsToAdd"][1].get("fileSize").is_none());
                 assert!(this.db.mutations().unwrap().iter().all(|row|row.status=="failed"));
             }).unwrap();
+            view.update(&mut cx,|this,window,cx| assert!(this.create_task.title.focus_handle(cx).is_focused(window),"source-comment create must initially focus its title")).unwrap();
+            cx.simulate_input("Follow up");
             click(view,&mut cx,"create.attachment.remove.1");
-            cx.simulate_input("Follow up");cx.simulate_keystrokes("ctrl-enter");
+            view.read_with(&cx,|this,_| assert_eq!(this.create_task.fields["urlsToAdd"].as_array().unwrap().len(),1,"the native remove control must remove exactly one file")).unwrap();
+            cx.simulate_keystrokes("ctrl-enter");
             view.update(&mut cx,|this,window,cx| {
-                assert_eq!(this.create_task.title.read(cx).content.as_ref(),"Follow up","attachment removal must preserve title focus");
+                assert_eq!(this.create_task.title.read(cx).content.as_ref(),"Follow up","attachment removal must preserve the edited title");
                 let id=this.db.mutations().unwrap().into_iter().find(|row|row.status!="failed").unwrap_or_else(|| panic!("create was not queued: {:?}",this.create_task.error)).id;
                 assert!(this.db.task(-id).unwrap().is_some());
                 this.interaction.task_part=0;
