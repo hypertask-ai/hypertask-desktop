@@ -2686,6 +2686,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "ht-schema-gen"
+version = "0.1.0"
+
+[[package]]
 name = "ht-updater"
 version = "0.1.0"
 dependencies = [
@@ -2698,10 +2702,6 @@ dependencies = [
  "ureq",
  "url",
 ]
-
-[[package]]
-name = "ht-schema-gen"
-version = "0.1.0"
 
 [[package]]
 name = "html5ever"

@@ -10,7 +10,7 @@ Open the Windows app normally. Updates stage silently and apply on the next star
 
 ## Driving it with GitHub CI
 
-No laptop access. All execution uses public GitHub runners.
+Preconditions: exact pushed SHA, draft PR, public GitHub runners, synthetic fixtures only. No laptop access.
 
 `CI` runs `cargo test --locked --release -p ht-updater -- --nocapture` on Windows and Linux. Require `UPDATER_MANIFEST_VERIFIED`, `UPDATER_HASH_REFUSAL_VERIFIED`, `UPDATER_VERSION_VERIFIED`, `UPDATER_SWAP_ACCEPT_VERIFIED`, `UPDATER_ROLLBACK_VERIFIED`, `UPDATER_RUNNING_EXE_HANDOFF_AND_ROLLBACK_VERIFIED`, `UPDATER_STARTUP_TIMEOUT_ROLLBACK_VERIFIED`, and Windows `UPDATER_INSTALL_LOCK_VERIFIED`.
 
@@ -26,4 +26,4 @@ On normal online Windows startup, the updater applies an already-verified stage 
 
 An installed pre-updater binary cannot update itself. This change provides the updater-capable starting point; it never replaces an installed executable from the VPS. Subsequent releases arrive exclusively through the app's updater.
 
-Final proof still requires the exact-head full CI receipt from `../SKILL.md`, including both architectures and frozen memory budgets. Release publication itself starts only after merge; no draft-branch publication is claimed.
+Proof: the exact-head full CI receipt is required from `../SKILL.md`, including both architectures and frozen memory budgets. Release publication itself starts only after merge; no draft-branch publication is claimed.
