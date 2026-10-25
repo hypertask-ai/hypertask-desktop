@@ -194,7 +194,7 @@ pub fn phrase_options<Tz: TimeZone>(input: &str, now: DateTime<Tz>, past: bool) 
         }
     }
     if let Some(date) = phrase_date(&query, &now, past).and_then(|date| at(&now, date.date_naive(), 9)) {
-        let difference = date.signed_duration_since(&now).num_milliseconds();
+        let difference = date.timestamp_millis() - now.timestamp_millis();
         if if past {difference < 60_000} else {difference > 60_000} {
             rows.push(DateOption { display:date.naive_local().format("%-m/%-d/%Y, %-I:%M:%S %p").to_string(), date:date.to_rfc3339() });
         }
