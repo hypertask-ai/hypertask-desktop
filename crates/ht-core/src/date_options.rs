@@ -150,7 +150,11 @@ fn phrase_date<Tz: TimeZone>(phrase: &str, now: &DateTime<Tz>, past: bool) -> Op
         "today" => at(now, today, 9)?,
         "tomorrow" => at(now, today.checked_add_signed(Duration::days(1))?, 9)?,
         "next week" => local(now, now.naive_local().checked_add_signed(Duration::weeks(1))?)?,
-        "next month" | "next year" => local(now, today.checked_add_months(chrono::Months::new(if phrase == "next year" {12} else {1}))?.and_time(now.time()))?,
+        "next month" => local(now, today.checked_add_months(chrono::Months::new(1))?.and_time(now.time()))?,
+        "next year" => {
+            let date = NaiveDate::from_ymd_opt(today.year().checked_add(1)?, today.month(), 1)?.checked_add_signed(Duration::days(today.day0() as i64))?;
+            local(now, date.and_time(now.time()))?
+        }
         "this weekend" | "next weekend" => at(now, today.checked_add_signed(Duration::days(6 - weekday + if phrase == "next weekend" {7} else {0}))?, 9)?,
         "end of week" | "end of month" => {
             let date = if phrase == "end of week" { today.checked_add_signed(Duration::days(6 - weekday))? }

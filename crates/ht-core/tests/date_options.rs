@@ -123,10 +123,12 @@ fn phrase_date_options_match_web_sugar_ranking_edges_clamping_start_direction_an
         assert!(output.status.success(),"{}",String::from_utf8_lossy(&output.stderr));
         let expected:Vec<Vec<Value>>=serde_json::from_slice(&output.stdout).unwrap();
         assert_eq!(expected.len(),actual.len());
+        let mut mismatches = vec![];
         for ((case,actual),expected) in cases.iter().zip(actual).zip(expected) {
             let actual:Vec<_>=actual.into_iter().map(|row|(row.display,DateTime::parse_from_rfc3339(&row.date).unwrap().timestamp_millis())).collect();
             let expected:Vec<_>=expected.into_iter().map(|row|(row["display"].as_str().unwrap().to_owned(),DateTime::parse_from_rfc3339(row["date"].as_str().unwrap()).unwrap().timestamp_millis())).collect();
-            assert_eq!(actual,expected,"{zone} {case}");
+            if actual != expected { mismatches.push(format!("{zone} {case}\nactual {actual:?}\nweb {expected:?}")); }
         }
+        assert!(mismatches.is_empty(), "{} mismatches\n{}", mismatches.len(), mismatches.into_iter().take(24).collect::<Vec<_>>().join("\n"));
     }
 }
