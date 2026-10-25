@@ -170,7 +170,7 @@ fn long_thread_reply_and_comment_shortcut_reveal_the_focused_composer(
             assert!(top >= viewport.top() && bottom <= viewport.bottom(), "composer clipped: {composer}");
             assert!(this.comment_input.focus_handle(cx).is_focused(window));
             if reply {
-                assert!(this.comment_input.read(cx).content.contains("A long thread comment"));
+                assert!(this.comment_input.read(cx).content.contains("First é🙂"));
             }
         }).unwrap();
     }
