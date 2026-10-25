@@ -145,6 +145,7 @@ fn everyday_time_queries_match_real_web_sugar_options_and_refuse_malformed_input
         "3 days ago", "1 month ago", "2 weeks from now", "2 days later",
         "2 hours", "1 month", "30 minutes", "3pm", "15:30", "9:15 am",
         "tomorrow at 25:00", "in bananas", "tomorrow at 3pm junk", "3pm junk",
+        "tomorrow at 1 5:30", "in 2 daysss",
     ];
     for (zone, offset) in [("UTC", "+00:00"), ("Etc/GMT-2", "+02:00")] {
         let mut cases = vec![];
