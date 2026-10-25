@@ -413,3 +413,53 @@ adjacent single-line content's measured height, retaining the mandatory 180px
 clip, exact long-case 180px width, and 8px/32px gaps. No application dimensions,
 existing assertion, gate tolerance or fixture is changed to accommodate that
 failure. Final proof is bound to the corrected descendant below via PR 18.
+
+## Approved reference-content continuation
+
+The separate HTPR-7381 reference-content fixture is additive. Dense/demo and
+sparse/Graphite fixtures, all existing assertions, the frozen live reference,
+comparer tolerances and memory budgets remain unchanged. Synthetic IDs are
+retained. There are no credentials or authenticated calls. The fixture and
+reference provenance are in `gates/fixtures/layout-reference/README.md`.
+
+Baseline SHA `7d718dd919abc150c106bccd74b96bbbb8bec180`, CI
+[40145936859](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40145936859),
+measures **68 raw / 33 sparse / 27 reference-content** differences at 1920x1009.
+The historical sparse count of 34 includes a date-dependent section label;
+this run's unmodified fixture happens to agree on LAST WEEK. The reference
+fixture alone dates its notification to the previous Thursday for stability.
+Its lower count must not be presented as a product layout improvement.
+
+The unchanged comparer exposes three genuine reference-content box defects,
+ranked by maximum native/live area:
+
+| Box | Area, square pixels | Maximum coordinate/size delta |
+| --- | ---: | ---: |
+| `inbox.row.0.kind` | 12745.38 | 2.609375px |
+| `inbox.row.0.title` | 5518.5 | 2.609375px |
+| `inbox.row.0.taskid` | 752 | 3px |
+
+All larger reference-content boxes already match. The remaining 24 differences
+are eight unsampled rail keys per screen, retained in the full output. Style
+mismatches are zero. No source-supported padding or column-width change is
+justified by the larger, content-dependent dense/sparse boxes.
+
+The common root cause is trailing whitespace. Web
+`src/components/Common/TaskRowComponents/TaskTitle.tsx:185-208` renders a flex
+container with `gap-1`, an 11px ticket span ending in a literal space, and the
+adjacent task title. Browser normal whitespace processing collapses the trailing
+space at the flex item's end; GPUI's separate text child previously reserved
+its advance. Removing that native child retains the source's 4px gap without
+inventing a compensating width. The notification kind retains its separate 8px
+gap from `src/components/notifications/NotificationRow.tsx:70-78`. Citations use
+web revision `6f9901764d355aba7bfc76e4e62ff255e0b68b31`.
+
+The additive Chromium probe keeps the web span's literal trailing space and
+compares its measured ticket/title widths and gap with the new native reference
+dump. Both pre-existing strict font assertions remain mandatory. The regression
+also feeds the three exact old native records, with original CI artifact
+provenance, through the same box assertion used for current native records.
+All three must be rejected before current shared boxes can pass. The full
+before/after comparison and exact-head all-job receipt belong to
+[draft PR 24](https://github.com/hypertask-ai/hypertask-desktop/pull/24).
+F011 remains out of scope; no native control is added or removed.

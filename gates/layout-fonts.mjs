@@ -14,7 +14,8 @@ const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1009 }, deviceScaleFactor: 1 });
   // BottomSettings_QuickTips.tsx:413-415; inboxSplit/SplitTitle.tsx:32-54;
-  // tailwind.config.ts:167-178. No app, authenticated API or laptop is used.
+  // Common/TaskRowComponents/TaskTitle.tsx:185-208; tailwind.config.ts:167-178.
+  // No app, authenticated API or laptop is used.
   await page.setContent(`<!doctype html><style>
     @font-face { font-family: WebPlex; src: url(data:font/woff2;base64,${font.toString('base64')}); font-weight: 100 900; }
     body { font-family: WebPlex; font-size: 16px; line-height: 1.5; }

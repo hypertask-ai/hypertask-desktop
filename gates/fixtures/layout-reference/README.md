@@ -30,3 +30,10 @@ including all native-only rail keys. CI retains unfiltered output for dense,
 sparse/parity and reference-content dumps. A lower reference-content count is
 not a product improvement. Only before/after runs with the same fixture prove
 product geometry improvements.
+
+`regression-before.json` retains the three failing native inbox records from
+baseline CI 40145936859, before the trailing-space correction. Its run, revision,
+artifact ID and digest identify the original `layout-dumps` artifact. CI must
+reject each old record with the same box assertion used for the current dump.
+The browser probe independently retains the web source's trailing space and
+requires its collapsed width and gap to agree with native.
