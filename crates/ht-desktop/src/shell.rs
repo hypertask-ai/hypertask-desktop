@@ -333,7 +333,7 @@ impl Desktop {
                 })
                 .when(self.shell.hovered == Some(i), |d| {
                     d.child(
-                        div()
+                        gpui::deferred(div()
                             .absolute()
                             .left(px(if wide { 136. } else { 54. }))
                             .bottom(px(-8.))
@@ -350,7 +350,7 @@ impl Desktop {
                                 &self.layout,
                                 "rail.tooltip",
                                 Some(format!("{tooltip}   {key}")),
-                            ),
+                            )).with_priority(1),
                     )
                 })
                 .layout_key(&self.layout, format!("rail.icon.{i}"), Some(label.into()))
@@ -394,7 +394,7 @@ impl Desktop {
                     )
                     .when(self.shell.hovered == Some(0), |d| {
                         d.child(
-                            div()
+                            gpui::deferred(div()
                                 .absolute()
                                 .left(px(if wide { 136. } else { 54. }))
                                 .bottom(px(-8.))
@@ -419,7 +419,7 @@ impl Desktop {
                                         }
                                         .into(),
                                     ),
-                                ),
+                                )).with_priority(1),
                         )
                     }),
             )
@@ -758,10 +758,12 @@ pub(super) mod tests {
     }
 
     pub(in super::super) fn draw(view: WindowHandle<Desktop>, cx: &mut VisualTestContext) {
-        let entity = view.entity(cx).unwrap();
-        cx.draw(point(px(0.), px(0.)), size(px(1440.), px(900.)), |_, _| {
-            entity.into_element()
-        });
+        // The element-only draw helper skips deferred paint and clears its arena early.
+        view.update(cx, |_, window, cx| {
+            window.refresh();
+            cx.notify();
+        }).unwrap();
+        cx.run_until_parked();
     }
 
     pub(in super::super) fn measured(
@@ -1387,6 +1389,38 @@ mod rail_detail_tests {
             measured(view, &mut cx, "rail.tooltip")["text"],
             "Collapse sidebar   ["
         );
+    }
+
+    #[gpui::test]
+    fn rail_hover_tooltips_paint_above_workspace_in_both_rail_widths(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        for expanded in [false, true] {
+            if expanded {
+                click(view, &mut cx, "rail.icon.0");
+            }
+            for index in 0..13 {
+                let icon = measured(view, &mut cx, &format!("rail.icon.{index}"));
+                cx.simulate_mouse_move(
+                    point(px(icon["x"].as_f64().unwrap() as f32 + 8.), px(icon["y"].as_f64().unwrap() as f32 + 10.)),
+                    None,
+                    Default::default(),
+                );
+                let tooltip = measured(view, &mut cx, "rail.tooltip");
+                cx.run_until_parked();
+                let expected: gpui::Background = view.read_with(&cx, |this, _| color(this.colors.card).into()).unwrap();
+                cx.update(|window, _| {
+                    let center = point(
+                        px((tooltip["x"].as_f64().unwrap() + tooltip["w"].as_f64().unwrap() / 2.) as f32),
+                        px((tooltip["y"].as_f64().unwrap() + tooltip["h"].as_f64().unwrap() / 2.) as f32),
+                    ).scale(window.scale_factor());
+                    let quads = window.painted_quads();
+                    let topmost = quads.iter().filter(|quad| {
+                        !quad.background.is_transparent() && quad.bounds.contains(&center) && quad.content_mask.bounds.contains(&center)
+                    }).max_by_key(|quad| quad.order).expect("painted tooltip background");
+                    assert_eq!(topmost.background, expected, "rail tooltip {index} is obscured (expanded={expanded})");
+                });
+            }
+        }
     }
 
     #[gpui::test]
