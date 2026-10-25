@@ -9,6 +9,23 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::ToggleRail => self.toggle_rail(cx),
+            ShellCommand::ToggleAi => self.toggle_ai(window, cx),
+            ShellCommand::ToggleAiMode => {
+                if self.shell.ai_open {
+                    if let Some(sidebar) = &self.ai_sidebar {
+                        sidebar.update(cx, |sidebar, cx| {
+                            let mode = if sidebar.mode() == crate::ai_sidebar::DisplayMode::Sidebar {
+                                crate::ai_sidebar::DisplayMode::Floating
+                            } else {
+                                crate::ai_sidebar::DisplayMode::Sidebar
+                            };
+                            sidebar.set_mode(mode, cx);
+                        });
+                    }
+                    cx.notify();
+                }
+            }
             ShellCommand::Settings(section) => {
                 self.open_settings(window, cx);
                 self.select_settings(section, window, cx);

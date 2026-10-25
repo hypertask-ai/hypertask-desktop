@@ -754,70 +754,80 @@ impl Desktop {
         self.add_comment_commands(&mut rows);
         self.add_board_commands(&mut rows);
         if self.ai_sidebar.is_some() {
-            for (key, name, action) in [
-                ("pinAiChatOpen", "Pin AI chat open", Action::PinAiChat),
-                ("fullScreenAiChat", "Open AI chat full screen", Action::FullscreenAiChat),
+            for (key, name, group, keys, keywords, action) in [
+                ("appShellAIChat", "App shell: Toggle AI chat", "App shell surfaces", "5", "surface switch toggle ai chat", CommandAction::Shell(command_center::ShellCommand::ToggleAi)),
+                ("appShellAIChatAlternative", "App shell: Toggle AI chat (alternative)", "App shell surfaces", "]", "surface switch toggle ai chat bracket alternative", CommandAction::Shell(command_center::ShellCommand::ToggleAi)),
+                ("aiChatInterface", "Chat with AI", "AI", "", "chat ask ai assistant bot conversation answer help discuss", CommandAction::Shell(command_center::ShellCommand::ToggleAi)),
+                ("pinAiChatOpen", "Pin AI chat open", "AI", "", "pin keep chat open always", CommandAction::Shortcut(Action::PinAiChat)),
+                ("fullScreenAiChat", "Open AI chat full screen", "AI", "", "full screen chat fullscreen expand ai big large page", CommandAction::Shortcut(Action::FullscreenAiChat)),
+                ("toggleAIChatView", "Switch AI chat mode", "AI", "", "switch toggle ai chat mode sidebar floating view layout", CommandAction::Shell(command_center::ShellCommand::ToggleAiMode)),
             ] {
-                rows.push(command_center::Command { key: key.into(), name: name.into(), group: "AI", keys: String::new(), keywords: "ai chat", action: CommandAction::Shortcut(action) });
+                rows.push(command_center::Command { key: key.into(), name: name.into(), group, keys: keys.into(), keywords, action });
             }
         }
-        if self
-            .selected_task()
-            .and_then(|id| self.db.task(id).ok().flatten())
+        if self.screen == Screen::Task && !self.task_inbox_ids().is_empty() {
+            rows.push(command_center::Command { key: "removeTaskNotification".into(), name: "Remove task notification".into(), group: "Task", keys: "E".into(), keywords: "remove notification mute", action: CommandAction::Shortcut(Action::ArchiveNotification) });
+        }
+        if self.selected_task().and_then(|id| self.db.task(id).ok().flatten())
             .is_some_and(|t| t.status == Status::Archive)
         {
-            rows.retain(|r| {
-                !matches!(
-                    r.action,
-                    CommandAction::Shortcut(Action::Assign | Action::MoveColumn)
-                )
-            });
             if let Some(row) = rows.iter_mut().find(|r| r.key == "archiveTask") {
                 row.name = "Unarchive task".into();
             }
         }
-        let insert = rows.first().map_or(0, |first| {
-            rows.iter()
-                .position(|r| r.group != first.group)
-                .unwrap_or(rows.len())
-        });
-        let boards = self
-            .db
-            .projects()
-            .unwrap_or_default()
-            .into_iter()
+        command_center::order(&mut rows, self.screen);
+        let context_groups = if rows.first().is_some_and(|row| row.group == "Comment") { 2 } else { 1 };
+        let mut groups = 0;
+        let insert = rows.windows(2).position(|pair| {
+            if pair[0].group != pair[1].group { groups += 1; }
+            groups == context_groups
+        }).map_or(rows.len(), |i| i + 1);
+        let boards = self.db.projects().unwrap_or_default().into_iter()
+            .filter(|p| p["id"].as_i64() != Some(self.options.board))
+            .take(50)
             .filter_map(|p| {
                 let id = p["id"].as_i64()?;
                 Some(command_center::Command {
-                    key: format!("board-{id}"),
-                    name: p["title"].as_str().or(p["name"].as_str())?.into(),
+                    key: format!("gotoBoard-{id}"),
+                    name: format!("Go to board: {}", p["title"].as_str().or(p["name"].as_str())?),
                     group: "Boards",
                     keys: String::new(),
-                    keywords: "board project kanban navigate open",
+                    keywords: "board project go open switch",
                     action: CommandAction::Board(id),
                 })
             });
         rows.splice(insert..insert, boards);
         let usage = self.command_usage();
         let now = chrono::Utc::now().timestamp_millis();
-        let mut frequent: Vec<_> = rows
-            .iter()
-            .filter(|r| usage[&r.key]["frequency"].as_u64().unwrap_or(0) > 0)
-            .cloned()
-            .collect();
-        frequent.sort_by(|a, b| {
-            let score = |r: &command_center::Command| {
-                command_center::frecency(
-                    usage[&r.key]["frequency"].as_u64().unwrap_or(0),
-                    usage[&r.key]["lastUsedAt"].as_i64().unwrap_or(now),
-                    now,
-                )
-            };
-            score(b).total_cmp(&score(a))
-        });
+        let score = |r: &command_center::Command| {
+            command_center::frecency(
+                usage[&r.key]["frequency"].as_u64().unwrap_or(0),
+                usage[&r.key]["lastUsedAt"].as_i64().unwrap_or(now),
+                now,
+            )
+        };
+        let mut start = 0;
+        while start < rows.len() {
+            let end = start + rows[start..].iter().take_while(|r| r.group == rows[start].group).count();
+            if !matches!(rows[start].group, "Comment" | "Selected tasks") {
+                rows[start..end].sort_by(|a, b| score(b).total_cmp(&score(a)));
+            }
+            start = end;
+        }
+        if self.screen == Screen::Task || !self.interaction.bulk.is_empty() {
+            return rows;
+        }
+        let mut frequent: Vec<_> = rows.iter().filter(|r| usage[&r.key]["frequency"].as_u64().unwrap_or(0) > 0).cloned().collect();
+        frequent.sort_by(|a, b| score(b).total_cmp(&score(a)));
         frequent.truncate(5);
-        for row in &mut frequent {
-            row.group = "Frequently used";
+        for row in &mut frequent { row.group = "Frequently used"; }
+        if frequent.is_empty() {
+            for key in ["createTask", "createTaskWithAiWriter", "inviteBoard", "createBoard", "addColumn"] {
+                if let Some(mut row) = rows.iter().find(|row| row.key == key).cloned() {
+                    row.group = "Get started";
+                    frequent.push(row);
+                }
+            }
         }
         rows.splice(0..0, frequent);
         rows
@@ -1232,7 +1242,8 @@ impl Desktop {
                         .text_size(px(11.))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(color(t.muted))
-                        .child(group.to_uppercase()),
+                        .child(group.to_uppercase())
+                        .layout_key(&self.layout, format!("command.group.{i}"), Some(group.into())),
                 );
             }
             let keys = if modal == Modal::Commands {
@@ -1274,7 +1285,12 @@ impl Desktop {
                         this.interaction.choice = i;
                         this.run_choice(window, cx);
                     }))
-                    .child(div().flex_1().child(choice.name.clone()))
+                    .child(div().flex_1().flex().items_center().child(choice.name.clone())
+                        .when(modal == Modal::Commands && matches!(filtered[i].key.as_str(), "copyCommentToAiChat" | "cliInstall"), |d| d.child(
+                            div().ml(px(8.)).px(px(5.)).py(px(2.)).rounded(px(2.))
+                                .bg(color(0x4455bb)).text_color(color(0xffffff)).text_size(px(11.))
+                                .font_weight(FontWeight::MEDIUM).line_height(px(11.)).child("New")
+                                .layout_key(&self.layout, format!("command.new.{i}"), Some("New".into())))))
                     .when(checked, |d| d.child("✓"))
                     .child(
                         div().flex().items_center().gap(px(3.)).children(
@@ -1297,8 +1313,12 @@ impl Desktop {
                                             .bg(color(keycap))
                                             .text_size(px(11.))
                                             .font_weight(FontWeight::MEDIUM)
+                                            .line_height(px(11.))
+                                            .text_color(color(t.text))
                                             .child(if cfg!(target_os = "macos") && key == "CTRL" {
                                                 "CMD".to_owned()
+                                            } else if cfg!(target_os = "macos") && key == "ALT" {
+                                                "OPT".to_owned()
                                             } else {
                                                 key.to_owned()
                                             })
@@ -1333,6 +1353,10 @@ impl Desktop {
                     .id("command-center")
                     .absolute()
                     .top(px(f32::from(window.viewport_size().height) * 0.24))
+                    .left(px(((f32::from(window.viewport_size().width) - if self.shell.ai_open {
+                        self.ai_sidebar.as_ref().filter(|sidebar| sidebar.read(cx).mode() == crate::ai_sidebar::DisplayMode::Sidebar)
+                            .map_or(0., |sidebar| sidebar.read(cx).width())
+                    } else { 0. } - 560.) / 2.).max(0.)))
                     .w(px(560.))
                     .rounded(px(5.))
                     .bg(color(background))
@@ -1351,7 +1375,7 @@ impl Desktop {
                             .flex()
                             .items_center()
                             .gap(px(10.))
-                            .child(icon("search", t.muted, 13.))
+                            .child(icon("search", t.muted, 13.).layout_key(&self.layout, "command.search.icon", None))
                             .child(
                                 div()
                                     .flex_1()
@@ -1359,7 +1383,7 @@ impl Desktop {
                                     .layout_key(&self.layout, "command.input", None),
                             ),
                     )
-                    .child(list)
+                    .child(list.layout_key(&self.layout, "command.results", None))
                     .child(
                         div()
                             .px(px(16.))
@@ -1471,7 +1495,7 @@ mod cmdk_parity_tests {
                 let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
                 groups.dedup();
                 assert_eq!(groups, if screen == Screen::Board {
-                    vec!["Get started", "Board", "Navigate", "App shell surfaces", "AI", "Appearance", "Settings", "Help"]
+                    vec!["Get started", "Board", "Navigate", "Inbox", "App shell surfaces", "AI", "Appearance", "Settings", "Help"]
                 } else {
                     vec!["Get started", "Navigate", "Inbox", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]
                 });
@@ -1507,7 +1531,7 @@ mod cmdk_parity_tests {
                 assert_eq!(comments, expected);
                 let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
                 groups.dedup();
-                assert_eq!(groups, ["Comment", "Task", "Navigate", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]);
+                assert_eq!(groups, ["Comment", "Task", "Navigate", "Inbox", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]);
             }
         }).unwrap();
     }
@@ -1564,6 +1588,56 @@ mod cmdk_parity_tests {
                 }
             }).unwrap();
         }
+    }
+
+
+    #[gpui::test]
+    fn cmdk_archived_task_keeps_web_actions_and_notification_row(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
+        view.update(cx, |this, _, _| {
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Archived","status":"Archive"})).unwrap();
+            this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[{"id":20,"taskId":1,"projectId":15,"status":"Normal","createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
+            this.reload();
+            let rows = this.command_rows();
+            assert_eq!(rows.iter().find(|row| row.key == "archiveTask").unwrap().name, "Unarchive task");
+            for key in ["assignUser", "moveToColumn", "removeTaskNotification"] { assert!(rows.iter().any(|row|row.key == key), "missing {key}"); }
+            assert!(!rows.iter().any(|row| row.key == "setReminder"));
+            let position = |key| rows.iter().position(|row|row.key == key).unwrap();
+            assert!(position("toggleAllComments") < position("removeTaskNotification"));
+            assert!(position("removeTaskNotification") < position("renameTask"));
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_boards_use_web_keys_labels_and_context_insertion(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = crate::ui::shell::tests::setup(cx);
+        view.update(&mut cx, |this, _, _| {
+            let rows = this.command_rows();
+            let boards = rows.iter().filter(|row|row.group == "Boards").map(|row|(row.key.as_str(),row.name.as_str())).collect::<Vec<_>>();
+            assert_eq!(boards, [("gotoBoard-16", "Go to board: Beta")]);
+            let index = rows.iter().position(|row|row.group == "Boards").unwrap();
+            assert_eq!(rows[index-1].group, "Navigate");
+            assert_eq!(rows[index+1].group, "Inbox");
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk_paints_web_modal_rows_header_and_new_badge(cx: &mut gpui::TestAppContext) {
+        use crate::ui::shell::tests::{draw, measured, setup};
+        let (view, mut cx) = setup(cx);
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("CLI");
+        draw(view, &mut cx);
+        let modal = measured(view, &mut cx, "command.center");
+        assert_eq!(modal["w"], 560.);
+        assert!((modal["y"].as_f64().unwrap() - 216.).abs() < 1.);
+        assert!((modal["x"].as_f64().unwrap() - 230.).abs() < 1.);
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["h"], 36.);
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "CLI");
+        assert_eq!(measured(view, &mut cx, "command.search.icon")["w"], 13.);
+        assert_eq!(measured(view, &mut cx, "command.new.0")["text"], "New");
+        assert!(measured(view, &mut cx, "command.results")["h"].as_f64().unwrap() <= 364.);
     }
 
 }

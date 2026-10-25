@@ -331,3 +331,23 @@ Written before production changes. Web source root: `/home/valentin/projects/hyp
 ## Remaining limits
 
 Unsupported web commands stay omitted. The inventory does not claim complete web parity. Fullscreen is a native display mode, not web routing. No live account credentials or remote delivery were tested. Paired web/native pixel identity remains unproven.
+
+## Implemented local gaps
+
+- Final context ordering includes all producers. Task fields, comments, board forms, and AI rows no longer split their groups.
+- Corrected web command keys, labels, keycap spelling, and App shell surfaces group.
+- Added AI chat toggle, sidebar/floating mode, both AI shell commands, sidebar expansion, board member settings, and inbox reminder rows.
+- Swipe through unread remains available in all supported contexts. Its existing native action reads the inbox and preserves the origin.
+- Remove task notification appears only with a cached notification. Arbitrary task reminders remain blocked.
+- Board navigation uses `gotoBoard-ID` and `Go to board: TITLE`, excludes the current board, and caps at 50. `components/Modals/commands/HTC/commands.tsx:207-215`.
+- Usage sorts inside each group. Task context suppresses recommendation groups. Bulk context leads and suppresses recommendations. Other contexts use Frequently used or the supported Get started subset.
+- Desktop keeps the header search icon and no mobile-only row icons. Added supported New badges and sidebar-aware centering.
+- Purple is `#4455BB`, also explicit in `components/PageComponents/Trial/TrialCard.tsx:65-72`. New badge uses `components/Modals/commands/HTC/CommandList.tsx:68-71`.
+- Rail shortcut is `[`. `lib/constants/railToggleKey.ts:1`.
+- Header is 44px. `components/Common/CommonModalComponents/index.tsx:141`. Footer geometry is `index.tsx:211-221`.
+
+## Regression evidence
+
+Before fix, [CI 40236357225](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40236357225) at `384298cbf6c495155341e9c7bd6b725b6425948c` fails `cmdk_task_commands_match_web_order_labels_and_groups` on Linux, Windows, and macOS. The macOS result is 181 passed, 1 failed. Actual first row is native `expandCollapseAllComments`; expected first row is web `assignUser`. The output also exposes the wrong move key, rename keycap, and copy keycaps.
+
+The table records pre-fix support. Implemented gaps above still require exact-head CI. Saved-comment toggle labels remain limited by cached state. AI writer remains a native draft workflow, not the web creation modal. Full pixel identity is not claimed.

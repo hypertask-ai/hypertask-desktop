@@ -243,10 +243,10 @@ impl Desktop {
                 });
             }
         }
-        if self.selected_task().is_some() {
+        if self.screen == Screen::Task && self.selected_task().is_some() {
             rows.push(crate::command_center::Command {
-                key: "moveTaskToBoard".into(),
-                name: "Move to board".into(),
+                key: "movetasktodifferentboard".into(),
+                name: "Move task to board".into(),
                 group: "Task",
                 keys: "SHIFT M".into(),
                 keywords: "move task another board",
