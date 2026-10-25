@@ -257,6 +257,13 @@ impl Desktop {
             ("?", false, _, false) => self.open_shortcuts(window, cx),
             ("2", false, false, false) => self.navigate_board(cx),
             ("3", false, false, false) => self.navigate_table(cx),
+            ("t", false, true, false) if self.screen == Screen::Board => {
+                if self.shell.destination == Destination::Table {
+                    self.navigate_board(cx);
+                } else {
+                    self.navigate_table(cx);
+                }
+            }
             ("/" | "6", false, false, false) => self.navigate_search(window, cx),
             ("b", true, false, false) => self.toggle_boards(window, cx),
             ("\\", false, false, false) => self.open_settings(window, cx),
