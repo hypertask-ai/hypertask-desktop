@@ -90,6 +90,21 @@ jobs:
             target/compose-live-requests.json
           if-no-files-found: error
       - run: cargo build --release -p ht-desktop -p ht-core
+      - name: Hosted Windows interaction dependencies
+        if: runner.os == 'Windows'
+        run: python -m pip install Pillow==11.3.0
+      - name: Native Windows interactions
+        if: runner.os == 'Windows'
+        run: python gates/windows-input.py
+        env:
+          HT_VERIFY_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Upload native Windows input evidence
+        if: runner.os == 'Windows' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-input
+          path: evidence/windows-input/
+          if-no-files-found: error
       - name: Layout dump contract
         if: runner.os == 'Linux'
         run: xvfb-run -a -s '-screen 0 1920x1009x24' python3 gates/layout-dump.py
@@ -188,21 +203,6 @@ jobs:
         with:
           name: windows-memory-heavy
           path: evidence/windows-memory-heavy/
-          if-no-files-found: error
-      - name: Hosted Windows interaction dependencies
-        if: runner.os == 'Windows'
-        run: python -m pip install Pillow==11.3.0
-      - name: Native Windows interactions
-        if: runner.os == 'Windows'
-        run: python gates/windows-input.py
-        env:
-          HT_VERIFY_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Upload native Windows input evidence
-        if: runner.os == 'Windows' && always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-input
-          path: evidence/windows-input/
           if-no-files-found: error
       - name: Upload Windows app
         if: runner.os == 'Windows'

@@ -9,6 +9,7 @@ import os
 from pathlib import Path
 import sqlite3
 import subprocess
+import struct
 import tempfile
 import time
 
@@ -289,11 +290,26 @@ def main():
     parser.add_argument("--out", type=Path, default=ROOT / "evidence/windows-input/baseline")
     parser.add_argument("--expect-broken", action="store_true")
     args = parser.parse_args()
-    C.WinDLL("user32").SetProcessDPIAware()
+    api = C.WinDLL("user32")
+    api.SetProcessDPIAware()
+    display = C.create_string_buffer(220)
+    struct.pack_into("H", display, 68, 220)
+    assert api.EnumDisplaySettingsW(None, -1, display), "Cannot read runner display mode"
+    requested = C.create_string_buffer(display.raw, 220)
+    struct.pack_into("I", requested, 72, 0x180000)
+    struct.pack_into("II", requested, 172, 1920, 1080)
+    assert api.ChangeDisplaySettingsW(requested, 2) == 0, "Runner cannot provide 1920x1080"
+    assert api.ChangeDisplaySettingsW(requested, 0) == 0, "Cannot set isolated runner display"
     app = ROOT / "target/release/ht-desktop.exe"
     core = ROOT / "target/release/ht-core-cli.exe"
     env = {k: v for k, v in os.environ.items() if k not in ("HT_TOKEN", "GH_TOKEN", "GITHUB_TOKEN")}
-    results = [run_case(case, app, core, args.out / case, env) for case in CASES]
+    try:
+        results = [run_case(case, app, core, args.out / case, env) for case in CASES]
+    finally:
+        restored = api.ChangeDisplaySettingsW(display, 0) == 0
+        args.out.mkdir(parents=True, exist_ok=True)
+        (args.out / "display.json").write_text(json.dumps({"requested": [1920, 1080], "restored": restored}) + "\n")
+        assert restored, "Cannot restore runner display"
     for result in results:
         if args.expect_broken:
             assert not result["passed"] and result.get("error_type") == "EffectMissing", result
