@@ -98,7 +98,12 @@ impl Db {
                     ensure!(*target == user, "self assignment belongs to another account");
                     ensure!(db.task(*task)?.is_some_and(|task| task.status == crate::generated::Status::Normal), "unarchive this task before assigning it");
                 }
-                let before = if let crate::BoardWrite::AssignAgent { task, .. } | crate::BoardWrite::AssignToMe { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
+                let mut before = if let crate::BoardWrite::AssignAgent { task, .. } | crate::BoardWrite::AssignToMe { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
+                // Upserts merge omitted fields, so rollback needs explicit empty assignment fields.
+                if !before.is_null() {
+                    if before.get("assignees").is_none() { before["assignees"] = json!([]); }
+                    if before.get("assigneeCount").is_none() { before["assigneeCount"] = json!(before["assignees"].as_array().map_or(0, Vec::len)); }
+                }
                 ("board".into(), "board_write", json!({"user_id":user,"change":change,"before":before}))
             }
             Write::Shell { request } => {

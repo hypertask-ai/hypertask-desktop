@@ -416,5 +416,7 @@ fn self_assignment_denial_restores_people_and_rejects_another_account() {
     let mut deny = server("POST", "/assignees/assign", json!({"task_id":1,"user_id":42,"intent":"assign"}), json!({"success":false}));
     deny.status = 403;
     assert_eq!(db.drain_once(&mut deny, 101).unwrap(), Drain::Failed(id));
-    assert_eq!(db.task(1).unwrap().unwrap().assignee_count, 0);
+    let task = db.task(1).unwrap().unwrap();
+    assert_eq!(task.assignee_count, 0);
+    assert_eq!(task.extra["assignees"], json!([]));
 }

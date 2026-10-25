@@ -43,3 +43,21 @@ Other visual edits belong to `look9`. Lowering 24 by deleting real controls or
 filtering those records would not be a product improvement. Existing separate
 source-backed rail and hover checks are retained. Final exact-head proof follows
 in the draft PR receipt; intermediate results are not promoted to completion.
+
+## Incremental assignment and rollback
+
+The first local-input checkpoint `a117243eab85cfe2dfc05bd785eaa86286fbe510`
+passes all six required jobs at
+https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40243674552.
+Source review then replaced its full-list assignment patch with the web's
+explicit assign intent, preserving people unknown to a stale local cache.
+
+Follow-up `8a316a0b119e135fa7b4976176b26cdcc31f1cb0`, CI
+https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40245313342,
+passes restart and concurrent-person transport assertions on all three test
+platforms. Its new denial regression fails **7 passed / 1 failed** in the
+board-write target. A sparse pre-assignment task omitted assignees/count;
+rollback's merging upsert retained the optimistic assignment rather than
+restoring empty state. Assignment snapshots now carry explicit empty fields.
+The unchanged zero-count assertion remains, with an additional empty-list
+assertion. This is a product rollback correction, not a relaxed test oracle.
