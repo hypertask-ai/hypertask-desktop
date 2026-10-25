@@ -758,10 +758,12 @@ pub(super) mod tests {
     }
 
     pub(in super::super) fn draw(view: WindowHandle<Desktop>, cx: &mut VisualTestContext) {
-        let entity = view.entity(cx).unwrap();
-        cx.draw(point(px(0.), px(0.)), size(px(1440.), px(900.)), |_, _| {
-            entity.into_element()
-        });
+        // The element-only draw helper skips deferred paint and clears its arena early.
+        view.update(cx, |_, window, cx| {
+            window.refresh();
+            cx.notify();
+        }).unwrap();
+        cx.run_until_parked();
     }
 
     pub(in super::super) fn measured(

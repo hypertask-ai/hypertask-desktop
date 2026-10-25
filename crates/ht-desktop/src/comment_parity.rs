@@ -194,9 +194,8 @@ fn editor_pointer_formatting_preserves_shell_editing_on_all_three_surfaces(
         cx.simulate_input("Pointer sample");
         cx.simulate_keystrokes("ctrl-a");
         cx.run_until_parked();
-        let bounds = input.read_with(cx, |input, _| input.input_bounds().unwrap());
-        // First-row B in the actual painted selection bubble, below the text row.
-        cx.simulate_click(point(bounds.left() + px(60.), bounds.bottom() + px(19.)), gpui::Modifiers::default());
+        let bounds = input.read_with(cx, |input, _| input.editor_control_bounds("format-0").expect("painted Bold control"));
+        cx.simulate_click(bounds.center(), gpui::Modifiers::default());
         view.read_with(cx, |this, cx| {
             assert!(this.editing == match surface { 0 => Editing::Comment, 1 => Editing::ExistingComment, _ => Editing::Description });
             assert_eq!(input.read(cx).html(), "<p><strong>Pointer sample</strong></p>");
