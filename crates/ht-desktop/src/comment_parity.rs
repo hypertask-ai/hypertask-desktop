@@ -159,7 +159,9 @@ fn long_thread_reply_and_comment_shortcut_reveal_the_focused_composer(
         } else {
             cx.simulate_keystrokes("ctrl-m");
         }
-        cx.run_until_parked();
+        cx.update(|window, cx| {
+            window.simulate_next_frame(cx);
+        });
         let composer = measured(view, &mut cx, "task.composer");
         view.update(&mut cx, |this, window, cx| {
             let viewport = this.detail_scroll.bounds();
