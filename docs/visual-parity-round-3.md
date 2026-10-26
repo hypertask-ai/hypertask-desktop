@@ -66,8 +66,24 @@ dense captures remain independently comparable with the round 2 artifact.
 | Layout contract | Web component | Token/cascade authority | Native test |
 | --- | --- | --- | --- |
 | 97% board width, 16px gap, count-dependent minmax(280,535) grid | src/components/PageComponents/Kanban/KanbanHomepageComponents/Homepage.tsx:915-917 | src/styles/tailwind-entry.css:10-11; src/components/PageComponents/Kanban/KanbanSectionComponents/section.tsx:427 | board_web_grid_uses_column_count_and_cards_follow_content |
-| Card 4px left border, 8px padding, 6px gap; content height | src/components/PageComponents/Kanban/KanbanTaskComponents/TaskDraggableContainer.tsx:66,96; TaskTopRow.tsx:69-91 | src/styles/tailwind-entry.css:10-11; src/components/PageComponents/Kanban/KanbanTaskComponents/TaskTitle.tsx | same test |
+| Card 4px left border, 8px padding, 6px gap; content height | src/components/PageComponents/Kanban/KanbanTaskComponents/TaskDraggableContainer.tsx:66,96; TaskTopRow.tsx:69-91 | src/styles/tailwind-entry.css:10-11; src/components/PageComponents/Kanban/KanbanTaskComponents/KanbanTaskCard.tsx:266-274 | same test |
 | Tabs 32px high, 15px right padding, 4px inner gaps | src/components/notifications/inboxSplit/SplitTitle.tsx:32-52 | src/styles/tailwind-entry.css:10-11; src/components/notifications/inboxSplit/SplitTitle.tsx:36; tailwind.config.ts:167-178 | inbox_web_tabs_and_intrinsic_row_widths_follow_reference_content |
 | Row 15% author reserve, 32px outer gaps, intrinsic title, remaining kind | src/components/notifications/NotificationRow.tsx:56-83; src/components/Common/TaskRowComponents/TaskTitle.tsx:156-176,195-210 | src/styles/tailwind-entry.css:10-11; tailwind.config.ts:167-178 | same test |
 
 All web paths are relative to /home/valentin/projects/hypertask.
+
+## First hosted rejection
+
+CI 40343475286 ran all 279 pre-existing desktop tests successfully on each
+platform and rejected the two new tests. GPUI TestAppContext supplies
+NoopTextSystem, not the executable's platform font shaping. Important 1 thus
+measures 102px in this mock, rather than the actual font's 96px. New GPUI tests
+now pin content, source spacing, count-dependent column widths and flow.
+Exact font-dependent boxes are pinned by visual3-proof.py against real hosted
+Windows layout dumps using the unchanged frozen 1.5px comparison. No existing
+test or comparer tolerance changed.
+
+The third column starts at 1020 in presented integer coordinates because each
+459px column and 16px gap is quantized. The new test checks adjacent presented
+columns' exact 16px gap instead of assuming independent rounding of the third
+continuous coordinate. The actual source grid equation remains unchanged.

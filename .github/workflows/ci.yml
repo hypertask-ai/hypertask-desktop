@@ -228,12 +228,25 @@ jobs:
           run-id: 40336879510
           github-token: ${{ github.token }}
           path: evidence/visual3-baseline-binary
+      - name: Download unchanged round 2 dense screenshots
+        if: runner.os == 'Windows'
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-memory
+          run-id: 40336879510
+          github-token: ${{ github.token }}
+          path: evidence/visual3-round2-dense
       - name: Windows reference-content captures (round 2 and current)
         if: runner.os == 'Windows'
         shell: pwsh
         run: |
           ./gates/windows-memory.ps1 -Exe evidence/visual3-baseline-binary/ht-desktop.exe -CoreExe target/release/ht-core-cli.exe -Fixtures gates/fixtures/visual3 -TaskId 103 -Revision 3d57a0d87e58c1cdeeee11b6f800ab5569bdf58f -Out evidence/windows-visual3-before
           ./gates/windows-memory.ps1 -Exe target/release/ht-desktop.exe -CoreExe target/release/ht-core-cli.exe -Fixtures gates/fixtures/visual3 -TaskId 103 -Revision '${{ github.event.pull_request.head.sha || github.sha }}' -Out evidence/windows-visual3
+      - name: Structural visual parity and unchanged-sidebar proof
+        if: runner.os == 'Windows'
+        run: python gates/visual3-proof.py
+        env:
+          HT_VERIFY_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Upload Windows visual captures
         if: runner.os == 'Windows' && always()
         uses: actions/upload-artifact@v4
@@ -242,6 +255,7 @@ jobs:
           path: |
             evidence/windows-visual3/**
             evidence/windows-visual3-before/**
+            evidence/visual3-proof/**
           if-no-files-found: error
       - name: Upload Windows app
         if: runner.os == 'Windows'
