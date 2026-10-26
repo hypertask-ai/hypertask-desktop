@@ -41,8 +41,18 @@ fn synced_fidelity_fixture_renders_real_authors_saved_summary_and_web_draft_mark
     draw(view, &mut cx);
     assert_eq!(measured(view, &mut cx, "task.summary.toggle")["text"], "Stored summary, not generated.");
     assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "Real Human");
-    assert_eq!(measured(view, &mut cx, "task.description.draft")["text"], "Draft");
-    assert_eq!(measured(view, &mut cx, "task.composer.draft")["text"], "Draft");
+    let marker = measured(view, &mut cx, "task.description.draft");
+    assert_eq!(marker["bg"], "#c2cfa5");
+    assert_eq!(marker["w"], 4.0);
+    assert!(marker["text"].is_null());
+    view.read_with(&mut cx, |this, _| {
+        assert!(!this.layout.as_ref().unwrap().borrow().interaction_elements().iter()
+            .any(|e| e["key"] == "task.composer.draft"));
+    }).unwrap();
+    let teaser = measured(view, &mut cx, "task.summary.toggle");
+    assert_eq!(teaser["fontSize"], 13.0);
+    assert_eq!(teaser["fontWeight"], 500.0);
+    assert_eq!(teaser["lineHeight"], 19.5);
     view.read_with(&mut cx, |this, _| {
         assert_eq!(this.summary.as_ref(), "Stored summary, not generated.");
         assert_eq!(this.detail.as_ref().unwrap().task.description, "<p>Published description</p>");
@@ -54,6 +64,15 @@ fn synced_fidelity_fixture_renders_real_authors_saved_summary_and_web_draft_mark
     assert_eq!(measured(view, &mut cx, "task.summary.full")["text"],
         "## Summary\n- **Stored** summary, not generated. [1]\n- Another item."
             .chars().take(40).collect::<String>());
+    let expanded = measured(view, &mut cx, "task.summary.full");
+    let header = measured(view, &mut cx, "task.header");
+    let content = measured(view, &mut cx, "task.summary.content");
+    assert_eq!(expanded["x"], header["x"]);
+    assert_eq!(expanded["w"], header["w"]);
+    assert_eq!(content["x"], teaser["x"]);
+    let column = measured(view, &mut cx, "task.summary.column");
+    assert!((content["w"].as_f64().unwrap() - column["w"].as_f64().unwrap() * 0.65).abs() < 1.0);
+    assert!((teaser["w"].as_f64().unwrap() - column["w"].as_f64().unwrap() * 0.65).abs() < 1.0);
     cx.simulate_keystrokes("escape");
     view.update(&mut cx, |this, window, cx| {
         this.open_task(102, cx);
@@ -114,7 +133,7 @@ fn synced_fidelity_refresh_removes_markers_and_keeps_web_summary_presence(
     });
     let mut cx = VisualTestContext::from_window(view.into(), cx);
     draw(view, &mut cx);
-    for (drafts, description, comment, board) in [
+    for (drafts, description, _comment, board) in [
         (serde_json::json!([]), false, false, false),
         (serde_json::json!([{"id":1,"taskId":101,"draftType":"description","text":"<p>Private draft</p>"}]), true, false, false),
         (serde_json::json!([{"id":2,"taskId":101,"draftType":"comment","text":"   "}]), false, false, true),
@@ -132,7 +151,7 @@ fn synced_fidelity_refresh_removes_markers_and_keeps_web_summary_presence(
         draw(view, &mut cx);
         view.read_with(&mut cx, |this, _| {
             let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
-            for (key, visible) in [("task.description.draft", description), ("task.composer.draft", comment)] {
+            for (key, visible) in [("task.description.draft", description), ("task.composer.draft", false)] {
                 assert_eq!(elements.iter().any(|e| e["key"] == key), visible, "{key}");
             }
         }).unwrap();
@@ -197,4 +216,46 @@ fn synced_fidelity_refresh_removes_markers_and_keeps_web_summary_presence(
         assert_eq!(this.detail.as_ref().unwrap().task.description, "<p>Published description</p>");
         assert!(this.db.mutations().unwrap().is_empty());
     }).unwrap();
+}
+
+#[gpui::test]
+fn synced_summary_teaser_preserves_unpaired_markers_like_web(cx: &mut gpui::TestAppContext) {
+    cx.update(crate::input::init);
+    let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| {
+        let f: Value = serde_json::from_str(include_str!("../../../fixtures/task-fidelity.json")).unwrap();
+        let mut sync = Sync::new(Db::memory().unwrap(), Fixture(VecDeque::from([
+            f["sections"].clone(), f["list"].clone(), f["detail"].clone(),
+        ])));
+        sync.board(15).unwrap();
+        let options = Options::parse(["--offline", "--screen", "task", "--task", "101", "--board", "15"]
+            .map(String::from)).unwrap();
+        let mut view = Desktop::new(sync.db, options, window, cx);
+        view.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+        view.ready_scheduled = true;
+        window.focus(&view.focus, cx);
+        view
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    for (markdown, expected) in [
+        ("- Keep unmatched* and `tick", "Keep unmatched* and `tick"),
+        ("- **Bold** *em* `code` [12]", "Bold em code"),
+        ("-   Indented bullet", "Indented bullet"),
+        ("### Heading only", "Heading only"),
+        ("## Title\nText with **broken", "Text with **broken"),
+    ] {
+        view.update(&mut cx, |this, _, _| {
+            let f: Value = serde_json::from_str(include_str!("../../../fixtures/task-fidelity.json")).unwrap();
+            let mut task = f["detail"]["tasks"][0].clone();
+            task["ai_summary"]["content"] = serde_json::json!(markdown);
+            let db = std::mem::replace(&mut this.db, Db::memory().unwrap());
+            let mut sync = Sync::new(db, Fixture(VecDeque::from([
+                serde_json::json!({"success":true,"tasks":[task]}),
+            ])));
+            sync.task(101).unwrap();
+            assert!(sync.transport.0.is_empty());
+            this.db = sync.db;
+            this.reload();
+        }).unwrap();
+        assert_eq!(measured(view, &mut cx, "task.summary.toggle")["text"], expected);
+    }
 }

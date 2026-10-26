@@ -162,3 +162,17 @@ separate board/description/comment draft flags. Recheck rather than duplicate.
    tests, lint or test copies; no laptop commands.
 5. Rebase before push; require exact-head public GitHub CI jobs and the full
    repository receipt. Retain named-test output, final SHA and CI/PR URLs.
+
+Current-source gaps found: task Draft **text** was invented. The web description
+uses a four-pixel green left border (`DescriptionContainer/index.tsx:141-151`);
+its top row has only author/actions (`TopRow/DescriptionTopRow.tsx:22-41`). The
+comment composer has no Draft text (`CommentContainer/NewCommentComponent.tsx:448-482`).
+Keep the existing server flags, replace description text with that border,
+and remove the invented composer label. Board Draft already matches.
+
+Saved-summary transport already matches. Presentation gaps: teaser removed
+unpaired Markdown markers, lacked medium weight/single-line 65% cap, and the
+expanded panel used inset card padding instead of the full title-container
+width. Sources: `utils/summaryTeaser.ts:1-17`, `TopRow/TaskSummary.tsx:30-54`,
+`styles/globals.scss:68-70` (all relative to the web `src`). Native regressions
+are committed first; no red-before execution on this forbidden test host.
