@@ -718,19 +718,20 @@ impl Desktop {
                 d.child(div().flex().gap(px(6.)).children(reactions.into_iter().map(
                     |(emoji, people)| {
                         let e = emoji.clone();
+                        let text = format!("{emoji} {}", people.len());
                         div()
                             .id(SharedString::from(format!("reaction-{id}-{emoji}")))
                             .px(px(6.))
                             .rounded(px(4.))
                             .bg(color(t.hover))
                             .cursor_pointer()
-                            .child(format!("{emoji} {}", people.len()))
-                            .layout_key(&self.layout, format!("task.comment.{i}.reaction.{emoji}"), Some(format!("{emoji} {}", people.len())))
+                            .child(text.clone())
                             .tooltip(move |_, cx| comment_tooltip(reactors_label(&people), cx))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
                                 this.react_comment(id, &e, cx);
                             }))
+                            .layout_key(&self.layout, format!("task.comment.{i}.reaction.{emoji}"), Some(text))
                     },
                 )))
             })

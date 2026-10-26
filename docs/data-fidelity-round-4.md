@@ -156,6 +156,9 @@ Unavailable cursor-team-kit steps use serial source/diff review per host rules.
   the native task regression also measures the actual grouped reaction count.
   Core regression `data4_inbox_full_snapshot_clears_old_actor_and_event_context`
   covers snapshot removal. Existing saved-summary/draft tests stay intact.
+- Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40398285917
+  rejected a tooltip call after `layout_key` erased the element type. Moved
+  capture to the chain end, keeping the real tooltip and click handler.
 - Exact-head CI jobs, named-test output and the strict receipt are recorded at
   https://github.com/hypertask-ai/hypertask-desktop/pull/57 before completion.
   No VPS builds, tests, lints, app launches, test copies, laptop commands or
