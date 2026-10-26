@@ -305,7 +305,7 @@ The flag is `htpr-7699-desktop-cli-token`.
 Only verified human CLI identities qualify (`lib/auth/desktopCliTokenUser.ts:14-29,53-77`).
 Owner reports flag enabled; live-owner requests remain unrun.
 Flag-off Unauthorized reaches compose/star/pin without fake success.
-Existing mention error label remains; no local-only results substitute.
+HTTP mention failures show the web empty-result state (`components/RTE/MentionData.js:13-41`).
 MCP compose saves append; exact top rank/defaults remain partial.
 Focused legacy editor writer remains a native gap, not auth-blocked.
 Acceptance and exact-head GitHub evidence: `GATES-cli7699.md`.

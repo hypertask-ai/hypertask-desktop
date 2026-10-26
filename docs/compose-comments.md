@@ -41,8 +41,9 @@ these messages through the native error view. Refusal keeps the note/comment
 and never creates a fallback task or changes saved state. Ordinary writer
 unavailability still preserves the original note as documented by
 `lib/ai/composeTask.ts:228-233`; that is not authorization success.
-Mention errors retain the existing web `Error loading results` label
-(`components/RTE/MentionData.js:43-44`), never fabricated suggestions.
+HTTP mention refusals show the web's `No results found` state:
+`components/RTE/MentionData.js:13-41` catches HTTP errors as empty results.
+No fabricated suggestions or successful comment send replaces a refusal.
 
 Native tests use actual keys and mocked responses, not successful receipt
 setters: `cli7699_native_ctrlj_mocked_writer_and_flag_off_keep_real_results`,

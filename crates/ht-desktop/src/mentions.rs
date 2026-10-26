@@ -281,7 +281,7 @@ impl Desktop {
         if self.mentions.loading {
             menu = menu.child(div().p(px(12.)).child("Loading mentions…"));
         } else if self.mentions.error {
-            menu = menu.child(div().p(px(12.)).child("Error loading results").layout_key(&self.layout, "comment.mentions.error", None));
+            menu = menu.child(div().p(px(12.)).child("No results found").layout_key(&self.layout, "comment.mentions.error", Some("No results found".into())));
         } else if self.mention_selectable().is_empty() {
             menu = menu.child(div().p(px(12.)).child("No results found"));
         } else {
@@ -584,6 +584,29 @@ mod tests {
                 });
             }
         }
+    }
+
+    #[gpui::test]
+    fn cli7699_mention_http_refusal_paints_the_web_empty_result_without_inserting(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::super::shell::tests::{measured, setup};
+        let (view, mut visual) = setup(cx);
+        view.update(&mut visual, |this, _, cx| { this.open_task(101, cx); }).unwrap();
+        visual.simulate_keystrokes("ctrl-m");
+        visual.simulate_input("@QA");
+        view.update(&mut visual, |this, _, cx| {
+            this.shell.set_token(Some("test-human-token".into()));
+            this.apply_mention_results(this.mentions.generation, 101, Some(1), Err(()), cx);
+        }).unwrap();
+        let error = measured(view, &mut visual, "comment.mentions.error");
+        assert_eq!(error["text"], "No results found");
+        assert!(error["w"].as_f64().unwrap() > 0.);
+        visual.simulate_keystrokes("enter");
+        view.read_with(&visual, |this, cx| {
+            assert_eq!(this.comment_input.read(cx).content.as_ref(), "@QA");
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
     }
 
 }

@@ -512,7 +512,8 @@ impl Desktop {
                         .child("Enter to send · Shift+Enter for newline · Tab to board"),
                 )
                 .when(self.compose.error.is_some(), |d| {
-                    d.child(self.compose.error.clone().unwrap())
+                    let error = self.compose.error.clone().unwrap();
+                    d.child(div().child(error.clone()).layout_key(&self.layout, "compose.error", Some(error)))
                 })
                 .into_any_element()
         };
@@ -790,6 +791,31 @@ mod tests {
                 }
             });
         }
+    }
+
+    #[gpui::test]
+    fn cli7699_compose_flag_off_paints_the_server_error_and_keeps_the_note(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::super::shell::tests::{measured, setup};
+        let (view, mut visual) = setup(cx);
+        view.update(&mut visual, |this, _, _| {
+            this.db.kv_set("current-user-id", "985").unwrap();
+            this.db.apply_response(&json!({"success":true,"projects":[{"id":7283,"title":"QA","status":"Normal"}]})).unwrap();
+            this.compose.project = 7283;
+        }).unwrap();
+        visual.simulate_keystrokes("ctrl-j");
+        visual.simulate_input("Native note");
+        visual.simulate_keystrokes("enter");
+        view.update(&mut visual, |this, window, cx| {
+            let mut server = CliServer { refusal: Some("defaults"), calls: vec![] };
+            assert!(matches!(this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Failed(_)));
+            this.poll_compose(window, cx);
+        }).unwrap();
+        let error = measured(view, &mut visual, "compose.error");
+        assert_eq!(error["text"], "Unauthorized");
+        assert!(error["w"].as_f64().unwrap() > 0.);
+        view.read_with(&visual, |this, cx| assert_eq!(this.compose.input.read(cx).content.as_ref(), "Native note")).unwrap();
     }
 
 }

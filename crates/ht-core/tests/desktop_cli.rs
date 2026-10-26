@@ -469,7 +469,7 @@ fn cli_flag_off_and_plan_refusals_keep_server_errors_without_creating_tasks() {
 #[test]
 fn writer_body_matches_web_board_scope_without_copying_provider_secrets() {
     let body = writer_request(&json!({
-        "id":7283,"teamId":42,"team":{"byokApiKeys":[{"enabled":true,"provider":"claude","apiKey":"never-send-this"},{"enabled":false,"provider":"openai"}]},
+        "id":7283,"teamId":42,"team":{"id":42,"byokApiKeys":[{"enabled":true,"provider":"claude","apiKey":"never-send-this"},{"enabled":false,"provider":"openai"}]},
         "ai_custom_instructions":[{"customInstruction":"Board style","source_selected":"claude","model_selected":"model-from-board"}]
     }), "é & note\nnext", "Europe/London").body;
     assert_eq!(body, json!({
