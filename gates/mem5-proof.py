@@ -46,8 +46,12 @@ for screen in ('inbox', 'board', 'task'):
             raise AssertionError('Unchanged memory accepted')
         print(f'MEM5_MEDIAN {screen} {key}: {before} -> {after} bytes')
     for run in range(1, 4):
-        for suffix in ('', '.fonts'):
-            assert load(current / f'{screen}-{run}-owners{suffix}.json') == load(control / f'{screen}-{run}-owners{suffix}.json'), f'{screen}: resource ownership changed'
+        gpu_new = load(current / f'{screen}-{run}-owners.json')
+        gpu_old = load(control / f'{screen}-{run}-owners.json')
+        assert gpu_new.pop('MappedInstanceBufferBytes') == 0
+        assert gpu_old.pop('MappedInstanceBufferBytes') == gpu_old['InstanceBufferBytes']
+        assert gpu_new == gpu_old, f'{screen}: GPU resource capacity changed'
+        assert load(current / f'{screen}-{run}-owners.fonts.json') == load(control / f'{screen}-{run}-owners.fonts.json')
         store_new = load(current / f'{screen}-{run}-owners.store.json')
         store_old = load(control / f'{screen}-{run}-owners.store.json')
         assert store_new.pop('CompactInboxMetadata') is True

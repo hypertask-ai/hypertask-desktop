@@ -117,3 +117,26 @@ now check out the exact head SHA, avoiding a head versus PR-merge BuildRevision
 mismatch in the stronger comparison contract. Require a >4 MB requested-Rust-heap
 reduction as well as lower commit/WS on every screen. No benchmark result is
 claimed from an uninstrumented executable; --bench-input explicitly rejects it.
+
+
+## Third receipt: demo accepted; heavy warm staging still over budget
+
+Run 40268307390 passed demo cold/warm budgets and the opt-in input benchmark smoke.
+Demo cold WS before -> after: 61.719 -> 56.017 / 67.342 -> 61.575 /
+78.889 -> 73.093 decimal MB; warm: 67.187 -> 61.186 / 73.265 -> 67.486 /
+86.405 -> 80.327 MB. Requested Rust heap fell by ~5.8 MB per demo screen.
+Heavy cold WS after was 67.744/87.474/89.735 MB; warm 65.991/101.028/106.328 MB.
+Heavy private commit still fell on every screen, but warm board/task correctly
+failed unchanged limits. The heavy maps distinguish mapped driver staging from
+private Rust data; working set cannot be equated with nominal resource payloads.
+
+Next unit: structured instance buffers use D3D11_USAGE_DEFAULT and bounded
+UpdateSubresource uploads rather than CPU-writable DYNAMIC/WRITE_DISCARD buffers.
+The latter permit driver-owned renamed/staging allocations across redraw/resize.
+Constant buffers stay dynamic. Instance capacities, stride, shaders, formats and
+all initialized bytes are identical. Empty updates do no work; partial updates
+use a byte-sized D3D11_BOX so unused capacity is never read from the Rust slice.
+The CI-only mapped-instance-buffers control retains the old policy. Actual
+ID3D11Buffer descriptions prove CPU-writable instance capacity goes to zero,
+while all other GPU capacities and font/SQLite/retained-visible-data checks stay.
+The end-to-end CI gates, not assumed driver behavior, decide whether this helps.
