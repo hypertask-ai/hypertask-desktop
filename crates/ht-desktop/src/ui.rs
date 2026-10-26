@@ -1286,6 +1286,12 @@ impl Desktop {
                             } else {
                                 t.muted
                             }))
+                            .when(self.inbox.iter().find(|n| n.task_id == Some(id)).is_some_and(|n| !n.seen)
+                                || task.extra.get("savedContentCount").and_then(|v| v.as_u64()).unwrap_or_else(|| task.extra.get("savedContent").and_then(|v| v.as_array()).map_or(0, |v| v.len() as u64)) > 0, |d| {
+                                let unread = self.inbox.iter().find(|n| n.task_id == Some(id)).is_some_and(|n| !n.seen);
+                                d.child(div().size(px(7.)).rounded_full().bg(color(if unread { 0x5896f1 } else { 0xffcb33 }))
+                                    .layout_key(&self.layout, format!("board.card.{index}.indicator"), None))
+                            })
                             .child(
                                 div()
                                     .child(task.ticket_number.clone().unwrap_or_default())
@@ -1449,6 +1455,7 @@ impl Desktop {
                 .layout_key(&self.layout, "task.title", Some(d.task.title.clone()))
         };
         let properties = self.properties(&d.task, cx);
+        let created_time = inbox::inbox_time(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or(""), chrono::Local::now());
         let placeholder = 0xaeb4bc;
         let option_color = if self.options.theme == ThemeName::Dia {
             0x6f6b63
@@ -1488,8 +1495,27 @@ impl Desktop {
                         .when(self.options.theme == ThemeName::Graphite, |d| d.border_0().border_l(px(4.)).pt(px(20.)).pb(px(4. + 8. + 12.)).px(px(16.)).rounded(px(4.)).border_color(if self.interaction.task_part == 0 { color(t.accent) } else { gpui::transparent_black() }))
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
-                            .child(div().child(self.creator.clone()).layout_key(&self.layout, "task.description.author", Some(self.creator.to_string()))).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(inbox::inbox_time(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or(""), chrono::Local::now())).layout_key(&self.layout, "task.description.timestamp", Some(inbox::inbox_time(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or(""), chrono::Local::now()))))))
+                            .child(div().child(self.creator.clone()).layout_key(&self.layout, "task.description.author", Some(self.creator.to_string())))
+                            .child(div().flex_1())
+                            .child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted))
+                                .child(created_time.clone()).layout_key(&self.layout, "task.description.timestamp", Some(created_time))))
                         .child(div().pt(px(8.)).min_h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.focused_editor(Editing::Description, cx))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
+                        .when(self.editing != Editing::Description, |description| description.children(
+                            d.task.extra.get("sub_tasks").and_then(|v| v.as_array()).filter(|tasks| !tasks.is_empty()).map(|tasks| {
+                                div().mt(px(12.)).flex().flex_col().gap(px(4.)).text_size(px(12.)).line_height(px(18.))
+                                    .child(div().text_color(color(t.muted)).child("Sub-tasks"))
+                                    .children(tasks.iter().enumerate().filter_map(|(i, task)| {
+                                        let id = task["id"].as_i64()?;
+                                        let title = task["title"].as_str().unwrap_or("");
+                                        let ticket = task["ticketNumber"].as_str().unwrap_or("");
+                                        Some(div().id(("description-subtask", id as u64)).cursor_pointer().flex().gap(px(4.))
+                                            .child(div().text_color(color(t.muted)).child(ticket.to_owned()))
+                                            .child(title.to_owned())
+                                            .on_click(cx.listener(move |this, _, _, cx| this.open_task(id, cx)))
+                                            .layout_key(&self.layout, format!("task.subtask.{i}"), Some(format!("{ticket} {title}").trim().to_owned())))
+                                    }))
+                            })
+                        ))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
                             .child(div().flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add sub-tasks"))

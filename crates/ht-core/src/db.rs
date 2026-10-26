@@ -341,7 +341,7 @@ impl Db {
     /// Cards omit detail-only bodies; detail/editor/search still read the complete task.
     pub fn board_cards(&self, project_id: i64) -> Result<Vec<BoardColumn>> {
         if !cfg!(feature = "compact-task-reads") { return self.board(project_id); }
-        self.board_rows(project_id, "SELECT json_remove(raw_json, '$.description', '$.attachments', '$.pullRequests', '$.savedContent', '$.customFieldValues', '$.followers', '$.sub_tasks') FROM Task WHERE projectId=? AND status='Normal' ORDER BY updatedAt DESC,id ASC")
+        self.board_rows(project_id, "SELECT json_set(json_remove(raw_json, '$.description', '$.attachments', '$.pullRequests', '$.savedContent', '$.customFieldValues', '$.followers', '$.sub_tasks'), '$.savedContentCount', coalesce(json_array_length(raw_json, '$.savedContent'), json_extract(raw_json, '$._count.savedContent'), 0)) FROM Task WHERE projectId=? AND status='Normal' ORDER BY updatedAt DESC,id ASC")
     }
 
     fn board_rows(&self, project_id: i64, sql: &str) -> Result<Vec<BoardColumn>> {

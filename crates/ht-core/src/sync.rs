@@ -285,7 +285,12 @@ impl<T: Transport> Sync<T> {
                 }
             }
             for item in &incoming {
-                db.upsert("Notification", item)?;
+                let mut notification = item.clone();
+                // Full inbox snapshots must remove context absent from the new event.
+                for key in ["comment", "commentId", "message", "reaction", "staleNudgeDays", "returnedFromReminders", "fromAgent", "fromUser", "recentActors", "unreadCount", "task"] {
+                    if notification.get(key).is_none() { notification[key] = Value::Null; }
+                }
+                db.upsert("Notification", &notification)?;
                 if let Some(id) = item["taskId"].as_i64() {
                     if let Some(mut task) = db.raw("Task", &json!(id))? {
                         let incoming_time = item["task"]["updatedAt"]

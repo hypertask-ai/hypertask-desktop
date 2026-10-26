@@ -473,7 +473,8 @@ impl Desktop {
         let show_actions = row == self.selected && self.interaction.bulk.is_empty();
         let kind = notification_content(&n.raw_json);
         let invitation = n.raw_json["type"] == "Invited";
-        let metadata = if invitation { String::new() } else { inbox_metadata(&n.raw_json["task"]) };
+        let show_task = !invitation && n.raw_json["task"].is_object();
+        let metadata = if !show_task { String::new() } else { inbox_metadata(&n.raw_json["task"]) };
         let source = n.source.clone().unwrap_or_default();
         let source = match n.raw_json["unreadCount"]
             .as_u64()
@@ -575,22 +576,22 @@ impl Desktop {
                                             .text_color(color(0x999a9d))
                                             .text_size(px(11.))
                                             .line_height(px(16.5))
-                                            .child(if invitation { String::new() } else { n.ticket_number.clone().unwrap_or_default() })
+                                            .child(if !show_task { String::new() } else { n.ticket_number.clone().unwrap_or_default() })
                                             .layout_key(
                                                 &self.layout,
                                                 format!("inbox.row.{row}.taskid"),
-                                                n.ticket_number.clone(),
+                                                Some(if show_task { n.ticket_number.clone().unwrap_or_default() } else { String::new() }),
                                             ),
                                     )
                                     .child(
                                         div()
                                             .min_w_0()
                                             .truncate()
-                                            .child(if invitation { String::new() } else { n.title.clone() })
+                                            .child(if !show_task { String::new() } else { n.title.clone() })
                                             .layout_key(
                                                 &self.layout,
                                                 format!("inbox.row.{row}.title"),
-                                                Some(if invitation { String::new() } else { n.title.clone() }),
+                                                Some(if !show_task { String::new() } else { n.title.clone() }),
                                             ),
                                     ),
                             )

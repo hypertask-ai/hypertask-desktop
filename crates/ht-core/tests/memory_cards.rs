@@ -32,6 +32,7 @@ fn compact_cards_preserve_every_display_field_and_full_detail_search_and_store()
             assert_eq!(full.description, description);
             let mut expected = full.clone();
             expected.description.clear();
+            expected.extra.insert("savedContentCount".into(), json!(0));
             for key in ["attachments", "pullRequests", "savedContent", "customFieldValues", "followers", "sub_tasks"] {
                 expected.extra.remove(key);
             }
