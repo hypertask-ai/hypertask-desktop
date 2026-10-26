@@ -244,7 +244,7 @@ fn fresh_search_fetches_uncached_result_then_opens_full_task(cx: &mut gpui::Test
     let send = h.block("/tasks?task_id=102");
     click(h.view,&mut h.cx,"shell.search.result.0");
     assert_eq!(measured(h.view,&mut h.cx,"task.unavailable")["text"],"Loading...");
-    assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"Loading...");
+    assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"Current task Server task 102");
     send.send(()).unwrap();
     h.wait(|this|task_ready(this,102));
     assert_eq!(measured(h.view,&mut h.cx,"task.title")["text"],"Server task 102");
