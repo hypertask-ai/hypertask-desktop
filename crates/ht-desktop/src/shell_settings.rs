@@ -1879,7 +1879,7 @@ impl Desktop {
                         }
                         div().mx(px(1.5)).px(px(6.)).py(px(4.)).min_h(px(25.))
                             .rounded(px(2.)).bg(color(0x4f5765)).text_color(color(0xffffff))
-                            .font_family("monospace").text_size(px(12.)).line_height(px(18.))
+                            .font_family("Liberation Mono").text_size(px(12.)).line_height(px(18.))
                             .font_weight(FontWeight::NORMAL)
                             .child((*key).to_owned())
                             .layout_key(&self.layout, format!("settings.shortcut-key.{i}.{j}"), None)
