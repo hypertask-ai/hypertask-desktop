@@ -259,3 +259,86 @@ fn synced_summary_teaser_preserves_unpaired_markers_like_web(cx: &mut gpui::Test
         assert_eq!(measured(view, &mut cx, "task.summary.toggle")["text"], expected);
     }
 }
+
+#[gpui::test]
+fn data4_task_fields_use_web_names_indices_and_relative_dates(cx: &mut gpui::TestAppContext) {
+    use serde_json::json;
+    cx.update(crate::input::init);
+    let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| {
+        let now = chrono::Local::now().to_rfc3339();
+        let mut sync = Sync::new(Db::memory().unwrap(), Fixture(VecDeque::from([
+            json!({"success":true,"tasks":[{"id":101,"projectId":15,"sectionId":10,"section":"Doing","boardTitle":"Real board","status":"Normal","title":"Read actual fields","createdAt":now,
+                "createdBy":{"email":"not-a-display-name@example.test"},
+                "priority":{"priority_index":2,"Priority_Value":"Wrong label"},
+                "estimate":{"estimate_index":3,"estimate_value":"Wrong size"},
+                "dueDate":"2030-01-02T13:00:00Z","labels":[{"id":"tag","name":"Real tag"}],
+                "assignees":[{"id":1,"email":"not-a-name@example.test"},{"id":2,"displayName":"Person Name"},{"id":3,"displayName":"Owner","agent":{"id":"runner","displayName":"Agent Name"}}]}]}),
+            json!({"success":true,"comments":[{"id":7,"taskId":101,"text":"<p>Real comment</p>","createdAt":now,"agent":{"displayName":"Live agent"},"agent_display_name":"Old stored name","creator":{"displayName":"Owner"}}],"total":1}),
+        ])));
+        sync.task(101).unwrap();
+        sync.comments(101).unwrap();
+        let options = Options::parse(["--offline","--screen","task","--task","101","--board","15"].map(String::from)).unwrap();
+        let mut view = Desktop::new(sync.db, options, window, cx);
+        view.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+        view.ready_scheduled = true;
+        view
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    draw(view, &mut cx);
+    assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "");
+    assert_eq!(measured(view, &mut cx, "task.description.timestamp")["text"], "Just now");
+    for (index, expected) in [(0,"Person Name"),(1,"Agent Name"),(2,""),(3,"Doing"),(5,"Real board"),(6,"High"),(7,"Small"),(8,"Real tag")] {
+        assert_eq!(measured(view, &mut cx, &format!("task.meta.{index}.value"))["text"], expected);
+    }
+    let due = chrono::DateTime::parse_from_rfc3339("2030-01-02T13:00:00Z").unwrap().with_timezone(&chrono::Local).format("%b %d, %Y").to_string();
+    assert_eq!(measured(view, &mut cx, "task.meta.4.value")["text"], due);
+    assert_eq!(measured(view, &mut cx, "task.comment.0.author")["text"], "Live agent");
+    assert_eq!(measured(view, &mut cx, "task.comment.0.timestamp")["text"], "Just now");
+    view.update(&mut cx, |this, _, cx| {
+        this.db.apply_task(&json!({"id":101,"projectId":15,"status":"Normal","title":"Read actual fields","createdBy":{"displayName":"First Middle Last"},"assignees":[],"priority":null,"estimate":null,"dueDate":null,"labels":[]})).unwrap();
+        this.db.apply_comments(101,&json!({"success":true,"comments":[{"id":8,"taskId":101,"text":"<p>Anonymous</p>","createdAt":"2025-01-02T13:00:00Z","creator":{"email":"no-name@example.test"}}]})).unwrap();
+        this.reload();cx.notify();
+    }).unwrap();
+    draw(view, &mut cx);
+    for (index, expected) in [(0,"The Assignees"),(1,"No agents"),(4,"-"),(6,"No Priority"),(7,"-"),(8,"No tags")] {
+        assert_eq!(measured(view, &mut cx, &format!("task.meta.{index}.value"))["text"], expected);
+    }
+    assert_eq!(measured(view, &mut cx, "task.comment.0.author")["text"], "");
+    assert_eq!(measured(view, &mut cx, "task.comment.0.timestamp")["text"], "2 Jan 2025");
+    view.read_with(&mut cx, |this, _| {
+        assert_eq!(this.creator_initials.as_ref(), "FL");
+        assert!(this.db.mutations().unwrap().is_empty());
+    }).unwrap();
+}
+
+#[gpui::test]
+fn data4_board_shows_real_assignees_size_and_three_tags(cx: &mut gpui::TestAppContext) {
+    use serde_json::json;
+    cx.update(crate::input::init);
+    let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| {
+        let task = json!({"id":101,"projectId":15,"sectionId":10,"section":"Doing","status":"Normal","title":"Board fields","ticketNumber":"REAL-1",
+            "priority":{"priority_index":2,"Priority_Value":"Wrong"},"estimate":{"estimate_index":3,"estimate_value":"Wrong"},
+            "dueDate":"2030-01-02T13:00:00Z","totalComments":4,
+            "assignees":[{"id":1,"displayName":"First Person"},{"id":2,"displayName":"Owner","agent":{"id":"runner","displayName":"Real Runner"}}],
+            "labels":[{"id":"1","name":"One"},{"id":"empty","name":""},{"id":"2","name":"Two"},{"id":"3","name":"Three"},{"id":"4","name":"Four"}]});
+        let mut sync = Sync::new(Db::memory().unwrap(),Fixture(VecDeque::from([
+            json!({"success":true,"projectId":15,"sections":[{"id":10,"projectId":15,"section_title":"Doing","ranking":"a","visibility":true,"deleted":false}]}),
+            json!({"success":true,"tasks":[task],"total":1}),json!({"success":true,"tasks":[task]}),
+        ])));
+        sync.board(15).unwrap();
+        let options=Options::parse(["--offline","--screen","board","--board","15"].map(String::from)).unwrap();
+        let mut view=Desktop::new(sync.db,options,window,cx);
+        view.layout=Some(Rc::new(RefCell::new(LayoutDump::default())));view.ready_scheduled=true;view
+    });
+    let mut cx=VisualTestContext::from_window(view.into(),cx);
+    draw(view,&mut cx);
+    for (key,text) in [("priority","High"),("size","S"),("label","One"),("label.1","Two"),("label.2","Three"),("labels.more","+1"),("assignee.0","First Person"),("agent.0","Real Runner"),("comments","4")] {
+        assert_eq!(measured(view,&mut cx,&format!("board.card.0.{key}"))["text"],text);
+    }
+    view.read_with(&mut cx,|this,_| {
+        let elements=this.layout.as_ref().unwrap().borrow().interaction_elements();
+        assert!(!elements.iter().any(|e|e["key"]=="board.card.0.label.3"));
+        assert_eq!(this.columns[0].cards[0].assignee_count,2);
+        assert!(this.db.mutations().unwrap().is_empty());
+    }).unwrap();
+}
