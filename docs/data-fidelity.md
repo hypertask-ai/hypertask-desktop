@@ -6,17 +6,57 @@ sources. Bearer-accessible discrepancies have synthetic regression coverage;
 missing bearer fields are reported, never fabricated. Execute all Rust tests,
 builds and the layout contract on GitHub, not the VPS.
 
+## Round 2 acceptance and source audit (data3)
+
+Sources are relative to `/home/valentin/projects/hypertask/src`.
+After-status describes the acceptance target until exact-head CI verifies it.
+
+| Field | Web source file:line | Native status before | Native status after |
+| --- | --- | --- | --- |
+| Author (`createdBy`, optional `agent`) | `lib/mcp/tasks/mappers.ts:47-61,331-336`; `components/PageComponents/TaskDetail/CommentAndDescription/index.tsx:109-118` | Existing hydration and task author rendering; old creator-only caches skip summary hydration. | Upgrade those caches once; preserve real human/agent authors through sync, reopen and native task navigation. |
+| Board identity | `components/PageComponents/Kanban/KanbanTaskComponents/KanbanTaskCard.tsx:162-198`; `TaskTopRow.tsx:134-175` in that directory | Cards retain creators; visible avatars are assignees. | Same web placement; no invented card author or summary label. |
+| Saved AI summary | `lib/mcp/operations/tasks/operation.ts:283-300,340-350`; `components/PageComponents/TaskDetail/TopRow/TaskDetailTitleContainer.tsx:38-44`; `TaskSummary.tsx:17-54` in that directory | Stored summary supported; existing creator-only caches miss it; an empty teaser hides nonempty saved content. | Hydrate missing summary fields; show/expand nonempty saved content even when its teaser is empty; clear absent/null summaries. |
+| Board Draft | `utils/controllers/drafts/getUserDrafts.ts:4-7`; `components/PageComponents/Kanban/KanbanTaskComponents/TaskTagsRow.tsx:140-143` | Synced comment-draft badge supported. | Native regression proves appearance and removal from synced snapshots, including the untrimmed board rule. |
+| Task Draft | `hooks/General/useHasDrafts.ts:5-17,34-40` | Separate description/comment flags supported. | Native regression proves both markers clear from empty snapshots; description-only drafts never mark cards. |
+
+Acceptance checks, written before implementation:
+
+1. **Cache upgrade.** Seed creator-only cached tasks, sync MCP list/detail and
+   drafts, close/reopen SQLite, and assert board/task creator, saved summary and
+   draft flags match the synthetic server snapshots. A second board sync must
+   not rehydrate known null summaries.
+2. **Native positive rendering.** From synced data, measure the real human and
+   agent author, saved-summary toggle/full body, and task/board Draft markers.
+   No mutation or generation request may be made.
+3. **Native removal and placement.** Sync empty drafts and null/missing summaries,
+   redraw, and assert markers/summary controls disappear without altering the
+   published description or author. Description-only and whitespace comment
+   drafts must follow the web's distinct card/task rules.
+4. **Nonempty summary.** Sync a nonempty Markdown summary with an empty teaser;
+   the summary toggle and I-key expansion must remain available, as on web.
+5. **Public CI only.** Require every exact-head CI job and the repository receipt,
+   retaining native/layout/memory artifacts. No VPS tests/builds or laptop access.
+
+Self-review stays serial; this change is one coupled sync/render contract.
+Owned paths are this ledger, `crates/ht-core/src/sync.rs`, its existing sync
+regressions, and native fidelity/render/shortcut files. Existing creator,
+summary and draft implementations are retained, not replaced. The red-before run was
+not executed: this host forbids tests, and full hosted CI is the verification
+surface. The new regressions were committed before the production fix.
+
 ## Implemented
 
 - **Saved task AI summary:** consume the `ai_summary.content` / `updated_at`
   detail field shipped by hypertask PR #1996. A null or missing full-detail
   summary clears old saved content; partial writes and list deltas preserve it.
-  No generation request or cookie endpoint is used. The field is server-flagged
+  Presence follows stored content, not the shortened teaser; even a nonempty
+  heading with an empty teaser remains expandable. No generation request or
+  cookie endpoint is used. The field is server-flagged
   for user bearer tokens; disabled flags, agent tokens and management tokens do
   not expose it. The task hides an absent summary.
 - **Creator:** `/api/mcp/tasks?project_id=…` omits `createdBy`, while
   `?task_id=…` returns it. Board sync hydrates missing creators in batches of
-  100, also repairing existing list-only caches. Detail refresh still refetches
+  100, also repairing existing list-only and creator-only caches. Detail refresh still refetches
   the authoritative task. Later list deltas preserve detail-only fields. The description prefers the visible creator agent (including `createdBy.agent`),
   not that agent's human owner. An uncached/missing author is “Unknown author”, not a fictional “Hypertask”.
 - **Task-page drafts:** `/api/mcp/drafts?task_id=…` is scoped by the authenticated
@@ -89,10 +129,10 @@ Paths below are relative to `/home/valentin/projects/hypertask/src`:
 | Board Draft | `components/PageComponents/Kanban/KanbanTaskComponents/TaskTagsRow.tsx:112-115`; `utils/controllers/drafts/getUserDrafts.ts:5-6`; `../tailwind.config.ts:36` | Nonempty comment draft; untrimmed board rule; 11 px / 22 px / medium / `#C2CFA5`. |
 | Task Draft | `hooks/General/useHasDrafts.ts:5-17,34-40` | Separate description/comment emptiness rules; clear markers on empty server snapshots; keep published content unchanged. |
 
-The local web checkout predates PR #1996. Its merged source is independently
-cited at `src/lib/mcp/operations/tasks/operation.ts:282-299,339-361` in commit
-`2741d663d4b2358078aa4b20155e0dc70999c6a7` (hypertask PR #1996), which selects
-the newest stored summary and maps the optional bearer-safe `ai_summary`.
+The current local web checkout includes the bearer summary implementation at
+`lib/mcp/operations/tasks/operation.ts:283-300,340-350`, which selects the newest
+stored summary and maps the optional bearer-safe `ai_summary`. The user-token
+feature gate remains authoritative; disabled or absent data is never fabricated.
 
 `fixtures/task-fidelity.json` supplies actual MCP-shaped human/agent/absent
 creators, present/null/missing saved summaries and server description/comment

@@ -240,7 +240,9 @@ impl Desktop {
         match action {
             Compose => self.open_compose(window, cx),
             ExpandSummary => {
-                if !self.summary.is_empty() { self.task_fields.summary_open = !self.task_fields.summary_open; }
+                if self.detail.as_ref().is_some_and(|d| !full_task_summary(&d.task.extra).is_empty()) {
+                    self.task_fields.summary_open = !self.task_fields.summary_open;
+                }
             }
             PinAiChat | FullscreenAiChat => self.ai_command(action, cx),
             StarComment | PinComment | CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment

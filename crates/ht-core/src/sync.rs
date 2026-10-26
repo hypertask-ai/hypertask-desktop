@@ -64,7 +64,7 @@ impl<T: Transport> Sync<T> {
         ensure!(project_id > 0, "invalid board id");
         self.sections(project_id)?;
         self.delta(project_id)?;
-        // List rows omit the creator. Hydrate uncached detail fields in batches,
+        // List rows omit creator and summary. Upgrade older caches in batches,
         // not one request per card, before an offline task page needs them.
         let ids = self
             .db
@@ -73,7 +73,7 @@ impl<T: Transport> Sync<T> {
                 [project_id],
             )?
             .into_iter()
-            .filter(|t| t.get("createdBy").is_none())
+            .filter(|t| t.get("createdBy").is_none() || t.get("ai_summary").is_none())
             .map(|t| integer(&t, "id"))
             .collect::<Result<Vec<_>>>()?;
         for ids in ids.chunks(100) {

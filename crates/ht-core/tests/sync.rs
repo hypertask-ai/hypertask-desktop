@@ -653,6 +653,43 @@ fn fidelity_upgrades_list_only_database_and_persists_authors_summary_and_drafts(
 }
 
 #[test]
+fn fidelity_upgrades_creator_only_cache_without_repeated_null_summary_hydration() {
+    let f: Value = serde_json::from_str(include_str!("../../../fixtures/task-fidelity.json")).unwrap();
+    let file = tempfile::NamedTempFile::new().unwrap();
+    {
+        let mut db = Db::open(file.path()).unwrap();
+        let mut old = f["detail"].clone();
+        for task in old["tasks"].as_array_mut().unwrap() {
+            task.as_object_mut().unwrap().remove("ai_summary");
+            if task.get("createdBy").is_none() {
+                task["createdBy"] = Value::Null;
+            }
+        }
+        db.apply_response(&old).unwrap();
+    }
+    let mut sync = Sync::new(Db::open(file.path()).unwrap(), Script::new(vec![
+        f["sections"].clone(), f["list"].clone(), f["detail"].clone(), f["drafts"].clone(),
+        f["sections"].clone(), f["list"].clone(), page(vec![], 0), page(vec![], 0),
+    ]));
+    sync.board(15).unwrap();
+    sync.drafts(101).unwrap();
+    sync.board(15).unwrap();
+    assert!(sync.transport.responses.is_empty());
+    assert_eq!(sync.transport.paths.iter().filter(|p| p.starts_with("/tasks?task_id=")).count(), 1);
+    drop(sync);
+    let db = Db::open(file.path()).unwrap();
+    let cards = db.board(15).unwrap().remove(0).cards;
+    for (index, id) in [101, 102, 103].into_iter().enumerate() {
+        let task = db.task_detail(id).unwrap().unwrap().task;
+        assert_eq!(cards[index], task);
+        assert_eq!(task.extra["createdBy"], f["detail"]["tasks"][index]["createdBy"]);
+        assert_eq!(task.extra["ai_summary"], f["detail"]["tasks"][index]["ai_summary"]);
+    }
+    assert_eq!(cards[0].extra["hasBoardDraft"], true);
+    assert!(db.mutations().unwrap().is_empty());
+}
+
+#[test]
 fn bounded_sync_cache_evicts_pages_without_losing_persisted_offline_content() {
     let file = tempfile::NamedTempFile::new().unwrap();
     let mut db = Db::open(file.path()).unwrap();

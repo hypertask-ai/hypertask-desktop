@@ -180,7 +180,11 @@ impl Desktop {
                         this.task_fields.summary_open = !this.task_fields.summary_open;
                         cx.notify();
                     }))
-                    .layout_key(&self.layout, "task.summary.toggle", None),
+                    .layout_key(&self.layout, "task.summary.toggle", Some(if self.task_fields.summary_open {
+                        "Summary".into()
+                    } else {
+                        self.summary.to_string()
+                    })),
             )
             .child(
                 gpui::canvas(
