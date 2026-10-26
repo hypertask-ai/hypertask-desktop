@@ -77,3 +77,6 @@ The separate gates/visual-artifact-proof.py takes before/after run IDs at invoca
 ## Hosted regression correction
 
 CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40385775426 passed 290 existing desktop tests on every platform and rejected the new paint assertion. GPUI does not submit a painted border quad for a transparent border. The test now requires the 4px left-only painted quad exactly when selected, and no such quad when unselected. Both states still reserve the source border geometry. No product value or comparison threshold changed.
+
+
+CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40387786271 passed both selection paint states and rejected the draft setup. Task.extra is a map, whose mutable indexing requires an existing key. The test inserts the synthetic draft field explicitly instead. Product code and all 290 existing tests remain unchanged.
