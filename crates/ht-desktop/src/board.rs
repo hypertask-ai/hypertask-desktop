@@ -401,7 +401,8 @@ mod tests {
                 this.db.apply_task(&json!({
                     "id":1,"projectId":15,"sectionId":10,"title":"Needle",
                     "ticketNumber":"HT-1","status":"Normal",
-                    "commentCount":comments,"assigneeCount":assignees
+                    "commentCount":comments,"assigneeCount":assignees,
+                    "assignees":if assignees > 0 { json!([{"id":42,"displayName":"Real Assignee"}]) } else { json!([]) }
                 })).unwrap();
                 if notification {
                     this.db.apply_response(&json!({"success":true,"user_notifications":[{

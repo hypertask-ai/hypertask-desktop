@@ -49,7 +49,7 @@ fn reminder_dates(now: chrono::DateTime<chrono::Local>) -> Vec<(String, String)>
         }).collect()
 }
 
-fn inbox_time(value: &str, now: chrono::DateTime<chrono::Local>) -> String {
+pub(super) fn inbox_time(value: &str, now: chrono::DateTime<chrono::Local>) -> String {
     let Ok(date) = chrono::DateTime::parse_from_rfc3339(value) else { return String::new(); };
     let date = date.with_timezone(&chrono::Local);
     let seconds = (now - date).num_seconds();
@@ -61,6 +61,87 @@ fn inbox_time(value: &str, now: chrono::DateTime<chrono::Local>) -> String {
         _ => date.format("%-d %b").to_string(),
     }
 }
+
+fn comment_preview(html: &str, mention_user: Option<i64>) -> String {
+    let document = scraper::Html::parse_fragment(html);
+    let root = document.root_element();
+    let quoted = |node: ego_tree::NodeRef<'_, scraper::Node>| node.ancestors().any(|parent| {
+        let Some(element) = scraper::ElementRef::wrap(parent) else { return false; };
+        if element.value().name() == "blockquote" { return true; }
+        if element.value().name() != "p" { return false; }
+        let children: Vec<_> = element.child_elements().collect();
+        if children.len() != 1 || children[0].value().attr("data-type") != Some("mention") { return false; }
+        let name = children[0].text().collect::<String>();
+        element.text().collect::<String>().trim().trim_end_matches(':').trim() == format!("{} said", name.trim())
+    });
+    if let Some(user) = mention_user {
+        let selector = scraper::Selector::parse("span[data-type=mention]").unwrap();
+        for mention in root.select(&selector) {
+            if mention.value().attr("data-label") != Some(format!("name-{user}").as_str()) || quoted(*mention) { continue; }
+            if let Some(parent) = mention.parent().and_then(scraper::ElementRef::wrap) {
+                let name = mention.text().collect::<String>();
+                let text = parent.text().collect::<String>();
+                return text.replacen(&name, &format!("@{name}"), 1);
+            }
+        }
+    }
+    let text: String = root.descendants().filter(|node| !quoted(*node)).filter_map(|node|
+        node.value().as_text().map(|text| text.to_string())).collect();
+    if text.trim().is_empty() { root.text().collect::<String>().trim().to_owned() } else { text.trim().to_owned() }
+}
+
+fn notification_content(n: &serde_json::Value) -> String {
+    use chrono::Datelike;
+    let text = || n.pointer("/comment/text").and_then(|v| v.as_str()).unwrap_or("");
+    match n["type"].as_str().unwrap_or("") {
+        "Comment" => comment_preview(text(), None),
+        "Assigned" => "Assigned to you".into(),
+        "TaskArchived" => if n["task"]["status"] == "Archive" { "Archived this task" } else { "Unarchived this task" }.into(),
+        "TaskMoved" => n["task"]["section"].as_str().map(|section| format!("Moved to {section}")).unwrap_or_default(),
+        "AddedToFollowerInTask" => "Added you to followers and mentioned you".into(),
+        "Mentioned" if !n["commentId"].is_null() => comment_preview(text(), n["userId"].as_i64()),
+        "Mentioned" => "Mentioned in".into(),
+        "Invited" => "Click or press ENTER to accept invitation".into(),
+        "TaskDueDate" => {
+            match n["task"]["dueDate"].as_str().and_then(|v| chrono::DateTime::parse_from_rfc3339(v).ok()) {
+                Some(date) => {
+                    let date = date.with_timezone(&chrono::Local);
+                    format!("Due date changed to {}", date.format(if date.year() == chrono::Local::now().year() { "%d %b" } else { "%d %b %Y" }))
+                }
+                None => "Due date reset".into(),
+            }
+        }
+        "TaskReminder" => n["staleNudgeDays"].as_i64().map(|days| format!("No activity for {days} days")).unwrap_or_else(|| "Task Reminder".into()),
+        "TaskMovedToInbox" => "Task moved to inbox".into(),
+        "TaskUpdateDescription" => "Description updated".into(),
+        "AgentMessage" => {
+            let message = n["message"].as_str().unwrap_or("");
+            let content = message.strip_prefix("\u{001e}ht-agent-message:v1:")
+                .and_then(|tail| tail.get(36..).and_then(|tail| tail.strip_prefix(':'))).unwrap_or(message);
+            scraper::Html::parse_fragment(content).root_element().text().collect::<String>()
+        }
+        "Reacted" => {
+            let Some(emoji) = n["reaction"]["emoji"].as_str() else { return String::new(); };
+            if n["commentId"].is_null() { format!("Reacted with {emoji} on description") }
+            else { format!("Reacted with {emoji} on {} ", scraper::Html::parse_fragment(text()).root_element().text().collect::<String>()) }
+        }
+        _ => String::new(),
+    }
+}
+
+fn notification_indicators(n: &InboxItem) -> Vec<u32> {
+    let mut colors = Vec::with_capacity(2);
+    if n.raw_json.pointer("/task/savedContent").and_then(|v| v.as_array()).is_some_and(|v| !v.is_empty()) { colors.push(0xffcb33); }
+    let blocked = n.raw_json.pointer("/task/waitingOnUserId").and_then(|v| v.as_i64())
+        .is_some_and(|id| n.raw_json["userId"].as_i64() == Some(id));
+    if blocked { colors.push(0x7f1d1d); }
+    else if !n.seen {
+        colors.push(if n.raw_json["returnedFromReminders"] == true { 0xc2cfa5 }
+            else if n.raw_json["type"] == "TaskOverdue" { 0xf88f9c } else { 0x5896f1 });
+    }
+    colors
+}
+
 
 impl Desktop {
     pub(super) fn mark_opened_notification(&mut self, task_id: i64, cx: &mut Context<Self>) {
@@ -390,21 +471,17 @@ impl Desktop {
         let t = self.colors;
         let id = n.id;
         let show_actions = row == self.selected && self.interaction.bulk.is_empty();
-        let kind = n
-            .raw_json
-            .pointer("/comment/text")
-            .and_then(|v| v.as_str())
-            .map(|html| RichText::parse(html, t).text.to_string())
-            .filter(|text| !text.trim().is_empty())
-            .unwrap_or_else(|| notification_label(n.raw_json["type"].as_str().unwrap_or("")));
-        let metadata = inbox_metadata(&n.raw_json["task"]);
+        let kind = notification_content(&n.raw_json);
+        let invitation = n.raw_json["type"] == "Invited";
+        let show_task = !invitation && n.task_id.is_some();
+        let metadata = if !show_task { String::new() } else { inbox_metadata(&n.raw_json["task"]) };
         let source = n.source.clone().unwrap_or_default();
         let source = match n.raw_json["unreadCount"]
             .as_u64()
             .filter(|count| *count > 0)
         {
-            Some(count) => format!("{source} ({count})"),
-            None => source,
+            Some(count) if n.raw_json["type"] != "Invited" => format!("{source} ({count})"),
+            _ => source,
         };
         div()
             .id(("notification", id as u64))
@@ -466,14 +543,10 @@ impl Desktop {
                             .flex()
                             .items_center()
                             .relative()
-                            .child(
-                                div()
-                                    .absolute()
-                                    .left(px(-8.))
-                                    .size(px(7.))
-                                    .rounded_full()
-                                    .when(!n.seen, |d| d.bg(color(t.accent))),
-                            )
+                            .children(notification_indicators(n).into_iter().enumerate().map(|(i, tint)| {
+                                div().absolute().left(px(-8. - i as f32 * 3.)).size(px(7.)).rounded_full().bg(color(tint))
+                                    .layout_key(&self.layout, format!("inbox.row.{row}.indicator.{i}"), None)
+                            }))
                             .child(div().truncate().child(source.clone()).layout_key(
                                 &self.layout,
                                 format!("inbox.row.{row}.author"),
@@ -503,22 +576,22 @@ impl Desktop {
                                             .text_color(color(0x999a9d))
                                             .text_size(px(11.))
                                             .line_height(px(16.5))
-                                            .child(n.ticket_number.clone().unwrap_or_default())
+                                            .child(if !show_task { String::new() } else { n.ticket_number.clone().unwrap_or_default() })
                                             .layout_key(
                                                 &self.layout,
                                                 format!("inbox.row.{row}.taskid"),
-                                                n.ticket_number.clone(),
+                                                Some(if show_task { n.ticket_number.clone().unwrap_or_default() } else { String::new() }),
                                             ),
                                     )
                                     .child(
                                         div()
                                             .min_w_0()
                                             .truncate()
-                                            .child(n.title.clone())
+                                            .child(if !show_task { String::new() } else { n.title.clone() })
                                             .layout_key(
                                                 &self.layout,
                                                 format!("inbox.row.{row}.title"),
-                                                Some(n.title.clone()),
+                                                Some(if !show_task { String::new() } else { n.title.clone() }),
                                             ),
                                     ),
                             )
@@ -680,16 +753,16 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         cx.update(crate::input::init);
-        for priority in [String::new(), "High".to_owned(), "High priority ".repeat(30)] {
-            let has_metadata = !priority.is_empty();
+        for label in [String::new(), "High".to_owned(), "Long real tag ".repeat(30)] {
+            let has_metadata = !label.is_empty();
             let view: WindowHandle<Desktop> = cx.add_window(|window, cx| {
                 let mut v = desktop(window, cx);
                 seed(&mut v);
                 v.db.apply_response(&json!({"success":true,"user_notifications":[{
                     "id":102,"taskId":2,"projectId":15,"status":"Normal","seen":true,
                     "createdAt":"2026-01-02T00:00:00Z","type":"TaskReminder",
-                    "task":{"title":"Other","ticketNumber":"HT-2","priority":
-                        if has_metadata { json!({"Priority_Value":priority}) } else { json!(null) }
+                    "task":{"title":"Other","ticketNumber":"HT-2","taskLabels":
+                        if has_metadata { json!([{"label":{"value":label}}]) } else { json!([]) }
                     }
                 }]})).unwrap();
                 v.reload();
@@ -707,10 +780,10 @@ mod tests {
                 let kind_right = kind["x"].as_f64().unwrap() + kind["w"].as_f64().unwrap();
                 let content_right = if has_metadata {
                     let meta = meta.expect("nonempty metadata must be rendered");
-                    assert_eq!(meta["text"], priority.chars().take(40).collect::<String>());
+                    assert_eq!(meta["text"], label.chars().take(40).collect::<String>());
                     assert!(meta["w"].as_f64().unwrap() <= 180.);
                     assert_eq!(meta["h"], kind["h"], "metadata must stay on the inherited single line");
-                    if priority.len() > 40 {
+                    if label.len() > 40 {
                         assert_eq!(meta["w"], 180.);
                     }
                     assert!((meta["x"].as_f64().unwrap() - kind_right - 8.).abs() <= 1.);

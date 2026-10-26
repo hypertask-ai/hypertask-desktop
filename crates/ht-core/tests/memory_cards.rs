@@ -32,6 +32,7 @@ fn compact_cards_preserve_every_display_field_and_full_detail_search_and_store()
             assert_eq!(full.description, description);
             let mut expected = full.clone();
             expected.description.clear();
+            expected.extra.insert("savedContentCount".into(), json!(0));
             for key in ["attachments", "pullRequests", "savedContent", "customFieldValues", "followers", "sub_tasks"] {
                 expected.extra.remove(key);
             }
@@ -104,6 +105,7 @@ fn compact_inbox_keeps_rendered_metadata_and_preserves_full_store() {
     expected[0]["rawJson"]["task"] = json!({
         "id":task["id"],"title":task["title"],"ticketNumber":task["ticketNumber"],
         "projectId":task["projectId"],"uniqueIndex":task["uniqueIndex"],"status":task["status"],
+        "section":task["section"],"savedContent":task["savedContent"],"waitingOnUserId":task["waitingOnUserId"],
         "dueDate":task["dueDate"],"priority":task["priority"],"estimate":task["estimate"],"taskLabels":task["taskLabels"]
     });
     let mut actual = serde_json::to_value(&rows).unwrap();

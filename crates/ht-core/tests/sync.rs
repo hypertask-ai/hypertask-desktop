@@ -745,3 +745,27 @@ fn inbox_synthetic_string_ids_sync_without_losing_rows_or_split_membership() {
         assert_eq!(splits[1]["ids"], json!([-42]));
     }
 }
+
+#[test]
+fn data4_inbox_full_snapshot_clears_old_actor_and_event_context() {
+    let first = json!({"id":101,"taskId":1,"status":"Normal","createdAt":"2026-10-20T00:00:00Z",
+        "fromAgent":{"displayName":"Old agent"},"recentActors":[{"displayName":"Old actor"},{"displayName":"Other"}],
+        "commentId":7,"comment":{"text":"Old comment"},"reaction":{"emoji":"👍"},"staleNudgeDays":5,
+        "message":"Old message","unreadCount":3,"returnedFromReminders":true,"task":{"title":"Old title"}});
+    let second = json!({"id":101,"taskId":1,"status":"Normal","createdAt":"2026-10-21T00:00:00Z",
+        "fromUser":{"displayName":"Current actor"},"type":"Assigned","task":{"title":"Current title"}});
+    let mut sync = Sync::new(Db::memory().unwrap(), Script::new(vec![
+        json!({"success":true,"user_notifications":[first]}),
+        json!({"success":true,"user_notifications":[second]}),
+    ]));
+    sync.inbox().unwrap();
+    assert_eq!(sync.db.inbox().unwrap()[0].source.as_deref(), Some("Old actor, Other"));
+    sync.inbox().unwrap();
+    let rows = sync.db.inbox_rows().unwrap();
+    assert_eq!(rows[0].source.as_deref(), Some("Current actor"));
+    assert_eq!(rows[0].title,"Current title");
+    for key in ["comment", "commentId", "message", "reaction", "staleNudgeDays", "returnedFromReminders", "recentActors", "unreadCount"] {
+        assert!(rows[0].raw_json[key].is_null(), "stale {key}");
+    }
+    assert!(sync.db.mutations().unwrap().is_empty());
+}
