@@ -1443,10 +1443,8 @@ impl Render for AiSidebar {
             composer = composer.w_full().max_w(px(800.)).mx_auto();
         }
         panel = panel.child(composer.layout_key(&self.capture, "ai.composer", None));
-        if self.mode() == DisplayMode::Sidebar {
-            panel = panel.child(self.resize_edge(cx));
-        }
-        div().size_full().border_l_1().border_color(color(t.rail_border)).bg(color(t.container))
+        div().size_full().relative().border_l_1().border_color(color(t.rail_border)).bg(color(t.container))
+            .when(self.mode() == DisplayMode::Sidebar, |d| d.pl(px(4.)).child(self.resize_edge(cx)))
             .child(panel).layout_key(&self.capture, "ai.panel", None)
     }
 }

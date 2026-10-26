@@ -1,0 +1,135 @@
+{
+  "revision": "8c6402b37c96ac6d843d424d856d510c3f7e7937",
+  "run": "https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40301021475",
+  "artifactId": 12641053839,
+  "states": {
+    "ai-welcome": {
+      "elements": [
+        {
+          "key": "ai.composer",
+          "x": 1030.0,
+          "y": 803.5,
+          "w": 402.0,
+          "h": 88.5,
+          "color": "#ffffff",
+          "bg": "#262a30",
+          "fontSize": 16.0,
+          "fontWeight": 400.0,
+          "lineHeight": 24.0,
+          "radius": 8.0,
+          "borderColor": null,
+          "text": null
+        },
+        {
+          "key": "ai.controls",
+          "x": 1038.0,
+          "y": 848.5,
+          "w": 386.0,
+          "h": 35.5,
+          "color": "#ffffff",
+          "bg": null,
+          "fontSize": 12.0,
+          "fontWeight": 400.0,
+          "lineHeight": 18.0,
+          "radius": null,
+          "borderColor": null,
+          "text": null
+        },
+        {
+          "key": "ai.header",
+          "x": 1022.0,
+          "y": 0.0,
+          "w": 418.0,
+          "h": 48.0,
+          "color": "#ffffff",
+          "bg": null,
+          "fontSize": 14.0,
+          "fontWeight": 700.0,
+          "lineHeight": 21.0,
+          "radius": null,
+          "borderColor": null,
+          "text": null
+        },
+        {
+          "key": "ai.input",
+          "x": 1038.0,
+          "y": 811.5,
+          "w": 386.0,
+          "h": 37.0,
+          "color": "#ffffff",
+          "bg": null,
+          "fontSize": 14.0,
+          "fontWeight": 400.0,
+          "lineHeight": 21.0,
+          "radius": null,
+          "borderColor": null,
+          "text": null
+        }
+      ]
+    },
+    "ai-messages": {
+      "elements": [
+        {
+          "key": "ai.composer",
+          "x": 1030.0,
+          "y": 803.5,
+          "w": 402.0,
+          "h": 88.5,
+          "color": "#ffffff",
+          "bg": "#262a30",
+          "fontSize": 16.0,
+          "fontWeight": 400.0,
+          "lineHeight": 24.0,
+          "radius": 8.0,
+          "borderColor": null,
+          "text": null
+        },
+        {
+          "key": "ai.controls",
+          "x": 1038.0,
+          "y": 848.5,
+          "w": 386.0,
+          "h": 35.5,
+          "color": "#ffffff",
+          "bg": null,
+          "fontSize": 12.0,
+          "fontWeight": 400.0,
+          "lineHeight": 18.0,
+          "radius": null,
+          "borderColor": null,
+          "text": null
+        },
+        {
+          "key": "ai.header",
+          "x": 1022.0,
+          "y": 0.0,
+          "w": 418.0,
+          "h": 48.0,
+          "color": "#ffffff",
+          "bg": null,
+          "fontSize": 14.0,
+          "fontWeight": 700.0,
+          "lineHeight": 21.0,
+          "radius": null,
+          "borderColor": null,
+          "text": null
+        },
+        {
+          "key": "ai.input",
+          "x": 1038.0,
+          "y": 811.5,
+          "w": 386.0,
+          "h": 37.0,
+          "color": "#ffffff",
+          "bg": null,
+          "fontSize": 14.0,
+          "fontWeight": 400.0,
+          "lineHeight": 21.0,
+          "radius": null,
+          "borderColor": null,
+          "text": null
+        }
+      ]
+    }
+  }
+}

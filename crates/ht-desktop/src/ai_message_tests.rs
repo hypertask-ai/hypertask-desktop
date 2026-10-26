@@ -186,8 +186,19 @@ fn sidebar_web_header_welcome_composer_and_tall_input_geometry(cx: &mut gpui::Te
     let suggestion = element(&view, cx, "ai.suggestion.0");
     assert_eq!(suggestion["x"].as_f64().unwrap() - welcome["x"].as_f64().unwrap(), 40.);
     let composer = element(&view, cx, "ai.composer");
-    assert_eq!(composer["x"], 10.); // Theme border + inner border + web p-2.
-    assert_eq!(composer["w"], 402.);
+    assert_eq!(composer["x"], 14.);
+    assert_eq!(composer["w"], 398.);
+    let panel = element(&view, cx, "ai.panel");
+    let header = element(&view, cx, "ai.header");
+    let edge = element(&view, cx, "ai.resize");
+    let track = element(&view, cx, "ai.resize.track");
+    let grip = element(&view, cx, "ai.resize.grip");
+    assert_eq!(header["x"].as_f64().unwrap() - panel["x"].as_f64().unwrap(), 6.);
+    assert_eq!(edge["w"], 4.);
+    assert_eq!(track["w"], 1.);
+    assert_eq!(grip["w"], 5.);
+    assert_eq!(grip["h"], 24.);
+    assert!((grip["y"].as_f64().unwrap() + 12. - panel["h"].as_f64().unwrap() / 2.).abs() <= 1.);
     view.update_in(cx, |this, _, cx| {
         this.input.update(cx, |input, cx| input.set_content("Line\n".repeat(80), cx));
     });
@@ -664,4 +675,46 @@ fn cmdk_summary_does_not_replace_drafts_or_queue_while_chat_is_busy(cx: &mut gpu
         assert!(sidebar.queued.is_empty());
         assert!(sidebar.chats[0].error.is_none());
     }).unwrap();
+}
+
+#[gpui::test]
+fn sidebar_1920_web_resize_gutter_and_centered_grip(cx: &mut gpui::TestAppContext) {
+    struct Host(Entity<AiSidebar>);
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().size_full().flex().justify_end()
+                .child(div().w(px(420.)).h_full().child(self.0.clone()))
+        }
+    }
+    let host = cx.open_window(size(px(1920.), px(1009.)), |window, cx| {
+        Host(cx.new(|cx| {
+            let focus = cx.focus_handle();
+            let mut sidebar = AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx);
+            sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
+            sidebar.set_scope(Scope::load(&Db::memory().unwrap(), Screen::Inbox, 0, None, 0), cx);
+            sidebar
+        }))
+    });
+    let mut visual = gpui::VisualTestContext::from_window(host.into(), cx);
+    let view = host.read_with(&visual, |host, _| host.0.clone()).unwrap();
+    let panel = element(&view, &mut visual, "ai.panel");
+    let header = element(&view, &mut visual, "ai.header");
+    let composer = element(&view, &mut visual, "ai.composer");
+    let welcome = element(&view, &mut visual, "ai.welcome");
+    let suggestion = element(&view, &mut visual, "ai.suggestion.0");
+    let edge = element(&view, &mut visual, "ai.resize");
+    let grip = element(&view, &mut visual, "ai.resize.grip");
+    assert_eq!(panel["x"], 1500.);
+    assert_eq!(panel["w"], 420.);
+    assert_eq!(header["x"], 1506.);
+    assert_eq!(header["w"], 414.);
+    assert_eq!(welcome["x"], header["x"]);
+    assert_eq!(suggestion["x"], 1546.);
+    assert_eq!(suggestion["w"], 334.);
+    assert_eq!(composer["x"], 1514.);
+    assert_eq!(composer["w"], 398.);
+    assert_eq!(edge["w"], 4.);
+    assert_eq!(grip["w"], 5.);
+    assert_eq!(grip["h"], 24.);
+    assert!((grip["y"].as_f64().unwrap() + 12. - 504.5).abs() <= 1.);
 }
