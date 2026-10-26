@@ -122,3 +122,12 @@ Lucide symbols imported by the cited web components.
 Native asset tests now pin those paths and the 1.75 stroke.
 Summary alpha now uses exact source 0.7 and 0.1,
 not byte-quantized approximations.
+
+Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40382389293
+passed controls, asset geometry and all task geometry assertions.
+The painted-alpha assertion selected the border-only quad.
+GPUI paints fill and border separately, as style.rs:713-755 shows.
+Its border quad deliberately has transparent background.
+The regression now independently requires the actual fill quad at
+that same origin, plus the 70% border and 1px width.
+No expected source value or acceptance threshold changed.

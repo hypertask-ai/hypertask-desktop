@@ -803,7 +803,8 @@ fn sidebar_task_summary_web_tint_icon_and_compact_prompt_geometry(cx: &mut gpui:
         let origin = point(px(summary["x"].as_f64().unwrap() as f32), px(summary["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
         let quads = window.painted_quads();
         let quad = quads.iter().find(|quad| quad.bounds.origin == origin && quad.border_color == color(0xc668ff).opacity(0.7).into()).expect("painted web summary border");
-        assert_eq!(quad.background, gpui::Background::from(color(0xc668ff).opacity(0.1)));
+        let background = quads.iter().find(|quad| quad.bounds.origin == origin && !quad.background.is_transparent()).expect("painted web summary fill");
+        assert_eq!(background.background, gpui::Background::from(color(0xc668ff).opacity(0.1)));
         assert_eq!(quad.border_widths.left, px(1.).scale(window.scale_factor()));
     });
     click(&view, cx, "ai.task.summary");
