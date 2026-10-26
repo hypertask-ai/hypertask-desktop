@@ -14,3 +14,5 @@ Owned implementation paths: crates/ht-desktop/src/ai_sidebar.rs and crates/ht-de
 Sequence: frozen inventory, native sidebar correction, exact-head CI capture verification, evidence. Throughput checkpoint after first correction: use measured rows and failing CI output to choose remaining work, not cosmetic guesses. Self-review only; unavailable cursor-team-kit tools are replaced by source/diff review and native CI evidence.
 
 Principle prove-it-works chooses hosted native captures, not compile-only proof. Principle sequence-verifiable-units chooses inventory before correction and CI before further correction.
+
+Asset ownership extension: main.rs changes only sidebar asset registration; new ai-scope-board.svg and ai-scope-task.svg are sidebar-only. Existing shared icons remain untouched. Frozen capture fixture, source projection, thresholds and references remain byte-identical.
