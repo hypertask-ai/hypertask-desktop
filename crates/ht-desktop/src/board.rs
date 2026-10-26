@@ -357,6 +357,51 @@ mod tests {
     }
 
     #[gpui::test]
+    fn board_tags_share_one_wrapping_row_with_source_pill_metrics(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        for (theme, background, font_size) in [
+            (ThemeName::Porcelain, "#ececef", 11.),
+            (ThemeName::Graphite, "#363b44", 11.),
+            (ThemeName::Amoled, "#2d2d2d", 11.),
+            (ThemeName::Dia, "#f1eee7", 12.),
+        ] {
+            let (view, mut cx) = visual(cx);
+            view.update(&mut cx, |this, _, cx| {
+                this.options.theme = theme;
+                this.colors = theme.colors();
+                this.db.apply_task(&json!({
+                    "id":1,"projectId":15,"sectionId":10,"title":"Needle",
+                    "ticketNumber":"HT-1","status":"Normal",
+                    "priority":"High","dueDate":"2026-10-26T12:00:00Z",
+                    "hasBoardDraft":true,"labels":[{"name":"Bug"}]
+                })).unwrap();
+                this.reload();
+                cx.notify();
+            }).unwrap();
+            draw(view, &mut cx);
+            view.read_with(&mut cx, |this, _| {
+                let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+                let element = |key: &str| elements.iter().find(|e| e["key"] == key).unwrap();
+                let label = element("board.card.0.label");
+                let draft = element("board.card.0.draft");
+                assert_eq!(label["y"], draft["y"], "tags must share a row: {label} {draft}");
+                for key in ["board.card.0.due", "board.card.0.priority"] {
+                    assert_eq!(element(key)["y"], label["y"], "{key} left the tags row");
+                }
+                let title = element("board.card.0.title");
+                assert_eq!(label["y"].as_f64().unwrap() - title["y"].as_f64().unwrap() - title["h"].as_f64().unwrap(), 6.);
+                assert!(label["h"].as_f64().unwrap() >= 20.);
+                assert_eq!(label["bg"], background);
+                assert_eq!(label["fontSize"], font_size);
+                assert_eq!(label["fontWeight"], 500.);
+                assert_eq!(label["lineHeight"], font_size);
+                assert!(this.db.mutations().unwrap().is_empty());
+            }).unwrap();
+        }
+    }
+
+    #[gpui::test]
     fn board_checkbox_selects_without_opening_and_card_click_preserves_selection(
         cx: &mut gpui::TestAppContext,
     ) {
