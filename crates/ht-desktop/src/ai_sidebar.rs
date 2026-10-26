@@ -977,7 +977,7 @@ impl Render for AiSidebar {
                     let mut actions = div().flex().gap(px(4.)).px(px(8.)).mt(px(2.)).h(px(18.)).text_size(px(12.));
                     if human {
                         actions = actions.child(
-                            div().id(("ai-edit-message", index)).tab_index(0).cursor_pointer().child(icon("square-pen", t.muted))
+                            div().id(("ai-edit-message", index)).tab_index(0).cursor_pointer().child(svg().path("square-pen").size(px(14.)).flex_shrink_0().text_color(color(t.muted)))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     let content = this.chats[this.selected].messages[index].message.content.clone();
                                     this.draft_quotes.clear();
@@ -989,7 +989,7 @@ impl Render for AiSidebar {
                     }
                     if human || (index + 1 == chat.messages.len() && chat.error.is_some()) {
                         actions = actions.child(
-                            div().id(("ai-retry-message", index)).tab_index(0).cursor_pointer().child(icon("rotate-cw", t.muted))
+                            div().id(("ai-retry-message", index)).tab_index(0).cursor_pointer().child(svg().path("rotate-cw").size(px(14.)).flex_shrink_0().text_color(color(t.muted)))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     let messages = &this.chats[this.selected].messages;
                                     let content = if messages[index].message.role == "human" {
@@ -1004,7 +1004,7 @@ impl Render for AiSidebar {
                         );
                     }
                     actions = actions.when(!message.message.content.is_empty(), |d| d.child(
-                        div().id(("ai-copy-response", index)).tab_index(0).cursor_pointer().child(icon("copy", t.muted))
+                        div().id(("ai-copy-response", index)).tab_index(0).cursor_pointer().child(svg().path("copy").size(px(14.)).flex_shrink_0().text_color(color(t.muted)))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 let message = &this.chats[this.selected].messages[index];
                                 let text = if message.message.role == "human" {

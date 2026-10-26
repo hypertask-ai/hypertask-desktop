@@ -1237,6 +1237,7 @@ impl TextInput {
 
     pub fn configure(&mut self, placeholder: &str, multiline: bool, cx: &mut Context<Self>) {
         self.placeholder = placeholder.to_owned().into();
+        self.line_height = 24.;
         self.multiline = multiline;
         self.editor_newlines = multiline;
         cx.notify();

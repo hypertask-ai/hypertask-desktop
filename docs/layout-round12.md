@@ -33,3 +33,9 @@ The earlier token-only projection on run `40264773202` reported 208; it is retai
 - TextInput defaults remain 24px. Only AI composer (21px) and the shortcut sheet search (21.74px) request source-specific line height. Rich comment rendering keeps its existing spacing; AI explicitly requests the web message paragraph spacing. No response, remote write, menu or extra product surface is added.
 
 Owned code is the five focused renderer/input files, additive measurement fixtures/gate and its CI step. Source-projection HTML, records, tolerances and prior screen references remain unchanged during product correction. Serial self-review checked input routing, Settings isolation and capture-key prefixes. No unavailable independent-review or screenshot-equivalence claim.
+
+## Focused correction review
+
+The first product correction preserves the source's two separate left borders. The existing Porcelain welcome test still expected the old single-border x=9/w=403 composer. The source-backed contract is tightened to x=10/w=402 (1px theme + 1px inner + 8px outer padding), not a wider tolerance. AI message action icons retain the source's 14px size (`MessageItem.tsx:133-137`) while header/send icons use 16px. Reconfiguring the shared Settings input restores its default 24px line height before the sheet explicitly selects 21.74px, preventing style leakage into import/settings forms.
+
+The first nine shortcut labels/keys are now frozen independently from the native registry using `src/lib/constants/shortcuts.ts:49-65` and `src/lib/constants/railToggleKey.ts:1`. This does not change projected output. `before.json` preserves all 72 actually measured baseline native records and their original artifact identity. Hosted CI replays the same comparison against them, requiring 41/46/129 old differences, then requires zero current differences. Neither the projection HTML nor the comparison algorithm/tolerances changes.

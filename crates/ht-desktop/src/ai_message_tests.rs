@@ -186,8 +186,8 @@ fn sidebar_web_header_welcome_composer_and_tall_input_geometry(cx: &mut gpui::Te
     let suggestion = element(&view, cx, "ai.suggestion.0");
     assert_eq!(suggestion["x"].as_f64().unwrap() - welcome["x"].as_f64().unwrap(), 40.);
     let composer = element(&view, cx, "ai.composer");
-    assert_eq!(composer["x"], 9.); // 1px panel border plus web p-2.
-    assert_eq!(composer["w"], 403.);
+    assert_eq!(composer["x"], 10.); // Theme border + inner border + web p-2.
+    assert_eq!(composer["w"], 402.);
     view.update_in(cx, |this, _, cx| {
         this.input.update(cx, |input, cx| input.set_content("Line\n".repeat(80), cx));
     });

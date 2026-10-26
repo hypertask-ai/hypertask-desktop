@@ -8,7 +8,8 @@ const out = 'evidence/layout';
 const source = readFileSync('gates/fixtures/layout-panels/source.html', 'utf8');
 const font = readFileSync('crates/ht-desktop/assets/fonts/IBMPlexSans-400.ttf');
 const medium = readFileSync('crates/ht-desktop/assets/fonts/IBMPlexSans-500.ttf');
-const rows = JSON.parse(readFileSync('crates/ht-desktop/src/shell_shortcuts.json', 'utf8'));
+const rows = JSON.parse(readFileSync('gates/fixtures/layout-panels/shortcuts.json', 'utf8'));
+const before = JSON.parse(readFileSync('gates/fixtures/layout-panels/before.json', 'utf8'));
 const prompts = ['What should I work on next?', 'Summarize the last 3 days', "What's unassigned?", "What's blocking release?"];
 const key = (name, tag, content, attrs = '') => `<${tag} data-key="${name}" ${attrs}>${content}</${tag}>`;
 const svg = size => `<svg width="${size}" height="${size}"></svg>`;
@@ -62,6 +63,9 @@ try {
     const native = JSON.parse(readFileSync(`${out}/panels-native/${state}.json`, 'utf8'));
     assert.equal(native.width, 1440); assert.equal(native.height, 900);
     writeFileSync(`${out}/panels-web/${state}.json`, JSON.stringify({ width: 1440, height: 900, elements: web }, null, 2) + '\n');
+    const rejected = compare(web, before.states[state].elements);
+    assert.equal(rejected.length, before.states[state].differences, `Old native defect receipt drifted: ${state}`);
+    console.log(`LAYOUT_PANELS_OLD_NATIVE_REJECTED ${state} ${rejected.length} revision=${before.revision}`);
     const differences = compare(web, native.elements);
     report[state] = { measured: web.length, differences: differences.length, records: differences };
     const missing = compare(web, native.elements.filter(element => element.key !== web[0].key));
@@ -78,3 +82,5 @@ report.coverage = 'Graphite source projection, not authenticated capture. Welcom
 writeFileSync(`${out}/panel-comparison.json`, JSON.stringify(report, null, 2) + '\n');
 writeFileSync(`${out}/compare-panels.txt`, Object.entries(report).filter(([, value]) => value?.differences !== undefined).map(([state, value]) => `${state} ${value.differences}`).join('\n') + `\nTOTAL ${report.total}\n`);
 console.log(`LAYOUT_PANELS_TOTAL ${report.total}`);
+
+assert.equal(report.total, 0, "Source-backed panel differences remain; inspect panel-comparison.json");

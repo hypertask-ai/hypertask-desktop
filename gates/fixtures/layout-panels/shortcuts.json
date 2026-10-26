@@ -1,0 +1,65 @@
+[
+  {
+    "group": "App shell surfaces",
+    "label": "Inbox",
+    "keys": [
+      "1"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Board",
+    "keys": [
+      "2"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Table",
+    "keys": [
+      "3"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Calendar",
+    "keys": [
+      "4"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Toggle AI chat",
+    "keys": [
+      "5"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Toggle AI chat (alternative)",
+    "keys": [
+      "]"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Search",
+    "keys": [
+      "6"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Running timers",
+    "keys": [
+      "7"
+    ]
+  },
+  {
+    "group": "App shell surfaces",
+    "label": "Collapse / expand sidebar",
+    "keys": [
+      "["
+    ]
+  }
+]
