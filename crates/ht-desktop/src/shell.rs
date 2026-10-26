@@ -49,7 +49,10 @@ impl Shell {
         cx.observe(&invite_input, |_, _, cx| cx.notify()).detach();
         let search_input =
             cx.new(|cx| TextInput::new(String::new(), "Search", color(0x8e9093), cx));
-        cx.observe(&search_input, |_, _, cx| cx.notify()).detach();
+        cx.observe(&search_input, |this, input, cx| {
+            this.request_search(input.read(cx).content.to_string());
+            cx.notify();
+        }).detach();
         let feedback_input = cx.new(|cx| {
             TextInput::new(
                 String::new(),

@@ -9,6 +9,22 @@ pub(super) enum Destination {
 }
 
 impl Desktop {
+    pub(in crate::ui) fn request_search(&mut self, query: String) {
+        self.search_query = query.trim().to_owned();
+        self.search_ids = None;
+        self.search_error = None;
+        self.search_load = self.worker.as_ref().filter(|_| !self.search_query.is_empty() || self.interaction.modal == Some(interactions::Modal::Search))
+            .and_then(|worker| worker.handle().search(self.search_query.clone()).ok());
+    }
+
+    pub(in crate::ui) fn searched_tasks(&self, query: &str, project: Option<i64>) -> Vec<TaskView> {
+        if query.trim() == self.search_query && let Some(ids) = &self.search_ids {
+            return ids.iter().filter_map(|id| self.db.task(*id).ok().flatten())
+                .filter(|task| project.is_none_or(|id| task.project_id == id)).collect();
+        }
+        self.db.search_tasks(query, project).unwrap_or_default()
+    }
+
     pub(super) fn navigate_board(&mut self, cx: &mut Context<Self>) {
         if self.screen == Screen::Task
             && let Some(task) = self.db.task(self.options.task).ok().flatten()
@@ -132,7 +148,7 @@ impl Desktop {
                 let mut tasks = if query.trim().is_empty() {
                     vec![]
                 } else {
-                    self.db.search_tasks(query, None).unwrap_or_default()
+                    self.searched_tasks(query, None)
                 };
                 if let Some(board) = self.shell.search_board {
                     tasks.sort_by_key(|t| t.project_id != board);
@@ -165,7 +181,8 @@ impl Desktop {
                                             .px(px(36.))
                                             .my(px(16.))
                                             .text_color(color(self.colors.muted))
-                                            .child("No results found"),
+                                            .child(if self.search_load.is_some() { "Loading..." } else { self.search_error.as_deref().unwrap_or("No results found") }.to_owned())
+                                            .layout_key(&self.layout, "shell.search.empty", Some(if self.search_load.is_some() { "Loading..." } else { self.search_error.as_deref().unwrap_or("No results found") }.into())),
                                     )
                                 })
                                 .child(

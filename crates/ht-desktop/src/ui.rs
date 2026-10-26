@@ -98,6 +98,10 @@ mod board;
 mod interactions;
 
 #[cfg(test)]
+#[path = "first_run_tests.rs"]
+mod first_run_tests;
+
+#[cfg(test)]
 #[path = "task_open_tests.rs"]
 mod task_open_tests;
 
@@ -124,6 +128,11 @@ pub struct Desktop {
     column_lists: Vec<ListState>,
     detail: Option<TaskDetail>,
     task_load: Option<std::sync::mpsc::Receiver<anyhow::Result<()>>>,
+    collection_load: Option<std::sync::mpsc::Receiver<anyhow::Result<()>>>,
+    search_query: String,
+    search_load: Option<std::sync::mpsc::Receiver<anyhow::Result<Vec<i64>>>>,
+    search_ids: Option<Vec<i64>>,
+    search_error: Option<String>,
     description: RichText,
     summary: SharedString,
     creator: SharedString,
@@ -244,6 +253,11 @@ impl Desktop {
             column_lists: vec![],
             detail: None,
             task_load: None,
+            collection_load: None,
+            search_query: String::new(),
+            search_load: None,
+            search_ids: None,
+            search_error: None,
             description: RichText::default(),
             summary: SharedString::default(),
             creator: SharedString::default(),
@@ -366,24 +380,48 @@ impl Desktop {
 
     fn request_sync(&mut self) {
         self.task_load = None;
+        self.collection_load = None;
         if let Some(worker) = &self.worker {
             let handle = worker.handle();
             let _ = match self.screen {
-                Screen::Inbox => handle.sync_inbox(),
-                Screen::Board => handle.sync_board(self.options.board),
-                Screen::Task if self.detail.is_none() => {
+                Screen::Inbox => handle.load_inbox().map(|receive| self.collection_load = Some(receive)),
+                Screen::Board => handle.load_board(self.options.board).map(|receive| self.collection_load = Some(receive)),
+                Screen::Task => {
                     match handle.load_task(self.options.task) {
                         Ok(receive) => self.task_load = Some(receive),
                         Err(error) => self.error = Some(error.to_string()),
                     }
                     Ok(())
                 }
-                Screen::Task => handle.sync_task(self.options.task),
             };
         }
     }
 
     fn reload(&mut self) {
+        if let Some(receive) = &self.collection_load {
+            match receive.try_recv() {
+                Ok(result) => {
+                    self.collection_load = None;
+                    if let Err(error) = result { self.error = Some(error.to_string()); }
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.collection_load = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+        if let Some(receive) = &self.search_load {
+            match receive.try_recv() {
+                Ok(result) => {
+                    self.search_load = None;
+                    match result {
+                        Ok(ids) => self.search_ids = Some(ids),
+                        Err(error) => self.search_error = Some(error.to_string()),
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.search_load = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
+
         if let Some(receive) = &self.task_load {
             match receive.try_recv() {
                 Ok(result) => {
@@ -596,6 +634,7 @@ impl Desktop {
     }
 
     fn edit_comment(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.worker.is_some() && self.db.current_user_id().is_none() { return; }
         if self.comment_input.read(cx).is_empty() {self.restore_editor(self.comment_input.clone(),Some(ht_core::DraftType::Comment),cx);}
         self.editing = Editing::Comment;
         self.composer_anchor.scroll_to(window, cx);
@@ -894,6 +933,8 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, "board.header", None),
             )
+            .when(self.collection_load.is_some() && self.columns.iter().all(|column| column.cards.is_empty()), |d| d.child(
+                div().p(px(16.)).child("Loading board…").layout_key(&self.layout, "board.loading", Some("Loading board…".into()))))
             .when(self.board_actions.searching, |d| d.child(self.board_search(cx)))
             .when(!self.interaction.bulk.is_empty(), |d| d.child(self.board_selection_bar(cx)))
             .child(
@@ -1367,7 +1408,9 @@ impl Desktop {
 
     fn task_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = self.colors;
-        let Some(d) = &self.detail else {
+        let Some(d) = self.detail.as_ref().filter(|detail| {
+            self.task_load.is_none() || detail.task.extra.contains_key("createdBy")
+        }) else {
             let message = if self.task_load.is_some() {
                 "Loading..."
             } else {
@@ -1440,7 +1483,7 @@ impl Desktop {
                             .child(div().ml(px(16.)).flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add page"))
                             .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
                     .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| self.comment_row(i, comment, body, cx)))
-                    .child(self.comment_composer(cx)))
+                    .when(self.worker.is_none() || self.db.current_user_id().is_some(), |d| d.child(self.comment_composer(cx))))
                 .child(properties)))
             .into_any_element()
     }
@@ -1796,9 +1839,11 @@ impl Render for Desktop {
         self.restore_comment_draft(cx);
         if self.inbox_actions.review.is_some() {return self.unread_review_screen(cx).into_any_element();}
         if let Some(sidebar) = &self.ai_sidebar {
-            let task = (self.screen != Screen::Board)
-                .then(|| self.selected_task())
-                .flatten();
+            let task = match self.screen {
+                Screen::Task => Some(self.options.task),
+                Screen::Inbox => self.selected_task(),
+                Screen::Board => None,
+            };
             let seed = sidebar.read(cx).suggestion_seed;
             let scope = Scope::load(&self.db, self.screen, self.options.board, task, seed);
             sidebar.update(cx, |sidebar, cx| { sidebar.capture = self.layout.clone(); sidebar.fit_viewport(f32::from(window.viewport_size().width), cx); sidebar.set_scope(scope, cx); });

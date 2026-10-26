@@ -71,7 +71,10 @@ impl Interaction {
                 cx,
             )
         });
-        cx.observe(&query, |this, _, cx| {
+        cx.observe(&query, |this, input, cx| {
+            if this.interaction.modal == Some(Modal::Search) {
+                this.request_search(input.read(cx).content.to_string());
+            }
             this.interaction.choice = 0;
             cx.notify();
         })
@@ -755,6 +758,7 @@ impl Desktop {
             .query
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.interaction.modal = Some(modal);
+        if modal == Modal::Search { self.request_search(String::new()); }
         self.interaction.choice = 0;
         self.interaction
             .modal_scroll
@@ -930,9 +934,7 @@ impl Desktop {
                 let project = (self.interaction.modal == Some(Modal::LocalSearch)
                     && self.screen == Screen::Board)
                     .then_some(self.options.board);
-                self.db
-                    .search_tasks(query, project)
-                    .unwrap_or_default()
+                self.searched_tasks(query, project)
                     .into_iter()
                     .filter(|t| {
                         self.interaction.modal != Some(Modal::LocalSearch)
@@ -1303,7 +1305,7 @@ impl Desktop {
                 filtered[i].group
             } else {
                 match modal {
-                    Modal::Search => "Search cached tasks",
+                    Modal::Search => "Search all tasks",
                     Modal::LocalSearch => "Search this view",
                     Modal::Boards => "Switch boards",
                     Modal::Column => "Move task to column",
@@ -1468,6 +1470,8 @@ impl Desktop {
                                     .layout_key(&self.layout, "command.input", None),
                             ),
                     )
+                    .when(self.interaction.modal == Some(Modal::Search) && self.search_load.is_some(), |d| d.child(
+                        div().px(px(16.)).py(px(8.)).child("Loading tasks…").layout_key(&self.layout, "command.loading", Some("Loading tasks…".into()))))
                     .child(list.layout_key(&self.layout, "command.results", None))
                     .child(
                         div()

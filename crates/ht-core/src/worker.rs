@@ -43,7 +43,9 @@ enum Work {
     Board(i64),
     Catalog(i64),
     Task(i64),
-    TaskRelated(i64),
+    User,
+    Sections(i64),
+    Comments(i64),
     Inbox,
     Draft(i64),
     Drain,
@@ -56,7 +58,10 @@ impl Work {
             Self::Projects => "projects",
             Self::Board(_) => "board",
             Self::Catalog(_) => "catalog",
-            Self::Task(_) | Self::TaskRelated(_) => "task",
+            Self::Task(_) => "task",
+            Self::User => "user",
+            Self::Sections(_) => "sections",
+            Self::Comments(_) => "comments",
             Self::Inbox => "inbox",
             Self::Draft(_) => "draft",
             Self::Drain => "mutations",
@@ -70,21 +75,20 @@ impl Work {
             Self::Projects => sync.projects()?,
             Self::Board(id) => sync.board(*id)?,
             Self::Catalog(id) => sync.catalog(*id)?,
-            Self::Task(id) | Self::TaskRelated(id) => {
-                if matches!(self, Self::Task(_)) {
-                    sync.task(*id)?;
-                }
-                if let Ok(response) = sync.transport.get("/user/context")
-                    && let Ok(context) = crate::http::successful(response)
-                    && let Some(id) = context["user"]["id"].as_i64().filter(|id| *id > 0)
-                {
-                    sync.db.kv_set("current-user-id", &id.to_string())?;
-                }
-                sync.comments(*id)?;
+            Self::Task(id) => sync.task(*id)?,
+            Self::User => {
+                let context = crate::http::successful(sync.transport.get("/user/context")?)?;
+                let id = context["user"]["id"].as_i64().filter(|id| *id > 0)
+                    .ok_or_else(|| anyhow::anyhow!("user context missing id"))?;
+                sync.db.kv_set("current-user-id", &id.to_string())?;
+            }
+            Self::Sections(id) => sync.sections(*id)?,
+            Self::Comments(id) => sync.comments(*id)?,
+            Self::Inbox => sync.inbox()?,
+            Self::Draft(id) => {
+                anyhow::ensure!(sync.db.current_user_id().is_some(), "draft owner not loaded");
                 sync.drafts(*id)?;
             }
-            Self::Inbox => sync.inbox()?,
-            Self::Draft(id) => sync.drafts(*id)?,
             Self::Drain => {
                 let mut applied = false;
                 loop {
@@ -147,9 +151,31 @@ fn schedule(pending: &mut BTreeMap<Work, Pending>, work: Work) {
     });
 }
 
+fn schedule_related(pending: &mut BTreeMap<Work, Pending>, work: &Work, db: &Db) {
+    match *work {
+        Work::Task(id) => {
+            schedule(pending, Work::User);
+            schedule(pending, Work::Comments(id));
+            schedule(pending, Work::Draft(id));
+            schedule(pending, Work::Projects);
+            if let Ok(Some(task)) = db.task(id) {
+                schedule(pending, Work::Sections(task.project_id));
+                schedule(pending, Work::Catalog(task.project_id));
+            }
+        }
+        Work::Board(id) => {
+            schedule(pending, Work::User);
+            schedule(pending, Work::Catalog(id));
+        }
+        Work::Inbox => schedule(pending, Work::User),
+        _ => (),
+    }
+}
+
 enum Command {
     Work(Work),
-    LoadTask(i64, mpsc::Sender<Result<()>>),
+    Load(Work, mpsc::Sender<Result<()>>),
+    Search(String, mpsc::Sender<Result<Vec<i64>>>),
     Event(String),
     Wake,
     Stop,
@@ -167,7 +193,22 @@ impl WorkerHandle {
     }
     pub fn load_task(&self, id: i64) -> Result<mpsc::Receiver<Result<()>>> {
         let (send, receive) = mpsc::channel();
-        self.sender.send(Command::LoadTask(id, send))?;
+        self.sender.send(Command::Load(Work::Task(id), send))?;
+        Ok(receive)
+    }
+    pub fn load_board(&self, id: i64) -> Result<mpsc::Receiver<Result<()>>> {
+        let (send, receive) = mpsc::channel();
+        self.sender.send(Command::Load(Work::Board(id), send))?;
+        Ok(receive)
+    }
+    pub fn load_inbox(&self) -> Result<mpsc::Receiver<Result<()>>> {
+        let (send, receive) = mpsc::channel();
+        self.sender.send(Command::Load(Work::Inbox, send))?;
+        Ok(receive)
+    }
+    pub fn search(&self, query: String) -> Result<mpsc::Receiver<Result<Vec<i64>>>> {
+        let (send, receive) = mpsc::channel();
+        self.sender.send(Command::Search(query, send))?;
         Ok(receive)
     }
     pub fn sync_inbox(&self) -> Result<()> {
@@ -208,19 +249,28 @@ impl Worker {
                     };
                     let mut wake = matches!(command, Some(Command::Wake));
                     match command {
-                        Some(Command::LoadTask(id, reply)) => {
-                            task = Some(id);
-                            let result = sync.task(id);
+                        Some(Command::Load(work, reply)) => {
+                            match work {
+                                Work::Task(id) => task = Some(id),
+                                Work::Board(id) => { boards.insert(id); }
+                                Work::Inbox => inbox = true,
+                                _ => unreachable!(),
+                            }
+                            schedule(&mut pending, Work::Projects);
+                            let result = work.run(&mut sync).map(|_| ());
                             if result.is_ok() {
-                                schedule(&mut pending, Work::TaskRelated(id));
+                                schedule_related(&mut pending, &work, &sync.db);
                             } else {
-                                log.failure("task", result.as_ref().unwrap_err(), 1);
-                                pending.insert(Work::Task(id), Pending {
+                                log.failure(work.name(), result.as_ref().unwrap_err(), 1);
+                                pending.insert(work.clone(), Pending {
                                     attempts: 1,
                                     due: Instant::now() + Duration::from_secs(crate::queue::backoff(0) as u64),
                                 });
                             }
                             let _ = reply.send(result);
+                        }
+                        Some(Command::Search(query, reply)) => {
+                            let _ = reply.send(sync.search(&query));
                         }
                         Some(Command::Work(work)) => {
                             match &work {
@@ -228,7 +278,7 @@ impl Worker {
                                     boards.insert(*id);
                                     schedule(&mut pending, Work::Projects);
                                 }
-                                Work::Inbox => inbox = true,
+                                Work::Inbox => { inbox = true; schedule(&mut pending, Work::Projects); }
                                 Work::Task(id) => task = Some(*id),
                                 _ => (),
                             }
@@ -310,6 +360,7 @@ impl Worker {
                                     log.record("recovered", work.name(), "none", entry.attempts);
                                 }
                                 pending.remove(&work);
+                                schedule_related(&mut pending, &work, &sync.db);
                             }
                             Err(error) => {
                                 entry.attempts = entry.attempts.saturating_add(1);
