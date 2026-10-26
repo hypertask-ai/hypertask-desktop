@@ -967,9 +967,10 @@ impl Desktop {
         let children = task.extra.get("sub_tasks").or_else(|| task.extra.get("subTasks"))?.as_array()?;
         let mut choices = Vec::new();
         for child in children {
-            let id = child["id"].as_i64().filter(|id| *id > 0)?;
-            let cached = self.db.task(id).ok().flatten()?;
-            if cached.extra.get("parentTaskId").and_then(serde_json::Value::as_i64) != Some(task.id) { continue; }
+            let id = child["id"].as_i64().filter(|id| *id > 0 && *id != task.id)?;
+            if self.db.task(id).ok().flatten().is_some_and(|cached| {
+                cached.extra.get("parentTaskId").is_some_and(|parent| parent.as_i64() != Some(task.id))
+            }) { continue; }
             choices.push(Choice {
                 name: format!("{} {}", child["ticketNumber"].as_str().unwrap_or(""), child["title"].as_str()?).trim().into(),
                 action: ChoiceAction::RemoveSubtask(id),
@@ -1163,7 +1164,9 @@ impl Desktop {
             }
             ChoiceAction::RemoveSubtask(task_id) => {
                 if self.removable_subtasks().is_some_and(|rows| rows.iter().any(|row| matches!(row.action, ChoiceAction::RemoveSubtask(id) if id == task_id))) {
-                    self.enqueue(Write::TaskPatch { task_id, patch: TaskPatch::Parent(None) }, cx);
+                    if let Some(parent) = self.selected_task() {
+                        self.enqueue(Write::Board { change: ht_core::BoardWrite::RemoveSubtask { task: task_id, parent } }, cx);
+                    }
                 }
             }
             ChoiceAction::Command(CommandAction::Shortcut(Action::Search)) => self.navigate_search(window, cx),
@@ -1973,20 +1976,27 @@ mod cmdk_round3_tests {
         view.read_with(&mut cx, |this, _| {
             let rows = this.db.mutations().unwrap();
             assert_eq!(rows.len(), 1);
-            assert_eq!(rows[0].kind, "task_patch");
-            assert_eq!(rows[0].payload_json, serde_json::json!({"task_id":3,"parent_task_id":null}));
+            assert_eq!(rows[0].kind, "board_write");
+            assert_eq!(rows[0].payload_json["change"], serde_json::json!({"RemoveSubtask":{"task":3,"parent":1}}));
             assert_eq!(this.options.task, 1);
             assert_eq!(this.db.task(2).unwrap().unwrap().extra["parentTaskId"], 1);
+            assert_eq!(this.db.task(3).unwrap().unwrap().extra["parentTaskId"], 1, "wait for the server like the web");
+        }).unwrap();
+        view.update(&mut cx, |this, _, _| {
+            let id = this.db.mutations().unwrap()[0].id;
+            assert_eq!(this.db.drain_once(&mut super::cmdk_round4_tests::RemovalServer(3), chrono::Utc::now().timestamp()).unwrap(), ht_core::Drain::Applied(id));
+            this.reload();
             assert!(this.db.task(3).unwrap().unwrap().extra["parentTaskId"].is_null());
             assert_eq!(this.removable_subtasks().unwrap().len(), 1);
         }).unwrap();
     }
 
     #[gpui::test]
-    fn cmdk3_child_removal_requires_complete_authoritative_cached_children(cx: &mut gpui::TestAppContext) {
+    fn cmdk4_child_removal_rejects_missing_identity_and_conflicting_parent(cx: &mut gpui::TestAppContext) {
         let (view, mut cx) = visual(cx);
         view.update(&mut cx, |this, _, _| {
-            for children in [serde_json::json!([]), serde_json::json!([{"id":99,"title":"Not cached"}]), serde_json::json!([{"id":2,"title":"Other"}])] {
+            this.db.apply_task(&serde_json::json!({"id":2,"projectId":15,"title":"Other","status":"Normal","parent_id":999})).unwrap();
+            for children in [serde_json::json!([]), serde_json::json!([{"id":0,"title":"Invalid"}]), serde_json::json!([{"id":99}]), serde_json::json!([{"id":1,"title":"Self"}]), serde_json::json!([{"id":2,"title":"Other"}])] {
                 this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","sub_tasks":children})).unwrap();
                 assert!(!this.command_rows().iter().any(|row| row.key == "removeSubtask"));
             }
@@ -2092,5 +2102,98 @@ mod cmdk_round3_board_tests {
             for key in ["renameColumn", "deleteColumn"] { assert!(!rows.iter().any(|row| row.key == key)); }
             assert!(this.db.mutations().unwrap().is_empty());
         });
+    }
+}
+
+#[cfg(test)]
+mod cmdk_round4_tests {
+    use super::*;
+    use crate::ui::{shell::tests::{draw, measured}, task_fields::tests::visual};
+
+    pub(super) struct RemovalServer(pub(super) i64);
+    impl ht_core::Transport for RemovalServer {
+        fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            assert_eq!(path, "/user/context");
+            Ok(ht_core::http::Response { status: 200, body: serde_json::json!({"success":true,"user":{"id":42}}) })
+        }
+        fn post(&mut self, path: &str, body: &serde_json::Value, key: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            assert_eq!(path, "/tasks/update");
+            assert_eq!(*body, serde_json::json!({"task_id":self.0,"parent_task_id":null}));
+            assert!(!key.is_empty());
+            Ok(ht_core::http::Response { status: 200, body: serde_json::json!({"success":true,"tasks":[{"id":self.0,"projectId":15,"title":"Detached child","status":"Normal"}]}) })
+        }
+    }
+
+    #[gpui::test]
+    fn cmdk4_remove_subtask_uses_projected_children_without_loading_their_details(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        view.update(&mut cx, |this, _, _| {
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","sub_tasks":[
+                {"id":98,"ticketNumber":"HT-98","title":"First child","uniqueIndex":98},
+                {"id":99,"ticketNumber":"HT-99","title":"Cold child","uniqueIndex":99}
+            ]})).unwrap();
+            this.reload();
+            assert!(this.db.task(98).unwrap().is_none());
+            assert!(this.db.task(99).unwrap().is_none());
+            let rows = this.command_rows();
+            let row = rows.iter().find(|row| row.key == "removeSubtask").expect("web child projection is sufficient");
+            assert_eq!((row.name.as_str(), row.group, row.keys.as_str()), ("Remove a sub-task", "Task", ""));
+            assert!(rows.iter().position(|row| row.key == "toggleAllComments").unwrap() < rows.iter().position(|row| row.key == "removeSubtask").unwrap());
+            assert!(rows.iter().position(|row| row.key == "removeSubtask").unwrap() < rows.iter().position(|row| row.key == "renameTask").unwrap());
+        }).unwrap();
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Remove a sub-task");
+        cx.simulate_keystrokes("enter");
+        draw(view, &mut cx);
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "HT-98 First child");
+        assert_eq!(measured(view, &mut cx, "command.choice.1")["text"], "HT-99 Cold child");
+        cx.simulate_input("Cold child");
+        cx.simulate_keystrokes("enter");
+        view.read_with(&mut cx, |this, _| {
+            let rows = this.db.mutations().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].kind, "board_write");
+            assert_eq!(rows[0].payload_json["change"], serde_json::json!({"RemoveSubtask":{"task":99,"parent":1}}));
+            assert_eq!(this.options.task, 1);
+            assert!(this.db.task(99).unwrap().is_none(), "do not invent a full child task from a projection");
+            assert!(this.interaction.modal.is_none());
+            assert_eq!(this.command_usage()["removeSubtask"]["frequency"], 1);
+        }).unwrap();
+        view.update(&mut cx, |this, _, _| {
+            let id = this.db.mutations().unwrap()[0].id;
+            assert_eq!(this.db.drain_once(&mut RemovalServer(99), chrono::Utc::now().timestamp()).unwrap(), ht_core::Drain::Applied(id));
+            this.reload();
+            assert_eq!(this.db.task(99).unwrap().unwrap().title, "Detached child");
+            assert!(this.db.task(99).unwrap().unwrap().extra["parentTaskId"].is_null());
+            assert_eq!(this.db.task(1).unwrap().unwrap().extra["sub_tasks"].as_array().unwrap().len(), 1);
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Remove a sub-task");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "HT-98 First child");
+        view.read_with(&mut cx, |this, _| assert_eq!(this.removable_subtasks().unwrap().len(), 1)).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk4_child_picker_revalidates_relationship_before_enter(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        view.update(&mut cx, |this, _, _| {
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","sub_tasks":[{"id":99,"title":"Child"}]})).unwrap();
+            this.reload();
+        }).unwrap();
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Remove a sub-task");
+        cx.simulate_keystrokes("enter");
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "Child");
+        view.update(&mut cx, |this, _, _| {
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","sub_tasks":[]})).unwrap();
+        }).unwrap();
+        cx.simulate_keystrokes("enter escape");
+        view.read_with(&mut cx, |this, _| {
+            assert!(this.db.mutations().unwrap().is_empty());
+            assert!(!this.command_rows().iter().any(|row| row.key == "removeSubtask"));
+            assert!(this.db.task(99).unwrap().is_none());
+        }).unwrap();
     }
 }

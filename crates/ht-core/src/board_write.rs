@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BoardWrite {
+    RemoveSubtask { task: i64, parent: i64 },
     MoveToInbox { task: i64, project: i64 },
     WaitingOn { task: i64, user: Option<i64> },
     ToggleTimer { task: i64 },
@@ -63,6 +64,12 @@ impl BoardWrite {
             Ok::<(), anyhow::Error>(())
         };
         let request = match self {
+            Self::RemoveSubtask { task, parent } => {
+                positive(*task)?;
+                positive(*parent)?;
+                ensure!(task != parent, "a task cannot be its own sub-task");
+                ("POST", "/tasks/update".into(), json!({"task_id":task,"parent_task_id":null}))
+            }
             Self::WaitingOn { task, user } => {
                 positive(*task)?;
                 if let Some(user) = user { positive(*user)?; }
@@ -198,6 +205,28 @@ impl BoardWrite {
     }
     pub(crate) fn resolve(&self, db: &mut Db, body: &Value, now: i64) -> Result<()> {
         match self {
+            Self::RemoveSubtask { task, parent } => {
+                let value = body.get("task").or_else(|| body["tasks"].as_array()
+                    .and_then(|rows| rows.iter().find(|row| row["id"] == *task)))
+                    .context("missing sub-task removal acknowledgement")?;
+                ensure!(value["id"] == *task && value["parent_id"].is_null()
+                    && value["parentTaskId"].is_null() && value["parent_task"].is_null(), "sub-task removal was not acknowledged");
+                // MCP omits absent parents; clear aliases in the merging cache explicitly.
+                let mut value = value.clone();
+                value["parent_id"] = Value::Null;
+                value["parentTaskId"] = Value::Null;
+                value["parent_task"] = Value::Null;
+                db.upsert_task(&value)?;
+                let mut parent_row = db.raw("Task", &json!(parent))?.context("parent task is not cached")?;
+                for field in ["sub_tasks", "subTasks"] {
+                    if let Some(children) = parent_row[field].as_array_mut() {
+                        children.retain(|child| child["id"] != *task);
+                    }
+                }
+                db.upsert_task(&parent_row)?;
+                db.request_refetch("task", *parent)?;
+                db.request_refetch("task", *task)?;
+            }
             Self::WaitingOn { task, user } => {
                 let row = &body["task"];
                 ensure!(row["id"] == *task && row.get("waitingOnUserId").is_some() && row["waitingOnUserId"] == json!(user), "missing blocked by person acknowledgement");

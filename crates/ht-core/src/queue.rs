@@ -91,6 +91,14 @@ impl Db {
             Write::Board { change } => {
                 change.request()?;
                 let user = db.current_user_id().context("sync your account before changing a board")?;
+                if let crate::BoardWrite::RemoveSubtask { task, parent } = change {
+                    let row = db.task(*parent)?.context("parent task is not cached")?;
+                    ensure!(row.extra.get("sub_tasks").or_else(|| row.extra.get("subTasks"))
+                        .and_then(Value::as_array).is_some_and(|children| children.iter().any(|child| child["id"] == *task)), "task is not a child of this parent");
+                    if let Some(child) = db.task(*task)? {
+                        ensure!(child.extra.get("parentTaskId").is_none_or(|id| id.as_i64() == Some(*parent)), "child no longer belongs to this parent");
+                    }
+                }
                 if let crate::BoardWrite::MoveToInbox { task, project } | crate::BoardWrite::StarTask { task, project, .. } | crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
                     ensure!(db.task(*task)?.is_some_and(|task| task.project_id == *project), "task is not cached in this board");
                 }
