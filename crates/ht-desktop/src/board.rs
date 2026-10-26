@@ -398,6 +398,30 @@ mod tests {
                 assert_eq!(label["lineHeight"], font_size);
                 assert!(this.db.mutations().unwrap().is_empty());
             }).unwrap();
+            view.update(&mut cx, |this, _, cx| {
+                this.db.apply_task(&json!({
+                    "id":1,"projectId":15,"sectionId":10,"title":"Needle",
+                    "status":"Normal","labels":[
+                        {"id":"wide-a","name":"A long label ".repeat(8)},
+                        {"id":"wide-b","name":"Another long label ".repeat(8)}
+                    ]
+                })).unwrap();
+                this.reload();
+                cx.notify();
+            }).unwrap();
+            draw(view, &mut cx);
+            view.read_with(&mut cx, |this, _| {
+                let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+                let element = |key: &str| elements.iter().find(|e| e["key"] == key).unwrap();
+                let first = element("board.card.0.label");
+                let second = element("board.card.0.label.1");
+                let card = element("board.card.0");
+                assert_eq!(second["y"].as_f64().unwrap() - first["y"].as_f64().unwrap() - first["h"].as_f64().unwrap(), 4.);
+                for label in [first, second] {
+                    assert!(label["x"].as_f64().unwrap() + label["w"].as_f64().unwrap() <= card["x"].as_f64().unwrap() + card["w"].as_f64().unwrap());
+                }
+                assert!(this.db.mutations().unwrap().is_empty());
+            }).unwrap();
         }
     }
 

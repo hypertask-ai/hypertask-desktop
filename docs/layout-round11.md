@@ -97,3 +97,23 @@ No title, ticket, column, notification, comment or fixture is removed or replace
 ## Hosted regression setup
 
 Initial regression run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40249933805 rejected a malformed new label fixture before reaching layout. Labels require IDs. The fixture is corrected without changing product code or existing assertions; this run is not claimed as product-defect red proof.
+
+Corrected red proof: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40250714384 at `9ee825517b105a27d494e62b46781a87dd2b3ae3`. Linux, Windows and macOS each report 208 native tests passed and this regression failed. The native `Bug` label starts at y=216.5; `Draft` starts at y=188.5. Both belong to the same source tags row. The label is 16.5px high, normal weight, with a 3px radius. This independently exposes a defect despite the zero reference-content total.
+
+## Implementation and source values
+
+Data shape: one ordered `Vec<AnyElement>` for existing draft, date, priority and label tags, consumed by one wrapping flex row. A local pill builder mirrors the existing web `LabelWrapper`; no new public type, module or API. Moving existing rows inside the source row was chosen over compensating card heights. The frozen reference does not cover mixed tags; changing it would hide that coverage gap rather than repair the product.
+
+| Native value | Web authority under `/home/valentin/projects/hypertask/` |
+| --- | --- |
+| Tag order, wrapping, 4px gap | `src/components/PageComponents/Kanban/KanbanTaskComponents/TaskTagsRow.tsx:113-114,140-199` |
+| Pill 6px horizontal and 2px vertical padding, minimum 20px height, medium weight, leading-none, rounded-sm | `src/components/Labels/LabelWrapper.tsx:13-35` |
+| Pill font 11px on Porcelain, Graphite, AMOLED | `src/styles/tailwindThemes/porcelain.css:147-149`, `src/styles/tailwindThemes/graphite.css:141-143`, `src/styles/tailwindThemes/amoled.css:147-149` |
+| Dia font 12px and 1px border | `src/components/Labels/LabelWrapper.tsx:24-25`, `src/styles/tailwindThemes/dia.css:153-155` |
+| Pill backgrounds #ececef / #363b44 / #2d2d2d / #f1eee7 | `src/styles/tailwindThemes/porcelain.css:22`, `src/styles/tailwindThemes/graphite.css:13`, `src/styles/tailwindThemes/amoled.css:7`, `src/styles/tailwindThemes/dia.css:17` |
+| Text inherits theme white-black | `src/components/Labels/LabelWrapper.tsx:36` |
+| Draft 11px, medium, 22px line height, green | `src/components/PageComponents/Kanban/KanbanTaskComponents/TaskTagsRow.tsx:140-143` |
+| Due calendar 16px, #FB773F | `src/components/Labels/DueDateLabel.tsx:67-84` |
+| Priority dot 7px, 4px internal gap; Urgent #F88F9C and High #DE9D6E | `src/components/Modals/TaskPriority/PriorityLabelComponent.tsx:39-68`, `src/lib/constants/constants.ts:85-101` |
+
+The native regression checks all four themes, shared tag-row position, source title-to-tags gap, pill metrics/colors, overflow wrapping with 4px row gap, and no queued mutations. Existing draft and ticket-row regressions remain unchanged. Prove-it-works requires the hosted native measurements. Sequence-verifiable-units keeps the rejected old layout before this correction. Fix-root-causes removes the incorrect separate rows rather than fitting offsets.
