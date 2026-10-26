@@ -580,7 +580,7 @@ fn graphite_sidebar_source_measurements(cx: &mut gpui::TestAppContext) {
             sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
             let mut db = Db::memory().unwrap();
             db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"Alpha","teamId":1}]})).unwrap();
-            let mut scope = Scope::load(&db, Screen::Board, 15, None);
+            let mut scope = Scope::load(&db, Screen::Board, 15, None, sidebar.suggestion_seed);
             scope.suggestions = vec!["What should I work on next?".into(), "Summarize the last 3 days".into(), "What's unassigned?".into(), "What's blocking release?".into()];
             sidebar.scope = Some(scope);
             sidebar
