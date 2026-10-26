@@ -1400,10 +1400,13 @@ impl Render for AiSidebar {
             .flex()
             .items_center()
             .gap(px(8.))
+            .justify_between()
             .text_size(px(12.))
+            .child(div().min_w_0().flex().items_center().gap(px(8.))
             .child(
                 div()
                     .id("ai-model-toggle")
+                    .flex_shrink_0()
                     .px(px(8.)).py(px(4.)).text_size(px(13.)).line_height(px(19.5))
                     .flex()
                     .items_center()
@@ -1423,7 +1426,6 @@ impl Render for AiSidebar {
                 div()
                     .id("ai-context-toggle")
                     .px(px(8.)).py(px(4.)).text_size(px(13.)).line_height(px(19.5))
-                    .flex_1()
                     .min_w_0()
                     .flex()
                     .items_center()
@@ -1444,20 +1446,22 @@ impl Render for AiSidebar {
                             "chevron-down"
                         },
                         t.muted,
-                    )),
-            )
+                    ))
+                    .layout_key(&self.capture, "ai.context.toggle", None),
+            ).layout_key(&self.capture, "ai.controls.leading", None))
+            .child(div().flex().flex_shrink_0().items_center().gap(px(8.))
             .when(self.active.is_some(), |d| d.child(
                 div().id("ai-stop").cursor_pointer().child("Stop")
                     .on_click(cx.listener(|this, _, _, cx| this.stop(cx)))
                     .layout_key(&self.capture, "ai.stop", None),
             ))
             .when(self.active.is_none() || !self.input.read(cx).content.trim().is_empty(), |d| d.child(
-                div().id("ai-send").cursor_pointer().child(icon("send", t.muted))
+                div().id("ai-send").cursor_pointer().child(svg().path("ai-send").size(px(16.)).flex_shrink_0().text_color(color(t.muted)))
                     .on_click(cx.listener(|this, _, window, cx| {
                         this.send(this.input.read(cx).content.to_string(), window, cx);
                     }))
                     .layout_key(&self.capture, "ai.send", None),
-            ));
+            )).layout_key(&self.capture, "ai.controls.actions", None));
         composer = composer.child(controls.layout_key(&self.capture, "ai.controls", None));
         if self.mode() == DisplayMode::Fullscreen {
             composer = composer.w_full().max_w(px(800.)).mx_auto();

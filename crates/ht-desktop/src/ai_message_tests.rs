@@ -867,3 +867,71 @@ fn sidebar_placeholder_paint_uses_web_tint_not_container_color(cx: &mut gpui::Te
         });
     }
 }
+
+// /home/valentin/projects/hypertask/src/components/AI_CHAT/AiChatComposerActionRow.tsx:74-90,146-152
+// /home/valentin/projects/hypertask/src/components/AI_CHAT/AI_Tiptap_Container.tsx:599-637
+#[gpui::test]
+fn sidebar_action_row_keeps_natural_scope_and_separate_right_actions(cx: &mut gpui::TestAppContext) {
+    struct Host(Entity<AiSidebar>);
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(420.)).h(px(1009.)).text_size(px(16.)).line_height(gpui::relative(1.5))
+                .child(self.0.clone())
+        }
+    }
+    for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
+        let (host, cx) = cx.add_window_view(|window, cx| Host(cx.new(|cx| {
+            let mut db = Db::memory().unwrap();
+            db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"QA Team Board","teamId":1}],"tasks":[{"id":103,"projectId":15,"title":"Task","ticketNumber":"QABO-5","status":"Normal"}]})).unwrap();
+            let focus = cx.focus_handle();
+            let mut sidebar = AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx);
+            sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
+            sidebar.set_scope(Scope::load(&db, screen, 15, Some(103), 0), cx);
+            sidebar
+        })));
+        let view = host.read_with(cx, |host, _| host.0.clone());
+        for included in [true, false] {
+            let row = element(&view, cx, "ai.controls");
+            let leading = element(&view, cx, "ai.controls.leading");
+            let actions = element(&view, cx, "ai.controls.actions");
+            let model = element(&view, cx, "ai.model.toggle");
+            let scope = element(&view, cx, "ai.context.toggle");
+            let label = element(&view, cx, "ai.context");
+            let send = element(&view, cx, "ai.send");
+            let number = |value: &serde_json::Value, field: &str| value[field].as_f64().unwrap();
+            assert_eq!(number(&scope, "x") - number(&model, "x") - number(&model, "w"), 8.);
+            // Natural chip is padding16 + icon13 + gaps8 + label + trailing16.
+            assert_eq!(number(&scope, "w") - number(&label, "w"), 53.);
+            assert_eq!(number(&leading, "x"), number(&row, "x"));
+            assert_eq!(number(&actions, "x") + number(&actions, "w"), number(&row, "x") + number(&row, "w"));
+            assert!(number(&actions, "x") - number(&leading, "x") - number(&leading, "w") >= 8.);
+            assert_eq!(send["w"], 16.);
+            assert_eq!(send["h"], 16.);
+            assert_eq!(label["text"], if included { "QABO-5 Task" } else { "All boards" });
+            println!("AI_SIDEBAR_GROUPS {screen:?} included={included} scope_width={} label_width={} send=16 right_edge={}", scope["w"], label["w"], number(&actions, "x") + number(&actions, "w"));
+            if included { click(&view, cx, "ai.context.toggle"); }
+        }
+        click(&view, cx, "ai.send");
+        view.read_with(cx, |sidebar, _| assert!(sidebar.chats[0].messages.is_empty()));
+        view.update_in(cx, |sidebar, _, cx| sidebar.input.update(cx, |input, cx| input.set_content("Keep my draft".into(), cx)));
+        click(&view, cx, "ai.send");
+        view.read_with(cx, |sidebar, cx| {
+            assert!(sidebar.chats[0].error.as_deref().unwrap().contains("offline"));
+            assert_eq!(sidebar.input.read(cx).content.as_ref(), "Keep my draft");
+        });
+    }
+}
+
+// /home/valentin/projects/hypertask/src/components/AI_CHAT/SendMessageButton.tsx:62-65
+#[test]
+fn sidebar_send_stroke_matches_web_without_changing_shared_send() {
+    use gpui::AssetSource;
+    let source = |name| String::from_utf8(crate::Assets.load(name).unwrap().unwrap().into_owned()).unwrap();
+    let sidebar = source("ai-send");
+    let shared = source("send");
+    assert!(sidebar.contains("stroke-width=\"1.75\""));
+    assert!(sidebar.contains("viewBox=\"0 0 24 24\""));
+    assert_eq!(sidebar.replace("stroke-width=\"1.75\"", "stroke-width=\"1.5\""), shared);
+    assert!(sidebar.contains("M14.536 21.686"));
+    assert!(sidebar.contains("m21.854 2.147-10.94 10.939"));
+}
