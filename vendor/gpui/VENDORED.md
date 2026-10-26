@@ -13,7 +13,8 @@ The source/build/resources are copied unchanged except these storage changes:
 `src/arena.rs` also releases chunks unused by the last completed frame after
 all arena values are dropped, rather than retaining a historical resize peak.
 Active nested scopes still defer clear. `src/app.rs` exposes requested element
-arena capacity for the existing owner receipt. No working-set calls are made.
+arena capacity for the existing owner receipt. `src/gpui.rs` re-exports Arena
+only under the existing test-support feature for the lifetime regression. No working-set calls are made.
 
 No shaping, font selection, glyph, decoration, raster, packing or painting logic changes.
 The standalone Cargo manifest resolves inherited dependencies to the same upstream

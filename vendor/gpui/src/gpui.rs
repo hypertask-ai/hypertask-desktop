@@ -103,6 +103,8 @@ pub use action::*;
 pub use anyhow::Result;
 pub use app::*;
 pub(crate) use arena::*;
+#[cfg(feature = "test-support")]
+pub use arena::Arena;
 pub use asset_cache::*;
 pub use assets::*;
 pub use color::*;

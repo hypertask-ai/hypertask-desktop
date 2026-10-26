@@ -62,7 +62,7 @@ for screen in ('inbox', 'board', 'task'):
         assert store_new == store_old, f'{screen}: SQLite/store ownership changed'
         app_new = load(current / f'{screen}-{run}-owners.app.json')
         app_old = load(control / f'{screen}-{run}-owners.app.json')
-        for key in app_old.keys() - {'RustLiveRequestedBytes', 'RustPeakRequestedBytes', 'RustLiveSizeBuckets', 'DataReads', 'ShapedLineBytes', 'ElementArenaCapacityBytes'}:
+        for key in app_old.keys() - {'RustLiveRequestedBytes', 'RustPeakRequestedBytes', 'DataReads', 'ShapedLineBytes', 'ElementArenaCapacityBytes'}:
             assert app_new[key] == app_old[key], f'{screen}: retained {key} changed'
         assert app_new['ElementArenaCapacityBytes'] <= app_old['ElementArenaCapacityBytes']
         print(f'MEM6_ARENA {screen} run={run}: {app_old["ElementArenaCapacityBytes"]} -> {app_new["ElementArenaCapacityBytes"]} bytes')

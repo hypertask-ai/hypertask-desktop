@@ -89,3 +89,11 @@ frame, and successful allocation after releasing two unused chunks. This is
 allocation lifetime management, not eviction or a heap-collection call. Accept
 only if the real receipt shows less retained capacity and preserved budgets,
 RGB, layouts and lower all-screen cold/warm memory; otherwise remove this unit.
+
+CI 40288821020 compiled production/control and ARM64, but correctly rejected the
+new lifetime test because Arena is crate-private. Expose its existing type only
+under GPUI's existing test-support feature; production's public surface stays
+unchanged. No memory/visual check is weakened. Retire the temporary allocation
+size histogram after attribution, avoiding an extra atomic operation on every
+production allocation. Original live/peak requested-byte counters remain exactly
+as before; both compared builds use the same measurement implementation.
