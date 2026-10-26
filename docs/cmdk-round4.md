@@ -3,7 +3,10 @@
 Web root: `/home/valentin/projects/hypertask/src`.
 Web checkout: `84ee35e8afe00cc67c79c8ad6162563363bfc19d`.
 Acceptance: [GATES-cmdk4.md](../GATES-cmdk4.md).
-Baseline native main: `c5fbfcc` after rebase.
+Baseline native main: `a84adf8` after final rebase.
+Data fidelity https://github.com/hypertask-ai/hypertask-desktop/pull/57 merged during CI.
+Its cache projections do not add command writers.
+Its new display fields do not resolve B/N contracts.
 Historical inventories remain unchanged below their round headings.
 This refresh supersedes their unresolved-row dispositions.
 

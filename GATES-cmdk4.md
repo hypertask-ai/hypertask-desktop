@@ -30,7 +30,7 @@ Prove It Works requires actual named CI output and exact-head receipt. Sequence 
 
 ## Evidence
 
-Pending source audit and exact-head GitHub CI.
+Source audit and red control are recorded below. Final exact-head GitHub receipt and every job conclusion are published on https://github.com/hypertask-ai/hypertask-desktop/pull/59.
 
 ### Source audit and rejection control
 
@@ -40,3 +40,4 @@ Pending source audit and exact-head GitHub CI.
 - Native keyboard tests cover cold and cached children, exact label/group/hint/order, filtered child identity, acknowledgement and visible remaining picker rows. Negative tests cover malformed/self identities, contradictory cached parent and a changed projection before Enter. Core tests cover durable restart/reopen, exact POST body, wrong account, forbidden writes and wrong/non-detached acknowledgements.
 - PR 57 remains open at source-audit completion; its proposed fidelity work does not add a command writer or capability endpoint. Fetch/rebase remains required before every push and completion check.
 - Full working fixed keys 84 -> 85; full working declarations 85 -> 86; available fixed keys 90 -> 90. No new web key invented. Existing search/Compose/reminder/notification/fullscreen partial workflows remain partial.
+- Data fidelity https://github.com/hypertask-ai/hypertask-desktop/pull/57 merged during hosted verification. Rebased onto a84adf8 and reviewed its core cache/projection and native display changes. It adds no writable route/capability resolving remaining command contracts. The pre-rebase run had Linux/macOS/ARM64/updater/pstack success while Windows native input continued; its watcher was stopped before 30 minutes. Only the new final-head receipt can qualify completion.
