@@ -117,3 +117,42 @@ Data shape: one ordered `Vec<AnyElement>` for existing draft, date, priority and
 | Priority dot 7px, 4px internal gap; Urgent #F88F9C and High #DE9D6E | `src/components/Modals/TaskPriority/PriorityLabelComponent.tsx:39-68`, `src/lib/constants/constants.ts:85-101` |
 
 The native regression checks all four themes, shared tag-row position, source title-to-tags gap, pill metrics/colors, overflow wrapping with 4px row gap, and no queued mutations. Existing draft and ticket-row regressions remain unchanged. Prove-it-works requires the hosted native measurements. Sequence-verifiable-units keeps the rejected old layout before this correction. Fix-root-causes removes the incorrect separate rows rather than fitting offsets.
+
+## Downloaded after artifact
+
+Product SHA `ed65aed9ca3035ee51ddd4e81d85d29c055a8ca9`, run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40251319284. Downloaded `layout-dumps` artifact ID `12620393561`; its ZIP SHA-256 matches GitHub's digest `sha256:d7c1ca3272944c130e452e94ab11f3ba3e1ee2d52232f3ac43ba24a40868d0b2`. The before artifact is the exact main artifact recorded above, not a locally generated comparison.
+
+| Dataset | Before inbox / board / task | After inbox / board / task | Before total | After total |
+| --- | --- | --- | ---: | ---: |
+| Dense | 13 / 17 / 14 | 13 / 17 / 14 | 44 | 44 |
+| Sparse | 4 / 5 / 1 | 4 / 5 / 1 | 10 | 10 |
+| Matched reference content | 0 / 0 / 0 | 0 / 0 / 0 | 0 | 0 |
+
+Counts are the complete, unfiltered `compare-complete-dense.txt`, `compare-complete-parity.txt` and `compare-complete-reference.txt` from the two hosted artifacts. Original frozen comparisons also remain 68 dense / 34 sparse / 24 reference; those additional 24 are unsampled rail keys. Neither comparison path is replaced or relaxed.
+
+| Original record | Before native | After native | Resolution |
+| --- | --- | --- | --- |
+| #17 `board.card.0` | x=79, y=109, w=262, h=126 | x=79, y=109, w=262, h=108 | Incorrect tag stacking removed. Narrower source-minimum tracks and actual task content still differ from capture. |
+| #18 `board.card.1` | x=79, y=251, w=262, h=120 | x=79, y=233, w=262, h=102 | Prior-card shift and own stacking corrected. Actual card content remains different. |
+| #29 `board.card.0.label` | x=91, y=211, w=84, h=16; weight=400; line-height=16.5; bg=#262930; color=#8e9093; radius=3 | x=142, y=189, w=102, h=20; weight=500; line-height=11; bg=#363b44; color=#ffffff; radius=4 | Source pill metrics and shared tags row restored. Valid dense label remains absent from captured first card. |
+| #28 `board.card.2` | y=387, h=120 | y=351, h=102 | Same renderer correction; task presence remains an artifact. |
+| #26 `board.card.3` | y=523, h=107 | y=469, h=89 | Same renderer correction; task presence remains an artifact. |
+| #27 `board.card.4` | y=646, h=120 | y=574, h=102 | Same renderer correction; task presence remains an artifact. |
+
+All three source-proven real records are corrected. Their surviving raw differences are content/cardinality artifacts, not claimed count reductions. The remaining 51 classifications are unchanged. Zero sampled style mismatches and zero matched-content differences are not a claim of complete live-app pixel parity or authenticated actions.
+
+The final documentation descendant gets a separate exact-head full-job receipt on https://github.com/hypertask-ai/hypertask-desktop/pull/36. No VPS build, test, lint, app/test-copy launch or laptop access occurred. Only source inspection, edits, Git, hosted artifact reading and read-only CI receipts ran here.
+
+Hosted macOS log explicitly reports `board_tags_share_one_wrapping_row_with_source_pill_metrics ... ok` and `209 passed; 0 failed`. That test exercises all four themes and wrapped labels. Hosted Windows warm board screenshots were also inspected directly: baseline artifact `windows-memory` ID `12620366459` and corrected artifact ID `12620402984`, both `board-warm.png` at 1920x1009. They show the source tag row replacing stacked priority/labels. No local image-diff test or complete screenshot-equivalence claim is made.
+
+The product SHA's complete receipt reports `DESKTOP_CI_VERIFIED ed65aed9ca3035ee51ddd4e81d85d29c055a8ca9` with eight successful jobs: `ubuntu-24.04`, `windows-2025`, `macos-15`, `windows-arm64`, `Pstack contract`, `updater-ubuntu-24.04`, `updater-windows-2025`, and `Windows memory receipt and budget`. The historical memory comparison matrix is skipped by its unchanged branch condition, not counted as required proof. All eleven required artifacts are nonempty, nonexpired and SHA-bound. The watcher initially hit a shared personal-account rate limit; a later stale shared GET snapshot was rejected. A fresh session-owned cache produced the successful receipt without changing the shared adapter or bypassing any gate.
+
+## Acceptance evidence
+
+| Check | Exact evidence |
+| --- | --- |
+| 1. Exact-main baseline | Run `40249398775`, artifact `12619234601`; receipt verified main SHA; complete counts 44 / 10 / 0. |
+| 2. All 54 records | Numbered inventory #1 through #54 above; original full-precision boxes and source file:line authorities retained. |
+| 3. Every source-proven real defect | Records #17, #18 and #29 corrected; five sampled dense cards each lose the incorrect extra 18px; table above retains every resulting box change. |
+| 4. Hosted behavior regression and contracts | Run `40250714384` rejects wrong tag-row positions on all three test platforms. Run `40251319284` passes all four theme states and wrapped-label regression, existing strict font/layout/input checks, ARM64 and both memory budgets. |
+| 5. Green draft delivery | Product run has all eight required jobs successful. Final documentation descendant's exact-head receipt and freshly downloaded count confirmation are attached to PR 36 before handoff. |
