@@ -187,4 +187,21 @@ mod tests {
         cx.simulate_keystrokes("2");
         assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
     }
+    #[gpui::test]
+    fn ai_toggle_shortcut_closes_from_composer_and_reopens_same_draft(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        cx.simulate_keystrokes("ctrl-q");
+        cx.simulate_input("Saved draft é🙂");
+        for chord in ["ctrl-shift-/", "ctrl-?"] {
+            cx.simulate_keystrokes(chord);
+            view.read_with(&cx, |this, _| assert!(!this.shell.ai_open)).unwrap();
+            assert_eq!(measured(view, &mut cx, "main")["w"], 1440.);
+            cx.simulate_keystrokes("ctrl-q");
+            assert_eq!(measured(view, &mut cx, "rightpanel")["w"], 420.);
+            view.read_with(&cx, |this, cx| {
+                assert_eq!(this.ai_sidebar.as_ref().unwrap().read(cx).draft_text(cx), "Saved draft é🙂");
+            }).unwrap();
+        }
+    }
+
 }

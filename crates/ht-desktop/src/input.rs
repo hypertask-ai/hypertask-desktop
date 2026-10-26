@@ -1209,6 +1209,12 @@ impl TextInput {
         self
     }
 
+    pub fn ai_composer(mut self) -> Self {
+        self.multiline = true;
+        self.editor = Some(EditorState::new(self.content.as_ref()));
+        self
+    }
+
     pub fn multiline_editor(mut self) -> Self {
         self.multiline = true;
         self.editor_newlines = true;

@@ -260,6 +260,7 @@ impl TextInput {
         }
     }
     pub(super) fn update_slash(&mut self, start: usize, text: &str) {
+        if !self.editor_newlines { return; }
         let Some(e) = &mut self.editor else {
             return;
         };
@@ -700,6 +701,10 @@ impl TextInput {
             return;
         }
         let key = &event.keystroke;
+        if !self.editor_newlines && (key.modifiers.control || key.modifiers.platform)
+            && matches!(key.key.as_str(), "u" | "y") {
+            return;
+        }
         let ctrl = key.modifiers.control || key.modifiers.platform;
         if key.key=="escape" && self.editor.as_ref().is_some_and(|e|e.ai_menu) {
             self.editor.as_mut().unwrap().ai_menu=false;cx.stop_propagation();cx.notify();return;
@@ -790,6 +795,7 @@ impl TextInput {
         }
     }
     pub(super) fn editor_menu(&self, window: &Window, cx: &mut Context<Self>) -> Vec<AnyElement> {
+        if !self.editor_newlines { return vec![]; }
         let Some(e) = &self.editor else {
             return vec![];
         };

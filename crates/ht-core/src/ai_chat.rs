@@ -410,16 +410,17 @@ pub fn suggestions(
     board: Option<(&str, &[BoardColumn])>,
     now: i64,
 ) -> Vec<String> {
-    if let Some(task) = task {
+    let mut pool = if let Some(task) = task {
         let reference = task.ticket_number.as_deref().unwrap_or("this ticket");
-        return vec![
+        vec![
             format!("Summarize {reference}"),
             format!("Write my next reply on {reference}"),
             format!("What's blocking {reference}?"),
             format!("What are the next steps for {reference}?"),
-        ];
-    }
-    if let Some((title, columns)) = board.filter(|(_, columns)| !columns.is_empty()) {
+            format!("Draft a status update for {reference}"),
+            format!("Suggest sub-tasks for {reference}"),
+        ]
+    } else if let Some((title, columns)) = board.filter(|(_, columns)| !columns.is_empty()) {
         let mut pool = vec!["What's important in my inbox?".into()];
         let busiest = columns
             .iter()
@@ -464,18 +465,27 @@ pub fn suggestions(
         pool.extend([
             "What's been stuck the longest?".into(),
             "Top 3 focus this week?".into(),
+            "Any duplicate tickets here?".into(),
         ]);
-        pool.truncate(4);
-        return pool;
-    }
+        pool
+    } else {
     [
         "What should I work on next?",
         "Summarize the last 3 days",
         "What's unassigned?",
         "What's blocking release?",
+        "Draft a task for the next sprint",
+        "What's overdue?",
+        "Who's overloaded?",
+        "What's been stuck over a week?",
+        "Top 3 focus this week?",
     ]
     .map(str::to_owned)
     .to_vec()
+    };
+    pool.sort_by_cached_key(|_| Uuid::new_v4());
+    pool.truncate(4);
+    pool
 }
 
 #[cfg(test)]
@@ -835,31 +845,26 @@ mod tests {
     }
 
     #[test]
-    fn suggestions_use_task_reference_and_real_board_counts() {
+    fn suggestions_use_full_web_pools_without_duplicates_or_invented_counts() {
         let task: TaskView = serde_json::from_value(json!({"id":456,"title":"Task","projectId":123,"ticketNumber":"HTPR-123","status":"Normal","dueDate":"2020-01-01T00:00:00Z"})).unwrap();
-        assert_eq!(
-            suggestions(Some(&task), None, 0)[2],
-            "What's blocking HTPR-123?"
-        );
-        let columns = vec![BoardColumn {
-            id: 1,
-            title: "Todo".into(),
-            ranking: "a".into(),
-            cards: vec![task],
-        }];
-        assert_eq!(
-            suggestions(None, Some(("Board", &columns)), 1_800_000_000),
-            vec![
-                "What's important in my inbox?",
-                "Prioritize the 1 tickets in Todo",
-                "Who should take the 1 unassigned?",
-                "Triage the 1 overdue tickets"
-            ]
-        );
-        assert_eq!(suggestions(None, None, 0).len(), 4);
-        assert_eq!(
-            suggestions(None, Some(("Empty", &[])), 0),
-            suggestions(None, None, 0)
-        );
+        let ticket_pool = ["Summarize HTPR-123", "Write my next reply on HTPR-123", "What's blocking HTPR-123?", "What are the next steps for HTPR-123?", "Draft a status update for HTPR-123", "Suggest sub-tasks for HTPR-123"];
+        let result = suggestions(Some(&task), None, 0);
+        assert_eq!(result.len(), 4);
+        assert!(result.iter().all(|s| ticket_pool.contains(&s.as_str())));
+        let columns = vec![BoardColumn { id: 1, title: "Todo".into(), ranking: "a".into(), cards: vec![task] }];
+        let board_pool = ["What's important in my inbox?", "Prioritize the 1 tickets in Todo", "Who should take the 1 unassigned?", "Triage the 1 overdue tickets", "What changed on Board this week?", "Summarize the Todo column", "What's been stuck the longest?", "Top 3 focus this week?", "Any duplicate tickets here?"];
+        let result = suggestions(None, Some(("Board", &columns)), 1_800_000_000);
+        assert_eq!(result.len(), 4);
+        assert!(result.iter().all(|s| board_pool.contains(&s.as_str())));
+        let mut unique = result.clone();
+        unique.sort(); unique.dedup();
+        assert_eq!(unique.len(), 4);
+        let general_pool = ["What should I work on next?", "Summarize the last 3 days", "What's unassigned?", "What's blocking release?", "Draft a task for the next sprint", "What's overdue?", "Who's overloaded?", "What's been stuck over a week?", "Top 3 focus this week?"];
+        for result in [suggestions(None, None, 0), suggestions(None, Some(("Empty", &[])), 0)] {
+            assert_eq!(result.len(), 4);
+            assert!(result.iter().all(|s| general_pool.contains(&s.as_str())));
+        }
+        let result = suggestions(None, Some(("Board", &columns)), 0);
+        assert!(!result.iter().any(|s| s.contains("overdue")));
     }
 }
