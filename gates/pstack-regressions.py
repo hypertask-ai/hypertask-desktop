@@ -67,6 +67,18 @@ class ReceiptRegression(unittest.TestCase):
             receipt.validate(self.sha, self.run, self.jobs, self.artifacts)
 
 
+class MemoryControlRegression(unittest.TestCase):
+    def test_demo_comparisons_use_the_producers_artifact_name(self):
+        workflow = (ROOT / ".github/workflows/ci.yml").read_text()
+        self.assertIn("demo-artifact: ${{ steps.control-identity.outputs.demo-artifact }}", workflow)
+        self.assertIn("name: ${{ steps.control-identity.outputs.demo-artifact }}", workflow)
+        comparisons = [line for line in workflow.splitlines()
+                       if "evidence/memory-proof/" in line and "github.event.pull_request.head.sha" in line]
+        self.assertEqual(comparisons, [], "Comparison paths must come from the measured control producer")
+        self.assertEqual(workflow.count("evidence/memory-proof/${{ needs.windows-memory-baselines.outputs.demo-artifact }}"), 3)
+        print("MEMORY_CONTROL_ARTIFACT_WIRING_VERIFIED")
+
+
 class IntegrationRegression(unittest.TestCase):
     def test_current_and_broken_skill_discovery(self):
         integration.check(ROOT)

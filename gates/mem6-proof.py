@@ -31,6 +31,7 @@ for screen in ('inbox', 'board', 'task'):
     new = [r for r in a['Samples'] if r['Screen'] == screen]
     old = [r for r in b['Samples'] if r['Screen'] == screen]
     assert all(r['WarmRendererReceiptUpdated'] is True for r in new + old)
+    assert all((r['WarmClientWidth'], r['WarmClientHeight']) == (r['ClientWidth'], r['ClientHeight']) for r in new + old), 'Warm geometry must match the cold capture'
     assert all(0 < r['WarmRestoreMaximizeMilliseconds'] < 10000 for r in new + old)
     for folder in (current, control):
         assert not list(folder.glob('*-owners.startup.json')), 'Working-set eviction is forbidden'

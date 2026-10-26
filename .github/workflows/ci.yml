@@ -279,6 +279,8 @@ jobs:
           path: target/aarch64-pc-windows-msvc/release/ht-desktop.exe
           retention-days: 14
   windows-memory-baselines:
+    outputs:
+      demo-artifact: ${{ steps.control-identity.outputs.demo-artifact }}
     name: memory-${{ github.head_ref == 'mem6' && 'oversized-layout-storage' || github.head_ref == 'mem5' && 'retained-inbox-metadata-profiler-mapped-buffers' || github.head_ref == 'mem3' && 'heavy-full-task-reads' || github.head_ref == 'mem2' && 'eager-fonts-triple-buffer' || matrix.revision }}
     if: github.event_name == 'pull_request' && contains(fromJSON('["ram2","mem2","mem3","mem5","mem6"]'), github.head_ref)
     strategy:
@@ -313,6 +315,11 @@ jobs:
       - name: Build identical code retaining oversized line and notification storage
         if: github.head_ref == 'mem6'
         run: cargo build --release --no-default-features -p ht-desktop -p ht-core --features ht-desktop/visible-board-columns,ht-desktop/lazy-theme-fonts,ht-core/bounded-sync-cache,ht-core/compact-task-reads,ht-core/compact-inbox-metadata,gpui/legacy-layout-storage
+      - name: Name the measured demo control
+        id: control-identity
+        if: github.head_ref != 'mem3'
+        shell: pwsh
+        run: '"demo-artifact=windows-memory-${{ matrix.revision }}" >> $env:GITHUB_OUTPUT'
       - name: Generate identical heavy account
         if: github.head_ref == 'mem3' || github.head_ref == 'mem5' || github.head_ref == 'mem6'
         run: python gates/heavy-fixture.py evidence/heavy-fixtures
@@ -354,12 +361,12 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: github.head_ref != 'mem3' && always()
         with:
-          name: windows-memory-${{ matrix.revision }}
+          name: ${{ steps.control-identity.outputs.demo-artifact }}
           path: evidence/windows-memory/
           if-no-files-found: error
   windows-memory-proof:
     name: Windows memory receipt and budget
-    # Comparative baselines run for ram2/mem2/mem3/mem5; frozen budgets apply on every PR/main.
+    # Comparative baselines run for ram2/mem2/mem3/mem5/mem6; frozen budgets apply on every PR/main.
     if: >-
       ${{ !cancelled() && needs.build.result == 'success' &&
       (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
@@ -377,7 +384,7 @@ jobs:
         if: github.event_name == 'pull_request' && contains(fromJSON('["ram2","mem2","mem3","mem5","mem6"]'), github.head_ref)
       - name: Compare memory optimization pixels and layout
         if: github.event_name == 'pull_request' && github.head_ref == 'mem2'
-        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json --require-improvement --compare evidence/memory-proof/windows-memory-${{ github.event.pull_request.head.sha }}
+        run: python3 gates/windows-memory-check.py evidence/memory-proof/windows-memory --owners --target --budget gates/windows-memory-budget.json --require-improvement --compare evidence/memory-proof/${{ needs.windows-memory-baselines.outputs.demo-artifact }}
       # PR 11 predates shipped UI additions; pixel identity is only the ram2 optimization contract.
       - name: Validate historical and fixed receipts; compare PR 11 pixels
         if: github.event_name == 'pull_request' && github.head_ref == 'ram2'
@@ -392,10 +399,10 @@ jobs:
       - name: Compare allocation commit, working set, warm pixels and ownership
         if: github.event_name == 'pull_request' && github.head_ref == 'mem5'
         run: |
-          python3 gates/mem5-proof.py evidence/memory-proof/windows-memory evidence/memory-proof/windows-memory-${{ github.event.pull_request.head.sha }}
+          python3 gates/mem5-proof.py evidence/memory-proof/windows-memory evidence/memory-proof/${{ needs.windows-memory-baselines.outputs.demo-artifact }}
           python3 gates/mem5-proof.py evidence/memory-proof/windows-memory-heavy evidence/memory-proof/windows-memory-heavy-baseline
       - name: Compare packed notification ownership, exact pixels and memory
         if: github.event_name == 'pull_request' && github.head_ref == 'mem6'
         run: |
-          python3 gates/mem6-proof.py evidence/memory-proof/windows-memory evidence/memory-proof/windows-memory-${{ github.event.pull_request.head.sha }}
+          python3 gates/mem6-proof.py evidence/memory-proof/windows-memory evidence/memory-proof/${{ needs.windows-memory-baselines.outputs.demo-artifact }}
           python3 gates/mem6-proof.py evidence/memory-proof/windows-memory-heavy evidence/memory-proof/windows-memory-heavy-baseline
