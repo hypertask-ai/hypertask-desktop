@@ -67,3 +67,7 @@ Distinguished actual runtime keys from Shift+S/2xTab/Ctrl+Y help-only claims.
 History preference is local; missing interactive feed fields remain the blocker.
 Time-log MCP report restricts ordinary members; web entries expose all task users.
 Native options/compose/column-focus subsets remain explicitly partial.
+
+Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40260330688
+rejected test calls to nonexistent `drain_one`; corrected them to the existing
+public `Db::drain_once`. Compiler evidence only, no weakened runtime assertions.

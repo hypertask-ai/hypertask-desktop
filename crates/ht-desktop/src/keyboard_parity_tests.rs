@@ -423,7 +423,7 @@ fn keyboard_alt_s_toggles_private_task_star_on_every_surface_and_reconciles_real
                 assert_eq!(row.payload_json["change"]["StarTask"], serde_json::json!({"task":1,"project":15,"active":active}));
                 let optimistic = this.db.task(1).unwrap().unwrap();
                 assert_eq!(!optimistic.extra["savedContent"].as_array().unwrap().is_empty(), active);
-                assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+                assert!(matches!(this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
                 this.reload();
                 cx.notify();
                 let task = this.db.task(1).unwrap().unwrap();
@@ -447,7 +447,7 @@ fn keyboard_shift_b_picks_only_people_and_clear_without_assigning_them(cx: &mut 
         view.update_in(cx, |this, _, _| {
             let row = this.db.mutations().unwrap().into_iter().find(|r| r.status == "pending").unwrap();
             assert_eq!(row.payload_json["change"]["WaitingOn"], serde_json::json!({"task":1,"user":user}));
-            assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+            assert!(matches!(this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
             assert_eq!(this.db.task(1).unwrap().unwrap().extra["waitingOnUserId"], serde_json::json!(user));
             assert!(this.db.task(1).unwrap().unwrap().extra.get("assignees").is_none());
         });
@@ -465,7 +465,7 @@ fn keyboard_timer_aliases_read_authoritative_state_and_stop_disabled_running_tim
         cx.simulate_keystrokes(chord); // Held/repeated input cannot enqueue a second toggle.
         view.update(&mut cx, |this, _, cx| {
             assert_eq!(this.db.mutations().unwrap().iter().filter(|r| r.status == "pending").count(), 1);
-            assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+            assert!(matches!(this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
             assert!(!this.poll_timer_shortcut(cx));
         }).unwrap();
         assert_eq!(measured(view, &mut cx, "task.timer.control")["text"], if running { "Stop" } else { "Start" });
@@ -478,7 +478,7 @@ fn keyboard_timer_aliases_read_authoritative_state_and_stop_disabled_running_tim
         let before = server.calls.len();
         cx.simulate_keystrokes("w");
         view.update(&mut cx, |this, _, cx| {
-            assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+            assert!(matches!(this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
             this.poll_timer_shortcut(cx);
         }).unwrap();
         assert_eq!(server.calls.len()-before, if running {2} else {1});
@@ -495,8 +495,8 @@ fn keyboard_timer_unknown_effect_is_never_automatically_replayed(cx: &mut TestAp
     server.fail_effect = true;
     view.update_in(cx, |this, _, cx| {
         let now = chrono::Utc::now().timestamp()+1;
-        assert!(matches!(this.db.drain_one(&mut server, now).unwrap(), ht_core::Drain::Failed(_)));
-        assert!(matches!(this.db.drain_one(&mut server, now+100).unwrap(), ht_core::Drain::Empty));
+        assert!(matches!(this.db.drain_once(&mut server, now).unwrap(), ht_core::Drain::Failed(_)));
+        assert!(matches!(this.db.drain_once(&mut server, now+100).unwrap(), ht_core::Drain::Empty));
         this.poll_timer_shortcut(cx);
         assert!(this.error.as_ref().unwrap().contains("refresh before retrying"));
     });
@@ -530,7 +530,7 @@ fn keyboard_board_w_uses_selected_task_and_changed_accounts_never_send_effects(c
         let mut server = KeyboardWriteServer::new();
         server.user = user;
         view.update_in(cx, |this, _, cx| {
-            let result = this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap();
+            let result = this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap();
             if user == 42 { assert!(matches!(result, ht_core::Drain::Applied(_))); }
             else { assert!(matches!(result, ht_core::Drain::Failed(_))); }
             this.poll_timer_shortcut(cx);
@@ -554,7 +554,7 @@ fn keyboard_star_refuses_unknown_state_and_rolls_back_on_account_refusal(cx: &mu
     server.user = 43;
     view.update_in(cx, |this, _, _| {
         assert!(this.db.task(1).unwrap().unwrap().extra["savedContent"].as_array().unwrap().is_empty());
-        assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Failed(_)));
+        assert!(matches!(this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Failed(_)));
         assert_eq!(this.db.task(1).unwrap().unwrap().extra["savedContent"], serde_json::json!([{"id":"old-star","type":"Private"}]));
     });
     assert!(server.calls.is_empty());
