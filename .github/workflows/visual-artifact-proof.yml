@@ -1,0 +1,35 @@
+name: Visual artifact comparison
+on:
+  workflow_dispatch:
+    inputs:
+      before_run:
+        description: Completed baseline CI run
+        required: true
+        type: string
+      after_run:
+        description: Completed candidate CI run
+        required: true
+        type: string
+permissions:
+  actions: read
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install Pillow==11.3.0
+      - name: Compare retained hosted captures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_RUN: ${{ inputs.before_run }}
+          AFTER_RUN: ${{ inputs.after_run }}
+        run: |
+          python3 gates/visual-artifact-proof.py --before-run "$BEFORE_RUN" --after-run "$AFTER_RUN" --output evidence/visual-artifact-proof
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-artifact-proof
+          path: evidence/visual-artifact-proof/
+          if-no-files-found: error

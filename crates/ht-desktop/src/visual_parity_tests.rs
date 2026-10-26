@@ -148,3 +148,60 @@ fn task_web_header_title_description_meta_and_composer_flow(cx: &mut gpui::TestA
         assert!(this.db.mutations().unwrap().is_empty());
     }).unwrap();
 }
+
+#[gpui::test]
+fn task_graphite_description_selection_and_property_surfaces_follow_web(cx: &mut gpui::TestAppContext) {
+    cx.update(crate::input::init);
+    let view = cx.open_window(gpui::size(px(1920.), px(1009.)), |window, cx| reference("task", window, cx));
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    for selected in [true, false] {
+        view.update(&mut cx, |this, _, cx| {
+            this.interaction.task_part = if selected { 0 } else { 1 };
+            cx.notify();
+        }).unwrap();
+        let description = measured(view, &mut cx, "task.description.container");
+        let author = measured(view, &mut cx, "task.description.author");
+        let properties = measured(view, &mut cx, "task.properties");
+        assert_eq!(description["radius"], 4.);
+        assert_eq!(description["bg"], "#262a30");
+        assert_eq!(description["w"], 680.);
+        assert_eq!(description["h"], 207.);
+        assert_eq!(author["y"].as_f64().unwrap() - description["y"].as_f64().unwrap(), 20.);
+        assert_eq!(author["x"].as_f64().unwrap() - description["x"].as_f64().unwrap(), 46.);
+        if selected {
+            assert_eq!(description["borderColor"], "#707788");
+        } else {
+            assert!(description["borderColor"].is_null());
+        }
+        let painted = cx.update(|window, _| {
+            let origin = point(px(description["x"].as_f64().unwrap() as f32), px(description["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
+            window.painted_quads().iter().any(|quad| {
+                quad.bounds.origin == origin
+                    && quad.bounds.size.width == px(680.).scale(window.scale_factor())
+                    && quad.border_widths.left == px(4.).scale(window.scale_factor())
+                    && quad.border_widths.top == px(0.).scale(window.scale_factor())
+                    && quad.border_widths.right == px(0.).scale(window.scale_factor())
+                    && quad.border_widths.bottom == px(0.).scale(window.scale_factor())
+                    && quad.border_color == color(0x707788)
+            })
+        });
+        assert_eq!(painted, selected, "Only selected descriptions paint the source left border");
+        assert_eq!(properties["radius"], 4.);
+        assert_eq!(properties["borderColor"], "#363b44");
+        assert_eq!(properties["bg"], "#262a30");
+        assert_eq!(properties["w"], 312.);
+        view.read_with(&mut cx, |this, _| assert!(this.db.mutations().unwrap().is_empty())).unwrap();
+    }
+    view.update(&mut cx, |this, _, cx| {
+        this.detail.as_mut().unwrap().task.extra.insert("hasDescriptionDraft".into(), json!(true));
+        cx.notify();
+    }).unwrap();
+    let description = measured(view, &mut cx, "task.description.container");
+    let draft = measured(view, &mut cx, "task.description.draft");
+    assert_eq!(draft["x"], description["x"]);
+    assert_eq!(draft["y"], description["y"]);
+    assert_eq!(draft["h"], description["h"]);
+    assert_eq!(draft["w"], 4.);
+    assert_eq!(draft["bg"], "#c2cfa5");
+
+}
