@@ -728,7 +728,7 @@ impl Desktop {
             .flex_shrink_0()
             .flex()
             .items_center()
-            .p(px(8.))
+            .justify_center()
             .bg(color(self.colors.footer))
             .relative()
             .overflow_hidden()
@@ -736,24 +736,33 @@ impl Desktop {
                 div()
                     .flex()
                     .items_center()
-                    .justify_center()
-                    .gap(px(2.))
-                    .flex_1()
-                    .min_w_0()
-                    .overflow_hidden()
+                    .gap(px(16.))
+                    .mr(px(18.))
                     .whitespace_nowrap()
-                    .children(items.iter().enumerate().flat_map(|(i, &(key, label))| {
+                    .flex_shrink_0()
+                    .children(items.iter().enumerate().map(|(i, &(key, label))| {
                         let label = format!("{}{}", label[..1].to_uppercase(), &label[1..]);
-                        let hint = div()
+                        div()
                             .flex()
                             .flex_shrink_0()
                             .items_center()
                             .gap(px(8.))
+                            .relative()
+                            .when(i > 0, |d| {
+                                d.child(
+                                    div()
+                                        .absolute()
+                                        .left(px(-10.))
+                                        .top(px(8.5))
+                                        .size(px(4.))
+                                        .rounded_full()
+                                        .bg(color(0x8e9093)),
+                                )
+                            })
                             .child(
                                 div().flex().items_center().gap(px(4.)).children(
                                     key.split(if key.starts_with("CTRL ") { " " } else { "\0" })
-                                        .enumerate()
-                                        .map(|(j, key)| {
+                                        .map(|key| {
                                             div()
                                                 .px(px(6.25))
                                                 .h(px(20.))
@@ -777,7 +786,6 @@ impl Desktop {
                                                 ))
                                                 .text_color(color(0xffffff))
                                                 .child(key)
-                                                .layout_key(&self.layout, format!("footer.key.{i}.{j}"), Some(key.into()))
                                         }),
                                 ),
                             )
@@ -786,19 +794,7 @@ impl Desktop {
                                 if i == 0 { "footer.text".to_owned() } else { format!("footer.hint.{i}") },
                                 Some(label),
                             ))
-                            .layout_key(&self.layout, format!("footer.group.{i}"), None);
-                        let separator = (i + 1 < items.len()).then(|| {
-                            div()
-                                .size(px(4.))
-                                .mx(px(4.))
-                                .flex_shrink_0()
-                                .rounded_full()
-                                .bg(color(0x8e9093))
-                                .layout_key(&self.layout, format!("footer.separator.{i}"), None)
-                        });
-                        std::iter::once(hint).chain(separator)
-                    }))
-                    .layout_key(&self.layout, "footer.shortcuts", None),
+                    })),
             )
             .child(
                 div()
@@ -847,15 +843,14 @@ impl Desktop {
             .child(
                 div()
                     .id("close-tips")
-                    .flex_shrink_0()
-                    .size(px(18.))
+                    .absolute()
+                    .right(px(8.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.footer = false;
                         cx.notify();
                     }))
-                    .child(icon("x", self.colors.text, 18.))
-                    .layout_key(&self.layout, "footer.close", None),
+                    .child(icon("x", self.colors.text, 18.)),
             )
             .layout_key(&self.layout, "footer", None)
     }
@@ -1488,6 +1483,7 @@ impl Desktop {
                             div().absolute().left(px(0.)).top(px(0.)).bottom(px(0.)).w(px(4.)).bg(color(0xc2cfa5))
                                 .layout_key(&self.layout, "task.description.draft", None)))
                         .min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == 0 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
+                        .when(self.options.theme == ThemeName::Graphite, |d| d.border_0().border_l(px(4.)).pt(px(20.)).pb(px(4. + 8. + 12.)).px(px(16.)).rounded(px(4.)).border_color(if self.interaction.task_part == 0 { color(t.accent) } else { gpui::transparent_black() }))
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
                             .child(div().child(self.creator.clone()).layout_key(&self.layout, "task.description.author", Some(self.creator.to_string()))).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
@@ -1496,7 +1492,8 @@ impl Desktop {
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
                             .child(div().flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add sub-tasks"))
                             .child(div().ml(px(16.)).flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add page"))
-                            .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
+                            .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI")))
+                        .layout_key(&self.layout, "task.description.container", None))
                     .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| self.comment_row(i, comment, body, cx)))
                     .when(self.worker.is_none() || self.db.current_user_id().is_some(), |d| d.child(self.comment_composer(cx))))
                 .child(properties)))
@@ -1588,6 +1585,7 @@ impl Desktop {
             .bg(color(t.comment))
             .border_1()
             .border_color(color(t.border))
+            .when(self.options.theme == ThemeName::Graphite, |d| d.rounded(px(4.)).border_color(color(0x363b44)))
             .map(|d| {
                 if self.options.theme == ThemeName::Dia {
                     d.shadow(vec![gpui::BoxShadow {
@@ -1707,6 +1705,7 @@ impl Desktop {
                         })),
                 )
             })
+            .layout_key(&self.layout, "task.properties", None)
     }
 }
 

@@ -26,18 +26,23 @@ Main CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/403698512
 
 Only one measured editable row remains, Task footer.text. Twenty-four measured presence rows are rail.icon.5 through rail.icon.12 on each screen. The frozen collector sampled only five rail icons; actual rail controls exist in the web and native screenshots. Deleting them or suppressing their capture keys would violate the no-hiding and unchanged-reference requirements. Eighteen screenshot-only rows comprise six classes per screen, all preserved. Four classes belong to the protected AI sidebar, one is account state, and one is the original footer rasterization class. A 20-row product reduction is therefore impossible within this scope. Do not report these rows as closed by filtering or renaming them.
 
-### Footer source correction
+### Rejected footer reconstruction
 
-Data shape stays the existing ordered hint tuples. The layout now models the source's actual sequence of hint group, in-flow separator, hint group. Absolute decorative dots plus a guessed fixed total gap do not model the source flex items' sizing and centering.
+The first hosted unit replaced absolute separator dots with source-equivalent in-flow spacing. CI 40379885550 passed the new regression on Ubuntu, Windows and macOS, but actual footer.text coordinates stayed Inbox 380, Board 272, Task 323. No ledger row closed. That reconstruction and its test are removed. No label-specific offset or guessed font compensation replaces them.
+
+### Task surface corrections
+
+Data shape stays the existing task selection index and theme. Graphite description selection paints only the source's 4px left edge, not a bright outline around every side. Graphite description and properties corners use 4px, not 5px. Properties use the source's #363b44 border instead of the generic #33373e. These genuine screenshot corrections were not original ledger identities, so they earn zero original-row reductions.
 
 | Source value | Component authority | Token authority | Native regression |
 | --- | --- | --- | --- |
-| Outer 8px padding; flexible clipped inner row; separate 18px close reserve | src/components/Global/BottomSettings_QuickTips.tsx:371,375,425 | src/styles/tailwind-entry.css:10-11 | footer_web_in_flow_separators_and_close_reserve |
-| Inner gap 2px; group gap 8px; in-flow 4px separator with 4px side margins and #8e9093 | src/components/Global/BottomSettings_QuickTips.tsx:375,391,418 | src/styles/tailwind-entry.css:10-11 | same test, each separator on all three screens |
-| Key gap 4px; padding 6.25px; 20px height; 12px font, 14px line, weight 600, radius 2px | src/components/Global/BottomSettings_QuickTips.tsx:402,407; src/components/Common/kbd.tsx:13 | src/styles/tailwind-entry.css:10-11; tailwind.config.ts:171 | same test |
-| Label 14px, 21px line, normal weight | src/components/Global/BottomSettings_QuickTips.tsx:413 | src/styles/tailwindThemes/graphite.css:169-172; tailwind.config.ts:174; src/styles/tailwind-entry.css:10-11 | same test |
+| Description 4px left edge only; selected #707788, otherwise transparent; 4px corners; top 20px, horizontal 16px | src/components/PageComponents/TaskDetail/CommentAndDescription/DescriptionContainer/index.tsx:139-151 | src/styles/tailwindThemes/graphite.css:90-93,153-155; src/lib/configs/taskDetail.config.ts:6; src/styles/tailwind-entry.css:10-11 | task_graphite_description_selection_and_property_surfaces_follow_web |
+| Description footer effective bottom reserve 4 + 8 + 12px, preserving content positions | DescriptionContainer/index.tsx:139; DescriptionSubTasks/DescriptionSubTasks.tsx:52,103 | src/lib/configs/taskDetail.config.ts; src/styles/tailwind-entry.css:10-11 | same test and existing task_web_header_title_description_meta_and_composer_flow |
+| Properties 4px corners, 312px width, #363b44 border, #262a30 background | src/components/PageComponents/TaskDetail/MainPageComponents/TaskInfoColumnContainer.tsx:6-10 | src/styles/tailwindThemes/graphite.css:20,153-155 | same test |
 
-Web paths are relative to /home/valentin/projects/hypertask. No shortcut mapping, keyboard handler, or command center implementation changes.
+The regression checks actual painted border widths on all four sides, selected and unselected colors, radii, surface widths, and unchanged description author placement. Existing long-title, long-description, comments, draft-marker and composer-flow tests remain unchanged. Other themes retain their existing styles. No shortcut mapping, keyboard handler, command center implementation, or AI sidebar changes.
+
+Web paths are relative to /home/valentin/projects/hypertask. Description component short paths are under src/components/PageComponents/TaskDetail/CommentAndDescription/DescriptionContainer.
 
 ### Exact retained row identities and blockers
 
@@ -62,7 +67,7 @@ Each row below applies independently to Inbox, Board and Task. No row is removed
 
 AppShellRail.tsx is src/components/PageComponents/Kanban/HeaderComponents/AppShellRail.tsx. AI component names are under src/components/AI_CHAT. graphite.css is src/styles/tailwindThemes/graphite.css. All source paths remain under /home/valentin/projects/hypertask/src.
 
-The remaining 43rd identity is Task footer.text's measured x coordinate. The native regression pins genuine source structure rather than hard-coding the frozen label's position. Source-equivalent total spacing need not close that row; the hosted capture decides. Even closing it leaves 42 original rows. The 20-fewer-row acceptance target stays unmet, not waived.
+The remaining 43rd identity is Task footer.text's measured x coordinate. The rejected source-equivalent footer reconstruction left that row unchanged. Its 1.625px x delta exceeds the immutable 1.5px threshold. Source sizing is BottomSettings_QuickTips.tsx:375,391,402,407,413,418; no source value authorizes a label-specific compensating offset. Even closing it leaves 42 original rows. The 20-fewer-row acceptance target stays unmet, not waived.
 
 ## One-off hosted comparison
 

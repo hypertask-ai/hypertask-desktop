@@ -150,44 +150,46 @@ fn task_web_header_title_description_meta_and_composer_flow(cx: &mut gpui::TestA
 }
 
 #[gpui::test]
-fn footer_web_in_flow_separators_and_close_reserve(cx: &mut gpui::TestAppContext) {
+fn task_graphite_description_selection_and_property_surfaces_follow_web(cx: &mut gpui::TestAppContext) {
     cx.update(crate::input::init);
-    for screen in ["inbox", "board", "task"] {
-        let view = cx.open_window(gpui::size(px(1920.), px(1009.)), |window, cx| reference(screen, window, cx));
-        let mut cx = VisualTestContext::from_window(view.into(), cx);
-        let shortcuts = measured(view, &mut cx, "footer.shortcuts");
-        let close = measured(view, &mut cx, "footer.close");
-        assert_eq!(shortcuts["x"], 56.);
-        assert_eq!(shortcuts["w"], 1418.);
-        assert_eq!(shortcuts["y"], 980.);
-        assert_eq!(shortcuts["h"], 21.);
-        assert_eq!(close["x"], 1474.);
-        assert_eq!(close["w"], 18.);
-        assert_eq!(close["h"], 18.);
-        let count = view.read_with(&mut cx, |this, _| crate::footer::hints(this.screen).len()).unwrap();
-        for i in 0..count - 1 {
-            let group = measured(view, &mut cx, &format!("footer.group.{i}"));
-            let separator = measured(view, &mut cx, &format!("footer.separator.{i}"));
-            let next = measured(view, &mut cx, &format!("footer.group.{}", i + 1));
-            assert_eq!(separator["w"], 4.);
-            assert_eq!(separator["h"], 4.);
-            assert_eq!(separator["bg"], "#8e9093");
-            assert!((separator["x"].as_f64().unwrap() - group["x"].as_f64().unwrap() - group["w"].as_f64().unwrap() - 6.).abs() <= 0.5);
-            assert!((next["x"].as_f64().unwrap() - separator["x"].as_f64().unwrap() - 10.).abs() <= 0.5);
+    let view = cx.open_window(gpui::size(px(1920.), px(1009.)), |window, cx| reference("task", window, cx));
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    for selected in [true, false] {
+        view.update(&mut cx, |this, _, cx| {
+            this.interaction.task_part = if selected { 0 } else { 1 };
+            cx.notify();
+        }).unwrap();
+        let description = measured(view, &mut cx, "task.description.container");
+        let author = measured(view, &mut cx, "task.description.author");
+        let properties = measured(view, &mut cx, "task.properties");
+        assert_eq!(description["radius"], 4.);
+        assert_eq!(description["bg"], "#262a30");
+        assert_eq!(description["w"], 680.);
+        assert_eq!(description["h"], 207.);
+        assert_eq!(author["y"].as_f64().unwrap() - description["y"].as_f64().unwrap(), 20.);
+        assert_eq!(author["x"].as_f64().unwrap() - description["x"].as_f64().unwrap(), 46.);
+        if selected {
+            assert_eq!(description["borderColor"], "#707788");
+        } else {
+            assert!(description["borderColor"].is_null());
         }
-        let first = measured(view, &mut cx, "footer.key.0.0");
-        let second = measured(view, &mut cx, "footer.key.0.1");
-        assert_eq!(first["h"], 20.);
-        assert_eq!(first["fontSize"], 12.);
-        assert_eq!(first["lineHeight"], 14.);
-        assert_eq!(first["fontWeight"], 600.);
-        assert_eq!(first["radius"], 2.);
-        assert_eq!(first["bg"], "#95999e");
-        assert!((second["x"].as_f64().unwrap() - first["x"].as_f64().unwrap() - first["w"].as_f64().unwrap() - 4.).abs() <= 0.5);
-        let label = measured(view, &mut cx, "footer.text");
-        assert_eq!(label["fontSize"], 14.);
-        assert_eq!(label["lineHeight"], 21.);
-        assert!((label["x"].as_f64().unwrap() - second["x"].as_f64().unwrap() - second["w"].as_f64().unwrap() - 8.).abs() <= 0.5);
+        let painted = cx.update(|window, _| {
+            let origin = point(px(description["x"].as_f64().unwrap() as f32), px(description["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
+            window.painted_quads().iter().any(|quad| {
+                quad.bounds.origin == origin
+                    && quad.bounds.size.width == px(680.).scale(window.scale_factor())
+                    && quad.border_widths.left == px(4.).scale(window.scale_factor())
+                    && quad.border_widths.top == px(0.).scale(window.scale_factor())
+                    && quad.border_widths.right == px(0.).scale(window.scale_factor())
+                    && quad.border_widths.bottom == px(0.).scale(window.scale_factor())
+                    && quad.border_color == if selected { color(0x707788) } else { gpui::transparent_black() }
+            })
+        });
+        assert!(painted, "Description must paint only the source left selection border");
+        assert_eq!(properties["radius"], 4.);
+        assert_eq!(properties["borderColor"], "#363b44");
+        assert_eq!(properties["bg"], "#262a30");
+        assert_eq!(properties["w"], 312.);
         view.read_with(&mut cx, |this, _| assert!(this.db.mutations().unwrap().is_empty())).unwrap();
     }
 }
