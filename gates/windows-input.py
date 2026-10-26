@@ -12,6 +12,7 @@ import subprocess
 import struct
 import tempfile
 import time
+import tomllib
 
 ROOT = Path(__file__).resolve().parent.parent
 CASES = {
@@ -52,6 +53,7 @@ class NativeWindow:
         self.api.GetWindowThreadProcessId.argtypes = [W.HWND, C.POINTER(W.DWORD)]
         self.api.IsWindowVisible.argtypes = [W.HWND]
         self.api.GetClassNameW.argtypes = [W.HWND, W.LPWSTR, C.c_int]
+        self.api.GetWindowTextW.argtypes = [W.HWND, W.LPWSTR, C.c_int]
         self.api.ShowWindow.argtypes = [W.HWND, C.c_int]
         self.api.SetWindowPos.argtypes = [W.HWND, W.HWND, C.c_int, C.c_int, C.c_int, C.c_int, W.UINT]
         self.api.SetForegroundWindow.argtypes = [W.HWND]
@@ -245,6 +247,14 @@ def run_case(case, app, core, out, env):
                 process = subprocess.Popen(command, env=env, stdout=stdout, stderr=stderr)
                 result["owned_pid"] = process.pid
                 window = NativeWindow(process)
+                title = C.create_unicode_buffer(512)
+                assert window.api.GetWindowTextW(window.hwnd, title, len(title)), "No native window title"
+                result["window_title"] = title.value
+                package_version = tomllib.loads((ROOT / "Cargo.toml").read_text())["workspace"]["package"]["version"]
+                expected_title = f"Hypertask v{package_version}"
+                if build := env.get("HT_RELEASE_BUILD_NUMBER"):
+                    expected_title += f"+{build}"
+                assert title.value == expected_title, (title.value, expected_title)
                 before = wait_for(lambda: snapshot(behavior), lambda s: s and s["state"]["screen"] == screen,
                                   "No presented starting screen")
                 (out / "before.json").write_text(json.dumps(before, indent=2))

@@ -189,6 +189,17 @@ impl AssetSource for Assets {
     }
 }
 
+fn format_version(package_version: &str, build_number: Option<&str>) -> String {
+    match build_number.filter(|build| !build.is_empty()) {
+        Some(build) => format!("v{package_version}+{build}"),
+        None => format!("v{package_version}"),
+    }
+}
+
+fn version() -> String {
+    format_version(env!("CARGO_PKG_VERSION"), option_env!("HT_RELEASE_BUILD_NUMBER"))
+}
+
 fn run() -> Result<()> {
     let options = Options::parse(std::env::args().skip(1))?;
     if let Some(parent) = options.db.parent().filter(|p| !p.as_os_str().is_empty()) {
@@ -233,7 +244,7 @@ fn run() -> Result<()> {
                         focus: !background,
                         show: !background,
                         titlebar: Some(TitlebarOptions {
-                            title: Some("Hypertask".into()),
+                            title: Some(format!("Hypertask {}", version()).into()),
                             appears_transparent: false,
                             ..Default::default()
                         }),
@@ -275,6 +286,30 @@ fn main() {
     if let Err(error) = run() {
         eprintln!("Hypertask: {error}");
         std::process::exit(1);
+    }
+}
+
+#[cfg(test)]
+mod version_tests {
+    use super::*;
+
+    #[test]
+    fn release_version_includes_build_number() {
+        assert_eq!(format_version("0.1.0", Some("449")), "v0.1.0+449");
+    }
+
+    #[test]
+    fn local_version_uses_package_version() {
+        assert_eq!(format_version("0.1.0", None), "v0.1.0");
+        assert_eq!(format_version("0.1.0", Some("")), "v0.1.0");
+    }
+
+    #[test]
+    fn embedded_build_number_matches_ci_environment() {
+        let build = std::env::var("HT_RELEASE_BUILD_NUMBER").ok();
+        assert_eq!(option_env!("HT_RELEASE_BUILD_NUMBER"), build.as_deref());
+        assert_eq!(version(), format_version(env!("CARGO_PKG_VERSION"), build.as_deref()));
+        println!("VERSION_BUILD_VERIFIED version={} build={}", version(), build.as_deref().unwrap_or(""));
     }
 }
 

@@ -1509,7 +1509,7 @@ impl Desktop {
                             .pb(px(8.))
                             .text_size(px(11.))
                             .text_color(color(t.muted))
-                            .child(concat!("v ", env!("CARGO_PKG_VERSION"))),
+                            .child(crate::version()),
                     )
                     .layout_key(&self.layout, "command.center", None),
             )
