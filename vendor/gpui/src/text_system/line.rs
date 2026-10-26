@@ -38,9 +38,9 @@ pub struct DecorationRun {
     pub strikethrough: Option<StrikethroughStyle>,
 }
 
-#[cfg(feature = "legacy-line-storage")]
+#[cfg(feature = "legacy-layout-storage")]
 pub(crate) const INLINE_DECORATION_RUNS: usize = 32;
-#[cfg(not(feature = "legacy-line-storage"))]
+#[cfg(not(feature = "legacy-layout-storage"))]
 pub(crate) const INLINE_DECORATION_RUNS: usize = 1;
 
 /// A line of text that has been shaped and decorated.

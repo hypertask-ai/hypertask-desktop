@@ -120,6 +120,23 @@ pub fn payload_bytes(value: &impl serde::Serialize) -> usize {
 mod tests {
     use gpui::AppContext as _;
     #[test]
+    fn element_arena_releases_only_chunks_unused_by_the_last_frame() {
+        let mut arena = gpui::Arena::new(1024);
+        arena.begin_scope();
+        for _ in 0..3 { arena.alloc(|| [1u8; 600]); }
+        assert_eq!(arena.capacity(), 3072);
+        arena.clear();
+        assert_eq!(arena.capacity(), 3072);
+        arena.end_scope();
+        arena.clear();
+        assert_eq!(arena.capacity(), 3072);
+        arena.alloc(|| [2u8; 600]);
+        arena.clear();
+        assert_eq!(arena.capacity(), 1024);
+        assert_eq!(arena.alloc(|| [3u8; 600])[599], 3);
+    }
+
+    #[test]
     fn shaped_line_keeps_only_one_style_inline() {
         assert!(std::mem::size_of::<gpui::ShapedLine>() < 256);
     }

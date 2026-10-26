@@ -67,3 +67,25 @@ callback byte ranges and colors, plus wrapped-line painting and split lengths.
 No production capacity or visual/memory acceptance is changed. The supplied
 watcher hit the shared user's rate limit; direct read-only GitHub API logs retain
 the actual failure. No test/build ran on this host.
+
+## Accepted text storage and next bounded unit
+
+CI 40285960123, c1fedbbc2d4bc310724a9c540c59f048ecba82a9: all nine jobs green.
+All six cold RGB/layout and all six warm RGB comparisons passed. ShapedLine
+shrinks from 2,984 to 136 bytes. Heavy live requested Rust heap falls from
+12.268/26.560/32.554 to 10.397/21.987/23.798 MB. Heavy cold WS is now
+67.330/83.907/83.595 MB; warm 65.253/85.271/82.493 MB. Private commit falls
+at both capture points on all screens. No laptop result is inferred.
+
+The board warm result still leaves little room for the observed driver gap.
+Next unit: the element arena retains every chunk from its largest historical
+frame, even after later frames stop using them. Drop only chunks unused by the
+last completed frame, after dropping all its values. Keep its used chunks as
+normal frame reuse storage; active/nested scopes still defer clearing. Record
+actual requested arena capacity and compare it, not resident-map guesses.
+The original behavior remains in the renamed legacy-layout-storage control.
+The regression verifies deferred clear, a three-chunk frame, a later one-chunk
+frame, and successful allocation after releasing two unused chunks. This is
+allocation lifetime management, not eviction or a heap-collection call. Accept
+only if the real receipt shows less retained capacity and preserved budgets,
+RGB, layouts and lower all-screen cold/warm memory; otherwise remove this unit.

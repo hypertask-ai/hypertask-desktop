@@ -36,7 +36,7 @@ windows-manifest = ["dep:embed-resource"]
 profiler = ["dep:hdrhistogram"]
 stacker = ["dep:stacksafe"]
 hot-reload = ["dep:async-tungstenite", "dep:dioxus-cli-config", "dep:dioxus-devtools-types", "dep:smol", "dep:subsecond"]
-legacy-line-storage = []
+legacy-layout-storage = []
 
 [lib]
 path = "src/gpui.rs"

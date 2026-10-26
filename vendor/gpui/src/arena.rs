@@ -154,6 +154,10 @@ impl Arena {
         for chunk_index in 0..=self.current_chunk_index {
             self.chunks[chunk_index].reset();
         }
+        if !cfg!(feature = "legacy-layout-storage") {
+            // A transient large frame must not keep unused chunks alive forever.
+            self.chunks.truncate(self.current_chunk_index + 1);
+        }
         self.current_chunk_index = 0;
     }
 

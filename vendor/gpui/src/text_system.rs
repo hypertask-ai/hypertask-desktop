@@ -765,7 +765,7 @@ impl WindowTextSystem {
         let mut process_line = |line_text: SharedString, line_start, line_end| {
             font_runs.clear();
 
-            let mut decoration_runs = <Vec<DecorationRun>>::with_capacity(if cfg!(feature = "legacy-line-storage") { 32 } else { 1 });
+            let mut decoration_runs = <Vec<DecorationRun>>::with_capacity(if cfg!(feature = "legacy-layout-storage") { 32 } else { 1 });
             let mut run_start = line_start;
             while run_start < line_end {
                 let Some(run) = runs.peek_mut() else {

@@ -1142,6 +1142,11 @@ impl App {
         app
     }
 
+    /// Requested storage retained by the current application's element arena.
+    pub fn element_arena_capacity(&self) -> usize {
+        self.element_arena.borrow().capacity()
+    }
+
     #[doc(hidden)]
     pub fn ref_counts_drop_handle(&self) -> impl Sized + use<> {
         self.entities.ref_counts_drop_handle()
