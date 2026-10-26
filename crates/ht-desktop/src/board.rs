@@ -488,7 +488,8 @@ mod tests {
             assert_eq!(this.screen, Screen::Board);
             assert_eq!(this.interaction.modal, Some(interactions::Modal::Commands));
             assert!(this.interaction.command_task);
-            assert_eq!(this.choices(cx)[0].name, "Assign task");
+            let choices = this.choices(cx);
+            assert_eq!(choices.iter().take(3).map(|row| row.name.as_str()).collect::<Vec<_>>(), ["Accept task", "Decline task", "Assign task"]);
         })
         .unwrap();
         cx.simulate_keystrokes("escape ctrl-k");

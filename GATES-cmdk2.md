@@ -49,3 +49,8 @@ Pending source audit and GitHub CI.
 
 - With focused comments, web groups are Comment, Task, Navigate, Inbox, Time. Task-only context instead promotes Time before Navigate (`AllCommands.ts:1359-1372`). Added both enabled-Time contexts to the existing native order test; the sort now preserves that distinction.
 - The owner-user `gh run watch` path hits exhausted credentials while `gh api` uses the existing repository-app wrapper successfully. Scoped read-only adapter reuses that wrapper's in-memory child environment, reduces watch interval to 120 seconds, and never prints or stores credentials. No shared helper or system configuration changed.
+
+## Native action evidence
+
+- Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40283323602 at 4c54b30596551f2a0e90555bb7ad34b1576f4e00 executes all new native action, HTTP summary, parent patch and account-bound Inbox tests successfully on Linux, Windows and macOS. Each desktop reports 241 passed, one failed. The one failure is the old card-menu assertion expecting Assign first; actual Accept is the requested web order. Updated it to assert the exact leading Accept/Decline/Assign sequence while retaining clicked-task and ordinary-board-context assertions.
+- Final exact-head receipt still required. Earlier green individual tests are not final workflow success.
