@@ -12,6 +12,9 @@ on:
 concurrency:
   group: ci-${{ github.ref }}
   cancel-in-progress: true
+env:
+  # Release packages these binaries and uses this source CI run number in its tag.
+  HT_RELEASE_BUILD_NUMBER: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.run_number || '' }}
 jobs:
   updater:
     name: updater-${{ matrix.os }}
@@ -79,6 +82,21 @@ jobs:
           if-no-files-found: error
       - uses: dtolnay/rust-toolchain@stable
       - uses: Swatinem/rust-cache@v2
+      - name: Prove compile-time release build number
+        if: runner.os == 'Linux'
+        env:
+          HT_RELEASE_BUILD_NUMBER: ${{ github.run_number }}
+        run: |
+          mkdir -p evidence/version
+          set -o pipefail
+          cargo test --release -p ht-desktop version_tests -- --nocapture 2>&1 | tee evidence/version/build-number.txt
+      - name: Upload version build proof
+        if: runner.os == 'Linux' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: version-build
+          path: evidence/version/
+          if-no-files-found: error
       - run: cargo test --workspace --release
         env:
           HT_QA_COMMENT_ID: ${{ inputs.qa_comment_id || '7' }}
