@@ -1,8 +1,34 @@
 # Windows memory gate (HTPR-7381)
 
-The historical measurements below predate mem4. See [memory-laptop.md](memory-laptop.md)
-for the read-only laptop attribution and explicitly disclosed one-shot residency
-policy; new receipts also include warm counters and private/shared resident axes.
+## mem5: allocation-only policy
+
+The mem5 candidate removes the previous startup working-set eviction entirely.
+Both its normal build and same-source retained-inbox-metadata control run without
+trimming. Production projects inbox display metadata before Rust deserialization, then
+drops actor/identity JSON already represented by typed row fields. The full
+notification remains in SQLite and `inbox()`. Rows stream instead of retaining
+an intermediate complete JSON vector. Ordinary releases also stop compiling
+unused GPUI performance history (a fixed 4 MiB journal plus histograms); the
+`input-benchmark` feature retains it for the frame-time gate. READY waits for
+successive native frame callbacks instead of retaining diagnostic histograms.
+Structured instance buffers use GPU-default storage with bounded uploads, not
+CPU-writable discard maps that permit driver staging/renaming. Constant buffers
+remain dynamic. Actual D3D buffer descriptions report the writable capacity.
+AI welcome choices now use one random sidebar seed instead of changing on every
+render (which also invalidated the view). Both CI builds use recorded fixture
+seed 7381 for comparable content, without masking pixels or shrinking the pool.
+The Windows segment heap was already
+enabled upstream; that hypothesis was rejected. The harness reads the actual PE
+manifest resource into `memory.json`; `mem5-proof.py` checks identical heap policy,
+lower working-set/private-commit medians at both capture points, identical
+visible data and GPU/font/store ownership, and exact RGB/layout on demo and heavy workloads.
+Existing frozen budgets, fixtures, display geometry and warm redraws stay fixed.
+This is a hypothesis until the mem5 CI receipt proves it; no new laptop
+measurement or sustained laptop working-set guarantee is claimed.
+
+The historical measurements below predate mem5. See [memory-laptop.md](memory-laptop.md)
+for the read-only laptop attribution and historical mem4 eviction policy.
+New receipts include warm counters and private/shared resident axes.
 
 Measurements run only on GitHub-hosted `windows-2025`, never on the VPS or the
 owner's laptop. The ordinary Windows build job starts the release executable

@@ -354,6 +354,16 @@ impl DirectXRenderer {
             + p.mono_sprites.buffer_size * std::mem::size_of::<MonochromeSprite>()
             + p.subpixel_sprites.buffer_size * std::mem::size_of::<SubpixelSprite>()
             + p.poly_sprites.buffer_size * std::mem::size_of::<PolychromeSprite>();
+        let mapped_instance_bytes: u64 = [
+            &p.shadow_pipeline.buffer, &p.quad_pipeline.buffer,
+            &p.path_rasterization_pipeline.buffer, &p.path_sprite_pipeline.buffer,
+            &p.underline_pipeline.buffer, &p.mono_sprites.buffer,
+            &p.subpixel_sprites.buffer, &p.poly_sprites.buffer,
+        ].into_iter().map(|buffer| {
+            let mut desc = D3D11_BUFFER_DESC::default();
+            unsafe { buffer.GetDesc(&mut desc) };
+            if desc.CPUAccessFlags & D3D11_CPU_ACCESS_WRITE.0 as u32 != 0 { u64::from(desc.ByteWidth) } else { 0 }
+        }).sum();
         let path_bytes = self.resources.as_ref().map_or(0, |resources| {
             if resources.path_intermediate_texture.is_some() {
                 u64::from(self.width) * u64::from(self.height) * 4 * (1 + u64::from(PATH_MULTISAMPLE_COUNT))
@@ -365,7 +375,7 @@ impl DirectXRenderer {
         // Resource payload sizes, not resident pages: driver/allocator overhead is
         // intentionally left to the independent process working-set receipt.
         let json = format!(
-            "{{\"MonochromeAtlasBytes\":{mono},\"ImageAtlasBytes\":{image},\"FontAtlasBytes\":{subpixel},\"InstanceBufferBytes\":{instance_bytes},\"PathTextureBytes\":{path_bytes},\"SwapChainBytes\":{swap_bytes}}}"
+            "{{\"MonochromeAtlasBytes\":{mono},\"ImageAtlasBytes\":{image},\"FontAtlasBytes\":{subpixel},\"InstanceBufferBytes\":{instance_bytes},\"MappedInstanceBufferBytes\":{mapped_instance_bytes},\"PathTextureBytes\":{path_bytes},\"SwapChainBytes\":{swap_bytes}}}"
         );
         let path = std::path::PathBuf::from(path);
         let temporary = path.with_extension("tmp");
@@ -1203,7 +1213,21 @@ impl<T> PipelineState<T> {
             self.view = view;
             self.buffer_size = new_buffer_size;
         }
-        update_buffer(device_context, &self.buffer, data)
+        if cfg!(feature = "mapped-instance-buffers") {
+            update_buffer(device_context, &self.buffer, data)
+        } else {
+            if !data.is_empty() {
+                let region = D3D11_BOX {
+                    left: 0, top: 0, front: 0,
+                    right: std::mem::size_of_val(data) as u32, bottom: 1, back: 1,
+                };
+                // Upload only initialized instances, not the unused buffer capacity.
+                unsafe {
+                    device_context.UpdateSubresource(&self.buffer, 0, Some(&region), data.as_ptr().cast(), 0, 0);
+                }
+            }
+            Ok(())
+        }
     }
 
     fn draw(
@@ -1654,9 +1678,9 @@ fn create_buffer(
 ) -> Result<ID3D11Buffer> {
     let desc = D3D11_BUFFER_DESC {
         ByteWidth: (element_size * buffer_size) as u32,
-        Usage: D3D11_USAGE_DYNAMIC,
+        Usage: if cfg!(feature = "mapped-instance-buffers") { D3D11_USAGE_DYNAMIC } else { D3D11_USAGE_DEFAULT },
         BindFlags: D3D11_BIND_SHADER_RESOURCE.0 as u32,
-        CPUAccessFlags: D3D11_CPU_ACCESS_WRITE.0 as u32,
+        CPUAccessFlags: if cfg!(feature = "mapped-instance-buffers") { D3D11_CPU_ACCESS_WRITE.0 as u32 } else { 0 },
         MiscFlags: D3D11_RESOURCE_MISC_BUFFER_STRUCTURED.0 as u32,
         StructureByteStride: element_size as u32,
     };

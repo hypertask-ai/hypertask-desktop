@@ -409,6 +409,7 @@ pub fn suggestions(
     task: Option<&TaskView>,
     board: Option<(&str, &[BoardColumn])>,
     now: i64,
+    seed: u64,
 ) -> Vec<String> {
     let mut pool = if let Some(task) = task {
         let reference = task.ticket_number.as_deref().unwrap_or("this ticket");
@@ -483,7 +484,9 @@ pub fn suggestions(
     .map(str::to_owned)
     .to_vec()
     };
-    pool.sort_by_cached_key(|_| Uuid::new_v4());
+    pool.sort_by_cached_key(|text| text.bytes().fold(seed, |hash, byte| {
+        (hash ^ u64::from(byte)).wrapping_mul(0x100000001b3)
+    }));
     pool.truncate(4);
     pool
 }
@@ -848,23 +851,24 @@ mod tests {
     fn suggestions_use_full_web_pools_without_duplicates_or_invented_counts() {
         let task: TaskView = serde_json::from_value(json!({"id":456,"title":"Task","projectId":123,"ticketNumber":"HTPR-123","status":"Normal","dueDate":"2020-01-01T00:00:00Z"})).unwrap();
         let ticket_pool = ["Summarize HTPR-123", "Write my next reply on HTPR-123", "What's blocking HTPR-123?", "What are the next steps for HTPR-123?", "Draft a status update for HTPR-123", "Suggest sub-tasks for HTPR-123"];
-        let result = suggestions(Some(&task), None, 0);
+        let result = suggestions(Some(&task), None, 0, 7381);
         assert_eq!(result.len(), 4);
         assert!(result.iter().all(|s| ticket_pool.contains(&s.as_str())));
         let columns = vec![BoardColumn { id: 1, title: "Todo".into(), ranking: "a".into(), cards: vec![task] }];
         let board_pool = ["What's important in my inbox?", "Prioritize the 1 tickets in Todo", "Who should take the 1 unassigned?", "Triage the 1 overdue tickets", "What changed on Board this week?", "Summarize the Todo column", "What's been stuck the longest?", "Top 3 focus this week?", "Any duplicate tickets here?"];
-        let result = suggestions(None, Some(("Board", &columns)), 1_800_000_000);
+        let result = suggestions(None, Some(("Board", &columns)), 1_800_000_000, 7381);
         assert_eq!(result.len(), 4);
         assert!(result.iter().all(|s| board_pool.contains(&s.as_str())));
         let mut unique = result.clone();
         unique.sort(); unique.dedup();
         assert_eq!(unique.len(), 4);
+        assert_eq!(suggestions(None, None, 0, 7381), suggestions(None, None, 1, 7381));
         let general_pool = ["What should I work on next?", "Summarize the last 3 days", "What's unassigned?", "What's blocking release?", "Draft a task for the next sprint", "What's overdue?", "Who's overloaded?", "What's been stuck over a week?", "Top 3 focus this week?"];
-        for result in [suggestions(None, None, 0), suggestions(None, Some(("Empty", &[])), 0)] {
+        for result in [suggestions(None, None, 0, 7381), suggestions(None, Some(("Empty", &[])), 0, 7381)] {
             assert_eq!(result.len(), 4);
             assert!(result.iter().all(|s| general_pool.contains(&s.as_str())));
         }
-        let result = suggestions(None, Some(("Board", &columns)), 0);
+        let result = suggestions(None, Some(("Board", &columns)), 0, 7381);
         assert!(!result.iter().any(|s| s.contains("overdue")));
     }
 }

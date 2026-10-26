@@ -177,7 +177,7 @@ fn sidebar_web_header_welcome_composer_and_tall_input_geometry(cx: &mut gpui::Te
         let focus = cx.focus_handle();
         let mut this = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
         this.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
-        this.set_scope(Scope::load(&Db::memory().unwrap(), Screen::Inbox, 0, None), cx);
+        this.set_scope(Scope::load(&Db::memory().unwrap(), Screen::Inbox, 0, None, this.suggestion_seed), cx);
         this
     })));
     let view = host.read_with(cx, |host, _| host.0.clone());
@@ -387,7 +387,7 @@ fn task_summary_mouse_action_sends_exact_web_prompt_and_context(cx: &mut gpui::T
         let mut this = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
         this.client = Some(Client::with_base(&base, "synthetic-token".into()).unwrap());
         this.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
-        this.set_scope(Scope::load(&db, Screen::Task, 123, Some(456)), cx);
+        this.set_scope(Scope::load(&db, Screen::Task, 123, Some(456), this.suggestion_seed), cx);
         this
     });
     click(&view, cx, "ai.task.summary");
@@ -580,7 +580,7 @@ fn graphite_sidebar_source_measurements(cx: &mut gpui::TestAppContext) {
             sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
             let mut db = Db::memory().unwrap();
             db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"Alpha","teamId":1}]})).unwrap();
-            let mut scope = Scope::load(&db, Screen::Board, 15, None);
+            let mut scope = Scope::load(&db, Screen::Board, 15, None, sidebar.suggestion_seed);
             scope.suggestions = vec!["What should I work on next?".into(), "Summarize the last 3 days".into(), "What's unassigned?".into(), "What's blocking release?".into()];
             sidebar.scope = Some(scope);
             sidebar

@@ -16,6 +16,23 @@ Add-Type @'
 using System;
 using System.Runtime.InteropServices;
 public class MemoryWindow {
+    [DllImport("kernel32.dll", CharSet = CharSet.Unicode)] static extern IntPtr LoadLibraryEx(string path, IntPtr file, uint flags);
+    [DllImport("kernel32.dll")] static extern IntPtr FindResource(IntPtr module, IntPtr name, IntPtr type);
+    [DllImport("kernel32.dll")] static extern IntPtr LoadResource(IntPtr module, IntPtr resource);
+    [DllImport("kernel32.dll")] static extern IntPtr LockResource(IntPtr resource);
+    [DllImport("kernel32.dll")] static extern uint SizeofResource(IntPtr module, IntPtr resource);
+    [DllImport("kernel32.dll")] static extern bool FreeLibrary(IntPtr module);
+    public static string Manifest(string path) {
+        var module = LoadLibraryEx(path, IntPtr.Zero, 2);
+        if (module == IntPtr.Zero) throw new Exception("Cannot inspect executable resources");
+        try {
+            var resource = FindResource(module, (IntPtr)1, (IntPtr)24);
+            if (resource == IntPtr.Zero) return "";
+            var bytes = new byte[SizeofResource(module, resource)];
+            Marshal.Copy(LockResource(LoadResource(module, resource)), bytes, 0, bytes.Length);
+            return System.Text.Encoding.UTF8.GetString(bytes);
+        } finally { FreeLibrary(module); }
+    }
     [DllImport("user32.dll")] public static extern bool SetProcessDPIAware();
     [DllImport("user32.dll")] public static extern bool ShowWindowAsync(IntPtr h, int command);
     [DllImport("user32.dll")] public static extern bool IsZoomed(IntPtr h);
@@ -79,6 +96,7 @@ if ($Assets) {
 }
 try {
 $rows = @()
+$env:HT_MEMORY_SUGGESTION_SEED = '7381'
 foreach ($round in 1..3) {
     foreach ($screen in 'inbox', 'board', 'task') {
         $db = Join-Path $Out "run-$screen-$round.db"
@@ -182,6 +200,8 @@ $medians = @(foreach ($screen in 'inbox', 'board', 'task') {
 })
 $result = [pscustomobject]@{
     Revision = $Revision; BuildRevision = (& git rev-parse HEAD); RunnerImage = $env:ImageVersion
+    SuggestionSeed = [long]$env:HT_MEMORY_SUGGESTION_SEED
+    ExecutableManifest = [MemoryWindow]::Manifest($Exe)
     ExeSHA256 = (Get-FileHash $Exe).Hash; DatabaseSHA256 = (Get-FileHash $seed).Hash
     DisplayRequestResult = $displayResult; DisplayWidth = $display.Width; DisplayHeight = $display.Height
     WaitSeconds = 8; Samples = $rows; Medians = $medians
@@ -198,6 +218,7 @@ if ($env:GITHUB_STEP_SUMMARY) {
 }
 
 } finally {
+    Remove-Item Env:HT_MEMORY_SUGGESTION_SEED -ErrorAction SilentlyContinue
     Remove-Item Env:HT_MEMORY_AI_HISTORY -ErrorAction SilentlyContinue
     if ($assetServer -and -not $assetServer.HasExited) {
         Stop-Process -Id $assetServer.Id -Force

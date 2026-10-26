@@ -18,8 +18,8 @@ export async function withXvfb(fn) {
   }
 }
 
-export function buildRelease() {
-  const cargo = ['cargo', 'build', '--release', '-p', 'ht-desktop', '-p', 'ht-core'];
+export function buildRelease(features = []) {
+  const cargo = ['cargo', 'build', '--release', '-p', 'ht-desktop', '-p', 'ht-core', ...features.flatMap(f => ['--features', f])];
   const [cmd, ...args] = process.platform === 'win32' ? cargo : ['nice', ...cargo];
   execFileSync(cmd, args, { cwd: ROOT, stdio: 'inherit' });
 }

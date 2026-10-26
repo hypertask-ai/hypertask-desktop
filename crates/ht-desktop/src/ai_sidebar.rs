@@ -15,6 +15,7 @@ use ht_core::{
 };
 use std::{
     collections::VecDeque,
+    hash::BuildHasher,
     sync::{
         Arc,
         mpsc::{self, Receiver},
@@ -43,7 +44,7 @@ pub struct Scope {
 }
 
 impl Scope {
-    pub fn load(db: &Db, screen: Screen, project: i64, task_id: Option<i64>) -> Self {
+    pub fn load(db: &Db, screen: Screen, project: i64, task_id: Option<i64>, seed: u64) -> Self {
         let task = task_id.and_then(|id| db.task(id).ok().flatten());
         let project = task.as_ref().map_or(project, |t| t.project_id);
         let (board_name, team_id) = ai_chat::project_metadata(db, project);
@@ -87,6 +88,7 @@ impl Scope {
             task.as_ref().filter(|_| screen == Screen::Task),
             (screen == Screen::Board).then_some((board_name.as_str(), columns.as_slice())),
             chrono::Utc::now().timestamp(),
+            seed,
         );
         Self {
             context: DefaultContext {
@@ -161,6 +163,7 @@ pub struct AiSidebar {
     previous_focus: Option<FocusHandle>,
     client: Option<Client>,
     scope: Option<Scope>,
+    pub(crate) suggestion_seed: u64,
     include_context: bool,
     chats: Vec<Chat>,
     selected: usize,
@@ -247,6 +250,10 @@ impl AiSidebar {
             skills: skills::Skills::new(token.clone()),
             client: token.and_then(|t| Client::new(t).ok()),
             scope: None,
+            suggestion_seed: std::env::var_os("GPUI_MEMORY_RECEIPT")
+                .and_then(|_| std::env::var("HT_MEMORY_SUGGESTION_SEED").ok())
+                .map(|seed| seed.parse().expect("memory suggestion seed"))
+                .unwrap_or_else(|| std::collections::hash_map::RandomState::new().hash_one(0u8)),
             include_context: true,
             chats: vec![chat],
             selected: 0,
@@ -1454,16 +1461,17 @@ mod tests {
             "projects":[{"id":123,"title":"Board","teamId":42}],
             "tasks":[{"id":456,"projectId":123,"title":"Investigate","ticketNumber":"HTPR-123","uniqueIndex":7,"status":"Normal"}]
         })).unwrap();
-        let board = Scope::load(&db, Screen::Board, 123, None);
+        let board = Scope::load(&db, Screen::Board, 123, None, 7381);
+        assert!(board == Scope::load(&db, Screen::Board, 123, None, 7381));
         assert_eq!(board.context.project_id, Some(123));
         assert_eq!(board.context.task_id, None);
         assert_eq!(board.team_id.as_deref(), Some("42"));
-        let task = Scope::load(&db, Screen::Task, 999, Some(456));
+        let task = Scope::load(&db, Screen::Task, 999, Some(456), 7381);
         assert_eq!(task.context.project_id, Some(123));
         assert_eq!(task.context.task_id, Some(456));
         assert_eq!(task.context.surface_path, "/detail/project-123/7");
         assert_eq!(task.label, "HTPR-123 Investigate");
-        let inbox = Scope::load(&db, Screen::Inbox, 999, Some(456));
+        let inbox = Scope::load(&db, Screen::Inbox, 999, Some(456), 7381);
         assert_eq!(inbox.context.project_id, None);
         assert_eq!(inbox.context.task_id, Some(456));
         assert_eq!(inbox.context.surface, "inbox");

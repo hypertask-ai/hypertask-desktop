@@ -7,7 +7,7 @@ const BUDGET_MS = 16;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ht-frames-'));
 const db = path.join(tmp, 'local.db');
 
-buildRelease();
+buildRelease(['input-benchmark']);
 seedLargeBoard(db);
 const out = await withXvfb(async () =>
   run(APP, ['--db', db, '--offline', '--screen', 'board', '--board', '15', '--bench-input', '300']));

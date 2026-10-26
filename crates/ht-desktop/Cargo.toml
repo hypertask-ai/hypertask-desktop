@@ -4,14 +4,13 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["visible-board-columns", "lazy-theme-fonts", "ht-core/bounded-sync-cache", "ht-core/compact-task-reads"]
+default = ["visible-board-columns", "lazy-theme-fonts", "ht-core/bounded-sync-cache", "ht-core/compact-task-reads", "ht-core/compact-inbox-metadata"]
 lazy-theme-fonts = []
 visible-board-columns = []
-# CI-only control for the one-shot production startup residency policy.
-untrimmed-startup = []
+input-benchmark = ["gpui/profiler"]
 
 [dependencies]
-gpui = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["profiler"] }
+gpui = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9" }
 gpui_platform = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["x11", "wayland"] }
 ht-core = { path = "../ht-core" }
 anyhow = "1"
