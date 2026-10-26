@@ -43,6 +43,7 @@ enum Work {
     Board(i64),
     Catalog(i64),
     Task(i64),
+    TaskRelated(i64),
     Inbox,
     Draft(i64),
     Drain,
@@ -55,7 +56,7 @@ impl Work {
             Self::Projects => "projects",
             Self::Board(_) => "board",
             Self::Catalog(_) => "catalog",
-            Self::Task(_) => "task",
+            Self::Task(_) | Self::TaskRelated(_) => "task",
             Self::Inbox => "inbox",
             Self::Draft(_) => "draft",
             Self::Drain => "mutations",
@@ -69,14 +70,16 @@ impl Work {
             Self::Projects => sync.projects()?,
             Self::Board(id) => sync.board(*id)?,
             Self::Catalog(id) => sync.catalog(*id)?,
-            Self::Task(id) => {
+            Self::Task(id) | Self::TaskRelated(id) => {
+                if matches!(self, Self::Task(_)) {
+                    sync.task(*id)?;
+                }
                 if let Ok(response) = sync.transport.get("/user/context")
                     && let Ok(context) = crate::http::successful(response)
                     && let Some(id) = context["user"]["id"].as_i64().filter(|id| *id > 0)
                 {
                     sync.db.kv_set("current-user-id", &id.to_string())?;
                 }
-                sync.task(*id)?;
                 sync.comments(*id)?;
                 sync.drafts(*id)?;
             }
@@ -146,6 +149,7 @@ fn schedule(pending: &mut BTreeMap<Work, Pending>, work: Work) {
 
 enum Command {
     Work(Work),
+    LoadTask(i64, mpsc::Sender<Result<()>>),
     Event(String),
     Wake,
     Stop,
@@ -160,6 +164,11 @@ impl WorkerHandle {
     }
     pub fn sync_task(&self, id: i64) -> Result<()> {
         Ok(self.sender.send(Command::Work(Work::Task(id)))?)
+    }
+    pub fn load_task(&self, id: i64) -> Result<mpsc::Receiver<Result<()>>> {
+        let (send, receive) = mpsc::channel();
+        self.sender.send(Command::LoadTask(id, send))?;
+        Ok(receive)
     }
     pub fn sync_inbox(&self) -> Result<()> {
         Ok(self.sender.send(Command::Work(Work::Inbox))?)
@@ -199,6 +208,20 @@ impl Worker {
                     };
                     let mut wake = matches!(command, Some(Command::Wake));
                     match command {
+                        Some(Command::LoadTask(id, reply)) => {
+                            task = Some(id);
+                            let result = sync.task(id);
+                            if result.is_ok() {
+                                schedule(&mut pending, Work::TaskRelated(id));
+                            } else {
+                                log.failure("task", result.as_ref().unwrap_err(), 1);
+                                pending.insert(Work::Task(id), Pending {
+                                    attempts: 1,
+                                    due: Instant::now() + Duration::from_secs(crate::queue::backoff(0) as u64),
+                                });
+                            }
+                            let _ = reply.send(result);
+                        }
                         Some(Command::Work(work)) => {
                             match &work {
                                 Work::Board(id) => {
