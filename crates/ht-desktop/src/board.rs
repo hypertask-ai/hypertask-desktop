@@ -224,7 +224,10 @@ impl Desktop {
             .layout_key(&self.layout, "board.bulk", None)
     }
     pub(super) fn add_board_commands(&self, rows: &mut Vec<crate::command_center::Command>) {
-        if self.screen == Screen::Board {
+        let project = if self.screen == Screen::Task {
+            self.selected_task().and_then(|id| self.db.task(id).ok().flatten()).map_or(self.options.board, |task| task.project_id)
+        } else { self.options.board };
+        if self.db.projects().unwrap_or_default().iter().any(|row| row["id"] == project) {
             for (key, name, action) in [
                 (
                     "addColumn",
@@ -252,6 +255,8 @@ impl Desktop {
                     crate::command_center::BoardAction::ArchiveBoard,
                 ),
             ] {
+                if matches!(action, crate::command_center::BoardAction::RenameColumn | crate::command_center::BoardAction::DeleteColumn)
+                    && !self.columns.get(self.column).is_some_and(|column| self.db.sections(project).unwrap_or_default().iter().any(|section| section["id"] == column.id)) { continue; }
                 rows.push(crate::command_center::Command {
                     key: key.into(),
                     name: name.into(),

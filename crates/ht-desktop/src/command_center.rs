@@ -38,6 +38,9 @@ pub enum ShellCommand {
     MoveToInbox,
     AcceptTask,
     RemoveParent,
+    SearchTasks,
+    SystemTheme,
+    RemoveSubtask,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -137,6 +140,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
             action: CommandAction::Theme(theme),
         });
     }
+    rows.push(Command { key: "systemTheme".into(), name: "Follow system".into(), group: "Appearance", keys: String::new(), keywords: "system automatic auto os default theme appearance", action: CommandAction::Shell(ShellCommand::SystemTheme) });
     shell_commands(&mut rows);
     order(&mut rows, screen);
     rows
@@ -145,7 +149,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
 // Context producers append rows; order the complete list, not just the base registry.
 pub fn order(rows: &mut [Command], screen: Screen) {
     let comment = rows.iter().any(|row| row.group == "Comment");
-    let task = ["acceptTask", "declineTask", "assignUser", "blockedByPerson", "assignToMe", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "starTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "removeParenttask", "renameTask", "showInInbox", "deleteTask"];
+    let task = ["acceptTask", "declineTask", "assignUser", "blockedByPerson", "assignToMe", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "starTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "removeSubtask", "removeParenttask", "renameTask", "showInInbox", "deleteTask"];
     let ai = ["aiChatInterface", "pinAiChatOpen", "fullScreenAiChat", "branchInNewChat", "toggleAIChatView"];
     let board = ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"];
     rows.sort_by_key(|row| {
@@ -166,7 +170,7 @@ pub fn order(rows: &mut [Command], screen: Screen) {
             "Help" => 12,
             _ => 13,
         };
-        let keys: &[&str] = match row.group { "Task" if screen == Screen::Task => &task, "Board" => &board, "AI" => &ai, _ => &[] };
+        let keys: &[&str] = match row.group { "Task" if screen == Screen::Task => &task, "Board" => &board, "AI" => &ai, "Appearance" => &["systemTheme", "lightTheme", "darkTheme", "amoledTheme", "paperTheme"], _ => &[] };
         (group, keys.iter().position(|key| *key == row.key).unwrap_or(keys.len()))
     });
 }

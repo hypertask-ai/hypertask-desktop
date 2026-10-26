@@ -43,7 +43,7 @@ impl Desktop {
         cx.notify();
     }
 
-    pub(super) fn navigate_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+    pub(in crate::ui) fn navigate_search(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         self.exit_ai_fullscreen(cx);
         self.shell.agents = false;
         self.shell.search_board = (self.screen == Screen::Board).then_some(self.options.board);

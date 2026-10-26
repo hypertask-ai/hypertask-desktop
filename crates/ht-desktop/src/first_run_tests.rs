@@ -259,7 +259,7 @@ fn fresh_command_search_fetches_and_keyboard_opens_uncached_task(cx: &mut gpui::
     h.cx.simulate_input("Search");
     h.cx.simulate_keystrokes("enter");
     h.cx.simulate_input("Server");
-    assert_eq!(measured(h.view,&mut h.cx,"command.loading")["text"],"Loading tasks…");
+    assert_eq!(measured(h.view,&mut h.cx,"shell.search.empty")["text"],"Loading...");
     send.send(()).unwrap();
     h.wait(|this|this.search_ids.as_ref().is_some_and(|ids|ids==&vec![102]));
     h.cx.simulate_keystrokes("enter");
