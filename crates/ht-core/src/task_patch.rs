@@ -6,6 +6,7 @@ use serde_json::{Value, json};
 /// Only fields supported by the authenticated /tasks/update contract.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum TaskPatch {
+    Parent(Option<i64>),
     Status(Status),
     Description(String),
     Priority(u8),
@@ -17,6 +18,10 @@ pub enum TaskPatch {
 impl TaskPatch {
     pub(crate) fn fields(&self) -> Result<Value> {
         Ok(match self {
+            Self::Parent(parent) => {
+                ensure!(parent.is_none_or(|id| id > 0), "parent task id must be positive");
+                json!({"parent_task_id":parent})
+            }
             Self::Status(status) => json!({"status": status}),
             Self::Description(text) => json!({"description": text, "content_type": "html"}),
             Self::Labels(ids) => {
@@ -56,6 +61,11 @@ pub(crate) fn optimistic(task: &mut Value, fields: &Value) {
         if let Some(value) = fields.get(key) {
             task[key] = value.clone();
         }
+    }
+    if let Some(value) = fields.get("parent_task_id") {
+        task["parentTaskId"] = value.clone();
+        task["parent_id"] = value.clone();
+        if value.is_null() { task["parent_task"] = Value::Null; }
     }
     if let Some(value) = fields.get("due_date") {
         task["dueDate"] = value.clone();

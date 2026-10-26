@@ -1,6 +1,7 @@
 use super::*;
 use super::shell::tests::{draw, measured, setup};
 use gpui::TestAppContext;
+use ht_core::generated::Status;
 
 #[gpui::test]
 fn keyboard_shift_t_toggles_existing_board_table_without_changing_board(cx: &mut TestAppContext) {
@@ -384,8 +385,12 @@ impl ht_core::Transport for KeyboardWriteServer {
         self.calls.push((path.into(), body.clone()));
         let response = match path {
             "/tasks/card-actions" => {
-                assert_eq!(body["action"], "star");
                 assert_eq!(body["project_id"], 15);
+                if body["action"] == "inbox" {
+                    assert_eq!(body["active"], true);
+                    return Ok(ht_core::http::Response { status:200, body:json!({"success":true,"action":"inbox","active":true}) });
+                }
+                assert_eq!(body["action"], "star");
                 let active = body["active"].as_bool().unwrap();
                 json!({"success":true,"action":"star","active":active,"saved_content":if active {json!([{"id":"saved-real","type":"Private"}])} else {json!([])}})
             }
@@ -597,4 +602,128 @@ fn cmdk_round2_existing_actions_use_web_labels_groups_and_native_effects(cx: &mu
             });
         }
     }
+}
+
+#[gpui::test]
+fn cmdk_round2_move_to_inbox_and_star_reconcile_without_faking_notifications(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    view.update_in(cx, |this, _, _| {
+        this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","savedContent":[]})).unwrap();
+    });
+    let mut server = KeyboardWriteServer::new();
+    for (query, active) in [("Star task", true), ("Unstar task", false)] {
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input(query);
+        view.read_with(cx, |this, cx| assert_eq!(this.choices(cx).first().unwrap().name, query));
+        cx.simulate_keystrokes("enter");
+        view.update_in(cx, |this, _, _| {
+            assert!(matches!(this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+            let task = this.db.task(1).unwrap().unwrap();
+            assert_eq!(!task.extra["savedContent"].as_array().unwrap().is_empty(), active);
+            if active { assert_eq!(task.extra["savedContent"][0]["id"], "saved-real"); }
+        });
+    }
+    for count in [3, 4] {
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Move task to inbox");
+        view.read_with(cx, |this, cx| assert_eq!(this.choices(cx).first().unwrap().name, "Move task to inbox"));
+        cx.simulate_keystrokes("enter");
+        view.update_in(cx, |this, _, _| {
+            assert!(matches!(this.db.drain_once(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+            assert!(this.db.inbox().unwrap().is_empty(), "notification identity must come from server refresh");
+            assert!(this.db.refetches().unwrap().iter().any(|(target, _, _)| target == "inbox"));
+        });
+        assert_eq!(server.calls.len(), count);
+        assert_eq!(server.calls.last().unwrap().1, serde_json::json!({"task_id":1,"project_id":15,"action":"inbox","active":true}));
+    }
+}
+
+#[gpui::test]
+fn cmdk_round2_omits_unknown_states_and_session_only_commands(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    for (query, forbidden) in [
+        ("Star task", "Star task"), ("Start or stop timer", "Start or stop timer"),
+        ("Clear inbox to zero", "Clear inbox to zero"), ("Archive all read", "Archive all read"),
+        ("Archive reactions", "Archive reactions"), ("Mark unread", "Mark unread"),
+        ("Set reminder", "Set reminder"), ("Mark blocked by", "Mark blocked by"),
+        ("Create task", "Create task"),
+    ] {
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input(query);
+        view.read_with(cx, |this, cx| assert!(!this.choices(cx).iter().any(|row| row.name == forbidden), "{forbidden}"));
+        cx.simulate_keystrokes("escape");
+    }
+    view.update_in(cx, |this, _, _| {
+        this.db.kv_set("current-user-id", "").unwrap();
+    });
+    for query in ["Blocked by person…", "Move task to inbox", "Decline task"] {
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input(query);
+        view.read_with(cx, |this, cx| assert!(!this.choices(cx).iter().any(|row| row.name == query)));
+        cx.simulate_keystrokes("escape");
+    }
+    view.read_with(cx, |this, _| assert!(this.db.mutations().unwrap().is_empty()));
+}
+
+#[gpui::test]
+fn cmdk_round2_accept_uses_ranked_columns_skips_only_intake_and_keeps_hidden_targets(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for (title, expected) in [("Triage", 13), ("Pretriage", 12)] {
+        let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+        view.update_in(cx, |this, _, _| {
+            this.db.apply_response(&serde_json::json!({"success":true,"sections":[
+                {"id":10,"projectId":15,"section_title":title,"visibility":true,"deleted":false,"ranking":"a"},
+                {"id":11,"projectId":15,"section_title":"Doing","visibility":true,"deleted":false,"ranking":"z"},
+                {"id":12,"projectId":15,"section_title":"Inbox","visibility":true,"deleted":false,"ranking":"b"},
+                {"id":13,"projectId":15,"section_title":"Ready","visibility":false,"deleted":false,"ranking":"c"}
+            ]})).unwrap();
+            this.reload();
+        });
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Accept task");
+        view.read_with(cx, |this, cx| assert_eq!(this.choices(cx).first().unwrap().name, "Accept task"));
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |this, _| {
+            let rows = this.db.mutations().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].payload_json["change"]["MoveTask"], serde_json::json!({"task":1,"project":15,"section":expected}));
+        });
+    }
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    view.update_in(cx, |this, _, _| {
+        this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"sectionId":11,"title":"Last column","status":"Normal"})).unwrap();
+        this.reload();
+    });
+    cx.simulate_keystrokes("ctrl-k");
+    cx.simulate_input("Accept task");
+    cx.simulate_keystrokes("enter");
+    view.read_with(cx, |this, _| {
+        assert!(this.db.mutations().unwrap().is_empty());
+        assert_eq!(this.error.as_deref(), Some("No later column is available for this task"));
+    });
+}
+
+#[gpui::test]
+fn cmdk_round2_remove_parent_uses_nullable_parent_field_and_hides_after_unlink(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    view.update_in(cx, |this, _, _| {
+        this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Child","status":"Normal","parent_id":2,"parent_task":{"id":2,"title":"Parent"}})).unwrap();
+        this.reload();
+    });
+    cx.simulate_keystrokes("ctrl-k");
+    cx.simulate_input("Remove as sub-task");
+    view.read_with(cx, |this, cx| assert_eq!(this.choices(cx).first().unwrap().name, "Remove as sub-task"));
+    cx.simulate_keystrokes("enter");
+    view.read_with(cx, |this, _| {
+        let rows = this.db.mutations().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].payload_json, serde_json::json!({"task_id":1,"parent_task_id":null}));
+        assert!(this.db.task(1).unwrap().unwrap().extra["parentTaskId"].is_null());
+    });
+    cx.simulate_keystrokes("ctrl-k");
+    cx.simulate_input("Remove as sub-task");
+    view.read_with(cx, |this, cx| assert!(!this.choices(cx).iter().any(|row| row.name == "Remove as sub-task")));
 }

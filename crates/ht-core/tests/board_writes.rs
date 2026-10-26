@@ -420,3 +420,29 @@ fn self_assignment_denial_restores_people_and_rejects_another_account() {
     assert_eq!(task.assignee_count, 0);
     assert_eq!(task.extra["assignees"], json!([]));
 }
+
+#[test]
+fn command_move_to_inbox_is_desired_state_and_account_bound() {
+    for user in [42, 43] {
+        let mut db = Db::memory().unwrap();
+        seed(&mut db);
+        let mut server = server("POST", "/tasks/card-actions", json!({"task_id":1,"project_id":15,"action":"inbox","active":true}), json!({"success":true,"action":"inbox","active":true}));
+        server.user = user;
+        db.enqueue(Write::Board { change: BoardWrite::MoveToInbox { task:1, project:15 } }, 1).unwrap();
+        let result = db.drain_once(&mut server, 2).unwrap();
+        if user == 42 {
+            assert!(matches!(result, Drain::Applied(_)));
+            assert_eq!(server.calls, 1);
+            assert!(db.refetches().unwrap().iter().any(|(target, _, _)| target == "inbox"));
+        } else {
+            assert!(matches!(result, Drain::Failed(_)));
+            assert_eq!(server.calls, 0);
+        }
+    }
+    let mut db = Db::memory().unwrap();
+    seed(&mut db);
+    assert!(db.enqueue(Write::Board { change: BoardWrite::MoveToInbox { task:1, project:99 } }, 1).is_err());
+    let mut server = server("POST", "/tasks/card-actions", json!({"task_id":1,"project_id":15,"action":"inbox","active":true}), json!({"success":true,"action":"inbox","active":false}));
+    db.enqueue(Write::Board { change: BoardWrite::MoveToInbox { task:1, project:15 } }, 1).unwrap();
+    assert!(matches!(db.drain_once(&mut server, 2).unwrap(), Drain::Failed(_)));
+}
