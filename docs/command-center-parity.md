@@ -1,5 +1,9 @@
 # Command center parity, round 3
 
+Current refresh: [round 4 audit](cmdk-round4.md).
+The tables below retain round 3's historical before/after.
+Round 4 rechecks every unresolved declaration and contract.
+
 Web source root: `/home/valentin/projects/hypertask/src`.
 Source-only audit; no web build or local tests.
 Baseline native main: `5c6b81fc1781`.
