@@ -152,7 +152,7 @@ impl Desktop {
             .cursor_pointer()
             .bg(color(if selected { 0x4455bb } else { self.colors.card }))
             .border_1()
-            .border_color(color(if selected { 0x4455bb } else { self.colors.border }).opacity(0.6))
+            .border_color(if selected { color(0x4455bb) } else { rgba(0x0000001a).into() })
             .rounded(px(4.))
             .flex()
             .items_center()
@@ -370,6 +370,8 @@ mod tests {
             assert_eq!((command["w"].as_f64(), command["h"].as_f64()), (Some(14.), Some(16.)));
             assert_eq!(selector["x"].as_f64().unwrap() - current_card["x"].as_f64().unwrap(), 12.);
             assert_eq!(selector["y"].as_f64().unwrap() - current_card["y"].as_f64().unwrap(), 8.);
+            assert_eq!(selector["borderColor"], if selected { "#4455bb" } else { "#000000" });
+            assert_eq!(selector["bg"], if selected { "#4455bb" } else { "#262a30" });
             assert_eq!(element("board.card.0.title")["x"].as_f64().unwrap() - idle_title["x"].as_f64().unwrap(), if hovered || selected { 20. } else { 0. });
             let painted = cx.update(|window, _| {
                 let origin = point(px(selector["x"].as_f64().unwrap() as f32), px(selector["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
