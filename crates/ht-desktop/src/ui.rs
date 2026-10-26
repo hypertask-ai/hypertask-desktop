@@ -1341,7 +1341,7 @@ impl Desktop {
                                         ),
                                 )
                             })
-                            .when(task.comment_count > 0 || task.assignee_count > 0, |d| {
+                            .when(task.comment_count > 0 || assignments.is_some_and(|a| !a.is_empty()), |d| {
                                 d.child(
                                     div()
                                         .flex()
@@ -1534,6 +1534,7 @@ impl Desktop {
             .extra
             .get("assignees")
             .and_then(|v| v.as_array())
+            .filter(|a| a.iter().any(|v| v["agent"].is_null()))
             .map(|a| {
                 a.iter()
                     .filter(|v| v["agent"].is_null())
@@ -1541,7 +1542,6 @@ impl Desktop {
                     .collect::<Vec<_>>()
                     .join(", ")
             })
-            .filter(|s| !s.is_empty())
             .unwrap_or_else(|| "The Assignees".into());
         let rows = [
             ("Assignees", assignees),
@@ -1550,6 +1550,7 @@ impl Desktop {
                 task.extra
                     .get("assignees")
                     .and_then(|v| v.as_array())
+                    .filter(|a| a.iter().any(|v| !v["agent"].is_null()))
                     .map(|a| {
                         a.iter()
                             .filter_map(|v| {
@@ -1558,7 +1559,6 @@ impl Desktop {
                             .collect::<Vec<_>>()
                             .join(", ")
                     })
-                    .filter(|s| !s.is_empty())
                     .unwrap_or_else(|| "No agents".into()),
             ),
             (
@@ -1584,13 +1584,13 @@ impl Desktop {
                 task.extra
                     .get("labels")
                     .and_then(|v| v.as_array())
+                    .filter(|a| !a.is_empty())
                     .map(|a| {
                         a.iter()
                             .filter_map(|v| v["name"].as_str().or_else(|| v["value"].as_str()))
                             .collect::<Vec<_>>()
                             .join(", ")
                     })
-                    .filter(|s| !s.is_empty())
                     .unwrap_or_else(|| "No tags".into()),
             ),
         ];

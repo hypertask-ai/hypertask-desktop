@@ -317,6 +317,13 @@ fn data4_task_fields_use_web_names_indices_and_relative_dates(cx: &mut gpui::Tes
         assert_eq!(this.creator_initials.as_ref(), "FL");
         assert!(this.db.mutations().unwrap().is_empty());
     }).unwrap();
+    view.update(&mut cx, |this, _, cx| {
+        this.db.apply_task(&json!({"id":101,"projectId":15,"status":"Normal","title":"Read actual fields", "assignees":[{"id":1,"displayName":""},{"id":2,"agent":{"id":"runner","displayName":""}}],"labels":[{"id":"empty","name":""}]})).unwrap();
+        this.reload();cx.notify();
+    }).unwrap();draw(view,&mut cx);
+    for index in [0,1,8] {
+        assert_eq!(measured(view,&mut cx,&format!("task.property.{index}.value"))["text"], "");
+    }
 }
 
 #[gpui::test]

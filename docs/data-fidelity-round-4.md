@@ -63,14 +63,14 @@ until the exact-head receipt. No runtime claim follows from source review.
 | T04 | Description avatar initials | Author name -> first/last grapheme; `lib/avatar.ts:26-36` | first two characters, not first/last words | wrong | exact |
 | T05 | Task created date | currentTask.createdAt -> RelativeTime; `components/PageComponents/TaskDetail/CommentAndDescription/DescriptionContainer/TopRow/DescriptionTopRight.tsx:15,50`; `utils/generateTime.ts:1-30` | Task.createdAt -> short_date, omits time/year | wrong | exact |
 | T06 | Task human assignees | humanAssignees displayName; `lib/assignees.ts:16-20,40-67`; `components/PageComponents/TaskDetail/AssigneesContainer.tsx:88-110` | Task.assignees without agent; email fallback; invented No assignees instead of The Assignees | wrong | exact |
-| T07 | Task agents | agentAssignees displayName; same sources; No agents is web empty state | Task.assignees[].agent | exact | exact |
+| T07 | Task agents | agentAssignees displayName; same sources; No agents is web empty state | Task.assignees[].agent; blank names incorrectly used empty-group text | wrong | exact |
 | T08 | Task ID | ticketNumber, no database-ID fallback; `components/PageComponents/TaskDetail/TaskInfoColumn/TaskInfo.tsx:288-308` | ticketNumber or numeric Task.id | placeholder | exact |
 | T09 | Task status | currentTask.section; TaskInfo `:335-362`; mapper `:240-241` | Task.section, exactly the web field, no section-ID fallback | exact | exact |
 | T10 | Task project | currentTask.project.title; TaskInfo `:525-549`; mapper `:244-245` | Task.boardTitle | exact | exact |
 | T11 | Task due date | currentTask.dueDate, otherwise -; TaskInfo `:439-452`; DueDateLabel `:24-33` | Task.dueDate -> short_date | wrong | exact |
 | T12 | Task priority | priority_.priority_index -> constants, absent No Priority; TaskInfo `:594-603`; PriorityLabelComponent `:27-31`; constants `:86-113` | Task.priority raw label | wrong | exact |
 | T13 | Task size | estimate_.estimate_index -> estimate_full_value, absent -; TaskInfo `:630-638`; constants `:115-153` | estimate_value abbreviated instead of full value | wrong | exact |
-| T14 | Task tags | taskLabels label.value; TaskInfo `:655-679`; mapper `:69-75,288` | Task.labels names, No tags web empty state | exact | exact |
+| T14 | Task tags | taskLabels label.value; TaskInfo `:655-679`; mapper `:69-75,288` | Task.labels names; blank label incorrectly used No tags instead of blank | wrong | exact |
 | T15 | Task saved AI summary | Task_Summary[0].content; `components/PageComponents/TaskDetail/TopRow/TaskDetailTitleContainer.tsx:38-44`; `TaskSummary.tsx:30-54`; `utils/summaryTeaser.ts:1-17`; `lib/mcp/operations/tasks/operation.ts:283-300,340-350` | bearer ai_summary.content -> saved teaser/full Markdown | exact | exact |
 | T16 | Description Draft marker | separate description draft; `hooks/General/useHasDrafts.ts:5-17,34-40`; `components/PageComponents/TaskDetail/CommentAndDescription/DescriptionContainer/index.tsx:141-151` | hasDescriptionDraft green border, no invented text | exact | exact |
 | T17 | Comment draft marker | no Draft text; `components/PageComponents/TaskDetail/CommentAndDescription/CommentContainer/NewCommentComponent.tsx:448-482` | hasCommentDraft retained, no invented text | exact | exact |
