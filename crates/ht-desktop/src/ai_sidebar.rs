@@ -1329,7 +1329,6 @@ impl Render for AiSidebar {
                     .max_h(px(380.))
                     .overflow_y_scroll()
                     .text_size(px(14.))
-                    .text_color(color(if self.input.read(cx).content.is_empty() { COMPOSER_PLACEHOLDER } else { t.text }))
                     .child(self.input.clone())
                     .layout_key(&self.capture, "ai.input", None),
             );

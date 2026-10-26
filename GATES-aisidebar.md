@@ -16,3 +16,5 @@ Sequence: frozen inventory, native sidebar correction, exact-head CI capture ver
 Principle prove-it-works chooses hosted native captures, not compile-only proof. Principle sequence-verifiable-units chooses inventory before correction and CI before further correction.
 
 Asset ownership extension: main.rs changes only sidebar asset registration; new ai-scope-board.svg and ai-scope-task.svg are sidebar-only. Existing shared icons remain untouched. Frozen capture fixture, source projection, thresholds and references remain byte-identical.
+
+Test observation extension: vendor/gpui/src/window.rs adds a cfg(test/test-support) read-only sprite-color getter beside painted_quads. This lets native tests assert the actual placeholder glyph paint without changing the inherited input color or any keyboard/input implementation. No permanent CI step or frozen projection changes.

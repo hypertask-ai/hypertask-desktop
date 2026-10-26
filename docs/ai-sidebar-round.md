@@ -20,7 +20,8 @@ One-pixel horizontal residues remain disclosed, not compensated.
 
 ## Before inventory
 
-Each C row applies independently to Inbox, Board, Task.
+Each C row applies independently to Inbox, Board, Task,
+except C16, which does not apply to Board.
 Bounds are [x,y,width,height]. Font weights are numeric.
 Colors are RGB unless a source token is shown.
 
@@ -35,13 +36,13 @@ Colors are RGB unless a source token is shown.
 | C07 | Scope label weight | 500, 13px/19.5px | 400, 13px/19.5px | Correct to 500. |
 | C08 | Scope icon-label spacing | 4px margin | 5px gap | Correct to 4px. |
 | C09 | Scope icon box | 13x13 | 16x16 | Correct to 13x13. |
-| C10 | Scope icon path/state | SquareKanban, 1.75 stroke; frozen board scope | Columns2, 1.5 stroke; native selected task context | Correct glyph for actual native state. Frozen state remains different, so retain row. |
+| C10 | Scope icon path/state | SquareKanban, 1.75 stroke; frozen board scope | Columns2, 1.5 stroke; native task scope on Inbox/Task, board scope on Board | Correct glyph for actual native state. Board closes; Inbox/Task retain different selected scope. |
 | C11 | Scope trailing control | 16px ChevronDown | 16px X while context included | Open action mismatch. Do not paint a dropdown without implementing it. |
 | C12 | Attachment action | 18px paperclip around x1797 | Missing | Open action gap. No decorative button. |
 | C13 | Recording action group | 18px microphone around x1825 plus dropdown | Missing | Open action gap. |
 | C14 | Add-context action | @ around x1867 | Missing | Open action gap. |
 | C15 | Selected model content | Haiku 5.5 | Gemini Flash Lite | Retain account/state difference. Do not alter capture data or model selection. |
-| C16 | Scope label content | Inbox Current board; Board/Task QA Team Board | QABO-5 plus truncated task title | Retain selected-scope difference. Do not relabel a task context as a board context. |
+| C16 | Scope label content | Inbox Current board; Board/Task QA Team Board | Inbox/Task QABO-5 plus truncated task title; Board QA Team Board already matches | Retain Inbox/Task selected-scope difference. Do not relabel a task context as a board context. |
 | C17 | Starter text/order | Four web-selected suggestions per screen | Four different native-seeded suggestions | Retain data/state difference. |
 | C18 | Font raster and equal-label painted bounds | Task New AI Chat bright glyph bounds [1518,30,79,11] | [1519,31,79,10], colored DirectWrite edge pixels | Open. No string-specific offsets or global typography edits. |
 | C19 | Send icon stroke | 16x16, 1.75 stroke | 16x16, 1.5 stroke | Open. Shared asset unchanged. |
@@ -61,8 +62,10 @@ Inbox-only I01. Header title is QA Team Board on web,
 New AI Chat natively. Board/Task header labels already match.
 This remains selected-scope/session state, not a new fixed title.
 
-Before counts are Inbox 21, Board 20, Task 27, total 68.
+Before counts are Inbox 21, Board 19, Task 27, total 67.
+Board C16 is not counted: both images say QA Team Board.
 C04..C09 are eighteen candidate closures across three screens.
+Board C10 contributes one more glyph-shape closure.
 T01..T07 are seven candidate closures. No closure claimed before CI.
 
 ### Tolerated residues and unchanged matches
@@ -108,7 +111,7 @@ and clicks the real summary action to retain offline refusal behavior.
 
 ## Exact-head verification
 
-Pending hosted CI and final capture measurement.
+Final exact-head receipt and capture measurements belong to the PR evidence comment.
 
 ### First hosted correction
 
@@ -131,3 +134,46 @@ Its border quad deliberately has transparent background.
 The regression now independently requires the actual fill quad at
 that same origin, plus the 70% border and 1px width.
 No expected source value or acceptance threshold changed.
+
+### Hosted Windows product measurement
+
+SHA 74a6f599499d41b06aa4e843472acdb0ed0e5b60.
+Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40384092379.
+Windows and macOS succeeded, including all new native tests.
+Linux rejected two inherited input colors in the source projection.
+The placeholder itself must be gray; its container stays white.
+The final correction removes that inherited-color change, not the oracle.
+Native tests now inspect actual painted glyph colors instead.
+A test-only read-only GPUI getter exposes existing sprite paint records.
+The native input implementation and all keyboard code remain untouched.
+
+Windows visual artifact 12681622223, digest
+sha256:612866224e20098d679acee64c37bf3f63330d2310bdc54d4d038386fd494daa.
+Its memory.json revision and build revision match the SHA above.
+
+| Measured crop | Inbox | Board | Task |
+| --- | ---: | ---: | ---: |
+| Main pixels changed left of x1500 | 0 | 0 | 0 |
+| Sidebar changed pixels versus main | 3,323 | 2,971 | 25,285 |
+| Unequal web/sidebar pixels before | 20,938 | 22,563 | 38,022 |
+| Unequal web/sidebar pixels after | 21,038 | 22,626 | 26,100 |
+| Inventory before | 21 | 19 | 27 |
+| Closed source properties | 6 | 7 | 13 |
+| Inventory after | 15 | 12 | 14 |
+
+Twenty-six source/property rows close, not pixel identity.
+Nineteen closures remain even excluding both 1px spacing corrections
+and the Board glyph-shape correction. No thresholds changed.
+Unequal-pixel counts include different content and shifted text.
+They can rise despite correct source font weights and spacing.
+Task's summary interior now measures (43,36,55), matching web.
+Its prompts naturally shrink from 34px to 32px.
+The composer remains [1514,913,398,88], not web [1513,908,399,93].
+The Task stack still starts 2px below web after correction.
+All remaining rows above remain open, including missing actions.
+
+Additional painted bounds, excluding antialiased dark fringe:
+web model [1530,971,55,10], native model [1531,974,99,10].
+Web scope label Inbox [1648,971,85,10], Board/Task [1648,971,95,12].
+Native scope label Inbox/Task [1698,975,150,11], Board [1698,974,90,12].
+These different-content bounds remain diagnostic, not font-width targets.
