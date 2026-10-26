@@ -1211,8 +1211,12 @@ impl Desktop {
                     .top_0()
                     .bottom_0()
                     .w(gpui::relative(0.26))
-                    .bg(color(self.colors.container))
-                    .px(px(16.))
+                    .bg(color(match self.options.theme {
+                        ThemeName::Graphite => 0x141518,
+                        _ => self.colors.container,
+                    }))
+                    .text_size(px(14.))
+                    .line_height(px(21.))
                     .overflow_y_scroll()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(self.shortcut_settings(cx))

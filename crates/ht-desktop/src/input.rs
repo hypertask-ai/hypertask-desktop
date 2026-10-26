@@ -138,6 +138,7 @@ pub struct TextInput {
     last_bounds: Option<Bounds<Pixels>>,
     is_selecting: bool,
     muted: gpui::Hsla,
+    pub line_height: f32,
     undo: Vec<EditSnapshot>,
     redo: Vec<EditSnapshot>,
     editor: Option<EditorState>,
@@ -1134,7 +1135,7 @@ impl Render for TextInput {
             .on_mouse_up_out(MouseButton::Left, cx.listener(Self::on_mouse_up))
             .on_mouse_move(cx.listener(Self::on_mouse_move))
             .w_full()
-            .line_height(px(24.))
+            .line_height(px(self.line_height))
             .child(TextElement { input: cx.entity() })
             .children(handles)
             .children(
@@ -1197,6 +1198,7 @@ impl TextInput {
             last_bounds: None,
             is_selecting: false,
             muted,
+            line_height: 24.,
             undo: vec![],
             redo: vec![],
             editor: None,
@@ -1210,6 +1212,7 @@ impl TextInput {
     }
 
     pub fn ai_composer(mut self) -> Self {
+        self.line_height = 21.;
         self.multiline = true;
         self.editor = Some(EditorState::new(self.content.as_ref()));
         self
