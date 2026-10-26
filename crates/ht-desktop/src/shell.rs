@@ -1211,8 +1211,12 @@ impl Desktop {
                     .top_0()
                     .bottom_0()
                     .w(gpui::relative(0.26))
-                    .bg(color(self.colors.container))
-                    .px(px(16.))
+                    .bg(color(match self.options.theme {
+                        ThemeName::Graphite => 0x141518,
+                        _ => self.colors.container,
+                    }))
+                    .text_size(px(14.))
+                    .line_height(px(21.))
                     .overflow_y_scroll()
                     .on_mouse_down(MouseButton::Left, |_, _, cx| cx.stop_propagation())
                     .child(self.shortcut_settings(cx))
@@ -1266,6 +1270,29 @@ mod surface_tests {
         measured(view, &mut cx, "inbox.tabs");
         view.read_with(&cx, |this, _| assert_eq!(this.shell.feedback_kind, "Idea"))
             .unwrap();
+    }
+
+    #[gpui::test]
+    fn graphite_shortcut_sheet_source_measurements(cx: &mut gpui::TestAppContext) {
+        #[cfg(target_os = "linux")]
+        let mut real = gpui::TestAppContext::build_with_text_system(
+            cx.dispatcher.clone(), Some("graphite_panel_measurement"),
+            gpui_platform::current_platform(true).text_system(),
+        );
+        #[cfg(target_os = "linux")]
+        let cx = &mut real;
+
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx, |this, _, cx| this.apply_shell_theme(ThemeName::Graphite, cx)).unwrap();
+        cx.simulate_keystrokes("?");
+        draw(view, &mut cx);
+        let elements = view.read_with(&cx, |this, _| this.layout.as_ref().unwrap().borrow().interaction_elements()).unwrap();
+        assert!(elements.iter().any(|e| e["key"] == "shell.shortcuts"));
+        if cfg!(target_os = "linux") && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+            let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/layout/panels-native");
+            std::fs::create_dir_all(&out).unwrap();
+            std::fs::write(out.join("shortcuts.json"), serde_json::to_vec_pretty(&serde_json::json!({"width":1440,"height":900,"elements":elements})).unwrap()).unwrap();
+        }
     }
 
     #[gpui::test]

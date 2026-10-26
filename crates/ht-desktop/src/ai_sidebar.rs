@@ -760,7 +760,7 @@ impl AiSidebar {
 fn icon(name: &'static str, tint: u32) -> impl IntoElement {
     svg()
         .path(name)
-        .size(px(15.))
+        .size(px(16.))
         .text_color(color(tint))
         .flex_shrink_0()
 }
@@ -895,7 +895,7 @@ impl Render for AiSidebar {
                 .flex_col()
                 .justify_center()
                 .px(px(40.))
-                .py(px(16.))
+                .py(px(24.))
                 .gap(px(8.));
             if self.scope.as_ref().is_some_and(|scope| scope.context.surface == "task_detail" && scope.context.task_id.is_some()) {
                 welcome = welcome.child(
@@ -924,7 +924,7 @@ impl Render for AiSidebar {
                         .min_h(px(34.))
                         .px(px(8.))
                         .py(px(8.))
-                        .rounded(px(4.))
+                        .rounded(px(6.))
                         .bg(color(t.active))
                         .text_size(px(12.))
                         .cursor_pointer()
@@ -941,12 +941,13 @@ impl Render for AiSidebar {
             for (index, message) in chat.messages.iter().enumerate() {
                 let human = message.message.role == "human";
                 let streaming = self.active.as_ref().is_some_and(|active| active.chat == self.selected && active.assistant == index);
-                let mut body = div().px(px(8.)).py(px(4.)).rounded(px(4.))
+                let mut body = div().px(px(8.)).py(px(4.)).rounded(px(6.))
+                    .when(!human, |d| d.w_full())
                     .when(human, |d| d.bg(color(t.card)))
                     .child(if human {
-                        RichText::parse(&message.message.content, t).element()
+                        RichText::parse(&message.message.content, t).chat_element()
                     } else {
-                        message.rich.element()
+                        message.rich.chat_element()
                     });
                 if streaming && chat.error.is_none() {
                     body = body.child(
@@ -968,14 +969,15 @@ impl Render for AiSidebar {
                     }
                 }
                 let mut row = div().id(("ai-message", index)).flex().flex_col()
+                    .text_size(px(12.)).line_height(px(18.))
                     .when(index + 1 < chat.messages.len(), |d| d.mb(px(8.)))
                     .when(human, |d| d.items_end())
                     .child(body.layout_key(&self.capture, format!("ai.message.{index}.body"), None));
                 if !streaming && (!message.message.content.is_empty() || (index + 1 == chat.messages.len() && chat.error.is_some())) {
-                    let mut actions = div().flex().gap(px(4.)).px(px(8.)).text_size(px(11.));
+                    let mut actions = div().flex().gap(px(4.)).px(px(8.)).mt(px(2.)).h(px(18.)).text_size(px(12.));
                     if human {
                         actions = actions.child(
-                            div().id(("ai-edit-message", index)).tab_index(0).cursor_pointer().child(icon("square-pen", t.muted))
+                            div().id(("ai-edit-message", index)).tab_index(0).cursor_pointer().child(svg().path("square-pen").size(px(14.)).flex_shrink_0().text_color(color(t.muted)))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     let content = this.chats[this.selected].messages[index].message.content.clone();
                                     this.draft_quotes.clear();
@@ -987,7 +989,7 @@ impl Render for AiSidebar {
                     }
                     if human || (index + 1 == chat.messages.len() && chat.error.is_some()) {
                         actions = actions.child(
-                            div().id(("ai-retry-message", index)).tab_index(0).cursor_pointer().child(icon("rotate-cw", t.muted))
+                            div().id(("ai-retry-message", index)).tab_index(0).cursor_pointer().child(svg().path("rotate-cw").size(px(14.)).flex_shrink_0().text_color(color(t.muted)))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     let messages = &this.chats[this.selected].messages;
                                     let content = if messages[index].message.role == "human" {
@@ -1002,7 +1004,7 @@ impl Render for AiSidebar {
                         );
                     }
                     actions = actions.when(!message.message.content.is_empty(), |d| d.child(
-                        div().id(("ai-copy-response", index)).tab_index(0).cursor_pointer().child(icon("copy", t.muted))
+                        div().id(("ai-copy-response", index)).tab_index(0).cursor_pointer().child(svg().path("copy").size(px(14.)).flex_shrink_0().text_color(color(t.muted)))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 let message = &this.chats[this.selected].messages[index];
                                 let text = if message.message.role == "human" {
@@ -1021,77 +1023,41 @@ impl Render for AiSidebar {
         }
         let error = chat.error.clone().filter(|_| chat.messages.last().is_none_or(|message| message.message.role != "assistant"));
         let mut header = div()
-            .h(px(48.))
-            .flex_shrink_0()
-            .flex()
-            .items_center()
-            .px(px(8.))
-            .pt(px(16.))
-            .gap(px(16.))
-            .child(
-                div()
-                    .id("ai-history-toggle")
-                    .flex_1()
-                    .min_w_0()
-                    .flex()
-                    .items_center()
-                    .gap(px(8.))
-                    .cursor_pointer()
+            .h(px(48.)).flex_shrink_0().flex().items_center()
+            .px(px(8.)).pt(px(24.)).gap(px(24.))
+            .text_size(px(14.)).line_height(px(21.)).font_weight(FontWeight::BOLD)
+            .child(div().flex_1().min_w_0().flex().items_center().child(
+                div().id("ai-history-toggle").min_w_0().max_w(gpui::relative(1.))
+                    .flex().items_center().gap(px(4.)).px(px(4.)).py(px(2.))
+                    .rounded(px(6.)).font_weight(FontWeight::MEDIUM).cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| this.toggle_history(cx)))
-                    .child(
-                        div()
-                            .truncate()
-                            .font_weight(FontWeight::SEMIBOLD)
-                            .child(title),
-                    )
-                    .child(icon("chevron-down", t.muted))
+                    .child(div().truncate().child(title.clone())
+                        .layout_key(&self.capture, "ai.title", Some(title)))
+                    .child(svg().path("chevron-down").size(px(18.)).flex_shrink_0().text_color(color(t.muted)))
                     .layout_key(&self.capture, "ai.history.toggle", None),
-            )
-            .child(
-                div()
-                    .id("ai-new")
-                    .cursor_pointer()
+            ))
+            .child(div().flex().items_center().gap(px(8.)).text_color(color(t.muted))
+                .child(div().id("ai-new").cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| this.new_chat(window, cx)))
                     .child(icon("square-pen", t.muted))
-                    .layout_key(&self.capture, "ai.new", None),
-            )
-            .child(
-                div()
-                    .id("ai-more")
-                    .cursor_pointer()
+                    .layout_key(&self.capture, "ai.new", None))
+                .child(div().id("ai-more").cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.more_menu = !this.more_menu;
                         this.history_menu = false;
                         cx.notify();
                     }))
                     .child(icon("ellipsis", t.muted))
-                    .layout_key(&self.capture, "ai.more", None),
-            )
-            .child(
-                div()
-                    .id("ai-collapse")
-                    .cursor_pointer()
+                    .layout_key(&self.capture, "ai.more", None))
+                .child(div().id("ai-collapse").cursor_pointer()
                     .on_click(cx.listener(|this, _, window, cx| {
-                        if this.mode() == DisplayMode::Sidebar {
-                            this.set_open(false, cx);
-                        } else {
-                            this.collapsed = true;
-                        }
-                        if let Some(previous) = &this.previous_focus {
-                            window.focus(previous, cx);
-                        }
+                        if this.mode() == DisplayMode::Sidebar { this.set_open(false, cx); }
+                        else { this.collapsed = true; }
+                        if let Some(previous) = &this.previous_focus { window.focus(previous, cx); }
                         cx.notify();
                     }))
-                    .child(icon(
-                        if self.mode() == DisplayMode::Sidebar {
-                            "chevron-right"
-                        } else {
-                            "minus"
-                        },
-                        t.muted,
-                    ))
-                    .layout_key(&self.capture, "ai.close", None),
-            );
+                    .child(icon(if self.mode() == DisplayMode::Sidebar { "chevron-right" } else { "minus" }, t.muted))
+                    .layout_key(&self.capture, "ai.close", None)));
         if self.mode() == DisplayMode::Fullscreen {
             header = div()
                 .h(px(48.))
@@ -1138,7 +1104,7 @@ impl Render for AiSidebar {
             .h_full()
             .min_h_0()
             .border_l_1()
-            .border_color(color(t.border))
+            .border_color(color(0x434343))
             .bg(color(t.container))
             .flex()
             .flex_col()
@@ -1318,18 +1284,20 @@ impl Render for AiSidebar {
                 }
             }))
             .mx(px(8.))
+            .mt(px(8.))
             .mb(px(8.))
             .p(px(8.))
             .rounded(px(8.))
             .bg(color(t.card))
             .flex()
             .flex_col()
-            .gap(px(12.))
             .child(
                 div()
                     .id("ai-composer-input")
                     .track_scroll(&self.input_scroll)
-                    .min_h(px(40.))
+                    .min_h(px(37.))
+                    .py(px(8.))
+                    .line_height(px(21.))
                     .max_h(px(380.))
                     .overflow_y_scroll()
                     .text_size(px(14.))
@@ -1393,13 +1361,15 @@ impl Render for AiSidebar {
             "All boards".into()
         };
         let controls = div()
+            .w_full().pt(px(8.))
             .flex()
             .items_center()
-            .gap(px(12.))
+            .gap(px(8.))
             .text_size(px(12.))
             .child(
                 div()
                     .id("ai-model-toggle")
+                    .px(px(8.)).py(px(4.)).text_size(px(13.)).line_height(px(19.5))
                     .flex()
                     .items_center()
                     .gap(px(5.))
@@ -1414,6 +1384,7 @@ impl Render for AiSidebar {
             .child(
                 div()
                     .id("ai-context-toggle")
+                    .px(px(8.)).py(px(4.)).text_size(px(13.)).line_height(px(19.5))
                     .flex_1()
                     .min_w_0()
                     .flex()
@@ -1447,7 +1418,7 @@ impl Render for AiSidebar {
                     }))
                     .layout_key(&self.capture, "ai.send", None),
             ));
-        composer = composer.child(controls);
+        composer = composer.child(controls.layout_key(&self.capture, "ai.controls", None));
         if self.mode() == DisplayMode::Fullscreen {
             composer = composer.w_full().max_w(px(800.)).mx_auto();
         }
@@ -1455,7 +1426,8 @@ impl Render for AiSidebar {
         if self.mode() == DisplayMode::Sidebar {
             panel = panel.child(self.resize_edge(cx));
         }
-        panel.into_any_element()
+        div().size_full().border_l_1().border_color(color(t.rail_border)).bg(color(t.container))
+            .child(panel).layout_key(&self.capture, "ai.panel", None)
     }
 }
 

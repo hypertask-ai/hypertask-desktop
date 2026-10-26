@@ -1841,6 +1841,7 @@ impl Desktop {
             .read(cx)
             .content
             .to_lowercase();
+        let sheet = self.shell.shortcuts;
         let rows: Vec<Value> = serde_json::from_str(include_str!("shell_shortcuts.json"))
             .expect("web shortcut registry");
         let mut group = String::new();
@@ -1848,21 +1849,12 @@ impl Desktop {
         for (i, row) in rows.into_iter().enumerate() {
             let heading = row["group"].as_str().unwrap_or("");
             let label = row["label"].as_str().unwrap_or("");
-            let keys = row[if cfg!(target_os = "macos") {
-                "macKeys"
-            } else {
-                "keys"
-            }]
-            .as_array()
-            .unwrap()
-            .iter()
-            .map(|key| key.as_str().unwrap_or("then"))
-            .collect::<Vec<_>>()
-            .join("  ");
+            let keys = row[if cfg!(target_os = "macos") { "macKeys" } else { "keys" }]
+                .as_array().unwrap().iter()
+                .map(|key| key.as_str().unwrap_or("then")).collect::<Vec<_>>();
             if !query.trim().is_empty()
-                && !format!("{heading} {label} {keys}")
-                    .to_lowercase()
-                    .contains(query.trim())
+                && !format!("{heading} {label} {}", keys.join("  "))
+                    .to_lowercase().contains(query.trim())
             {
                 continue;
             }
@@ -1870,44 +1862,63 @@ impl Desktop {
                 group = heading.to_owned();
                 elements.push(
                     div()
-                        .mt(px(24.))
-                        .mb(px(12.))
+                        .mt(px(if sheet { 40. } else { 24. }))
+                        .mb(px(if sheet { 16. } else { 12. }))
+                        .when(sheet, |d| d.text_size(px(14.)).line_height(px(21.)).font_weight(FontWeight::MEDIUM))
                         .text_color(color(self.colors.muted))
-                        .child(group.to_uppercase())
-                        .into_any_element(),
+                        .child(if sheet { group.clone() } else { group.to_uppercase() })
+                        .layout_key(&self.layout, format!("settings.shortcut-group.{i}"), Some(group.clone())),
                 );
             }
+            let keycaps = if sheet {
+                div().w(gpui::relative(0.4)).flex().gap(px(4.))
+                    .children(keys.iter().enumerate().map(|(j, key)| {
+                        if *key == "then" {
+                            return div().px(px(0.5)).font_weight(FontWeight::BOLD).child("then")
+                                .layout_key(&self.layout, format!("settings.shortcut-key.{i}.{j}"), None);
+                        }
+                        div().mx(px(1.5)).px(px(6.)).py(px(4.)).min_h(px(25.))
+                            .rounded(px(2.)).bg(color(0x4f5765)).text_color(color(0xffffff))
+                            .font_family("Liberation Mono").text_size(px(12.)).line_height(px(18.))
+                            .font_weight(FontWeight::NORMAL)
+                            .child((*key).to_owned())
+                            .layout_key(&self.layout, format!("settings.shortcut-key.{i}.{j}"), None)
+                    }))
+                    .layout_key(&self.layout, format!("settings.shortcut-keys.{i}"), None)
+            } else {
+                div().child(keys.join("  "))
+                    .layout_key(&self.layout, format!("settings.shortcut-keys.{i}"), None)
+            };
             elements.push(
                 div()
-                    .p(px(8.))
+                    .when(!sheet, |d| d.p(px(8.)).justify_between())
+                    .when(sheet, |d| d.items_center().gap(px(8.)).mb(px(8.)))
                     .flex()
-                    .justify_between()
-                    .child(label.to_owned())
-                    .child(keys)
-                    .layout_key(
-                        &self.layout,
-                        format!("settings.shortcut.{i}"),
-                        Some(label.into()),
-                    ),
+                    .child(div()
+                        .when(sheet, |d| d.w(gpui::relative(0.6)).text_size(px(14.)).line_height(px(16.94)))
+                        .child(label.to_owned())
+                        .layout_key(&self.layout, format!("settings.shortcut-label.{i}"), Some(label.into())))
+                    .child(keycaps)
+                    .layout_key(&self.layout, format!("settings.shortcut.{i}"), Some(label.into())),
             );
         }
         let empty = elements.is_empty();
         div()
-            .flex()
-            .flex_col()
-            .gap(px(4.))
+            .flex().flex_col()
+            .when(!sheet, |d| d.gap(px(4.)))
             .child(
                 div()
-                    .h(px(36.))
-                    .p(px(8.))
-                    .border_1()
-                    .border_color(color(self.colors.border))
-                    .rounded(px(8.))
+                    .when(sheet, |d| d.px(px(24.)).pt(px(24.)).text_size(px(24.))
+                        .line_height(px(21.74)).font_weight(FontWeight::MEDIUM))
+                    .when(!sheet, |d| d.h(px(36.)).p(px(8.)).border_1()
+                        .border_color(color(self.colors.border)).rounded(px(8.)))
                     .child(self.shell.settings_state.import_url.clone())
                     .layout_key(&self.layout, "settings.shortcuts.search", None),
             )
-            .when(empty, |d| d.child("No shortcuts found"))
-            .children(elements)
+            .child(div().when(sheet, |d| d.px(px(24.))).flex().flex_col()
+                .when(!sheet, |d| d.gap(px(4.)))
+                .when(empty, |d| d.child("No shortcuts found"))
+                .children(elements))
             .into_any_element()
     }
 }
@@ -1930,12 +1941,14 @@ impl Desktop {
         window: &mut Window,
         cx: &mut Context<Self>,
     ) {
+        let sheet = self.shell.shortcuts;
         self.shell
             .settings_state
             .import_url
             .update(cx, |input, cx| {
                 input.set_content(String::new(), cx);
-                input.configure("Search shortcuts", false, cx);
+                input.configure(if sheet { "Search" } else { "Search shortcuts" }, false, cx);
+                input.line_height = if sheet { 21.74 } else { 24. };
             });
         window.focus(&self.shell.settings_state.import_url.focus_handle(cx), cx);
     }

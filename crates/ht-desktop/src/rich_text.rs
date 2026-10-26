@@ -27,6 +27,7 @@ struct RenderedBlock {
     quote: bool,
     size: f32,
     code: bool,
+    paragraph: bool,
     background: u32,
 }
 
@@ -100,6 +101,7 @@ impl RichText {
                 quote: display.quote,
                 size: block_size(&b.tag.name),
                 code: b.tag.name == "pre",
+                paragraph: b.tag.name == "p",
                 background: if light { 0xf5f5f5 } else { 0x292c30 },
             };
             let mut at = 0;
@@ -150,6 +152,12 @@ impl RichText {
         out
     }
     pub fn element(&self) -> AnyElement {
+        self.render(false)
+    }
+    pub fn chat_element(&self) -> AnyElement {
+        self.render(true)
+    }
+    fn render(&self, chat: bool) -> AnyElement {
         div()
             .flex()
             .flex_col()
@@ -180,7 +188,8 @@ impl RichText {
                     .gap(px(8.))
                     .text_size(px(b.size))
                     .line_height(px(b.size * 1.5))
-                    .when(i > 0, |d| d.mt(px(6.3)))
+                    .when(i > 0 && !(chat && b.paragraph), |d| d.mt(px(6.3)))
+                    .when(chat && b.paragraph, |d| d.mb(px(8.)))
                     .when(b.depth > 0, |d| d.ml(px(16. * b.depth as f32)))
                     .when(b.quote, |d| {
                         d.border_l(px(3.))
