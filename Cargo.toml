@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
 members = ["crates/*", "vendor/gpui_windows", "vendor/gpui_wgpu"]
+exclude = ["vendor/gpui"]
 
 [workspace.package]
 edition = "2024"
@@ -15,5 +16,6 @@ codegen-units = 1
 strip = true
 
 [patch."https://github.com/zed-industries/zed"]
+gpui = { path = "vendor/gpui" }
 gpui_windows = { path = "vendor/gpui_windows" }
 gpui_wgpu = { path = "vendor/gpui_wgpu" }

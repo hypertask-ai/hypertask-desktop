@@ -226,3 +226,60 @@ The setting receipt independently reports `-256`. The 128-task persistence and
 actual-cache-ceiling regression passed on Ubuntu, Windows and macOS, as did the
 synced-author/summary/Draft rendering regression. This is a hosted CI result,
 not a measurement of the owner's reported 114 MB laptop workload.
+
+
+## mem6: compact text styles and layout storage
+
+[CI 40291404083](https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40291404083)
+verified source `92bbea228a5af9d15c26bcea7311a77c9ea712d4`.
+All nine jobs passed. Both workloads retained identical cold/warm RGB pixels.
+Layout JSON and counts matched exactly.
+
+Same-source control → production, median of three launches.
+Working sets use decimal MB. Private commit uses bytes.
+
+| Workload/screen | 8 s WS MB | Warm WS MB | 8 s private committed bytes | Warm private committed bytes |
+| --- | ---: | ---: | ---: | ---: |
+| demo inbox | 56.532992 → 55.394304 | 61.718528 → 60.497920 | 30,572,544 → 28,631,040 | 30,629,888 → 29,470,720 |
+| demo board | 61.771776 → 60.649472 | 67.678208 → 66.158592 | 37,527,552 → 36,061,184 | 39,096,320 → 36,663,296 |
+| demo task | 73.359360 → 69.423104 | 79.994880 → 75.923456 | 48,058,368 → 43,679,744 | 49,176,576 → 45,600,768 |
+| heavy inbox | 69.222400 → 67.289088 | 67.469312 → 65.327104 | 36,716,544 → 34,820,096 | 36,802,560 → 33,845,248 |
+| heavy board | 87.638016 → 83.464192 | 90.566656 → 85.262336 | 56,557,568 → 52,428,800 | 59,031,552 → 54,542,336 |
+| heavy task | 90.017792 → 83.623936 | 90.296320 → 82.604032 | 58,740,736 → 52,588,544 | 61,378,560 → 54,214,656 |
+
+The largest changed owner was retained text storage.
+`ShapedLine` shrank from 2,984 to 136 bytes.
+It now embeds one style, not 32.
+Wrapped text also starts with one style.
+Both containers grow for arbitrary style counts.
+The regression paints 64 alternating underline styles.
+It checks every painted range and color.
+Fonts, shaping, glyphs, packing and painting stay unchanged.
+
+Filtered notifications now release oversized backing maps.
+Keys and values move without cloning or omission.
+Heavy retained Rust heap falls by ~1.536 MB.
+That saving occurs on every heavy screen.
+Total heavy live requested Rust heap falls
+12.268 → 10.397 / 26.560 → 21.988 /
+32.554 → 23.798 MB (inbox/board/task).
+These requested allocations are not resident-page measurements.
+
+The arena also releases unused historical frame chunks.
+Active nested frames still defer clearing.
+Demo board capacity falls 2,097,152 → 1,048,576 bytes.
+Heavy capacity remains unchanged at 1/3/3 MiB.
+No heavy saving is attributed to this change.
+
+GPUI source is pinned and vendored with licensing.
+`vendor/gpui/VENDORED.md` identifies the narrow upstream changes.
+The `legacy-layout-storage` control restores both original capacities.
+It also retains the original inbox backing maps.
+Atlas, font, SQLite and stored-data receipts remain unchanged.
+Budgets, workloads, geometry and timing remain frozen.
+No eviction, working-set limits or forced collection.
+
+Heavy screens remain above 80 MB.
+The laptop target remains unverified.
+No owner-laptop access or measurement occurred.
+See [mem6 acceptance](../gates/mem6-GATES.md) for rejected attempts.

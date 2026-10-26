@@ -105,6 +105,77 @@ pub fn payload_bytes(value: &impl serde::Serialize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use gpui::AppContext as _;
+    #[test]
+    fn element_arena_releases_only_chunks_unused_by_the_last_frame() {
+        let mut arena = gpui::Arena::new(1024);
+        arena.begin_scope();
+        for _ in 0..3 { arena.alloc(|| [1u8; 600]); }
+        assert_eq!(arena.capacity(), 3072);
+        arena.clear();
+        assert_eq!(arena.capacity(), 3072);
+        arena.end_scope();
+        arena.clear();
+        assert_eq!(arena.capacity(), 3072);
+        arena.alloc(|| [2u8; 600]);
+        arena.clear();
+        assert_eq!(arena.capacity(), 1024);
+        assert_eq!(arena.alloc(|| [3u8; 600])[599], 3);
+    }
+
+    #[test]
+    fn shaped_line_keeps_only_one_style_inline() {
+        assert!(std::mem::size_of::<gpui::ShapedLine>() < 256);
+    }
+
+    #[gpui::test]
+    fn compact_line_storage_preserves_more_than_32_styles(cx: &mut gpui::TestAppContext) {
+        struct Styles;
+        impl gpui::Render for Styles {
+            fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl gpui::IntoElement {
+                use gpui::Styled;
+                gpui::canvas(|_, _, _| (), |bounds, _, window, cx| {
+                    let text: gpui::SharedString = "x".repeat(64).into();
+                    let runs = (0..64).map(|i| {
+                        let color = if i % 2 == 0 { gpui::black() } else { gpui::white() };
+                        gpui::TextRun {
+                            len: 1,
+                            font: gpui::font("monospace"),
+                            color,
+                            background_color: None,
+                            underline: Some(gpui::UnderlineStyle {
+                                color: Some(color), thickness: gpui::px(1.), wavy: false,
+                            }),
+                            strikethrough: None,
+                        }
+                    }).collect::<Vec<_>>();
+                    let line = window.text_system().shape_line(text.clone(), gpui::px(14.), &runs, None);
+                    assert_eq!(line.len(), 64);
+                    assert_eq!(line.runs.iter().map(|run| run.glyphs.len()).sum::<usize>(), 64);
+                    let mut strokes = Vec::new();
+                    line.paint_with_underline_handler(bounds.origin, gpui::px(20.), gpui::TextAlign::Left, None, window, cx,
+                        |range, origin, width, style, window| {
+                            strokes.push((range, style.color));
+                            window.paint_underline(origin, width, style);
+                        }).unwrap();
+                    assert_eq!(strokes.len(), 64);
+                    for (i, (range, color)) in strokes.iter().enumerate() {
+                        assert_eq!(*range, i..i + 1);
+                        assert_eq!(*color, Some(runs[i].color));
+                    }
+                    let wrapped = window.text_system().shape_text(text, gpui::px(14.), &runs, None, None).unwrap();
+                    assert_eq!(wrapped.len(), 1);
+                    assert_eq!(wrapped[0].unwrapped_layout.len, 64);
+                    wrapped[0].paint(bounds.origin + gpui::point(gpui::px(0.), gpui::px(24.)), gpui::px(20.), gpui::TextAlign::Left, None, window, cx).unwrap();
+                    let (left, right) = line.split_at(33);
+                    assert_eq!((left.len(), right.len()), (33, 31));
+                }).size_full()
+            }
+        }
+        let window = cx.add_window(|_, _| Styles);
+        cx.update_window(window.into(), |_, window, cx| window.draw(cx).clear(cx)).unwrap();
+    }
+
     #[test]
     fn memory_payload_counter_matches_serialization_without_retaining_a_copy() {
         let value = serde_json::json!({"unicode":"é🙂", "html":"<p>text</p>", "items":[1,2,3]});

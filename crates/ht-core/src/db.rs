@@ -427,6 +427,12 @@ impl Db {
                     n.as_object_mut().context("notification object missing")?.retain(|key, _| {
                         matches!(key.as_str(), "type" | "computedSplit" | "directReply" | "unreadCount" | "project" | "comment" | "task")
                     });
+                    if cfg!(feature = "packed-inbox-metadata") {
+                        let old = std::mem::take(n.as_object_mut().unwrap());
+                        let mut packed = serde_json::Map::with_capacity(old.len());
+                        packed.extend(old);
+                        n = Value::Object(packed);
+                    }
                 }
                 Ok(InboxItem { id, task_id, title, ticket_number, source, seen, created_at, raw_json: n })
             }).collect()

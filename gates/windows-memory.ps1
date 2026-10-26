@@ -147,6 +147,8 @@ foreach ($round in 1..3) {
                 # CI only: a real restore/maximize cycle invalidates layout and
                 # redraws the scene. Private GPUI messages require a secret token;
                 # sending one externally can succeed while doing no rendering.
+                $maximizedSwapChainBytes = (Get-Content $env:GPUI_MEMORY_RECEIPT -Raw | ConvertFrom-Json).SwapChainBytes
+                $swapChainBytesPerPixel = $maximizedSwapChainBytes / ($rect.Right * $rect.Bottom)
                 $renderTime = [System.Diagnostics.Stopwatch]::StartNew()
                 foreach ($command in 9, 3) {
                     $beforeRender = (Get-Item $env:GPUI_MEMORY_RECEIPT).LastWriteTimeUtc
@@ -154,9 +156,21 @@ foreach ($round in 1..3) {
                     $deadline = [DateTime]::UtcNow.AddSeconds(5)
                     do {
                         Start-Sleep -Milliseconds 100
+                        $warmRect = New-Object MemoryWindow+Rect
+                        if (-not [MemoryWindow]::GetClientRect($h, [ref]$warmRect)) { throw 'Warm GetClientRect failed' }
+                        $zoomed = [MemoryWindow]::IsZoomed($h)
                         $rendered = (Get-Item $env:GPUI_MEMORY_RECEIPT).LastWriteTimeUtc -gt $beforeRender
-                    } while (-not $rendered -and [DateTime]::UtcNow -lt $deadline)
-                    if (-not $rendered) { throw "No rendered receipt after ShowWindow($command)" }
+                        # A queued restored-size frame is not proof that async maximize finished.
+                        $geometryReady = if ($command -eq 3) {
+                            $zoomed -and $warmRect.Right -eq $rect.Right -and $warmRect.Bottom -eq $rect.Bottom
+                        } else { -not $zoomed }
+                        $swapChainBytes = (Get-Content $env:GPUI_MEMORY_RECEIPT -Raw | ConvertFrom-Json).SwapChainBytes
+                        $rendererReady = $rendered -and $swapChainBytes -eq ($warmRect.Right * $warmRect.Bottom * $swapChainBytesPerPixel)
+                    } while (-not ($geometryReady -and $rendererReady) -and [DateTime]::UtcNow -lt $deadline)
+                    if (-not ($geometryReady -and $rendererReady)) {
+                        throw "$screen run ${round}: ShowWindow($command) incomplete; rendered=$rendered zoomed=$zoomed client=$($warmRect.Right)x$($warmRect.Bottom) expected=$($rect.Right)x$($rect.Bottom)"
+                    }
+                    Write-Host "MEMORY_WARM_TRANSITION $screen run=$round command=$command maximized=$zoomed client=$($warmRect.Right)x$($warmRect.Bottom) rendered=$rendered swapChainBytes=$swapChainBytes"
                 }
                 $renderTime.Stop()
                 if (-not [MemoryWindow]::IsZoomed($h)) { throw 'Warm window not maximized' }
@@ -165,6 +179,8 @@ foreach ($round in 1..3) {
                 if ($warmRect.Right -ne $rect.Right -or $warmRect.Bottom -ne $rect.Bottom) { throw 'Warm geometry changed' }
                 $rows[-1] | Add-Member -NotePropertyName WarmRestoreMaximizeMilliseconds -NotePropertyValue $renderTime.Elapsed.TotalMilliseconds
                 $rows[-1] | Add-Member -NotePropertyName WarmRendererReceiptUpdated -NotePropertyValue $true
+                $rows[-1] | Add-Member -NotePropertyName WarmClientWidth -NotePropertyValue $warmRect.Right
+                $rows[-1] | Add-Member -NotePropertyName WarmClientHeight -NotePropertyValue $warmRect.Bottom
                 # The first resized frame can still contain the restored-size
                 # surface. Capture only after the final maximized frame settles.
                 Start-Sleep -Seconds 22

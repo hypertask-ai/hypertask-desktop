@@ -5,6 +5,8 @@ impl Desktop {
         let Some(path) = std::env::var_os("GPUI_MEMORY_RECEIPT") else { return };
         let mut usage = crate::memory::rust_heap_usage();
         usage["InputBenchmarkProfiler"] = cfg!(feature = "input-benchmark").into();
+        usage["ElementArenaCapacityBytes"] = cx.element_arena_capacity().into();
+        usage["ShapedLineBytes"] = std::mem::size_of::<gpui::ShapedLine>().into();
         usage["DataReads"] = crate::memory::data_read_usage();
         // Serialized payloads are reproducible lower bounds, not allocator accounting.
         usage["InboxItems"] = self.inbox.len().into();
