@@ -87,3 +87,12 @@ The third column starts at 1020 in presented integer coordinates because each
 459px column and 16px gap is quantized. The new test checks adjacent presented
 columns' exact 16px gap instead of assuming independent rounding of the third
 continuous coordinate. The actual source grid equation remains unchanged.
+
+CI 40346041401 passed the inbox regression and all existing tests, then
+rejected the board card height. Self-review found a fixture error: assigning
+the unshown second notification to QABO-7 added a real In inbox badge there.
+The second notification now has no task, preserving the reference's badge on
+QABO-5 only. The unsupported guessed assignee was also removed. No UI is hidden.
+The old-binary capture records the current harness checkout in BuildRevision;
+its actual executable SHA-256 must match the original round 2 dense receipt.
+The current capture must similarly match the unchanged current dense binary.

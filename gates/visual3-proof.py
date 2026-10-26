@@ -59,7 +59,12 @@ paths = {name: ROOT / "evidence" / directory for name, directory in {
 for name, directory in paths.items():
     receipt = json.loads((directory / "memory.json").read_text(encoding="utf-8-sig"))
     expected = BASE if name.startswith("round2") else HEAD
-    assert receipt["Revision"] == receipt["BuildRevision"] == expected, (name, receipt)
+    assert receipt["Revision"] == expected, (name, receipt)
+    # The capture harness records its checkout, not the downloaded binary's build.
+    assert receipt["BuildRevision"] == (HEAD if name == "round2_matched" else expected), (name, receipt)
+receipts = {name: json.loads((directory / "memory.json").read_text(encoding="utf-8-sig")) for name, directory in paths.items()}
+assert receipts["round2_matched"]["ExeSHA256"] == receipts["round2_dense"]["ExeSHA256"]
+assert receipts["current_matched"]["ExeSHA256"] == receipts["current_dense"]["ExeSHA256"]
 counts = {name: compare(name, directory) for name, directory in paths.items()}
 assert counts["round2_dense"] == {"inbox": 24, "board": 24, "task": 23}, counts
 reduction = sum(counts["round2_dense"].values()) - sum(counts["current_matched"].values())

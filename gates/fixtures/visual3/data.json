@@ -69,12 +69,7 @@
         "id": 1,
         "displayName": "valentin+qa-owner"
       },
-      "assignees": [
-        {
-          "id": 2,
-          "displayName": "The Assignees"
-        }
-      ],
+      "assignees": [],
       "labels": [],
       "Task_Summary": [
         {
@@ -99,13 +94,13 @@
     },
     {
       "id": 2,
-      "taskId": 101,
+      "taskId": null,
       "projectId": 15,
       "userId": 1,
       "status": "Normal",
       "seen": true,
       "createdAt": "2026-10-23T12:00:00Z",
-      "type": "AssignedToTask",
+      "type": "Invited",
       "fromUser": {
         "displayName": "valentin+qa-owner"
       }

@@ -8,9 +8,12 @@ Content aligns the read-only live-graphite-1920 reference:
 
 - Board title QA Team Board; cards QABO-7 and QABO-5.
 - Task 103 uses the frozen QABO-5 title, empty description, QA owner author,
-  October 13 creation date, The Assignees assignment, and visible summary text.
+  October 13 creation date, no assignees, and visible summary text.
 - Two notifications populate Important 1, Agents 1, MyBoard 1, QA Team Board 1,
   All 2. Only the QABO-5 reminder belongs to the selected Important split.
+- The second, unshown notification has no task. It exercises the frozen All 2
+  counter without inventing an inbox badge on QABO-7. Its unseen content is
+  synthetic, not claimed as recovered live-account data.
 - No extra board columns, card labels, comments, or Important rows are hidden.
   They do not exist in this separate synthetic sample.
 
