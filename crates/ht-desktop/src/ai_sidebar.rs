@@ -171,7 +171,7 @@ pub struct AiSidebar {
     history_pending: Option<Receiver<Result<Vec<Arc<Session>>, String>>>,
     history_error: Option<String>,
     history_limit: usize,
-    chat_pending: Option<Receiver<Chat>>,
+    chat_pending: Option<Receiver<(String, String, Vec<ChatMessage>)>>,
     more_menu: bool,
     collapsed: bool,
     scroll: ScrollHandle,
@@ -388,14 +388,7 @@ impl AiSidebar {
                         ChatMessage { message, rich }
                     })
                     .collect();
-                let _ = send.send(Chat {
-                    id,
-                    title,
-                    messages,
-                    status: String::new(),
-                    error: None,
-                    scroll: ScrollHandle::new(),
-                });
+                let _ = send.send((id, title, messages));
             }) {
             Ok(_) => self.chat_pending = Some(receive),
             Err(error) => self.history_error = Some(error.to_string()),
@@ -424,9 +417,9 @@ impl AiSidebar {
         }
         if let Some(pending) = &self.chat_pending {
             match pending.try_recv() {
-                Ok(chat) => {
+                Ok((id, title, messages)) => {
                     self.chat_pending = None;
-                    self.chats.push(chat);
+                    self.chats.push(Chat { id, title, messages, status: String::new(), error: None, scroll: ScrollHandle::new() });
                     self.selected = self.chats.len() - 1;
                     self.scroll = self.chats[self.selected].scroll.clone();
                     self.queued.clear();
@@ -867,7 +860,6 @@ impl Render for AiSidebar {
             .track_scroll(&self.scroll)
             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
             .p(px(if empty { 0. } else { 8. }))
-            .layout_key(&self.capture, "ai.transcript", None)
             .when(self.mode() == DisplayMode::Fullscreen, |d| {
                 d.w_full().max_w(px(800.)).mx_auto()
             });
@@ -879,8 +871,7 @@ impl Render for AiSidebar {
                 .justify_center()
                 .px(px(40.))
                 .py(px(16.))
-                .gap(px(8.))
-                .layout_key(&self.capture, "ai.welcome", None);
+                .gap(px(8.));
             if self.scope.as_ref().is_some_and(|scope| scope.context.surface == "task_detail" && scope.context.task_id.is_some()) {
                 welcome = welcome.child(
                     div().id("ai-task-summary").w_full().p(px(8.)).rounded(px(4.))
@@ -920,7 +911,7 @@ impl Render for AiSidebar {
                         .layout_key(&self.capture, format!("ai.suggestion.{index}"), Some(label)),
                 );
             }
-            transcript = transcript.child(welcome);
+            transcript = transcript.child(welcome.layout_key(&self.capture, "ai.welcome", None));
         } else {
             for (index, message) in chat.messages.iter().enumerate() {
                 let human = message.message.role == "human";
@@ -1005,7 +996,6 @@ impl Render for AiSidebar {
             .px(px(8.))
             .pt(px(16.))
             .gap(px(16.))
-            .layout_key(&self.capture, "ai.header", None)
             .child(
                 div()
                     .id("ai-history-toggle")
@@ -1108,7 +1098,7 @@ impl Render for AiSidebar {
                     cx.notify();
                 }
             }))
-            .child(header);
+            .child(header.layout_key(&self.capture, "ai.header", None));
         let mut panel = div()
             .id("ai-sidebar")
             .w_full()
@@ -1261,7 +1251,7 @@ impl Render for AiSidebar {
         }
         panel = panel
             .child(header_area)
-            .child(transcript)
+            .child(transcript.layout_key(&self.capture, "ai.transcript", None))
             .when(self.away_from_latest() && self.active.is_none(), |d| {
                 d.child(
                     div()
@@ -1312,8 +1302,7 @@ impl Render for AiSidebar {
                     .text_size(px(14.))
                     .child(self.input.clone())
                     .layout_key(&self.capture, "ai.input", None),
-            )
-            .layout_key(&self.capture, "ai.composer", None);
+            );
         if !self.queued.is_empty() {
             composer = composer.child(
                 div().mb(px(8.)).p(px(8.)).rounded(px(5.)).border_1().border_color(color(t.border))
@@ -1429,7 +1418,7 @@ impl Render for AiSidebar {
         if self.mode() == DisplayMode::Fullscreen {
             composer = composer.w_full().max_w(px(800.)).mx_auto();
         }
-        panel = panel.child(composer);
+        panel = panel.child(composer.layout_key(&self.capture, "ai.composer", None));
         if self.mode() == DisplayMode::Sidebar {
             panel = panel.child(self.resize_edge(cx));
         }

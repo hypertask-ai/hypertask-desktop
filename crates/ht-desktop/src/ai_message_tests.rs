@@ -336,8 +336,7 @@ fn ai_composer_rich_marks_keep_enter_send_and_skills_only(cx: &mut gpui::TestApp
     });
 }
 
-#[gpui::test]
-fn task_summary_mouse_action_sends_exact_web_prompt_and_context(cx: &mut gpui::TestAppContext) {
+fn refusal_server() -> (String, std::thread::JoinHandle<(String, serde_json::Value)>) {
     use std::io::{BufRead, BufReader, Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
     let base = format!("http://{}", listener.local_addr().unwrap());
@@ -361,6 +360,12 @@ fn task_summary_mouse_action_sends_exact_web_prompt_and_context(cx: &mut gpui::T
         socket.write_all(b"HTTP/1.1 401 Unauthorized\r\nContent-Type: application/json\r\nContent-Length: 24\r\nConnection: close\r\n\r\n{\"error\":\"Unauthorized\"}").unwrap();
         (headers, serde_json::from_slice::<serde_json::Value>(&body).unwrap())
     });
+    (base, server)
+}
+
+#[gpui::test]
+fn task_summary_mouse_action_sends_exact_web_prompt_and_context(cx: &mut gpui::TestAppContext) {
+    let (base, server) = refusal_server();
     let (view, cx) = cx.add_window_view(|window, cx| {
         let mut db = Db::memory().unwrap();
         db.apply_response(&serde_json::json!({"success":true, "projects":[{"id":123,"title":"Board"}], "tasks":[{"id":456,"projectId":123,"title":"Test","ticketNumber":"HTPR-123","status":"Normal"}]})).unwrap();
@@ -445,5 +450,40 @@ fn retry_mouse_action_preserves_real_offline_refusal(cx: &mut gpui::TestAppConte
         assert!(this.active.is_none());
         assert!(this.chats[0].error.as_deref().unwrap().contains("offline"));
         assert_eq!(this.chats[0].messages.len(), 1);
+    });
+}
+
+#[gpui::test]
+fn queued_followup_drains_after_done_with_original_history(cx: &mut gpui::TestAppContext) {
+    cx.update(crate::input::init);
+    let (base, server) = refusal_server();
+    let (send, updates) = mpsc::sync_channel(64);
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let focus = cx.focus_handle();
+        let mut this = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
+        this.client = Some(Client::with_base(&base, "synthetic-token".into()).unwrap());
+        this.chats[0].messages = vec![
+            ChatMessage { message: Message { role: "human".into(), content: "First".into() }, rich: RichText::default() },
+            ChatMessage { message: Message { role: "assistant".into(), content: "First answer".into() }, rich: markdown("First answer", this.colors) },
+        ];
+        this.active = Some(ActiveTurn { ids: TurnIds::new(this.chats[0].id.clone()), chat: 0, assistant: 1, updates, cancel_reply: None, stopping: false, client: this.client.clone().unwrap() });
+        this.focus_composer(window, cx);
+        this
+    });
+    cx.simulate_input("Followup é🙂");
+    cx.simulate_keystrokes("enter");
+    view.read_with(cx, |this, _| assert_eq!(this.queued.len(), 1));
+    send.send(Update::Event(Event::Done(ai_chat::Done { status: "complete".into(), cancelled: false, user_message_persisted: true, assistant_persisted: true }))).unwrap();
+    view.update_in(cx, |this, _, cx| this.poll(cx));
+    let (headers, request) = server.join().unwrap();
+    assert!(headers.starts_with("POST /api/ai/chat/stream "));
+    assert_eq!(request["message"], "Followup é🙂");
+    assert_eq!(request["chat_history"][0]["content"], "First");
+    assert_eq!(request["chat_history"][1]["content"], "First answer");
+    view.read_with(cx, |this, cx| {
+        assert!(this.queued.is_empty());
+        assert!(this.input.read(cx).content.is_empty());
+        assert_eq!(this.chats[0].messages[2].message.content, "Followup é🙂");
+        assert!(this.active.is_some());
     });
 }

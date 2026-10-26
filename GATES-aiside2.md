@@ -39,3 +39,11 @@ necessary AI-only core/shortcut code. Other helpers own unrelated surfaces.
 ## Evidence
 
 Pending source audit, implementation and current-head hosted CI.
+
+- Initial hosted run 40258153914, c76a118aff2b5508145a9d7350fd258d0e6aa40f:
+  compiler rejected LayoutKey's type-erasing wrappers before child/style calls,
+  and a GUI-only ScrollHandle crossing the history worker channel. Wrappers now
+  attach only after construction; worker returns prepared transcript data and
+  GUI thread constructs its per-chat ScrollHandle. No local checks ran.
+- Queue followup proof now includes real keyboard input, explicit done event,
+  worker HTTP capture of the next message and original chat history.
