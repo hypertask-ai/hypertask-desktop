@@ -1025,6 +1025,76 @@ impl Desktop {
             .get("labels")
             .and_then(|v| v.as_array())
             .filter(|v| !v.is_empty());
+        let pill = || {
+            div()
+                .flex()
+                .items_center()
+                .gap(px(6.))
+                .min_h(px(20.))
+                .max_w(gpui::relative(1.))
+                .px(px(6.))
+                .py(px(2.))
+                .rounded(px(4.))
+                .bg(color(match self.options.theme {
+                    ThemeName::Porcelain => 0xececef,
+                    ThemeName::Graphite => 0x363b44,
+                    ThemeName::Amoled => 0x2d2d2d,
+                    ThemeName::Dia => 0xf1eee7,
+                }))
+                .when(self.options.theme == ThemeName::Dia, |d| {
+                    d.border_1().border_color(color(t.border))
+                })
+                .text_size(px(if self.options.theme == ThemeName::Dia { 12. } else { 11. }))
+                .line_height(px(if self.options.theme == ThemeName::Dia { 12. } else { 11. }))
+                .font_weight(FontWeight::MEDIUM)
+                .text_color(color(t.text))
+        };
+        let mut tags = Vec::new();
+        if task.extra.get("hasBoardDraft").and_then(|v| v.as_bool()) == Some(true) {
+            tags.push(
+                div()
+                    .text_size(px(11.))
+                    .line_height(px(22.))
+                    .font_weight(FontWeight::MEDIUM)
+                    .text_color(color(0xc2cfa5))
+                    .child("Draft")
+                    .layout_key(&self.layout, format!("board.card.{index}.draft"), Some("Draft".into())),
+            );
+        }
+        if let Some(date) = task.due_date.as_deref() {
+            let date = short_date(date);
+            tags.push(
+                pill()
+                    .child(icon("calendar", 0xfb773f, 16.))
+                    .child(date.clone())
+                    .layout_key(&self.layout, format!("board.card.{index}.due"), Some(date)),
+            );
+        }
+        let priority = priority_name(&task.extra);
+        if priority != "No Priority" {
+            tags.push(
+                pill()
+                    .gap(px(4.))
+                    .when(matches!(priority, "Urgent" | "High"), |d| {
+                        d.child(div().size(px(7.)).rounded_full().bg(color(
+                            if priority == "Urgent" { 0xf88f9c } else { 0xde9d6e },
+                        )))
+                    })
+                    .child(priority.to_owned())
+                    .layout_key(&self.layout, format!("board.card.{index}.priority"), Some(priority.into())),
+            );
+        }
+        if let Some(labels) = labels {
+            tags.extend(labels.iter().filter_map(|label| {
+                label["name"].as_str().or_else(|| label["value"].as_str())
+            }).enumerate().map(|(i, label)| {
+                pill().child(label.to_owned()).layout_key(
+                    &self.layout,
+                    if i == 0 { format!("board.card.{index}.label") } else { format!("board.card.{index}.label.{i}") },
+                    Some(label.to_owned()),
+                )
+            }));
+        }
         div()
             .id(("task-card", id as u64))
             .px(px(8.))
@@ -1255,68 +1325,8 @@ impl Desktop {
                                 ),
                         ),
                     )
-                    .when(
-                        priority_name(&task.extra) != "No Priority" || task.due_date.is_some(),
-                        |d| {
-                            d.child(
-                                div().text_size(px(11.)).text_color(color(t.muted)).child(
-                                    [
-                                        Some(priority_name(&task.extra))
-                                            .filter(|p| *p != "No Priority")
-                                            .map(str::to_owned),
-                                        task.due_date.as_deref().map(short_date),
-                                    ]
-                                    .into_iter()
-                                    .flatten()
-                                    .collect::<Vec<_>>()
-                                    .join(" · "),
-                                ),
-                            )
-                        },
-                    )
-                    .when(
-                        task.extra.get("hasBoardDraft").and_then(|v| v.as_bool()) == Some(true),
-                        |d| {
-                            d.child(
-                                div()
-                                    .text_size(px(11.))
-                                    .line_height(px(22.))
-                                    .font_weight(FontWeight::MEDIUM)
-                                    .text_color(color(0xc2cfa5))
-                                    .child("Draft")
-                                    .layout_key(&self.layout, format!("board.card.{index}.draft"), Some("Draft".into())),
-                            )
-                        },
-                    )
-                    .when_some(labels, |d, labels| {
-                        d.child(
-                            div().flex().flex_wrap().gap(px(4.)).children(
-                                labels
-                                    .iter()
-                                    .filter_map(|label| {
-                                        label["name"].as_str().or_else(|| label["value"].as_str())
-                                    })
-                                    .enumerate()
-                                    .map(|(i, label)| {
-                                        div()
-                                            .px(px(4.))
-                                            .rounded(px(3.))
-                                            .bg(color(t.footer))
-                                            .text_size(px(11.))
-                                            .text_color(color(t.muted))
-                                            .child(label.to_owned())
-                                            .layout_key(
-                                                &self.layout,
-                                                if i == 0 {
-                                                    format!("board.card.{index}.label")
-                                                } else {
-                                                    format!("board.card.{index}.label.{i}")
-                                                },
-                                                Some(label.to_owned()),
-                                            )
-                                    }),
-                            ),
-                        )
+                    .when(!tags.is_empty(), |d| {
+                        d.child(div().flex().flex_wrap().gap(px(4.)).children(tags))
                     })
                     .layout_key(&self.layout, format!("board.card.{index}"), None),
             )
