@@ -641,3 +641,27 @@ fn cmdk_summary_transport_keeps_web_prompt_quote_and_current_task_context(cx: &m
         else { assert_eq!(message, prompt); }
     }
 }
+
+#[gpui::test]
+fn cmdk_summary_does_not_replace_drafts_or_queue_while_chat_is_busy(cx: &mut gpui::TestAppContext) {
+    let view = cx.add_window(|window, cx| {
+        let focus = cx.focus_handle();
+        AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx)
+    });
+    view.update(cx, |sidebar, window, cx| {
+        sidebar.input.update(cx, |input, cx| input.set_content("Keep my draft".into(), cx));
+        let (_send, receive) = mpsc::channel();
+        sidebar.chat_pending = Some(receive);
+        sidebar.command_prompt("Summarize this comment concisely.", None, window, cx);
+        assert_eq!(sidebar.input.read(cx).content.as_ref(), "Keep my draft");
+        assert!(sidebar.queued.is_empty());
+        sidebar.chat_pending = None;
+        let (_send, updates) = mpsc::sync_channel(64);
+        sidebar.chats[0].messages.push(ChatMessage { message:Message { role:"assistant".into(), content:"Working".into() }, rich:markdown("Working", sidebar.colors) });
+        sidebar.active = Some(ActiveTurn { ids:TurnIds::new(sidebar.chats[0].id.clone()), chat:0, assistant:0, updates, cancel_reply:None, stopping:false, client:Client::new("synthetic-token".into()).unwrap() });
+        sidebar.command_prompt("Summarize this comment concisely.", None, window, cx);
+        assert_eq!(sidebar.input.read(cx).content.as_ref(), "Keep my draft");
+        assert!(sidebar.queued.is_empty());
+        assert!(sidebar.chats[0].error.is_none());
+    }).unwrap();
+}

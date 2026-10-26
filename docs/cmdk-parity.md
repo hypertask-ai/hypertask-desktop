@@ -415,6 +415,7 @@ Exact-head CI evidence belongs in `docs/gaps-evidence.md`.
 The historical Blocked/Unsupported rows above are not current verdicts.
 See [cmdk-round2.md](cmdk-round2.md) for every unresolved declaration,
 exact handlers/routes, bearer comparisons, native gaps, and exclusions.
-Seven commands now reuse authenticated native operations: person blocker,
-star/unstar, timer toggle, accept, decline, move to inbox, and parent unlink.
+Ten command keys now reuse native operations: person blocker,
+star/unstar, timer toggle, accept, decline, move to inbox, parent unlink,
+comment branch, ticket summary, and comment summary.
 Unknown cached state stays omitted; creation remains HTPR-7699.

@@ -1371,7 +1371,7 @@ impl Desktop {
                         this.run_choice(window, cx);
                     }))
                     .child(div().flex_1().flex().items_center().child(choice.name.clone())
-                        .when(modal == Modal::Commands && matches!(filtered[i].key.as_str(), "summarizeComment" | "branchInNewChat" | "copyCommentToAiChat" | "assignToMe" | "cliInstall"), |d| d.child(
+                        .when(modal == Modal::Commands && (matches!(filtered[i].key.as_str(), "summarizeTicket" | "summarizeComment" | "copyCommentToAiChat" | "assignToMe" | "cliInstall") || (filtered[i].key == "branchInNewChat" && filtered[i].group == "Comment")), |d| d.child(
                             div().ml(px(8.)).px(px(5.)).py(px(2.)).rounded(px(2.))
                                 .bg(color(0x4455bb)).text_color(color(0xffffff)).text_size(px(11.))
                                 .font_weight(FontWeight::MEDIUM).line_height(px(11.)).child("New")

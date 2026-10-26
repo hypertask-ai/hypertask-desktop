@@ -444,5 +444,6 @@ fn command_move_to_inbox_is_desired_state_and_account_bound() {
     assert!(db.enqueue(Write::Board { change: BoardWrite::MoveToInbox { task:1, project:99 } }, 1).is_err());
     let mut server = server("POST", "/tasks/card-actions", json!({"task_id":1,"project_id":15,"action":"inbox","active":true}), json!({"success":true,"action":"inbox","active":false}));
     db.enqueue(Write::Board { change: BoardWrite::MoveToInbox { task:1, project:15 } }, 1).unwrap();
-    assert!(matches!(db.drain_once(&mut server, 2).unwrap(), Drain::Failed(_)));
+    assert!(matches!(db.drain_once(&mut server, 2).unwrap(), Drain::Retrying(_)));
+    assert!(db.refetches().unwrap().iter().all(|(target, _, _)| target != "inbox"));
 }

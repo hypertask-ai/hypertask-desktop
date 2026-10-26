@@ -34,6 +34,9 @@ The exact read-model fields matter too.
 | U10 | `summarizeComment`, **Summarize comment**, Comment | Registry `components/Modals/commands/HTC/taskCommands.ts:195-200`; dispatcher `components/commandDispatcher.ts:716-718`; quote/prompt and busy guard `hooks/MultiPages/AIChat/useCommentToAiChat.ts:93-114`. | Existing native quote and chat sender. Current chat retained; old draft replaced by attributed quote plus exact prompt. Busy/history-loading guard prevents accidental queueing. |
 
 Both summaries use POST `/api/ai/chat/stream`.
+Web route constant `lib/constants/APIRouteConstants.ts:60`.
+Server CLI auth `app/api/ai/chat/stream/route.ts:29-37`.
+Exact prompts `hooks/MultiPages/AIChat/useCommentToAiChat.ts:93-129`.
 Native request tests capture the authenticated request.
 A synthetic HTTP refusal proves transport, not server acceptance.
 

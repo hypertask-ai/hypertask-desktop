@@ -19,6 +19,7 @@ impl Transport for Server {
 #[test]
 fn typed_patches_are_optimistic_durable_and_use_authenticated_task_update() {
     for (patch, field, expected, request) in [
+        (TaskPatch::Parent(None), "parentTaskId", Value::Null, json!({"task_id":1,"parent_task_id":null})),
         (TaskPatch::Status(Status::Archive), "status", json!("Archive"), json!({"task_id":1,"status":"Archive"})),
         (TaskPatch::Status(Status::Deleted), "status", json!("Deleted"), json!({"task_id":1,"status":"Deleted"})),
         (TaskPatch::Description("<p>Description</p>".into()), "description", json!("<p>Description</p>"), json!({"task_id":1,"description":"<p>Description</p>","content_type":"html"})),
@@ -44,7 +45,7 @@ fn typed_patches_are_optimistic_durable_and_use_authenticated_task_update() {
 #[test]
 fn invalid_patch_never_enters_queue() {
     let mut db = db();
-    for patch in [TaskPatch::Priority(5), TaskPatch::Estimate(1), TaskPatch::DueDate(Some("not a date".into()))] {
+    for patch in [TaskPatch::Parent(Some(0)), TaskPatch::Priority(5), TaskPatch::Estimate(1), TaskPatch::DueDate(Some("not a date".into()))] {
         assert!(db.enqueue(Write::TaskPatch { task_id:1, patch }, 100).is_err());
         assert!(db.mutations().unwrap().is_empty());
     }
