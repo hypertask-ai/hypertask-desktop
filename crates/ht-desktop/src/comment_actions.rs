@@ -522,6 +522,7 @@ impl Desktop {
         }
         div()
             .id(("comment", i))
+            .group("task-comment")
             .anchor_scroll(Some(self.comment_anchors[i].clone()))
             .p(px(20.))
             .bg(color(t.comment))
@@ -549,7 +550,9 @@ impl Desktop {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(10.))
+                    .gap(px(8.))
+                    .text_size(px(14.))
+                    .line_height(px(21.))
                     .text_color(color(t.muted))
                     .child(div().child(comment_author(&comment.extra)).layout_key(
                         &self.layout,
@@ -561,6 +564,8 @@ impl Desktop {
                         d.child(
                             div()
                                 .id(("reply-comment", i))
+                                .opacity(0.)
+                                .group_hover("task-comment", |d| d.opacity(1.))
                                 .cursor_pointer()
                                 .child(icon("corner-left-up", t.muted, 14.))
                                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -573,6 +578,8 @@ impl Desktop {
                         .child(
                             div()
                                 .id(("react-comment", i))
+                                .opacity(if self.comment_actions.reaction_id == Some(id) { 1. } else { 0. })
+                                .group_hover("task-comment", |d| d.opacity(1.))
                                 .cursor_pointer()
                                 .child("☺+")
                                 .on_click(cx.listener(move |this, _, window, cx| {
@@ -590,6 +597,8 @@ impl Desktop {
                                 d.child(
                                     div()
                                         .id(("like-comment", i))
+                                        .opacity(0.)
+                                        .group_hover("task-comment", |d| d.opacity(1.))
                                         .cursor_pointer()
                                         .child("👍")
                                         .on_click(cx.listener(move |this, _, _, cx| {
@@ -602,8 +611,11 @@ impl Desktop {
                         .child(
                             div()
                                 .id(("comment-options", i))
+                                .opacity(0.)
+                                .group_hover("task-comment", |d| d.opacity(1.))
                                 .cursor_pointer()
-                                .child("⋯")
+                                .w(px(16.)).h(px(14.)).flex().items_center().justify_center()
+                                .child(icon("ellipsis", 0x999a9d, 14.))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     cx.stop_propagation();
                                     this.interaction.task_part = i + 1;
@@ -620,8 +632,10 @@ impl Desktop {
                         let exact = exact_comment_time(&comment.created_at);
                         div()
                             .id(("comment-timestamp", i))
+                            .text_size(px(12.)).line_height(px(18.))
                             .child(short_date(&comment.created_at))
                             .tooltip(move |_, cx| comment_tooltip(exact.clone(), cx))
+                            .layout_key(&self.layout, format!("task.comment.{i}.timestamp"), None)
                     }),
             )
             .child(if editing {

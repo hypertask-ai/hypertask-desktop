@@ -1175,6 +1175,9 @@ impl Desktop {
             .child(
                 div()
                     .id("card")
+                    .relative()
+                    .group("kanban-selection")
+                    .child(self.card_controls(id, column, row, cx))
                     .bg(color(if active { t.active } else { t.card }))
                     .rounded(px(if self.options.theme == ThemeName::Dia {
                         10.
@@ -1228,6 +1231,8 @@ impl Desktop {
                         ]
                     })
                     .p(px(8.))
+                    .when(!self.interaction.bulk.is_empty(), |d| d.pl(px(28.)))
+                    .group_hover("kanban-selection", |d| d.pl(px(28.)))
                     .flex()
                     .flex_col()
                     .gap(px(6.))
@@ -1285,7 +1290,7 @@ impl Desktop {
                                     ),
                             )
                             .child(div().flex_1())
-                            .child(self.card_controls(id, column, row, cx))
+                            .child(self.card_command(id, column, row, cx))
                             .when(self.inbox.iter().any(|n| n.task_id == Some(id)), |d| {
                                 d.child(
                                     div()
@@ -1465,8 +1470,8 @@ impl Desktop {
             .child(div().flex_shrink_0().pt(px(36.)).pl(px(82.)).pr(px(64.)).pb(px(if full_task_summary(&d.task.extra).is_empty() { 16. } else { 8. })).relative()
 
                 .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(36.)).min_h(px(37.)).child(title)
-                    .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).pt(px(10.25)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
-                        .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(icon("layers", 0x696b6e, 16.))))
+                    .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).mt(px(9.75)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
+                        .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(gpui::img("htc-logo").size(px(16.)).layout_key(&self.layout, "task.header.command", None)).layout_key(&self.layout, "task.header.actions", None)))
                 .when(!full_task_summary(&d.task.extra).is_empty(), |d| d.child(self.task_summary_view(cx))).layout_key(&self.layout, "task.header", None))
             .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
                 .when(self.inbox_actions.review.is_some(), |d| d.flex_col())

@@ -49,6 +49,19 @@ fn reminder_dates(now: chrono::DateTime<chrono::Local>) -> Vec<(String, String)>
         }).collect()
 }
 
+fn inbox_time(value: &str, now: chrono::DateTime<chrono::Local>) -> String {
+    let Ok(date) = chrono::DateTime::parse_from_rfc3339(value) else { return String::new(); };
+    let date = date.with_timezone(&chrono::Local);
+    let seconds = (now - date).num_seconds();
+    match seconds {
+        ..60 => "Just now".into(),
+        60..3600 => format!("{}min", seconds / 60),
+        3600..43200 => date.format("%-I:%M %p").to_string(),
+        _ if date.year() != now.year() => date.format("%-d %b %Y").to_string(),
+        _ => date.format("%-d %b").to_string(),
+    }
+}
+
 impl Desktop {
     pub(super) fn mark_opened_notification(&mut self, task_id: i64, cx: &mut Context<Self>) {
         if self.screen != Screen::Inbox && !(self.screen == Screen::Task && self.previous == Screen::Inbox) { return; }
@@ -376,6 +389,7 @@ impl Desktop {
         let n = &self.inbox[self.filtered[row]];
         let t = self.colors;
         let id = n.id;
+        let show_actions = row == self.selected && self.interaction.bulk.is_empty();
         let kind = n
             .raw_json
             .pointer("/comment/text")
@@ -423,6 +437,12 @@ impl Desktop {
                 },
             )
             .hover(|d| d.bg(color(t.hover)))
+            .on_mouse_move(cx.listener(move |this, _, _, cx| {
+                if this.selected != row {
+                    this.selected = row;
+                    cx.notify();
+                }
+            }))
             .on_click(cx.listener(move |this, _, _, cx| {
                 this.selected = row;
                 if let Some(id) = this.selected_task() {
@@ -536,6 +556,8 @@ impl Desktop {
                     .child(
                         div()
                             .w(px(62.))
+                            .h(px(19.5))
+                            .relative()
                             .flex_shrink_0()
                             .flex()
                             .items_center()
@@ -545,8 +567,10 @@ impl Desktop {
                             .child(
                                 div()
                                     .id(("archive-notification", id as u64))
+                                    .opacity(if show_actions { 1. } else { 0. })
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
+                                        if !this.interaction.bulk.is_empty() { return; }
                                         this.enqueue(
                                             Write::InboxArchive {
                                                 notification_id: id,
@@ -557,10 +581,19 @@ impl Desktop {
                                     .child(icon("archive-x", 0x696b6e, 18.))
                                     .layout_key(&self.layout,format!("inbox.row.{row}.archive"),None),
                             )
-                            .child(div().id(("remind-notification",id as u64)).on_click(cx.listener(move|this,_,window,cx|{
+                            .child(div().id(("remind-notification",id as u64)).opacity(if show_actions { 1. } else { 0. }).on_click(cx.listener(move|this,_,window,cx|{
                                 cx.stop_propagation();
+                                if !this.interaction.bulk.is_empty() { return; }
                                 this.show_inbox_reminder(vec![id],window,cx);
                             })).child(icon("clock",0x696b6e,18.)).layout_key(&self.layout,format!("inbox.row.{row}.remind"),None))
+                            .when(!show_actions, |d| {
+                                let timestamp = inbox_time(&n.created_at, chrono::Local::now());
+                                d.child(div().absolute().left_0().min_w(px(57.))
+                                    .text_size(px(13.)).line_height(px(19.5))
+                                    .text_color(color(if self.interaction.bulk.contains(&id) { 0xffffff } else { 0x8e9093 }))
+                                    .child(timestamp.clone())
+                                    .layout_key(&self.layout, format!("inbox.row.{row}.timestamp"), Some(timestamp)))
+                            })
                             .layout_key(&self.layout, format!("inbox.row.{row}.actions"), None),
                     )
                     .layout_key(&self.layout, format!("inbox.row.{row}"), None),
@@ -592,6 +625,56 @@ mod tests {
         ]})).unwrap();
         view.screen=Screen::Inbox;view.reload();view.split=view.splits.iter().position(|s|s=="All").unwrap();view.filter_inbox();
     }
+    #[test]
+    fn inbox_timestamp_uses_web_relative_time_boundaries_and_year() {
+        let now = chrono::Local.with_ymd_and_hms(2026, 10, 26, 12, 0, 0).single().unwrap();
+        for (seconds, expected) in [(0, "Just now"), (59, "Just now"), (60, "1min"), (3599, "59min"), (3600, "11:00 AM"), (43200, "26 Oct")] {
+            assert_eq!(inbox_time(&(now - chrono::Duration::seconds(seconds)).to_rfc3339(), now), expected);
+        }
+        let last_year = chrono::Local.with_ymd_and_hms(2025, 10, 26, 12, 0, 0).single().unwrap();
+        assert_eq!(inbox_time(&last_year.to_rfc3339(), now), "26 Oct 2025");
+        assert_eq!(inbox_time("", now), "");
+    }
+
+    #[gpui::test]
+    fn inbox_selected_actions_replace_web_timestamp_without_moving_content(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let view: WindowHandle<Desktop> = cx.add_window(|window, cx| {
+            let mut v = desktop(window, cx);
+            seed(&mut v);
+            v.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+            v.ready_scheduled = true;
+            v
+        });
+        let mut cx = VisualTestContext::from_window(view.into(), cx);
+        for selected in [0, 1] {
+            view.update(&mut cx, |this, _, cx| { this.selected = selected; cx.notify(); }).unwrap();
+            draw(view, &mut cx);
+            view.read_with(&mut cx, |this, _| {
+                let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+                let element = |key: &str| elements.iter().find(|e| e["key"] == key).unwrap();
+                let other = 1 - selected;
+                let timestamp = element(&format!("inbox.row.{other}.timestamp"));
+                let actions = element(&format!("inbox.row.{other}.actions"));
+                assert_eq!(timestamp["fontSize"], 13.);
+                assert_eq!(timestamp["lineHeight"], 19.5);
+                assert!(timestamp["w"].as_f64().unwrap() >= 57.);
+                assert_eq!(timestamp["x"], actions["x"]);
+                assert_eq!(actions["w"], 62.);
+                assert_eq!(actions["h"], 19.5);
+                assert!(!elements.iter().any(|e| e["key"] == format!("inbox.row.{selected}.timestamp")));
+                assert!(this.db.mutations().unwrap().is_empty());
+            }).unwrap();
+        }
+        view.update(&mut cx, |this, _, cx| { this.interaction.bulk.insert(101); cx.notify(); }).unwrap();
+        click(view, &mut cx, "inbox.row.0.archive");
+        click(view, &mut cx, "inbox.row.0.remind");
+        view.read_with(&mut cx, |this, _| {
+            assert!(this.db.mutations().unwrap().is_empty());
+            assert!(this.inbox_actions.reminder.is_none());
+        }).unwrap();
+    }
+
     #[gpui::test]
     fn inbox_metadata_shares_content_gap_without_an_empty_outer_column(
         cx: &mut gpui::TestAppContext,

@@ -140,48 +140,66 @@ impl Desktop {
         row: usize,
         cx: &mut Context<Self>,
     ) -> AnyElement {
+        let selected = self.interaction.bulk.contains(&task);
         div()
+            .absolute()
+            .left(px(8.))
+            .top(px(8.))
+            .size(px(15.))
+            .opacity(if selected || !self.interaction.bulk.is_empty() { 1. } else { 0. })
+            .group_hover("kanban-selection", |d| d.opacity(1.))
+            .id(("card-select", task as u64))
+            .cursor_pointer()
+            .bg(color(if selected { 0x4455bb } else { self.colors.card }))
+            .border_1()
+            .border_color(if selected { color(0x4455bb) } else { rgba(0x0000001a).into() })
+            .rounded(px(4.))
             .flex()
-            .gap(px(6.))
-            .child(
-                div()
-                    .id(("card-select", task as u64))
-                    .cursor_pointer()
-                    .on_mouse_down(
-                        MouseButton::Left,
-                        cx.listener(|_, _, _, cx| cx.stop_propagation()),
-                    )
-                    .on_click(cx.listener(move |this, _, _, cx| {
-                        cx.stop_propagation();
-                        this.column = column;
-                        this.selected = row;
-                        if !this.interaction.bulk.remove(&task) {
-                            this.interaction.bulk.insert(task);
-                        }
-                        cx.notify();
-                    }))
-                    .child(if self.interaction.bulk.contains(&task) {
-                        "☑"
-                    } else {
-                        "☐"
-                    })
-                    .layout_key(&self.layout, format!("board.card.{task}.select"), None),
+            .items_center()
+            .justify_center()
+            .on_mouse_down(
+                MouseButton::Left,
+                cx.listener(|_, _, _, cx| cx.stop_propagation()),
             )
-            .child(
-                div()
-                    .id(("card-commands", task as u64))
-                    .cursor_pointer()
-                    .on_click(cx.listener(move |this, _, window, cx| {
-                        cx.stop_propagation();
-                        this.column = column;
-                        this.selected = row;
-                        this.run_shortcut(Action::Commands, window, cx);
-                        this.interaction.command_task = true;
-                    }))
-                    .child(gpui::img("htc-logo").size(px(14.)))
-                    .layout_key(&self.layout, format!("board.card.{task}.commands"), None),
-            )
-            .into_any_element()
+            .on_click(cx.listener(move |this, _, _, cx| {
+                cx.stop_propagation();
+                this.column = column;
+                this.selected = row;
+                if !this.interaction.bulk.remove(&task) {
+                    this.interaction.bulk.insert(task);
+                }
+                cx.notify();
+            }))
+            .when(selected, |d| d.child(svg().path("selection-check").w(px(9.)).h(px(7.)).text_color(color(0xffffff))))
+            .layout_key(&self.layout, format!("board.card.{task}.select"), None)
+    }
+    pub(super) fn card_command(
+        &self,
+        task: i64,
+        column: usize,
+        row: usize,
+        cx: &mut Context<Self>,
+    ) -> AnyElement {
+        div()
+            .id(("card-commands", task as u64))
+            .w(px(14.))
+            .h(px(16.))
+            .flex_shrink_0()
+            .flex()
+            .items_center()
+            .justify_center()
+            .opacity(0.)
+            .group_hover("kanban-selection", |d| d.opacity(1.))
+            .cursor_pointer()
+            .on_click(cx.listener(move |this, _, window, cx| {
+                cx.stop_propagation();
+                this.column = column;
+                this.selected = row;
+                this.run_shortcut(Action::Commands, window, cx);
+                this.interaction.command_task = true;
+            }))
+            .child(gpui::img("htc-logo").size(px(16.)))
+            .layout_key(&self.layout, format!("board.card.{task}.commands"), None)
     }
     pub(super) fn board_selection_bar(&self, cx: &mut Context<Self>) -> AnyElement {
         div()
@@ -318,6 +336,56 @@ mod tests {
         draw(view, &mut cx);
         (view, cx)
     }
+    #[gpui::test]
+    fn board_hover_selection_uses_web_overlay_and_reserved_command_slot(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        let (view, mut cx) = visual(cx);
+        view.update(&mut cx, |this, _, cx| {
+            this.options.theme = ThemeName::Graphite;
+            this.colors = ThemeName::Graphite.colors();
+            cx.notify();
+        }).unwrap();
+        let card = super::super::shell::tests::measured(view, &mut cx, "board.card.0");
+        let idle_title = super::super::shell::tests::measured(view, &mut cx, "board.card.0.title");
+        for (hovered, selected) in [(false, false), (true, false), (false, true)] {
+            if selected {
+                click(view, &mut cx, "board.card.1.select");
+            }
+            cx.simulate_mouse_move(
+                if hovered {
+                    point(px(card["x"].as_f64().unwrap() as f32 + 50.), px(card["y"].as_f64().unwrap() as f32 + 25.))
+                } else { point(px(1400.), px(500.)) },
+                None, Default::default(),
+            );
+            draw(view, &mut cx);
+            let elements = view.read_with(&mut cx, |this, _| {
+                this.layout.as_ref().unwrap().borrow().interaction_elements()
+            }).unwrap();
+            let element = |key: &str| elements.iter().find(|e| e["key"] == key).unwrap();
+            let current_card = element("board.card.0");
+            let selector = element("board.card.1.select");
+            let command = element("board.card.1.commands");
+            assert_eq!((selector["w"].as_f64(), selector["h"].as_f64()), (Some(15.), Some(15.)));
+            assert_eq!((command["w"].as_f64(), command["h"].as_f64()), (Some(14.), Some(16.)));
+            assert_eq!(selector["x"].as_f64().unwrap() - current_card["x"].as_f64().unwrap(), 12.);
+            assert_eq!(selector["y"].as_f64().unwrap() - current_card["y"].as_f64().unwrap(), 8.);
+            assert_eq!(selector["borderColor"], if selected { "#4455bb" } else { "#000000" });
+            assert_eq!(selector["bg"], if selected { "#4455bb" } else { "#262a30" });
+            assert_eq!(element("board.card.0.title")["x"].as_f64().unwrap() - idle_title["x"].as_f64().unwrap(), if hovered || selected { 20. } else { 0. });
+            let painted = cx.update(|window, _| {
+                let origin = point(px(selector["x"].as_f64().unwrap() as f32), px(selector["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
+                window.painted_quads().iter().any(|quad| {
+                    quad.bounds.origin == origin
+                        && quad.border_color == if selected { color(0x4455bb) } else { rgba(0x0000001a).into() }
+                        && quad.bounds.size.width == px(15.).scale(window.scale_factor())
+                })
+            });
+            assert_eq!(painted, hovered || selected, "selection paint must follow hover or selection mode");
+            view.read_with(&mut cx, |this, _| assert!(this.db.mutations().unwrap().is_empty())).unwrap();
+        }
+    }
+
     #[gpui::test]
     fn board_comment_and_assignee_metadata_stays_in_the_ticket_row(
         cx: &mut gpui::TestAppContext,

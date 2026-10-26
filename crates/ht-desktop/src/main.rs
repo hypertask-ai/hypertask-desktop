@@ -181,7 +181,8 @@ impl AssetSource for Assets {
             "copy",
             "rotate-cw",
             "minimize-2",
-            "minus"
+            "minus",
+            "selection-check"
         ))
     }
     fn list(&self, _: &str) -> Result<Vec<SharedString>> {
