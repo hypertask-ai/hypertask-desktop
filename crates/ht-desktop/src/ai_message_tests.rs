@@ -555,6 +555,14 @@ fn message_rows_use_web_alignment_padding_and_eight_pixel_gap(cx: &mut gpui::Tes
 
 #[gpui::test]
 fn graphite_sidebar_source_measurements(cx: &mut gpui::TestAppContext) {
+        #[cfg(target_os = "linux")]
+        let mut real = gpui::TestAppContext::build_with_text_system(
+            cx.dispatcher.clone(), Some("graphite_panel_measurement"),
+            gpui_platform::current_platform(true).text_system(),
+        );
+        #[cfg(target_os = "linux")]
+        let cx = &mut real;
+
     struct Fixture(gpui::Entity<AiSidebar>);
     impl gpui::Render for Fixture {
         fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl IntoElement {

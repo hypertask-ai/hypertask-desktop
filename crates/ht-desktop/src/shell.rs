@@ -1270,6 +1270,14 @@ mod surface_tests {
 
     #[gpui::test]
     fn graphite_shortcut_sheet_source_measurements(cx: &mut gpui::TestAppContext) {
+        #[cfg(target_os = "linux")]
+        let mut real = gpui::TestAppContext::build_with_text_system(
+            cx.dispatcher.clone(), Some("graphite_panel_measurement"),
+            gpui_platform::current_platform(true).text_system(),
+        );
+        #[cfg(target_os = "linux")]
+        let cx = &mut real;
+
         let (view, mut cx) = setup(cx);
         view.update(&mut cx, |this, _, cx| this.apply_shell_theme(ThemeName::Graphite, cx)).unwrap();
         cx.simulate_keystrokes("?");

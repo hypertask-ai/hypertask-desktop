@@ -13,3 +13,7 @@
 Use the existing layout-key JSON records (`key`, box, typography, colors) and Playwright source-projection approach. Add a separate panel comparison; existing frozen screens remain untouched. First deliver measurement-only baseline, then source-backed corrections, then exact-head evidence. Serial source/diff self-review replaces unavailable cursor-team-kit tooling; no independent review claimed.
 
 Principle-prove-it-works requires hosted renderer measurements, not inferred parity. Principle-sequence-verifiable-units requires the baseline artifact before correction. Throughput checkpoint: keep collection separate from corrections; inspect complete counts before choosing edits.
+
+## Baseline collector review
+
+Before trusting a count, source review found GPUI's ordinary test context uses `NoopTextSystem`. The measurement fixtures now explicitly use the production Linux platform text system. This prevents fake glyph widths from masquerading as product defects. Added shortcut child keys use distinct prefixes so the existing row-search behavior contract remains unchanged. The composer projection includes source selector padding (4px vertical), not just its text height. These are collector corrections before baseline acceptance, not product styling changes.

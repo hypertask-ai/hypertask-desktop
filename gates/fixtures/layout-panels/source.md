@@ -20,7 +20,7 @@ Authority is the read-only web checkout `/home/valentin/projects/hypertask/src`,
 | Message content 14px, 1.5 line-height, paragraph 8px bottom margin | `src/styles/messageItem.scss:55-74` |
 | Composer outer 8px padding; inner 8px padding/8px radius | `src/components/AI_CHAT/AI_Tiptap_Container.tsx:261,298-306` |
 | Input 380px maximum; contenteditable 8px vertical padding, paragraph 14px/21px | `src/components/AI_CHAT/AI_Tiptap_Container.tsx:326-335`, `src/styles/tiptap.module.scss:45-53,200-204` |
-| Action row 8px top padding, 8px gap; leading controls 12px; scope 13px | `src/components/AI_CHAT/AiChatComposerActionRow.tsx:74-90`, `src/components/AI_CHAT/ChatScopeChip.tsx:24-45` |
+| Action row 8px top padding, 8px gap; leading controls 12px; scope 13px | `src/components/AI_CHAT/AiChatComposerActionRow.tsx:74-90`, `src/components/AI_CHAT/ChatScopeChip.tsx:24-45`, `src/components/Global/ModelSelectorDropdown.tsx:488-518` |
 | Send icon 16px | `src/components/AI_CHAT/SendMessageButton.tsx:62-65` |
 | Shortcut sheet 26vw full viewport, 14px; search 24px/21.74px, 500 weight, top/horizontal 16px | `src/components/sidebars/keyboardShortcuts.tsx:21,128-140` |
 | Shortcut content 16px horizontal; heading 40px top/12px bottom, 14px/21px, 500; row 8px bottom/gap; labels 60%, 14px/16.94px; keys 40%, 4px gap | `src/components/sidebars/keyboardShortcuts.tsx:22-30,155-169` |
@@ -30,3 +30,5 @@ Authority is the read-only web checkout `/home/valentin/projects/hypertask/src`,
 The composer controls projection measures their shared outer row and send icon, not feature-flag-specific control inventories. Message fixture text is neutral matched data (`Hello`, `Hello back`), not an invented product response. Native source tests do not send a request or imply authorized AI transport. Comparisons preserve the existing 1.5px box and 0.5 typography tolerances. A missing projected element is a difference. Existing frozen inbox/board/task fixtures, comparisons and budgets are untouched.
 
 Web source revision: `003a872014c35eeba1ab21047cdfdf70160e654e`.
+
+Native CI fixtures use the production Linux platform text system through `TestAppContext::build_with_text_system`, not GPUI's default no-op test font metrics. They paint real renderer elements in an isolated 1440x900 test window. This measures native layout and typography, not GPU screenshot equivalence. Windows/macOS retain their ordinary behavior-test contexts.

@@ -1874,7 +1874,7 @@ impl Desktop {
                         .mb(px(12.))
                         .text_color(color(self.colors.muted))
                         .child(group.to_uppercase())
-                        .layout_key(&self.layout, format!("settings.shortcut.group.{i}"), Some(group.clone())),
+                        .layout_key(&self.layout, format!("settings.shortcut-group.{i}"), Some(group.clone())),
                 );
             }
             elements.push(
@@ -1882,8 +1882,8 @@ impl Desktop {
                     .p(px(8.))
                     .flex()
                     .justify_between()
-                    .child(div().child(label.to_owned()).layout_key(&self.layout, format!("settings.shortcut.label.{i}"), Some(label.into())))
-                    .child(div().child(div().child(keys).layout_key(&self.layout, format!("settings.shortcut.key.{i}.0"), None)).layout_key(&self.layout, format!("settings.shortcut.keys.{i}"), None))
+                    .child(div().child(label.to_owned()).layout_key(&self.layout, format!("settings.shortcut-label.{i}"), Some(label.into())))
+                    .child(div().child(div().child(keys).layout_key(&self.layout, format!("settings.shortcut-key.{i}.0"), None)).layout_key(&self.layout, format!("settings.shortcut-keys.{i}"), None))
                     .layout_key(
                         &self.layout,
                         format!("settings.shortcut.{i}"),

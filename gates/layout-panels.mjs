@@ -17,13 +17,13 @@ const html = state => {
     let group = '';
     return key('shell.shortcuts', 'aside', key('settings.shortcuts.search', 'div', 'Search', 'class="search"') + `<div class="shortcut-content">${rows.slice(0, 9).map((row, i) => {
       let heading = '';
-      if (group !== row.group) { group = row.group; heading = key(`settings.shortcut.group.${i}`, 'h3', group, 'class="group"'); }
-      return heading + key(`settings.shortcut.${i}`, 'div', key(`settings.shortcut.label.${i}`, 'p', row.label, 'class="label"') + key(`settings.shortcut.keys.${i}`, 'div', row.keys.map((value, j) => key(`settings.shortcut.key.${i}.${j}`, 'kbd', value ?? 'then')).join(''), 'class="keys"'), 'class="shortcut"');
+      if (group !== row.group) { group = row.group; heading = key(`settings.shortcut-group.${i}`, 'h3', group, 'class="group"'); }
+      return heading + key(`settings.shortcut.${i}`, 'div', key(`settings.shortcut-label.${i}`, 'p', row.label, 'class="label"') + key(`settings.shortcut-keys.${i}`, 'div', row.keys.map((value, j) => key(`settings.shortcut-key.${i}.${j}`, 'kbd', value ?? 'then')).join(''), 'class="keys"'), 'class="shortcut"');
     }).join('')}</div>`, 'class="shortcuts"');
   }
   const header = key('ai.header', 'header', `<div style="flex:1;min-width:0">${key('ai.history.toggle', 'button', key('ai.title', 'span', 'Alpha') + svg(18), 'class="title"')}</div><div class="header-actions">${key('ai.new', 'button', svg(16))}${key('ai.more', 'button', svg(16))}${key('ai.close', 'button', svg(16))}</div>`, 'class="header"');
   const transcript = state === 'ai-welcome' ? key('ai.welcome', 'div', `<div class="suggestions">${prompts.map((prompt, i) => key(`ai.suggestion.${i}`, 'button', prompt, 'class="suggestion"')).join('')}</div>`, 'class="welcome"') : `<div class="messages">${['Hello', 'Hello back'].map((text, i) => key(`ai.message.${i}`, 'div', key(`ai.message.${i}.body`, 'div', `<div class="content"><p>${text}</p></div>`, 'class="bubble"') + '<div class="actions"></div>', `class="message ${i === 0 ? 'human' : ''}"`)).join('')}</div>`;
-  const composer = `<div class="composer-outer">${key('ai.composer', 'div', key('ai.input', 'div', '&nbsp;', 'class="input"') + key('ai.controls', 'div', '<span>Claude Sonnet</span><span class="scope">Alpha</span>' + key('ai.send', 'button', svg(16)), 'class="controls"'), 'class="composer"')}</div>`;
+  const composer = `<div class="composer-outer">${key('ai.composer', 'div', key('ai.input', 'div', '&nbsp;', 'class="input"') + key('ai.controls', 'div', '<span class="selector">Claude Sonnet</span><span class="selector">Alpha</span>' + key('ai.send', 'button', svg(16)), 'class="controls"'), 'class="composer"')}</div>`;
   return key('ai.panel', 'aside', `<div class="inner">${header}${key('ai.transcript', 'div', transcript, 'class="transcript"')}${composer}</div>`, 'class="panel"');
 };
 function compare(web, native) {
