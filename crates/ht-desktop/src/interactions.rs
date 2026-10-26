@@ -21,6 +21,7 @@ pub(super) enum Modal {
     Size,
     DueDate,
     Delete,
+    RemoveSubtask,
 }
 #[derive(Clone)]
 pub(super) struct Choice {
@@ -42,6 +43,7 @@ enum ChoiceAction {
     Board(i64),
     Delete,
     CreateLabel,
+    RemoveSubtask(i64),
 }
 pub(super) struct Interaction {
     pub modal: Option<Modal>,
@@ -897,6 +899,9 @@ impl Desktop {
                 rows.push(command_center::Command { key: "toggleTimeTracking".into(), name: "Start or stop timer".into(), group: "Time", keys: "W".into(), keywords: "start stop toggle time tracking timer work log", action: CommandAction::Shortcut(Action::ToggleTimer) });
             }
         }
+        if context == Screen::Task && self.removable_subtasks().is_some_and(|rows| !rows.is_empty()) {
+            rows.push(command_center::Command { key: "removeSubtask".into(), name: "Remove a sub-task".into(), group: "Task", keys: String::new(), keywords: "remove delete subtask", action: CommandAction::Shell(command_center::ShellCommand::RemoveSubtask) });
+        }
         command_center::order(&mut rows, context);
         let context_groups = if rows.first().is_some_and(|row| row.group == "Comment") { 2 } else { 1 };
         let mut groups = 0;
@@ -954,18 +959,37 @@ impl Desktop {
         rows.splice(0..0, frequent);
         rows
     }
+    fn removable_subtasks(&self) -> Option<Vec<Choice>> {
+        self.db.current_user_id()?;
+        let task = self.selected_task().and_then(|id| self.db.task(id).ok().flatten())?;
+        let children = task.extra.get("sub_tasks").or_else(|| task.extra.get("subTasks"))?.as_array()?;
+        let mut choices = Vec::new();
+        for child in children {
+            let id = child["id"].as_i64().filter(|id| *id > 0)?;
+            let cached = self.db.task(id).ok().flatten()?;
+            if cached.extra.get("parentTaskId").and_then(serde_json::Value::as_i64) != Some(task.id) { continue; }
+            choices.push(Choice {
+                name: format!("{} {}", child["ticketNumber"].as_str().unwrap_or(""), child["title"].as_str()?).trim().into(),
+                action: ChoiceAction::RemoveSubtask(id),
+            });
+        }
+        Some(choices)
+    }
+    fn filtered_commands(&self, cx: &App) -> Vec<command_center::Command> {
+        let commands = self.command_rows();
+        let query: &str = self.interaction.query.read(cx).content.as_ref();
+        let mut rows = command_center::ranked(&commands, query, &self.command_usage(), chrono::Utc::now().timestamp_millis())
+            .into_iter().cloned().collect::<Vec<_>>();
+        if !query.trim().is_empty() {
+            rows.push(command_center::Command { key: "searchTasksHandover".into(), name: format!("Search tasks: \"{query}\""), group: "Results", keys: String::new(), keywords: "", action: CommandAction::Shell(command_center::ShellCommand::SearchTasks) });
+        }
+        rows
+    }
     pub(super) fn choices(&self, cx: &App) -> Vec<Choice> {
         let query: &str = self.interaction.query.read(cx).content.as_ref();
         match self.interaction.modal {
             Some(Modal::Commands) => {
-                let commands = self.command_rows();
-                command_center::ranked(
-                    &commands,
-                    query,
-                    &self.command_usage(),
-                    chrono::Utc::now().timestamp_millis(),
-                )
-                .into_iter()
+                self.filtered_commands(cx).into_iter()
                 .map(|c| Choice {
                     name: c.name.clone(),
                     action: ChoiceAction::Command(c.action),
@@ -989,6 +1013,7 @@ impl Desktop {
                     })
                     .collect()
             }
+            Some(Modal::RemoveSubtask) => self.removable_subtasks().unwrap_or_default(),
             Some(Modal::BlockedBy) => std::iter::once(Choice { name: "Nobody (clear)".into(), action: ChoiceAction::WaitingOn(None) })
                 .chain(self.db.project_members(self.selected_task().and_then(|id| self.db.task(id).ok().flatten()).map_or(self.options.board, |t| t.project_id)).unwrap_or_default().iter()
                     .filter(|member| member["agent"].is_null() && member["id"].is_i64())
@@ -1116,13 +1141,10 @@ impl Desktop {
     }
     fn apply_choice(&mut self, choice: Choice, window: &mut Window, cx: &mut Context<Self>) {
         if self.interaction.modal == Some(Modal::Commands) {
-            let rows = self.command_rows();
-            let query: &str = self.interaction.query.read(cx).content.as_ref();
+            let rows = self.filtered_commands(cx);
             let mut usage = self.command_usage();
             let now = chrono::Utc::now().timestamp_millis();
-            if let Some(command) =
-                command_center::ranked(&rows, query, &usage, now).get(self.interaction.choice)
-            {
+            if let Some(command) = rows.get(self.interaction.choice) {
                 let frequency = usage[&command.key]["frequency"].as_u64().unwrap_or(0) + 1;
                 usage[&command.key] = serde_json::json!({"frequency":frequency,"lastUsedAt":now});
                 let _ = self.db.kv_set("command-usage", &usage.to_string());
@@ -1137,6 +1159,12 @@ impl Desktop {
             ChoiceAction::WaitingOn(user) => {
                 if let Some(task) = self.selected_task() { self.enqueue(Write::Board { change: ht_core::BoardWrite::WaitingOn { task, user } }, cx); }
             }
+            ChoiceAction::RemoveSubtask(task_id) => {
+                if self.removable_subtasks().is_some_and(|rows| rows.iter().any(|row| matches!(row.action, ChoiceAction::RemoveSubtask(id) if id == task_id))) {
+                    self.enqueue(Write::TaskPatch { task_id, patch: TaskPatch::Parent(None) }, cx);
+                }
+            }
+            ChoiceAction::Command(CommandAction::Shortcut(Action::Search)) => self.navigate_search(window, cx),
             ChoiceAction::Command(CommandAction::Shortcut(action)) => {
                 self.run_shortcut(action, window, cx)
             }
@@ -1328,13 +1356,7 @@ impl Desktop {
             ThemeName::Dia => (0xffffff, 0xc9e3d2, 0xf1eee7),
         };
         let query: &str = self.interaction.query.read(cx).content.as_ref();
-        let commands = self.command_rows();
-        let filtered = command_center::ranked(
-            &commands,
-            query,
-            &self.command_usage(),
-            chrono::Utc::now().timestamp_millis(),
-        );
+        let filtered = self.filtered_commands(cx);
         let choices = self.choices(cx);
         let mut last_group = String::new();
         let mut list = div()
@@ -1361,6 +1383,7 @@ impl Desktop {
                     Modal::Size => "Set task size",
                     Modal::DueDate => "Set due date",
                     Modal::Delete => "Delete task?",
+                    Modal::RemoveSubtask => "Remove a sub-task",
                     Modal::Commands => unreachable!(),
                 }
             };
@@ -1372,6 +1395,7 @@ impl Desktop {
                         .pt(px(10.))
                         .pb(px(4.))
                         .text_size(px(11.))
+                        .line_height(px(16.5))
                         .font_weight(FontWeight::SEMIBOLD)
                         .text_color(color(t.muted))
                         .child(group.to_uppercase())
@@ -1404,6 +1428,7 @@ impl Desktop {
                     .gap(px(12.))
                     .cursor_pointer()
                     .text_size(px(13.))
+                    .line_height(px(19.5))
                     .when(i == self.interaction.choice, |d| d.bg(color(selected)))
                     .hover(|d| d.bg(color(selected)))
                     .on_mouse_move(cx.listener(move |this, _, _, cx| {
@@ -1490,6 +1515,10 @@ impl Desktop {
                             .map_or(0., |sidebar| sidebar.read(cx).width())
                     } else { 0. } - 560.) / 2.).max(0.)))
                     .w(px(560.))
+                    .font_family(self.options.theme.font())
+                    .text_color(color(t.text))
+                    .text_size(px(14.))
+                    .line_height(px(21.))
                     .rounded(px(5.))
                     .bg(color(background))
                     .shadow(shadow())
@@ -1620,7 +1649,7 @@ mod cmdk_parity_tests {
                 assert_eq!(keys("Navigate"), ["copyCurrentPageUrl", "GotoInbox", "searchTask"]);
                 assert_eq!(keys("App shell surfaces"), ["appShellInbox", "appShellBoard", "appShellAIChat", "appShellAIChatAlternative"]);
                 assert_eq!(keys("AI"), ["aiChatInterface", "pinAiChatOpen", "fullScreenAiChat", "toggleAIChatView"]);
-                assert_eq!(keys("Appearance"), ["lightTheme", "darkTheme", "amoledTheme", "paperTheme"]);
+                assert_eq!(keys("Appearance"), ["systemTheme", "lightTheme", "darkTheme", "amoledTheme", "paperTheme"]);
                 assert_eq!(keys("Settings"), ["settingsCalendarShowWeekends", "settingsLearnQuickTips", "settingsGeneral", "settingsAppearance", "settingsSkills", "settingsBoardMembers", "settingsBoardAi", "settingsBoardSkills", "settingsBoardFiles", "settingsCli", "settingsShortcuts", "settingsLearn"]);
                 assert_eq!(keys("Help"), ["shortcuts", "settings", "boardSettings", "helpCenter", "quickTips", "cliInstall"]);
                 assert!(keys("Task").is_empty());
@@ -1834,4 +1863,161 @@ mod cmdk_parity_tests {
         }).unwrap();
     }
 
+}
+
+#[cfg(test)]
+mod cmdk_round3_tests {
+    use super::*;
+    use crate::ui::{shell::tests::{draw, measured}, task_fields::tests::visual};
+
+    #[gpui::test]
+    fn cmdk3_search_handover_follows_ranked_rows_and_keeps_query(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        for (index, screen) in [Screen::Inbox, Screen::Board, Screen::Task].into_iter().enumerate() {
+            view.update(&mut cx, |this, window, cx| {
+                this.screen = screen;
+                this.reload();
+                window.focus(&this.focus, cx);
+            }).unwrap();
+            cx.simulate_keystrokes("ctrl-k");
+            let query = " Needle \"quoted\" ";
+            cx.simulate_input(query);
+            draw(view, &mut cx);
+            assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], format!("Search tasks: \"{query}\""));
+            view.read_with(&mut cx, |this, cx| {
+                let rows = this.filtered_commands(cx);
+                assert_eq!(rows.len(), 1);
+                assert_eq!(rows[0].key, "searchTasksHandover");
+                assert_eq!(rows[0].keys, "");
+            }).unwrap();
+            cx.simulate_keystrokes("enter");
+            view.update(&mut cx, |this, window, cx| {
+                assert!(this.interaction.modal.is_none());
+                let _ = (window, cx);
+                assert_eq!(this.search_query, query.trim());
+                assert_eq!(this.command_usage()["searchTasksHandover"]["frequency"], index + 1);
+                assert!(this.db.mutations().unwrap().is_empty());
+            }).unwrap();
+            draw(view, &mut cx);
+            measured(view, &mut cx, "shell.search.input");
+            cx.simulate_keystrokes("ctrl-a ctrl-c");
+            cx.update(|_, cx| assert_eq!(cx.read_from_clipboard().and_then(|item| item.text()), Some(query.into())));
+            cx.simulate_keystrokes("escape");
+        }
+    }
+
+    #[gpui::test]
+    fn cmdk3_search_handover_is_last_not_an_empty_query_recommendation(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        cx.simulate_keystrokes("ctrl-k");
+        view.read_with(&mut cx, |this, cx| assert!(!this.filtered_commands(cx).iter().any(|r| r.key == "searchTasksHandover"))).unwrap();
+        cx.simulate_input("copy");
+        view.read_with(&mut cx, |this, cx| {
+            let rows = this.filtered_commands(cx);
+            assert!(rows.len() > 1);
+            assert_eq!(rows[0].key, "copyformattedTaskLink");
+            assert_eq!(rows.last().unwrap().key, "searchTasksHandover");
+            assert!(rows[..rows.len()-1].iter().all(|r| r.key != "searchTasksHandover"));
+        }).unwrap();
+        cx.simulate_keystrokes("escape ctrl-k");
+        cx.simulate_input("Search");
+        cx.simulate_keystrokes("enter");
+        view.read_with(&mut cx, |this, _| {
+            assert!(this.interaction.modal.is_none());
+            assert!(this.search_query.is_empty());
+        }).unwrap();
+        draw(view, &mut cx);
+        measured(view, &mut cx, "shell.search.input");
+        cx.simulate_input("Needle");
+        view.read_with(&mut cx, |this, _| assert_eq!(this.search_query, "Needle")).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk3_follow_system_changes_theme_and_persists_preference(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Follow system");
+        cx.simulate_keystrokes("enter");
+        view.update(&mut cx, |this, window, _| {
+            let expected = match window.appearance() {
+                gpui::WindowAppearance::Dark | gpui::WindowAppearance::VibrantDark => ThemeName::Amoled,
+                _ => ThemeName::Porcelain,
+            };
+            assert_eq!(this.options.theme, expected);
+            assert_eq!(this.db.kv_get("theme").unwrap().as_deref(), Some("system"));
+            assert_eq!(this.command_usage()["systemTheme"]["frequency"], 1);
+            assert!(this.interaction.modal.is_none());
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk3_remove_child_picker_unlinks_selected_child_not_parent(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        view.update(&mut cx, |this, _, _| {
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","sub_tasks":[
+                {"id":2,"ticketNumber":"HT-2","title":"Other","uniqueIndex":2},
+                {"id":3,"ticketNumber":"HT-3","title":"Third","uniqueIndex":3}
+            ]})).unwrap();
+            for id in [2, 3] { this.db.apply_task(&serde_json::json!({"id":id,"projectId":15,"title":if id == 2 {"Other"} else {"Third"},"status":"Normal","parent_id":1})).unwrap(); }
+            this.reload();
+        }).unwrap();
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Remove a sub-task");
+        cx.simulate_keystrokes("enter");
+        draw(view, &mut cx);
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "HT-2 Other");
+        assert_eq!(measured(view, &mut cx, "command.choice.1")["text"], "HT-3 Third");
+        cx.simulate_input("Third");
+        cx.simulate_keystrokes("enter");
+        view.read_with(&mut cx, |this, _| {
+            let rows = this.db.mutations().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].kind, "task_patch");
+            assert_eq!(rows[0].payload_json, serde_json::json!({"task_id":3,"parent_task_id":null}));
+            assert_eq!(this.options.task, 1);
+            assert_eq!(this.db.task(2).unwrap().unwrap().extra["parentTaskId"], 1);
+            assert!(this.db.task(3).unwrap().unwrap().extra["parentTaskId"].is_null());
+            assert_eq!(this.removable_subtasks().unwrap().len(), 1);
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk3_child_removal_requires_complete_authoritative_cached_children(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        view.update(&mut cx, |this, _, _| {
+            for children in [serde_json::json!([]), serde_json::json!([{"id":99,"title":"Not cached"}]), serde_json::json!([{"id":2,"title":"Other"}])] {
+                this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","sub_tasks":children})).unwrap();
+                assert!(!this.command_rows().iter().any(|row| row.key == "removeSubtask"));
+            }
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+    }
+
+    #[gpui::test]
+    fn cmdk3_palette_typography_and_tokens_match_all_web_themes(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        for (theme, background, selected) in [
+            (ThemeName::Porcelain, "#ffffff", "#e2e2e6"), (ThemeName::Graphite, "#2c2f36", "#3a3d45"),
+            (ThemeName::Amoled, "#141414", "#303239"), (ThemeName::Dia, "#ffffff", "#c9e3d2"),
+        ] {
+            view.update(&mut cx, |this, _, cx| this.apply_named_theme(theme, cx)).unwrap();
+            cx.simulate_keystrokes("ctrl-k");
+            cx.simulate_input("Follow system");
+            draw(view, &mut cx);
+            let modal = measured(view, &mut cx, "command.center");
+            let row = measured(view, &mut cx, "command.choice.0");
+            let group = measured(view, &mut cx, "command.group.0");
+            assert_eq!(modal["w"], 560.);
+            assert_eq!(modal["bg"], background);
+            assert_eq!(row["h"], 36.);
+            assert_eq!(row["bg"], selected);
+            assert_eq!(row["fontSize"], 13.);
+            assert_eq!(row["lineHeight"], 19.5);
+            assert_eq!(group["fontSize"], 11.);
+            assert_eq!(group["lineHeight"], 16.5);
+            assert_eq!(measured(view, &mut cx, "command.input")["fontSize"], 14.);
+            assert_eq!(measured(view, &mut cx, "command.search.icon")["w"], 13.);
+            cx.simulate_keystrokes("escape");
+        }
+    }
 }

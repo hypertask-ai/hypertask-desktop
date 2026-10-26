@@ -10,6 +10,19 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::RemoveSubtask => self.show_modal(super::interactions::Modal::RemoveSubtask, window, cx),
+            ShellCommand::SystemTheme => {
+                self.shell.theme_preference = Some("system".into());
+                if let Err(error) = self.db.kv_set("theme", "system") {
+                    self.error = Some(error.to_string());
+                }
+                self.apply_shell_theme(system_theme(window.appearance()), cx);
+            }
+            ShellCommand::SearchTasks => {
+                let query = self.interaction.query.read(cx).content.to_string();
+                self.navigate_search(window, cx);
+                self.shell.search_input.update(cx, |input, cx| input.set_content(query, cx));
+            }
             ShellCommand::RemoveParent => {
                 if let Some(task) = self.selected_task() {
                     self.enqueue(Write::TaskPatch { task_id: task, patch: TaskPatch::Parent(None) }, cx);
