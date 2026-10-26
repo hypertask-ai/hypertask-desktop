@@ -570,6 +570,7 @@ impl Desktop {
                                     .opacity(if show_actions { 1. } else { 0. })
                                     .on_click(cx.listener(move |this, _, _, cx| {
                                         cx.stop_propagation();
+                                        if !this.interaction.bulk.is_empty() { return; }
                                         this.enqueue(
                                             Write::InboxArchive {
                                                 notification_id: id,
@@ -582,6 +583,7 @@ impl Desktop {
                             )
                             .child(div().id(("remind-notification",id as u64)).opacity(if show_actions { 1. } else { 0. }).on_click(cx.listener(move|this,_,window,cx|{
                                 cx.stop_propagation();
+                                if !this.interaction.bulk.is_empty() { return; }
                                 this.show_inbox_reminder(vec![id],window,cx);
                             })).child(icon("clock",0x696b6e,18.)).layout_key(&self.layout,format!("inbox.row.{row}.remind"),None))
                             .when(!show_actions, |d| {
@@ -664,6 +666,13 @@ mod tests {
                 assert!(this.db.mutations().unwrap().is_empty());
             }).unwrap();
         }
+        view.update(&mut cx, |this, _, cx| { this.interaction.bulk.insert(101); cx.notify(); }).unwrap();
+        click(view, &mut cx, "inbox.row.0.archive");
+        click(view, &mut cx, "inbox.row.0.remind");
+        view.read_with(&mut cx, |this, _| {
+            assert!(this.db.mutations().unwrap().is_empty());
+            assert!(this.inbox_actions.reminder.is_none());
+        }).unwrap();
     }
 
     #[gpui::test]
