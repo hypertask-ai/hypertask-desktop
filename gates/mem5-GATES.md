@@ -62,3 +62,29 @@ both same-source releases, verifies actual PE manifest selection, exact pixels,
 layout, retained workload, and private-commit/working-set improvements. The
 sequence/prove-it principles require real CI evidence before accepting this unit;
 the laziness principle chooses the manifest over a new allocator implementation.
+
+
+## Hypothesis rejected; revised unit
+
+CI 40264147263 rejected the segment-heap manifest at the Windows linker:
+`CVTRES : fatal error CVT1100: duplicate resource. type:MANIFEST, name:1`.
+The upstream GPUI manifest already requests SegmentHeap, with DPI/Common-Controls
+settings. The added manifest/build script are removed, not patched around.
+No allocation improvement was established for that rejected attempt.
+
+The selected owner is now retained notification JSON: measured heavy inbox reads
+retain ~7.7 MB requested Rust bytes on every screen, versus only ~2.2 MB of
+board-card reads. The display reads only seven raw metadata fields after identity,
+title, ticket, source, seen and timestamp have been extracted to typed fields.
+A compact SQL projection omits unused top-level payloads before deserialization;
+actor/source/identity JSON is released after extracting those typed fields.
+The full `inbox()` and persisted bodies remain unchanged. Rows stream, avoiding
+the intermediate full Vec<Value>. Existing task metadata projection is unchanged.
+
+Same-source CI control disables only `compact-inbox-metadata`; it retains all
+other production optimizations and also has no eviction. Both builds use the
+same existing segment heap. Compare exact layouts and cold/warm RGB, typed data
+counts, GPU/fonts/SQLite ownership, lower retained payload and inbox read allocation,
+and lower Windows working-set/private-commit medians at both capture points.
+The regression explicitly preserves bool flags, actor precedence/multi-actor names,
+uncached titles, invitation fallback, splits, metadata and full stored photos.

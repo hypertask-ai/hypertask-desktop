@@ -3,12 +3,15 @@
 ## mem5: allocation-only policy
 
 The mem5 candidate removes the previous startup working-set eviction entirely.
-Both its normal build and same-source `legacy-windows-heap` control run without
-trimming. Production requests Windows' segment heap through the executable
-manifest, retaining Rust's System allocator. The harness reads the actual PE
-manifest resource into `memory.json`; `mem5-proof.py` checks the selection,
+Both its normal build and same-source retained-inbox-metadata control run without
+trimming. Production projects inbox display metadata before Rust deserialization, then
+drops actor/identity JSON already represented by typed row fields. The full
+notification remains in SQLite and `inbox()`. Rows stream instead of retaining
+an intermediate complete JSON vector. The Windows segment heap was already
+enabled upstream; that hypothesis was rejected. The harness reads the actual PE
+manifest resource into `memory.json`; `mem5-proof.py` checks identical heap policy,
 lower working-set/private-commit medians at both capture points, identical
-resource/data ownership, and exact RGB/layout on demo and heavy workloads.
+visible data and GPU/font/store ownership, and exact RGB/layout on demo and heavy workloads.
 Existing frozen budgets, fixtures, display geometry and warm redraws stay fixed.
 This is a hypothesis until the mem5 CI receipt proves it; no new laptop
 measurement or sustained laptop working-set guarantee is claimed.

@@ -24,7 +24,7 @@ assert a['Revision'] == b['Revision'] == a['BuildRevision'] == b['BuildRevision'
 assert a['ExeSHA256'] != b['ExeSHA256']
 heap_tag = '{http://schemas.microsoft.com/SMI/2020/WindowsSettings}heapType'
 assert ET.fromstring(a['ExecutableManifest']).find('.//' + heap_tag).text == 'SegmentHeap'
-assert not b['ExecutableManifest'] or ET.fromstring(b['ExecutableManifest']).find('.//' + heap_tag) is None
+assert a['ExecutableManifest'] == b['ExecutableManifest'], 'Heap policy must not change'
 for screen in ('inbox', 'board', 'task'):
     new = [r for r in a['Samples'] if r['Screen'] == screen]
     old = [r for r in b['Samples'] if r['Screen'] == screen]
@@ -46,12 +46,20 @@ for screen in ('inbox', 'board', 'task'):
             raise AssertionError('Unchanged memory accepted')
         print(f'MEM5_MEDIAN {screen} {key}: {before} -> {after} bytes')
     for run in range(1, 4):
-        for suffix in ('', '.fonts', '.store'):
+        for suffix in ('', '.fonts'):
             assert load(current / f'{screen}-{run}-owners{suffix}.json') == load(control / f'{screen}-{run}-owners{suffix}.json'), f'{screen}: resource ownership changed'
+        store_new = load(current / f'{screen}-{run}-owners.store.json')
+        store_old = load(control / f'{screen}-{run}-owners.store.json')
+        assert store_new.pop('CompactInboxMetadata') is True
+        assert store_old.pop('CompactInboxMetadata') is False
+        assert store_new == store_old, f'{screen}: SQLite/store ownership changed'
         app_new = load(current / f'{screen}-{run}-owners.app.json')
         app_old = load(control / f'{screen}-{run}-owners.app.json')
-        for key in app_old.keys() - {'RustLiveRequestedBytes', 'RustPeakRequestedBytes', 'DataReads'}:
+        for key in app_old.keys() - {'RustLiveRequestedBytes', 'RustPeakRequestedBytes', 'DataReads', 'InboxJsonPayloadBytes'}:
             assert app_new[key] == app_old[key], f'{screen}: retained {key} changed'
+        assert app_new['InboxJsonPayloadBytes'] < app_old['InboxJsonPayloadBytes']
+        assert app_new['DataReads']['InboxReadNetRequestedBytes'] < app_old['DataReads']['InboxReadNetRequestedBytes']
+        print(f'MEM5_INBOX_OWNERS {screen} run={run}: {app_old["DataReads"]["InboxReadNetRequestedBytes"]} -> {app_new["DataReads"]["InboxReadNetRequestedBytes"]} requested bytes')
     with Image.open(control / f'{screen}-warm.png') as before, Image.open(current / f'{screen}-warm.png') as after:
         assert before.size == after.size
         assert ImageChops.difference(before.convert('RGB'), after.convert('RGB')).getbbox() is None, f'{screen}: warm pixels changed'

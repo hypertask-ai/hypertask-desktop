@@ -106,8 +106,50 @@ fn compact_inbox_keeps_rendered_metadata_and_preserves_full_store() {
         "projectId":task["projectId"],"uniqueIndex":task["uniqueIndex"],"status":task["status"],
         "dueDate":task["dueDate"],"priority":task["priority"],"estimate":task["estimate"],"taskLabels":task["taskLabels"]
     });
-    assert_eq!(serde_json::to_value(&rows).unwrap(), expected);
+    let mut actual = serde_json::to_value(&rows).unwrap();
+    if cfg!(feature = "compact-inbox-metadata") {
+        let expected_raw = expected[0].as_object_mut().unwrap().remove("rawJson").unwrap();
+        let actual_raw = actual[0].as_object_mut().unwrap().remove("rawJson").unwrap();
+        for key in ["type", "computedSplit", "directReply", "unreadCount", "project", "comment", "task"] {
+            assert_eq!(actual_raw[key], expected_raw[key], "display field {key}");
+        }
+        assert!(actual_raw.get("fromUser").is_none());
+    }
+    assert_eq!(actual, expected);
     assert_eq!(db.inbox().unwrap()[0].raw_json, full[0].raw_json);
     assert_eq!(db.task(1).unwrap().unwrap().description, task["description"].as_str().unwrap());
     assert!(serde_json::to_vec(&rows).unwrap().len() * 20 < serde_json::to_vec(&full).unwrap().len());
+}
+
+#[test]
+fn inbox_display_rows_preserve_sources_splits_flags_and_uncached_titles() {
+    let mut db = Db::memory().unwrap();
+    db.apply_response(&json!({"success":true,"user_notifications":[
+        {"id":1,"taskId":1,"status":"Normal","createdAt":"2026-10-20T00:00:00Z",
+         "seen":true,"directReply":true,"unreadCount":3,"computedSplit":"Agents",
+         "project":{"title":"Team"},"task":{"title":"Uncached","ticketNumber":"MEM-1"},
+         "fromUser":{"displayName":"User","photoURL":"original.png"},
+         "fromAgent":{"displayName":"Agent","photoURL":"agent.png"}},
+        {"id":2,"status":"Normal","createdAt":"2026-10-20T00:00:00Z","seen":false,
+         "message":"Invitation","recentActors":[{"displayName":"First"},{"displayName":"Second"}]}
+    ]})).unwrap();
+    let full = db.inbox().unwrap();
+    let rows = db.inbox_rows().unwrap();
+    assert_eq!(rows.len(), full.len());
+    for (row, original) in rows.iter().zip(&full) {
+        assert_eq!((row.id, row.task_id, row.seen), (original.id, original.task_id, original.seen));
+        assert_eq!((&row.title, &row.ticket_number, &row.source, &row.created_at),
+                   (&original.title, &original.ticket_number, &original.source, &original.created_at));
+        for path in ["/type", "/computedSplit", "/directReply", "/unreadCount", "/project/title", "/comment/text"] {
+            assert_eq!(row.raw_json.pointer(path).unwrap_or(&serde_json::Value::Null),
+                       original.raw_json.pointer(path).unwrap_or(&serde_json::Value::Null), "{path}");
+        }
+    }
+    assert_eq!(rows[0].source.as_deref(), Some("First, Second"));
+    assert_eq!(rows[1].source.as_deref(), Some("Agent"));
+    assert!(rows[1].seen);
+    assert_eq!(rows[1].raw_json["directReply"], true);
+    assert_eq!(rows[1].title, "Uncached");
+    assert_eq!(rows[0].title, "Invitation");
+    assert_eq!(db.inbox().unwrap()[1].raw_json["fromUser"]["photoURL"], "original.png");
 }

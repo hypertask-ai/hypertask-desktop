@@ -372,16 +372,27 @@ impl Db {
     /// Row metadata only; the complete notification and task stay in the sync store.
     pub fn inbox_rows(&self) -> Result<Vec<InboxItem>> {
         if !cfg!(feature = "compact-task-reads") { return self.inbox(); }
-        self.read_inbox("CASE WHEN json_type(n.raw_json, '$.task')='object' THEN json_set(n.raw_json, '$.task', json_object('id', json_extract(n.raw_json, '$.task.id'), 'title', json_extract(n.raw_json, '$.task.title'), 'ticketNumber', json_extract(n.raw_json, '$.task.ticketNumber'), 'projectId', json_extract(n.raw_json, '$.task.projectId'), 'uniqueIndex', json_extract(n.raw_json, '$.task.uniqueIndex'), 'status', json_extract(n.raw_json, '$.task.status'), 'dueDate', json_extract(n.raw_json, '$.task.dueDate'), 'priority', json_extract(n.raw_json, '$.task.priority'), 'estimate', json_extract(n.raw_json, '$.task.estimate'), 'taskLabels', json_extract(n.raw_json, '$.task.taskLabels'))) ELSE n.raw_json END")
+        let projection = if cfg!(feature = "compact-inbox-metadata") {
+            "json_object('id', n.id, 'taskId', n.taskId, 'seen', json(n.raw_json -> '$.seen'), 'createdAt', n.createdAt,
+                'message', json_extract(n.raw_json, '$.message'), 'type', json_extract(n.raw_json, '$.type'),
+                'computedSplit', json_extract(n.raw_json, '$.computedSplit'), 'directReply', json(n.raw_json -> '$.directReply'),
+                'unreadCount', json_extract(n.raw_json, '$.unreadCount'), 'project', json_extract(n.raw_json, '$.project'),
+                'comment', json_extract(n.raw_json, '$.comment'), 'task', json_extract(n.raw_json, '$.task'),
+                'fromUser', json_extract(n.raw_json, '$.fromUser'), 'fromAgent', json_extract(n.raw_json, '$.fromAgent'),
+                'recentActors', json_extract(n.raw_json, '$.recentActors'))"
+        } else { "n.raw_json" };
+        self.read_inbox(&format!("CASE WHEN json_type(n.raw_json, '$.task')='object' THEN json_set({projection}, '$.task', json_object('id', json_extract(n.raw_json, '$.task.id'), 'title', json_extract(n.raw_json, '$.task.title'), 'ticketNumber', json_extract(n.raw_json, '$.task.ticketNumber'), 'projectId', json_extract(n.raw_json, '$.task.projectId'), 'uniqueIndex', json_extract(n.raw_json, '$.task.uniqueIndex'), 'status', json_extract(n.raw_json, '$.task.status'), 'dueDate', json_extract(n.raw_json, '$.task.dueDate'), 'priority', json_extract(n.raw_json, '$.task.priority'), 'estimate', json_extract(n.raw_json, '$.task.estimate'), 'taskLabels', json_extract(n.raw_json, '$.task.taskLabels'))) ELSE {projection} END"), cfg!(feature = "compact-inbox-metadata"))
     }
 
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {
-        self.read_inbox("n.raw_json")
+        self.read_inbox("n.raw_json", false)
     }
 
-    fn read_inbox(&self, projection: &str) -> Result<Vec<InboxItem>> {
-        self.json_rows(&format!("SELECT {projection} FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC"), [])?
-            .into_iter().map(|n| {
+    fn read_inbox(&self, projection: &str, display_only: bool) -> Result<Vec<InboxItem>> {
+        let mut statement = self.conn.prepare(&format!("SELECT {projection} FROM Notification n LEFT JOIN Task t ON t.id=n.taskId WHERE n.status='Normal' AND n.archivedAt IS NULL AND (t.id IS NULL OR t.status='Normal') ORDER BY n.createdAt DESC,n.id DESC"))?;
+        let rows = statement.query_map([], |row| row.get::<_, String>(0))?;
+        rows.map(|row| {
+                let mut n: Value = serde_json::from_str(&row?)?;
                 let actors = n["recentActors"].as_array();
                 let source = if actors.is_some_and(|actors| actors.len() >= 2) {
                     Some(actors.unwrap().iter().filter_map(|actor| actor["displayName"].as_str())
@@ -400,9 +411,17 @@ impl Db {
                 }).transpose()?.flatten();
                 let title = task.as_ref().map(|t| t.0.clone()).unwrap_or_else(|| n.pointer("/task/title").or_else(|| n.get("message")).and_then(Value::as_str).unwrap_or("").to_owned());
                 let ticket_number = task.and_then(|t| t.1).or_else(|| n.pointer("/task/ticketNumber").and_then(Value::as_str).map(str::to_owned));
-                Ok(InboxItem { id: integer(&n,"id")?, task_id: n["taskId"].as_i64(), title,
-                    ticket_number, source,
-                    seen: n["seen"].as_bool().unwrap_or(false), created_at: n["createdAt"].as_str().context("notification createdAt missing")?.to_owned(), raw_json: n })
+                let id = integer(&n, "id")?;
+                let task_id = n["taskId"].as_i64();
+                let seen = n["seen"].as_bool().unwrap_or(false);
+                let created_at = n["createdAt"].as_str().context("notification createdAt missing")?.to_owned();
+                if display_only {
+                    // Identity/source already live in typed fields; retain only rendered metadata.
+                    n.as_object_mut().context("notification object missing")?.retain(|key, _| {
+                        matches!(key.as_str(), "type" | "computedSplit" | "directReply" | "unreadCount" | "project" | "comment" | "task")
+                    });
+                }
+                Ok(InboxItem { id, task_id, title, ticket_number, source, seen, created_at, raw_json: n })
             }).collect()
     }
 
