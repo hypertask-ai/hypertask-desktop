@@ -1603,7 +1603,10 @@ mod cmdk_parity_tests {
                 {"id":7,"text":"One","creatorId":42,"creator":{"id":42},"createdAt":"2026-01-01T00:00:00Z"},
                 {"id":8,"text":"Two","creatorId":43,"creator":{"id":43},"createdAt":"2026-01-02T00:00:00Z"}
             ]})).unwrap();
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","project":{"id":15,"timeTrackingEnabled":true}})).unwrap();
             this.reload();
+            let task_rows = this.command_rows();
+            assert!(task_rows.iter().position(|row| row.group == "Time").unwrap() < task_rows.iter().position(|row| row.group == "Navigate").unwrap());
             for (part, own) in [(1, true), (2, false)] {
                 this.interaction.task_part = part;
                 let rows = this.command_rows();
@@ -1624,7 +1627,7 @@ mod cmdk_parity_tests {
                 assert_eq!(comments, expected);
                 let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
                 groups.dedup();
-                assert_eq!(groups, ["Comment", "Task", "Navigate", "Inbox", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]);
+                assert_eq!(groups, ["Comment", "Task", "Navigate", "Inbox", "Time", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]);
             }
         }).unwrap();
     }

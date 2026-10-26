@@ -41,7 +41,8 @@ Native request tests capture the authenticated request.
 A synthetic HTTP refusal proves transport, not server acceptance.
 
 Task order follows `taskCommands.ts:395-549`.
-Time follows Task, before Navigate, `AllCommands.ts:1364-1372`.
+Time follows Task in task-only context, `AllCommands.ts:1364-1372`.
+Comment context retains Navigate/Inbox/Time, `AllCommands.ts:1359-1362`.
 Board-name insertion stays unchanged, `commands.tsx:308-315`.
 Labels and context originate from the registry, not shortcuts.
 

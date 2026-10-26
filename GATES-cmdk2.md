@@ -44,3 +44,8 @@ Pending source audit and GitHub CI.
 
 - CI 692f4e23833d10a3e2b9da6834859b3d0501a464: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40281832093. All three native platforms reach core tests. `command_move_to_inbox_is_desired_state_and_account_bound` rejects its malformed-ack expectation at board_writes.rs:447. Eight sibling board tests pass. Core intentionally retries invalid success responses; desired-state Inbox mutation is safe to retry. Corrected expected Retrying and explicitly require no success refetch on that invalid acknowledgement.
 - Added nullable-parent exact-request/restart coverage and summary busy/history draft preservation. Web New badges now distinguish Comment branch from the unbadged AI alias. No acceptance threshold or product behavior weakened.
+
+## Context-order self-review
+
+- With focused comments, web groups are Comment, Task, Navigate, Inbox, Time. Task-only context instead promotes Time before Navigate (`AllCommands.ts:1359-1372`). Added both enabled-Time contexts to the existing native order test; the sort now preserves that distinction.
+- The owner-user `gh run watch` path hits exhausted credentials while `gh api` uses the existing repository-app wrapper successfully. Scoped read-only adapter reuses that wrapper's in-memory child environment, reduces watch interval to 120 seconds, and never prints or stores credentials. No shared helper or system configuration changed.

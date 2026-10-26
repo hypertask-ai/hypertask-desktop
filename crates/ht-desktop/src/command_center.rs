@@ -144,6 +144,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
 
 // Context producers append rows; order the complete list, not just the base registry.
 pub fn order(rows: &mut [Command], screen: Screen) {
+    let comment = rows.iter().any(|row| row.group == "Comment");
     let task = ["acceptTask", "declineTask", "assignUser", "blockedByPerson", "assignToMe", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "starTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "removeParenttask", "renameTask", "showInInbox", "deleteTask"];
     let ai = ["aiChatInterface", "pinAiChatOpen", "fullScreenAiChat", "branchInNewChat", "toggleAIChatView"];
     let board = ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"];
@@ -152,7 +153,7 @@ pub fn order(rows: &mut [Command], screen: Screen) {
             "Selected tasks" | "Comment" => 0,
             "Task" if screen == Screen::Task => 1,
             "Board" if screen == Screen::Board => 1,
-            "Time" if screen == Screen::Task => 2,
+            "Time" if screen == Screen::Task && !comment => 2,
             "Navigate" => 3,
             "Inbox" => 4,
             "Time" => 5,
