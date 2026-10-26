@@ -177,7 +177,7 @@ impl Desktop {
             return true;
         }
         if self.shell.shortcuts {
-            if key.key == "escape" {
+            if key.key == "escape" || !self.shortcut_search_focused(window, cx) {
                 self.shell.shortcuts = false;
                 window.focus(&self.focus, cx);
                 cx.stop_propagation();

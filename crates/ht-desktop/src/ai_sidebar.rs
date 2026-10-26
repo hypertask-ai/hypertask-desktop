@@ -28,7 +28,7 @@ use std::{
 mod memory;
 
 #[path = "ai_skills.rs"]
-mod skills;
+pub(crate) mod skills;
 
 #[path = "ai_presentation.rs"]
 mod presentation;

@@ -202,6 +202,7 @@ impl Desktop {
                 .take()
                 .filter(|(at, _)| at.elapsed() < Duration::from_secs(1))
             {
+                let shift = if self.screen == Screen::Task { shortcuts::shifted(key) } else { shift };
                 let action = shortcuts::sequence(&key.key, shift, self.screen);
                 if let Some(action) = action {
                     if action == Action::Inbox {
@@ -441,7 +442,6 @@ impl Desktop {
                 } else {
                     self.interaction.task_part = self.comments.len() + 1;
                     self.composer_anchor.scroll_to(window, cx);
-                    self.edit_comment(window, cx);
                 }
             }
             First | Last => {

@@ -840,9 +840,11 @@ fn keyboard_task_gg_and_gg_shift_focus_description_and_composer_without_sending(
     cx.simulate_keystrokes("shift-g shift-g");
     view.update_in(cx, |this, window, cx| {
         assert_eq!(this.interaction.task_part, this.comments.len() + 1);
-        assert!(this.comment_input.focus_handle(cx).is_focused(window));
+        assert!(this.focus.is_focused(window));
+        assert!(!this.comment_input.focus_handle(cx).is_focused(window));
         assert!(this.db.mutations().unwrap().is_empty());
     });
+    cx.simulate_keystrokes("enter");
     cx.simulate_input("g g stays text");
     view.read_with(cx, |this, cx| assert!(this.comment_input.read(cx).content.contains("g g stays text")));
 }
@@ -932,12 +934,27 @@ fn keyboard_due_picker_j_k_match_arrow_navigation_without_leaking_to_tasks(cx: &
     cx.update(crate::input::init);
     let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
     cx.simulate_keystrokes("d j k j enter");
-    view.read_with(cx, |this, _| {
+    view.update_in(cx, |this, window, _| {
         let rows = this.db.mutations().unwrap();
         assert_eq!(rows.len(), 1);
         assert_eq!(rows[0].payload_json["task_id"], 1);
         assert!(rows[0].payload_json["due_date"].is_string());
-        assert!(this.task_fields.due.is_none());
+        assert!(this.focus.is_focused(window));
         assert_eq!(this.options.task, 1);
     });
+}
+
+#[gpui::test]
+fn keyboard_shortcut_sheet_keeps_search_keys_but_dismisses_outside_input(cx: &mut TestAppContext) {
+    let (view, mut cx) = setup(cx);
+    cx.simulate_keystrokes("?");
+    cx.simulate_input("Archive");
+    assert!(measured(view, &mut cx, "shell.shortcuts")["w"].as_f64().unwrap() > 0.);
+    view.update(&mut cx, |this, window, cx| window.focus(&this.focus, cx)).unwrap();
+    cx.simulate_keystrokes("j");
+    draw(view, &mut cx);
+    view.read_with(&cx, |this, _| {
+        assert!(!this.layout.as_ref().unwrap().borrow().interaction_elements().iter().any(|row| row["key"] == "shell.shortcuts"));
+        assert!(this.db.mutations().unwrap().is_empty());
+    }).unwrap();
 }

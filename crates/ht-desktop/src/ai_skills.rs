@@ -46,7 +46,7 @@ fn skills_from_response(value: &Value) -> Vec<Value> {
     rows.sort_by_key(|skill| skill["name"].as_str().unwrap_or("").to_lowercase());
     rows
 }
-fn fetch_skills(
+pub(crate) fn fetch_skills(
     transport: &mut impl Transport,
     project: Option<i64>,
 ) -> Result<Vec<Value>, String> {

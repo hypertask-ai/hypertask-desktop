@@ -1936,6 +1936,9 @@ impl Desktop {
 }
 
 impl Desktop {
+    pub(super) fn shortcut_search_focused(&self, window: &Window, cx: &App) -> bool {
+        self.shell.settings_state.import_url.focus_handle(cx).is_focused(window)
+    }
     pub(in super::super) fn shortcut_search_focus(
         &mut self,
         window: &mut Window,
