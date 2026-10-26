@@ -24,6 +24,8 @@ use std::{
     time::Duration,
 };
 
+const COMPOSER_PLACEHOLDER: u32 = 0xadb5bd;
+
 #[path = "ai_memory.rs"]
 mod memory;
 
@@ -208,7 +210,7 @@ impl AiSidebar {
             TextInput::new(
                 String::new(),
                 "Focus with CTRL + Q, @ for context",
-                color(colors.muted),
+                color(COMPOSER_PLACEHOLDER),
                 cx,
             )
             .ai_composer()
@@ -919,9 +921,14 @@ impl Render for AiSidebar {
                 .gap(px(8.));
             if self.scope.as_ref().is_some_and(|scope| scope.context.surface == "task_detail" && scope.context.task_id.is_some()) {
                 welcome = welcome.child(
-                    div().id("ai-task-summary").w_full().p(px(8.)).rounded(px(4.))
-                        .border_1().border_color(color(t.accent)).text_size(px(12.))
-                        .cursor_pointer().child("Summarize the current task")
+                    div().id("ai-task-summary").w_full().p(px(8.)).rounded(px(6.))
+                        .border_1().border_color(color(0xc668ff).opacity(0.7)).bg(color(0xc668ff).opacity(0.1))
+                        .text_size(px(12.)).line_height(px(16.)).flex().items_center().gap(px(8.))
+                        .cursor_pointer()
+                        .child(svg().path("ai-sparkles").size(px(14.)).flex_shrink_0().text_color(color(0xc668ff))
+                            .layout_key(&self.capture, "ai.task.summary.icon", None))
+                        .child(div().child("Summarize the current task")
+                            .layout_key(&self.capture, "ai.task.summary.label", None))
                         .on_click(cx.listener(|this, _, window, cx| {
                             this.send("/i Summarize the current task".into(), window, cx);
                         }))
@@ -941,7 +948,8 @@ impl Render for AiSidebar {
                     div()
                         .id(("ai-suggestion", index))
                         .w_full()
-                        .min_h(px(34.))
+                        .min_h(px(if self.scope.as_ref().is_some_and(|s| s.context.surface == "task_detail") { 32. } else { 34. }))
+                        .line_height(px(if self.scope.as_ref().is_some_and(|s| s.context.surface == "task_detail") { 16. } else { 18. }))
                         .px(px(8.))
                         .py(px(8.))
                         .rounded(px(6.))
@@ -1380,6 +1388,13 @@ impl Render for AiSidebar {
         } else {
             "All boards".into()
         };
+        let scope_icon = if !self.include_context {
+            "layers"
+        } else if self.scope.as_ref().is_some_and(|s| s.context.task_id.is_some()) {
+            "ai-scope-task"
+        } else {
+            "ai-scope-board"
+        };
         let controls = div()
             .w_full().pt(px(8.))
             .flex()
@@ -1392,14 +1407,17 @@ impl Render for AiSidebar {
                     .px(px(8.)).py(px(4.)).text_size(px(13.)).line_height(px(19.5))
                     .flex()
                     .items_center()
-                    .gap(px(5.))
+                    .gap(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.model_menu = !this.model_menu;
                         cx.notify();
                     }))
-                    .child(MODELS[self.model].label)
-                    .child(icon("chevron-down", t.muted)),
+                    .child(div().font_weight(FontWeight::MEDIUM).child(MODELS[self.model].label)
+                        .layout_key(&self.capture, "ai.model.label", Some(MODELS[self.model].label.into())))
+                    .child(svg().path("chevron-down").size(px(16.)).flex_shrink_0().text_color(color(t.muted))
+                        .layout_key(&self.capture, "ai.model.chevron", None))
+                    .layout_key(&self.capture, "ai.model.toggle", None),
             )
             .child(
                 div()
@@ -1409,14 +1427,16 @@ impl Render for AiSidebar {
                     .min_w_0()
                     .flex()
                     .items_center()
-                    .gap(px(5.))
+                    .gap(px(4.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.include_context = !this.include_context;
                         cx.notify();
                     }))
-                    .child(icon("columns-2", t.muted))
-                    .child(div().truncate().child(label.clone()).layout_key(&self.capture, "ai.context", Some(label)))
+                    .child(svg().path(scope_icon)
+                        .size(px(13.)).flex_shrink_0().text_color(color(t.muted))
+                        .layout_key(&self.capture, "ai.context.icon", Some(scope_icon.into())))
+                    .child(div().truncate().font_weight(FontWeight::MEDIUM).child(label.clone()).layout_key(&self.capture, "ai.context", Some(label)))
                     .child(icon(
                         if self.include_context {
                             "x"

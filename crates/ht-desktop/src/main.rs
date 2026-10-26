@@ -177,6 +177,8 @@ impl AssetSource for Assets {
             "arrow-right",
             "corner-left-up",
             "ai-sparkles",
+            "ai-scope-board",
+            "ai-scope-task",
             "send-archive",
             "square-pen",
             "copy",

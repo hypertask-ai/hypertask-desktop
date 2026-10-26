@@ -718,3 +718,152 @@ fn sidebar_1920_web_resize_gutter_and_centered_grip(cx: &mut gpui::TestAppContex
     assert_eq!(grip["h"], 24.);
     assert!((grip["y"].as_f64().unwrap() + 12. - 504.5).abs() <= 1.);
 }
+
+#[gpui::test]
+fn sidebar_web_control_labels_icons_and_spacing(cx: &mut gpui::TestAppContext) {
+    struct Host(Entity<AiSidebar>);
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(420.)).h(px(1009.)).font_family("IBM Plex Sans")
+                .text_size(px(16.)).line_height(gpui::relative(1.5)).text_color(color(0xffffff)).child(self.0.clone())
+        }
+    }
+    for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
+        let (host, cx) = cx.add_window_view(|window, cx| Host(cx.new(|cx| {
+            let mut db = Db::memory().unwrap();
+            db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"QA Team Board","teamId":1}],"tasks":[{"id":103,"projectId":15,"title":"Task","ticketNumber":"QABO-5","status":"Normal"}]})).unwrap();
+            let focus = cx.focus_handle();
+            let mut sidebar = AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx);
+            sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
+            sidebar.set_scope(Scope::load(&db, screen, 15, (screen == Screen::Task).then_some(103), 0), cx);
+            sidebar
+        })));
+        let view = host.read_with(cx, |host, _| host.0.clone());
+        let model = element(&view, cx, "ai.model.label");
+        let toggle = element(&view, cx, "ai.model.toggle");
+        let chevron = element(&view, cx, "ai.model.chevron");
+        let context = element(&view, cx, "ai.context");
+        let icon = element(&view, cx, "ai.context.icon");
+        for label in [&model, &context] {
+            assert_eq!(label["fontSize"], 13.);
+            assert_eq!(label["fontWeight"], 500.);
+            assert_eq!(label["lineHeight"], 19.5);
+        }
+        assert_eq!(model["x"].as_f64().unwrap() - toggle["x"].as_f64().unwrap(), 8.);
+        assert_eq!(chevron["x"].as_f64().unwrap() - model["x"].as_f64().unwrap() - model["w"].as_f64().unwrap(), 4.);
+        assert_eq!(chevron["w"], 16.);
+        assert_eq!(chevron["h"], 16.);
+        assert_eq!(icon["w"], 13.);
+        assert_eq!(icon["h"], 13.);
+        assert_eq!(icon["text"], if screen == Screen::Task { "ai-scope-task" } else { "ai-scope-board" });
+        assert_eq!(context["x"].as_f64().unwrap() - icon["x"].as_f64().unwrap() - icon["w"].as_f64().unwrap(), 4.);
+        assert_eq!(element(&view, cx, "ai.input")["color"], "#ffffff");
+        view.update_in(cx, |sidebar, _, cx| sidebar.input.update(cx, |input, cx| input.set_content("Actual message".into(), cx)));
+        assert_eq!(element(&view, cx, "ai.input")["color"], "#ffffff");
+        println!("AI_SIDEBAR_WEB_CONTROLS {screen:?} label=13/19.5/500 model_gap=4 context_gap=4 scope_icon=13 placeholder=#adb5bd");
+    }
+}
+
+#[gpui::test]
+fn sidebar_task_summary_web_tint_icon_and_compact_prompt_geometry(cx: &mut gpui::TestAppContext) {
+    struct Host(Entity<AiSidebar>);
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(420.)).h(px(1009.)).text_size(px(16.)).line_height(gpui::relative(1.5))
+                .child(self.0.clone())
+        }
+    }
+    let (host, cx) = cx.add_window_view(|window, cx| Host(cx.new(|cx| {
+        let mut db = Db::memory().unwrap();
+        db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"QA Team Board","teamId":1}],"tasks":[{"id":103,"projectId":15,"title":"Task","ticketNumber":"QABO-5","status":"Normal"}]})).unwrap();
+        let focus = cx.focus_handle();
+        let mut sidebar = AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx);
+        sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
+        sidebar.set_scope(Scope::load(&db, Screen::Task, 15, Some(103), 0), cx);
+        sidebar
+    })));
+    let view = host.read_with(cx, |host, _| host.0.clone());
+    let summary = element(&view, cx, "ai.task.summary");
+    let label = element(&view, cx, "ai.task.summary.label");
+    let icon = element(&view, cx, "ai.task.summary.icon");
+    let prompt = element(&view, cx, "ai.suggestion.0");
+    assert_eq!(summary["h"], 34.);
+    assert_eq!(summary["radius"], 6.);
+    assert_eq!(summary["fontSize"], 12.);
+    assert_eq!(summary["lineHeight"], 16.);
+    assert_eq!(icon["w"], 14.);
+    assert_eq!(icon["h"], 14.);
+    assert_eq!(icon["color"], "#c668ff");
+    assert_eq!(icon["x"].as_f64().unwrap() - summary["x"].as_f64().unwrap(), 9.);
+    assert_eq!(label["x"].as_f64().unwrap() - icon["x"].as_f64().unwrap() - icon["w"].as_f64().unwrap(), 8.);
+    assert_eq!(prompt["h"], 32.);
+    assert_eq!(prompt["lineHeight"], 16.);
+    assert_eq!(prompt["y"].as_f64().unwrap() - summary["y"].as_f64().unwrap() - summary["h"].as_f64().unwrap(), 8.);
+    cx.update(|window, _| {
+        let origin = point(px(summary["x"].as_f64().unwrap() as f32), px(summary["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
+        let quads = window.painted_quads();
+        let quad = quads.iter().find(|quad| quad.bounds.origin == origin && quad.border_color == color(0xc668ff).opacity(0.7).into()).expect("painted web summary border");
+        let background = quads.iter().find(|quad| quad.bounds.origin == origin && !quad.background.is_transparent()).expect("painted web summary fill");
+        assert_eq!(background.background, gpui::Background::from(color(0xc668ff).opacity(0.1)));
+        assert_eq!(quad.border_widths.left, px(1.).scale(window.scale_factor()));
+    });
+    click(&view, cx, "ai.task.summary");
+    view.read_with(cx, |sidebar, _| assert!(sidebar.chats[0].error.as_deref().unwrap().contains("offline")));
+    println!("AI_SIDEBAR_WEB_TASK summary=34 prompt=32 line=16 icon=14 gap=8 border=#c668ff/70 fill=#c668ff/10");
+}
+
+#[test]
+fn sidebar_scope_glyphs_match_web_symbols() {
+    use gpui::AssetSource;
+    for (name, paths) in [
+        ("ai-scope-board", &["M8 7v7", "M12 7v4", "M16 7v9"][..]),
+        ("ai-scope-task", &["M13 5h8", "M13 12h8", "M13 19h8", "m3 17 2 2 4-4"][..]),
+    ] {
+        let bytes = crate::Assets.load(name).unwrap().unwrap();
+        let svg = std::str::from_utf8(&bytes).unwrap();
+        assert!(svg.contains("viewBox=\"0 0 24 24\""));
+        assert!(svg.contains("stroke-width=\"1.75\""));
+        for path in paths { assert!(svg.contains(path), "{name}: missing {path}"); }
+    }
+}
+
+#[cfg(target_os = "linux")]
+#[gpui::test]
+fn sidebar_placeholder_paint_uses_web_tint_not_container_color(cx: &mut gpui::TestAppContext) {
+    let mut real = gpui::TestAppContext::build_with_text_system(
+        cx.dispatcher.clone(), Some("sidebar_placeholder_paint"),
+        gpui_platform::current_platform(true).text_system(),
+    );
+    let cx = &mut real;
+    cx.update(|cx| crate::fonts::load(crate::theme::ThemeName::Graphite, cx));
+    struct Host(Entity<AiSidebar>);
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(420.)).h(px(1009.)).font_family("IBM Plex Sans")
+                .text_size(px(16.)).line_height(gpui::relative(1.5)).text_color(color(0xffffff)).child(self.0.clone())
+        }
+    }
+    let (host, cx) = cx.add_window_view(|window, cx| Host(cx.new(|cx| {
+        let focus = cx.focus_handle();
+        let mut sidebar = AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx);
+        sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
+        sidebar
+    })));
+    let view = host.read_with(cx, |host, _| host.0.clone());
+    for (content, expected) in [("", 0xadb5bd), ("Actual message", 0xffffff)] {
+        view.update_in(cx, |sidebar, _, cx| sidebar.input.update(cx, |input, cx| input.set_content(content.into(), cx)));
+        let input = element(&view, cx, "ai.input");
+        assert_eq!(input["color"], "#ffffff");
+        cx.update(|window, _| {
+            let bounds = gpui::Bounds::new(
+                point(px(input["x"].as_f64().unwrap() as f32), px(input["y"].as_f64().unwrap() as f32)),
+                size(px(input["w"].as_f64().unwrap() as f32), px(input["h"].as_f64().unwrap() as f32)),
+            ).scale(window.scale_factor());
+            let colors: Vec<_> = window.painted_sprite_colors().into_iter()
+                .filter(|(sprite, _)| bounds.contains(&sprite.center())).map(|(_, color)| color).collect();
+            assert!(!colors.is_empty(), "composer text must actually paint");
+            assert!(colors.iter().all(|paint| *paint == color(expected)), "wrong composer paint: {colors:?}");
+            println!("AI_SIDEBAR_WEB_INPUT glyphs={} color={expected:#08x} container=#ffffff", colors.len());
+        });
+    }
+}

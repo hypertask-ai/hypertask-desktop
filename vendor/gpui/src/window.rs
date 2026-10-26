@@ -2899,6 +2899,16 @@ impl Window {
         self.rendered_frame.scene.quads.clone()
     }
 
+    /// Returns monochrome/subpixel sprite bounds and paint colors.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn painted_sprite_colors(&self) -> Vec<(Bounds<ScaledPixels>, Hsla)> {
+        self.rendered_frame.scene.monochrome_sprites.iter()
+            .map(|sprite| (sprite.bounds, sprite.color))
+            .chain(self.rendered_frame.scene.subpixel_sprites.iter()
+                .map(|sprite| (sprite.bounds, sprite.color)))
+            .collect()
+    }
+
     /// Returns the underlines in the most recently rendered frame's scene.
     #[cfg(any(test, feature = "test-support"))]
     pub fn painted_underlines(&self) -> Vec<Underline> {
