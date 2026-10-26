@@ -74,7 +74,7 @@ Excluded destinations remain labeled, not silently omitted.
 | Board | `Ctrl/Cmd+J` | Add task with AI Task Writer | Partial native flagged compose; legacy full-create/defaults/ranking blocked. R14 / creation-parity.md. | `lib/constants/shortcuts.ts:118` |
 | Board | `Ctrl/Cmd+Shift++` | Add sub-task | Blocked session-only orphan catalog and full-create fallback. Palette is not linker. R15. | `lib/constants/shortcuts.ts:119` |
 | Board | `Ctrl/Cmd+Shift+C` | Add task at top | Blocked exact full-create/defaults/ranking contract; compose differs. R14 / creation-parity.md. | `lib/constants/shortcuts.ts:120` |
-| Board | `Shift+C` | Add task at bottom | Skipped N/Shift+C; HTPR-7699. Existing creation blocker unchanged. | `lib/constants/shortcuts.ts:121` |
+| Board | `Shift+C` | Add task at bottom | Blocked exact POST creation; GET defaults alone unlocked. See CLI7699 audit below. | `lib/constants/shortcuts.ts:121` |
 | Board | `ENTER` | Open task | Native Enter opens selected cached task. | `lib/constants/shortcuts.ts:122` |
 | Board | `` | Next view | Blocked unsavedView/view_order/default_view_order/rendered tabs. R6. | `lib/constants/shortcuts.ts:126` |
 | Board | `[` | Previous view | Blocked unsavedView/view_order/default_view_order/rendered tabs. R6. | `lib/constants/shortcuts.ts:127` |
@@ -196,7 +196,7 @@ Hints do not prove native support.
 | Board | K | up | Supported | `components/Global/ConstantsQuickTips.ts:41` |
 | Board | Tab | next column | Supported legacy hint. Shell view-cycle differs below. | `components/Global/ConstantsQuickTips.ts:45` |
 | Board | C | add task | Blocked exact full-create/defaults/ranking contract; compose differs. R14 / creation-parity.md. | `components/Global/ConstantsQuickTips.ts:49` |
-| Board | N / Shift+C | quick add | Skipped N/Shift+C; HTPR-7699. Existing creation blocker unchanged. | `components/PageComponents/Kanban/KanbanSectionComponents/NewTaskButton.tsx:54` |
+| Board | N / Shift+C | quick add | Blocked exact POST creation; GET defaults alone unlocked. See CLI7699 audit below. | `components/PageComponents/Kanban/KanbanSectionComponents/NewTaskButton.tsx:54` |
 | Board | Ctrl+E | archive | Supported task archive | `components/Global/ConstantsQuickTips.ts:53` |
 | Board | Ctrl+B | Change Board | Supported cached board picker | `components/Global/ConstantsQuickTips.ts:57` |
 | Board | / | search | Partial cached search; web document route requires session. R18. | `components/Global/ConstantsQuickTips.ts:61` |
@@ -217,7 +217,7 @@ Conflicting hints stay explicit below.
 
 | Surface | Web shortcut | Runtime action | Native status | Web source |
 | --- | --- | --- | --- | --- |
-| Board | N / Shift+C | Quick entry in focused/selected column, bottom | Skipped N/Shift+C; HTPR-7699. Existing creation blocker unchanged. | `hooks/Homepage/useHandleKeyDownOperations.ts:93-118`, `hooks/Homepage/useSections.ts:108-141`, `hooks/MultiPages/useAddDeleteTaskInBoards.tsx:115-164` |
+| Board | N / Shift+C | Quick entry in focused/selected column, bottom | Blocked exact POST creation; GET defaults alone unlocked. See CLI7699 audit below. | `hooks/Homepage/useHandleKeyDownOperations.ts:93-118`, `hooks/Homepage/useSections.ts:108-141`, `hooks/MultiPages/useAddDeleteTaskInBoards.tsx:115-164` |
 | Board | C, Ctrl/Cmd+Shift+C | Full create at top | Blocked exact full-create/defaults/ranking contract; compose differs. R14 / creation-parity.md. | `hooks/Homepage/useSections.ts:263-310` |
 | Inbox/task | C | Full create task | Blocked exact full-create/defaults/ranking contract; compose differs. R14 / creation-parity.md. | `app/inbox/Inbox.tsx:395-398`, `app/detail/[...slug]/taskDetailEditingKeymap.ts:197-209` |
 | Board | Shift+F | Filter commands | Blocked personal unsaved-view read/write; named settings differ. R5. | `hooks/Homepage/useHandleKeyDownOperations.ts:186` |
@@ -283,9 +283,32 @@ Task creation remains deliberately unavailable for plain keys.
 The exact defaults and authorization boundary are now traced in
 [creation-parity.md](creation-parity.md), including N/Shift+C column targeting,
 active-filter precedence, assignable IDs and exact top/bottom ranks.
-Both exact save routes still need server sign-in work under HTPR-7699.
+Both exact POST save routes remain session-only after HTPR-7699.
 MCP append and AI compose cannot replace that user promise.
 No fake quick-add UI was introduced.
+
+
+## CLI7699 route refresh
+
+Web PR https://github.com/hypertask-ai/hypertask/pull/2028 is merged.
+Citations below use `/home/valentin/projects/hypertask/src`.
+
+| Keys / action | Updated status | Source / native proof |
+| --- | --- | --- |
+| Ctrl/Cmd+J | **Implemented** compose/writer, partial exact save | POST writer CLI resolver `app/api/ai/task-writer/route.ts:52-61`; GET defaults `pages/api/tasks/createGlobally.ts:17-44`. Web request `lib/ai/composeTask.ts:79-128`. `cli7699_native_ctrlj_mocked_writer_and_flag_off_keep_real_results`. |
+| Ctrl/Cmd+Shift+B inside compose | **Implemented** existing board picker | `components/Modals/commands/HTC/ComposeTaskWriter.tsx:166-172,228-237`; same native test. |
+| Ctrl+Shift+S / Ctrl+Shift+P, focused comment | **Implemented** star / pin | `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:545-558`; authorized comment-only POST `pages/api/savedContent/toggleSaved.ts:16-23,76-106`. `cli7699_native_star_pin_mocked_save_remove_and_flag_off_are_authoritative`. |
+| @, arrows, Enter, Escape in comment | **Implemented** server mention search | GET CLI adapter `pages/api/tasks/searchByParam.ts:5-9`; request and result labels `components/RTE/MentionData.js:12-44`. `cli7699_native_mentions_apply_mocked_http_results_and_refusals`. |
+| N / Shift+C | **Blocked**, not the same writes | Web exact POST `/api/tasks/create` or `/api/tasks/createGlobally`, `hooks/MultiPages/useAddDeleteTaskInBoards.tsx:127-148,169-179`; session-only `lib/api/task-writes/route.ts:35-38,101-106`, `pages/api/tasks/createGlobally.ts:113-115`. No guessed quick-add UI. |
+
+The flag is `htpr-7699-desktop-cli-token`.
+Only verified human CLI identities qualify (`lib/auth/desktopCliTokenUser.ts:14-29,53-77`).
+Owner reports flag enabled; live-owner requests remain unrun.
+Flag-off Unauthorized reaches compose/star/pin without fake success.
+HTTP mention failures show the web empty-result state (`components/RTE/MentionData.js:13-41`).
+MCP compose saves append; exact top rank/defaults remain partial.
+Focused legacy editor writer remains a native gap, not auth-blocked.
+Acceptance and exact-head GitHub evidence: `GATES-cli7699.md`.
 
 ## Native input evidence
 
@@ -329,7 +352,7 @@ Duplicates reference the same audit entry.
 `No` means today's desktop bearer cannot authorize it.
 `Yes` does not mean live-server QA happened.
 No cookies copied. No authorization widened.
-N / Shift+C deliberately skipped: HTPR-7699.
+N / Shift+C remain blocked by exact POST writes.
 
 ### Unblocked contracts
 
@@ -356,7 +379,7 @@ N / Shift+C deliberately skipped: HTPR-7699.
 | R11 | Ctrl/Cmd+Shift+H history / agent log | `app/detail/[...slug]/taskDetailEditingKeymap.ts:81-87`; local persisted boolean `store/index.ts:207-210`; merge `hooks/Task Detail/useTaskDetailGlobalStates.ts:207-223`, `lib/agentRuns/taskActivityFeed.ts:30-64`. | Preference itself needs **no route**. Full web feed GET `/api/comments/getByTask?taskId=…`: `utils/api/Task Detail/index.ts:78-105`, `pages/api/comments/getByTask.ts:21-27` (session-only). **Yes** for MCP comments `include_activity=true`, `lib/mcp/operations/comments/operation.ts:285-296,334-336`; **Yes** for GET `/api/mcp/tasks/{taskId}/agent-activity`. But exact merged feed needs `link/options/selectedOption/selectedAt/selectedBy`, `lib/agentRuns/model.ts:64-75`. MCP activity select/response omits them: `app/api/mcp/tasks/[taskId]/agent-activity/route.ts:53-72`. Cannot determine interactive elicitation visibility/selection (`lib/agentRuns/taskActivityFeed.ts:48-52`). Full per-run GET `/api/mcp/agents/runs/{id}/activities` also checked: **No** for personal bearer (`app/api/mcp/agents/runs/[id]/activities/route.ts:39-52,65-73`, `lib/agentRuns/service.ts:81-95` requires agentId for Authorization). Remaining blocker is missing feed fields, not history preference auth. |
 | R12 | Ctrl/Cmd+Shift+D/F dictation; Alt+V; inbox audio reply; AI recording | Task `app/detail/[...slug]/taskDetailEditingKeymap.ts:150-174`; AI `hooks/MultiPages/AIChat/aiChatKeyboard.ts:119-124`. POST `/api/ai/audio-transcript`. | **No**. `app/api/ai/audio-transcript/route.ts:102-104` session user required. Missing authorized audio/form-data transcription contract; native microphone capture also absent. No fake recording state. |
 | R13 | AI Ctrl/Cmd+U; editor Ctrl/Cmd+Shift+A uploads | AI `hooks/MultiPages/AIChat/aiChatKeyboard.ts:115-118`; editor `components/RTE/useTaskDetailEditorKeyboard.tsx:70-73`; picker `components/Common/AttachmentsUpload/FileUploadHandler.tsx:14-18,91-94`. POST `/api/tasks/uploadUrl`, object-storage PUT, buffered POST `/api/tasks/n8nUpload`: `lib/storage/uploadViaApi.ts:95-121,125-140,159-178`. | **No** for web staged upload. Ticket route `pages/api/tasks/uploadUrl.ts:1-5`, session wrapper R4; buffered route session auth `pages/api/tasks/n8nUpload.ts:102-126`. Missing authorized upload ticket/grant and native file picker/delivery. MCP `/tasks/attachments` is not a binary upload service; existing hosted URLs do not produce file bytes or upload grants. |
-| R14 | C, Ctrl/Cmd+Shift+C full creation; new-task save chords; legacy Ctrl/Cmd+J writer | Full create `hooks/Homepage/useSections.ts:263-310`, task `app/detail/[...slug]/taskDetailEditingKeymap.ts:197-208`; new-task form `components/RTE/TiptapCreateTaskModal.tsx`. POST `/api/tasks/create`; GET/POST `/api/tasks/createGlobally`. | **No** for exact full form, defaults and ranking. Detailed route/field/auth trace: [creation-parity.md](creation-parity.md). Source `lib/api/task-writes/create.ts:17-55`, `lib/api/task-writes/create-global.ts:42,342-390`; session wrapper R4. CLI exception only selected endpoints, `lib/auth/desktopCliTokenUser.ts:7,53-77`, still HTPR-7699-dependent. Ctrl+J compose is a different flag variant. N/Shift+C explicitly skipped. |
+| R14 | C, Ctrl/Cmd+Shift+C full creation; new-task save chords; legacy Ctrl/Cmd+J writer | Full create `hooks/Homepage/useSections.ts:263-310`, task `app/detail/[...slug]/taskDetailEditingKeymap.ts:197-208`; new-task form `components/RTE/TiptapCreateTaskModal.tsx`. POST `/api/tasks/create`; GET/POST `/api/tasks/createGlobally`. | **Partial**: GET defaults and POST writer now accept flagged human CLI tokens. Exact full-form POST saves and ranking remain blocked. Detailed route/field/auth trace: [creation-parity.md](creation-parity.md). Source `lib/api/task-writes/create.ts:17-55`, `lib/api/task-writes/create-global.ts:42,342-390`; session wrapper R4. CLI exception only selected endpoints, `lib/auth/desktopCliTokenUser.ts:7,53-77`, still HTPR-7699-dependent. Ctrl+J compose is a different flag variant. N/Shift+C explicitly skipped. |
 | R15 | Ctrl/Cmd+Shift++ task linker; inbox Ctrl/Cmd+Shift+O | Inbox runtime `components/notifications/inboxSplit/index.tsx:640-642`; task runtime `app/detail/[...slug]/taskDetailEditingKeymap.ts:212-218`; linker `components/Modals/SubtaskLinkingModal/SubtaskLinking.tsx:46-57,95-109,122-135`. GET `/api/tasks/searchOrphans`, POST `/api/tasks/addParent`; constants `lib/constants/APIRouteConstants.ts:29-30`. | **No** for exact orphan catalog and empty-result create flow. Session routes `pages/api/tasks/searchOrphans.ts:1-5`, `pages/api/tasks/addParent.ts:1-5`; wrapper R4. **Yes** for MCP `parent_task_id` write (`lib/mcp/tasks/fields/types.ts:70`), but no orphan catalog/searchQuery counterpart, nor full create fallback R14. Native command palette is not the linker. |
 | R16 | U inbox unread | `components/notifications/inboxSplit/index.tsx:646-656`. GET `/api/notifications/markAsUnseen`; `lib/api/notification-writes/mark-unseen.ts:13-16,35-42,58-64,73-75`. | **No**. Session wrapper R4. Missing false/toggle seen write. MCP POST `/inbox/seen` only sets true: `app/api/mcp/inbox/seen/route.ts:79-85`. Existing seen-on-open is not U parity. |
 | R17 | Z / Ctrl/Cmd+Z global undo | `hooks/General/useUndo.tsx:194-220`, `utils/undoActions/helperFuncs.ts:21-68`. POST `/api/notifications/inbox-zero/undo`, `/api/notifications/(un)archiveBulk`, `/api/savedContent/toggleSaved`. | **No** for whole action-history contract. Session-only routes; saved route's CLI exception only comment rows (`pages/api/savedContent/toggleSaved.ts:17-20`). MCP `/inbox/unarchive` exists but cannot restore the entire heterogeneous web undo stack. Editor undo remains supported. |

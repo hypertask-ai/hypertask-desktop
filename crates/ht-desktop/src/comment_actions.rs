@@ -92,7 +92,7 @@ impl Desktop {
         self.comment_actions.saved_pending.retain(|key| {
             let receipt=format!("comment-saved-result:{key}");
             let Some(value)=self.db.kv_get(&receipt).ok().flatten().and_then(|s|serde_json::from_str::<Value>(&s).ok()) else{return true;};
-            if let Some(error)=value["error"].as_str() {self.error=Some(format!("Could not star/pin comment: {error}. Refresh before trying again."));}
+            if let Some(error)=value["error"].as_str() {self.error=Some(error.to_owned());}
             let _=self.db.kv_set(&receipt,"null");
             false
         });

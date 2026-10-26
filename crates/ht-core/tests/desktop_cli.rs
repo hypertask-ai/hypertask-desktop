@@ -28,6 +28,7 @@ struct Server {
     split: bool,
     refuse_second: bool,
     other_user: bool,
+    refusal: Option<&'static str>,
 }
 impl Default for Server {
     fn default() -> Self {
@@ -39,6 +40,7 @@ impl Default for Server {
             split: false,
             refuse_second: false,
             other_user: false,
+            refusal: None,
         }
     }
 }
@@ -51,6 +53,9 @@ impl Transport for Server {
             });
         }
         assert_eq!(path, defaults_request(7283).path);
+        if self.refusal == Some("defaults") {
+            return Ok(Response { status: 401, body: json!({"message":"Unauthorized"}) });
+        }
         Ok(Response {
             status: 200,
             body: json!({"sectionId":11,"section":"Todo","ranking":"a"}),
@@ -68,6 +73,13 @@ impl Transport for Server {
     ) -> Result<Response, TransportError> {
         assert_eq!(method, "POST");
         self.calls.push((path.into(), body.clone(), key.into()));
+        if path == "/api/ai/task-writer" && self.refusal.is_some() {
+            return Ok(if self.refusal == Some("plan") {
+                Response { status: 402, body: json!({"code":"PLAN_LIMIT_REACHED","error":"Plan limit reached"}) }
+            } else {
+                Response { status: 401, body: json!("event: error\ndata: {\"content\":\"Unauthorized\"}\n\nevent: done\ndata: {\"status\":\"error\"}\n\n") }
+            });
+        }
         match path {
             "/api/ai/task-writer" => Ok(Response {
                 status: if self.writer_failure { 500 } else { 200 },
@@ -104,6 +116,8 @@ impl Transport for Server {
                     status: self.saved_status,
                     body: if self.saved_status == 200 {
                         json!({"saved":{"id":"s","commentId":7,"type":body["type"],"userId":985}})
+                    } else if self.saved_status == 401 {
+                        json!({"message":"Unauthorized"})
                     } else {
                         json!({})
                     },
@@ -422,4 +436,48 @@ fn compose_and_saved_comment_queue_refuse_a_different_bearer_account() {
         assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Failed(id));
         assert!(server.calls.is_empty());
     }
+}
+
+#[test]
+fn cli_flag_off_and_plan_refusals_keep_server_errors_without_creating_tasks() {
+    for (refusal, expected) in [("defaults", "Unauthorized"), ("writer", "Unauthorized"), ("plan", "Plan limit reached")] {
+        let mut db = db();
+        let id = db.enqueue(Write::ComposeTask { project_id: 7283, text: "Keep this note".into(), time_zone: "UTC".into() }, 100).unwrap();
+        let key = db.mutations().unwrap()[0].client_id.clone();
+        let mut server = Server { refusal: Some(refusal), ..Default::default() };
+        assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Failed(id));
+        let result: Value = serde_json::from_str(&db.kv_get(&format!("compose-result:{key}")).unwrap().unwrap()).unwrap();
+        assert_eq!(result["error"], expected);
+        assert!(!server.calls.iter().any(|call| call.0 == "/tasks/create"));
+        assert!(db.task(9).unwrap().is_none());
+        assert_eq!(db.drain_once(&mut server, 1000).unwrap(), Drain::Empty);
+    }
+    for public in [false, true] {
+        let mut db = db();
+        let id = db.enqueue(Write::CommentAction { task_id: 60253, comment_id: 7, change: CommentWrite::Saved { public } }, 100).unwrap();
+        let key = db.mutations().unwrap()[0].client_id.clone();
+        let mut server = Server { saved_status: 401, ..Default::default() };
+        assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Failed(id));
+        let result: Value = serde_json::from_str(&db.kv_get(&format!("comment-saved-result:{key}")).unwrap().unwrap()).unwrap();
+        assert_eq!(result["error"], "Unauthorized");
+        assert_eq!(db.drain_once(&mut server, 1000).unwrap(), Drain::Empty);
+        assert_eq!(server.calls.len(), 1);
+        assert!(db.task_detail(60253).unwrap().unwrap().comments[0].extra.get("savedContent").is_none_or(|saved| saved.as_array().unwrap().is_empty()));
+    }
+}
+
+#[test]
+fn writer_body_matches_web_board_scope_without_copying_provider_secrets() {
+    let body = writer_request(&json!({
+        "id":7283,"teamId":42,"team":{"id":42,"byokApiKeys":[{"enabled":true,"provider":"claude","apiKey":"never-send-this"},{"enabled":false,"provider":"openai"}]},
+        "ai_custom_instructions":[{"customInstruction":"Board style","source_selected":"claude","model_selected":"model-from-board"}]
+    }), "é & note\nnext", "Europe/London").body;
+    assert_eq!(body, json!({
+        "projectId":7283,"teamId":42,"byokProviderFlags":[{"enabled":true,"provider":"claude"},{"enabled":false,"provider":"openai"}],
+        "PROMPT":"Write a task title and description from this note in the board's style.\n\n<p>é &amp; note<br>next</p>",
+        "userRetrievalTexts":["é & note\nnext"],"customInstructions":"Board style","sourceSelected":"claude","modelSelected":"model-from-board",
+        "aiMode":"AiTaskWriter","requestKind":"compose-task","timeZone":"Europe/London","images64":[],"taskDescription":"<p>é &amp; note<br>next</p>"
+    }));
+    assert_eq!(writer_request(&json!({"id":7283,"teamId":null}), "Note", "UTC").body["teamId"], -1);
+    assert!(!body.to_string().contains("never-send-this"));
 }

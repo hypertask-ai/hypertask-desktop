@@ -64,7 +64,7 @@ impl Desktop {
         self.mentions.dismissed = false;
         self.mentions.choice = 0;
         self.mentions.error = false;
-        let Some((_, project, range, query)) = next else {
+        let Some((_, project, _, query)) = next else {
             cx.notify();
             return;
         };
@@ -102,25 +102,7 @@ impl Desktop {
                 match receive.try_recv() {
                     Ok(result) => {
                         let _ = view.update(cx, |this, cx| {
-                            let valid = this.mentions.generation == generation
-                                && this.options.task == task
-                                && this.db.current_user_id() == user
-                                && this.cli_token().is_some()
-                                && input
-                                    .read(cx)
-                                    .mention_token()
-                                    .is_some_and(|(r, _)| r == range);
-                            if !valid {
-                                return;
-                            }
-                            this.mentions.loading = false;
-                            match result {
-                                Ok(rows) => this.mentions.rows = rows,
-                                Err(()) => this.mentions.error = true,
-                            }
-                            this.mentions.choice =
-                                this.mention_selectable().first().copied().unwrap_or(0);
-                            cx.notify();
+                            this.apply_mention_results(generation, task, user, result, cx);
                         });
                         break;
                     }
@@ -134,6 +116,37 @@ impl Desktop {
             }
         })
         .detach();
+        cx.notify();
+    }
+    fn apply_mention_results(
+        &mut self,
+        generation: u64,
+        task: i64,
+        user: Option<i64>,
+        result: Result<Vec<Value>, ()>,
+        cx: &mut Context<Self>,
+    ) {
+        let valid = self.mentions.generation == generation
+            && self.options.task == task
+            && self.db.current_user_id() == user
+            && self.cli_token().is_some()
+            && self.mentions.input.as_ref().is_some_and(|input| {
+                self.mentions.token.as_ref().is_some_and(|(id, project, range, query)| {
+                    input.entity_id() == *id
+                        && self.detail.as_ref().is_some_and(|d| d.task.project_id == *project)
+                        && input.read(cx).mention_token() == Some((range.clone(), query.clone()))
+                })
+            });
+        if !valid {
+            return;
+        }
+        self.mentions.loading = false;
+        self.mentions.rows.clear();
+        self.mentions.error = result.is_err();
+        if let Ok(rows) = result {
+            self.mentions.rows = rows;
+        }
+        self.mentions.choice = self.mention_selectable().first().copied().unwrap_or(0);
         cx.notify();
     }
     fn mention_selectable(&self) -> Vec<usize> {
@@ -268,7 +281,7 @@ impl Desktop {
         if self.mentions.loading {
             menu = menu.child(div().p(px(12.)).child("Loading mentions…"));
         } else if self.mentions.error {
-            menu = menu.child(div().p(px(12.)).child("Error loading results"));
+            menu = menu.child(div().p(px(12.)).child("No results found").layout_key(&self.layout, "comment.mentions.error", Some("No results found".into())));
         } else if self.mention_selectable().is_empty() {
             menu = menu.child(div().p(px(12.)).child("No results found"));
         } else {
@@ -467,4 +480,133 @@ mod tests {
         })
         .unwrap();
     }
+    #[gpui::test]
+    fn cli7699_native_mentions_apply_mocked_http_results_and_refusals(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use ht_core::desktop_cli::mentions_request;
+        use std::{io::{Read, Write}, net::TcpListener};
+        cx.update(crate::input::init);
+        for status in [200, 401] {
+            let (view, visual) = cx.add_window_view(desktop);
+            visual.simulate_keystrokes("ctrl-m");
+            visual.simulate_input("Before @QA");
+            let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+            let base = format!("http://{}/api/mcp", listener.local_addr().unwrap());
+            let server = std::thread::spawn(move || {
+                let (mut socket, _) = listener.accept().unwrap();
+                socket.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+                let mut request = vec![];
+                while !request.windows(4).any(|bytes| bytes == b"\r\n\r\n") {
+                    let mut buf = [0; 1024];
+                    let len = socket.read(&mut buf).unwrap();
+                    assert!(len > 0);
+                    request.extend_from_slice(&buf[..len]);
+                }
+                let request = String::from_utf8(request).unwrap();
+                assert!(request.starts_with("GET /api/tasks/searchByParam?param=QA&projectId=7283 HTTP/1.1"));
+                assert!(request.to_ascii_lowercase().contains("authorization: bearer test-human-token\r\n"));
+                assert!(!request.to_ascii_lowercase().contains("cookie:"));
+                let body = if status == 200 {
+                    json!([{"type":"peopleHeading","name":"People"},{"type":"name","id":985,"name":"QA"},{"type":"task","id":5,"name":"Linked task","project_id":7283,"index":5,"ticketNumber":"QA-5"}])
+                } else { json!({"message":"Unauthorized"}) }.to_string();
+                write!(socket, "HTTP/1.1 {status} Test\r\nContent-Type: application/json\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{body}", body.len()).unwrap();
+            });
+            let request = mentions_request(7283, "QA");
+            let result = ht_core::Http::with_base(&base, "test-human-token".into()).unwrap()
+                .json_request("GET", &request.path, None)
+                .and_then(|value| value.as_array().cloned().ok_or_else(|| anyhow::anyhow!("invalid mention response")))
+                .map_err(|_| ());
+            server.join().unwrap();
+            view.update_in(visual, |this, _, cx| {
+                this.shell.set_token(Some("test-human-token".into()));
+                let generation = this.mentions.generation;
+                this.apply_mention_results(generation.wrapping_sub(1), 1, Some(985), Ok(vec![]), cx);
+                this.apply_mention_results(generation, 1, Some(985), result, cx);
+                assert!(!this.mentions.loading);
+                assert_eq!(this.mentions.error, status != 200);
+            });
+            if status == 200 {
+                visual.simulate_keystrokes("down enter");
+            } else {
+                visual.simulate_keystrokes("enter escape");
+            }
+            view.read_with(visual, |this, cx| {
+                let html = this.comment_input.read(cx).html();
+                if status == 200 {
+                    assert!(html.contains("href=\"https://app.hypertask.ai/detail/project-7283/5\""), "{html}");
+                    assert!(!html.contains("@QA"));
+                } else {
+                    assert!(html.contains("Before @QA"), "{html}");
+                }
+                assert!(this.db.mutations().unwrap().is_empty());
+            });
+        }
+    }
+
+    #[gpui::test]
+    fn cli7699_native_star_pin_mocked_save_remove_and_flag_off_are_authoritative(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        struct Server(u16);
+        impl ht_core::Transport for Server {
+            fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                assert_eq!(path, "/user/context");
+                Ok(ht_core::http::Response { status: 200, body: json!({"success":true,"user":{"id":985}}) })
+            }
+            fn post(&mut self, path: &str, body: &Value, _: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+                assert_eq!(path, "/api/savedContent/toggleSaved");
+                assert_eq!(body, &json!({"taskId":1,"projectId":7283,"commentId":"7","type":body["type"]}));
+                Ok(ht_core::http::Response { status: self.0, body: match self.0 {
+                    200 => json!({"saved":{"id":"real-saved-id","commentId":7,"type":body["type"],"userId":985}}),
+                    201 => json!({}),
+                    _ => json!({"message":"Unauthorized"}),
+                } })
+            }
+        }
+        cx.update(crate::input::init);
+        for (shortcut, kind) in [("ctrl-shift-s", "Private"), ("ctrl-shift-p", "Public")] {
+            let (view, visual) = cx.add_window_view(desktop);
+            view.update_in(visual, |this, _, _| this.interaction.task_part = 1);
+            for status in [200, 201, 401] {
+                visual.simulate_keystrokes(shortcut);
+                view.update_in(visual, |this, _, cx| {
+                    let change = &this.db.mutations().unwrap()[0].payload_json["change"];
+                    assert_eq!(change["public"], kind == "Public");
+                    let result = this.db.drain_once(&mut Server(status), chrono::Utc::now().timestamp()+1).unwrap();
+                    assert!(if status == 401 { matches!(result, ht_core::Drain::Failed(_)) } else { matches!(result, ht_core::Drain::Applied(_)) });
+                    this.poll_saved_comments(cx);
+                    let comment = &this.db.task_detail(1).unwrap().unwrap().comments[0];
+                    let saved = comment.extra.get("savedContent").and_then(Value::as_array).cloned().unwrap_or_default();
+                    assert_eq!(saved.len(), usize::from(status == 200));
+                    if status == 200 { assert_eq!(saved[0]["type"], kind); }
+                    if status == 401 { assert_eq!(this.error.as_deref(), Some("Unauthorized")); }
+                });
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn cli7699_mention_http_refusal_paints_the_web_empty_result_without_inserting(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        use super::super::shell::tests::{measured, setup};
+        let (view, mut visual) = setup(cx);
+        view.update(&mut visual, |this, _, cx| { this.open_task(101, cx); }).unwrap();
+        visual.simulate_keystrokes("ctrl-m");
+        visual.simulate_input("@QA");
+        view.update(&mut visual, |this, _, cx| {
+            this.shell.set_token(Some("test-human-token".into()));
+            this.apply_mention_results(this.mentions.generation, 101, Some(1), Err(()), cx);
+        }).unwrap();
+        let error = measured(view, &mut visual, "comment.mentions.error");
+        assert_eq!(error["text"], "No results found");
+        assert!(error["w"].as_f64().unwrap() > 0.);
+        visual.simulate_keystrokes("enter");
+        view.read_with(&visual, |this, cx| {
+            assert_eq!(this.comment_input.read(cx).content.as_ref(), "@QA");
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+    }
+
 }
