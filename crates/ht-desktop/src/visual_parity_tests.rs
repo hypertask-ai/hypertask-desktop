@@ -192,4 +192,16 @@ fn task_graphite_description_selection_and_property_surfaces_follow_web(cx: &mut
         assert_eq!(properties["w"], 312.);
         view.read_with(&mut cx, |this, _| assert!(this.db.mutations().unwrap().is_empty())).unwrap();
     }
+    view.update(&mut cx, |this, _, cx| {
+        this.detail.as_mut().unwrap().task.extra["hasDescriptionDraft"] = json!(true);
+        cx.notify();
+    }).unwrap();
+    let description = measured(view, &mut cx, "task.description.container");
+    let draft = measured(view, &mut cx, "task.description.draft");
+    assert_eq!(draft["x"], description["x"]);
+    assert_eq!(draft["y"], description["y"]);
+    assert_eq!(draft["h"], description["h"]);
+    assert_eq!(draft["w"], 4.);
+    assert_eq!(draft["bg"], "#c2cfa5");
+
 }

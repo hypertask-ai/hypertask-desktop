@@ -1480,7 +1480,7 @@ impl Desktop {
                 .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
                     .child(div().id("task-description").relative().anchor_scroll(Some(self.description_anchor.clone()))
                         .when(d.task.extra.get("hasDescriptionDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child(
-                            div().absolute().left(px(0.)).top(px(0.)).bottom(px(0.)).w(px(4.)).bg(color(0xc2cfa5))
+                            div().absolute().left(px(if self.options.theme == ThemeName::Graphite { -4. } else { 0. })).top(px(0.)).bottom(px(0.)).w(px(4.)).bg(color(0xc2cfa5))
                                 .layout_key(&self.layout, "task.description.draft", None)))
                         .min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == 0 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .when(self.options.theme == ThemeName::Graphite, |d| d.border_0().border_l(px(4.)).pt(px(20.)).pb(px(4. + 8. + 12.)).px(px(16.)).rounded(px(4.)).border_color(if self.interaction.task_part == 0 { color(t.accent) } else { gpui::transparent_black() }))
