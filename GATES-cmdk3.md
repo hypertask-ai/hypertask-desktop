@@ -21,3 +21,11 @@ Written before implementation. Scope: palette on inbox, board, task and AI sideb
 ## Evidence
 
 Pending source audit and exact-head GitHub CI.
+
+## Source audit and first CI correction
+
+- Fresh TypeScript AST audit identifies 299 declarations, 297 fixed registry keys, and the runtime query handover. Dynamic Boards are separate. docs/command-center-parity.md records expressions, effective Task/Time slots, final visibility filters, dispatch and exact B/N contracts.
+- Existing Command/CommandAction and native operations remain the shape. New keys: Follow system, search query handover, cached-child removal. Plain Search now opens main's existing search screen. Five existing board-form commands gain loaded Inbox/Task contexts. No screen layout was edited.
+- CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40349200748 at 6e8295e36d4e81a8e24f301c0dbd8eef66d04e60 rejects E0624 on Linux, Windows, macOS and ARM64. navigate_search was shell-private. Widen only that existing entrypoint to crate::ui for palette dispatch. No local compiler/test execution.
+- Source review also preserves precise limits: cold child snapshots, full document-search engine, focused-writer flags, session-only Inbox Zero/unread/reminder routes, complete history/version fields. No falsely invented route blocker on nullable parent writes or CLI Compose.
+- Eight focused native tests now cover query handover across three surfaces, ranking placement, theme persistence, child selection/missing data, four-theme geometry/type/colors, five forms across three surfaces, missing catalog and foreign-column rejection. Existing transport/queue tests remain required.

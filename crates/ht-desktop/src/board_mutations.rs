@@ -38,6 +38,9 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         self.task_fields.summary_open = false;
+        let project_id = if self.screen == Screen::Task {
+            self.selected_task().and_then(|id| self.db.task(id).ok().flatten()).map_or(self.options.board, |task| task.project_id)
+        } else { self.options.board };
         if action == BoardAction::ArchiveBoard
             && !self
                 .db
@@ -45,7 +48,7 @@ impl Desktop {
                 .unwrap_or_default()
                 .iter()
                 .any(|project| {
-                    project["id"] == self.options.board
+                    project["id"] == project_id
                         && self
                             .db
                             .current_user_id()
@@ -63,7 +66,7 @@ impl Desktop {
         }
         self.board_forms.form = Some(Form {
             action,
-            project: self.options.board,
+            project: project_id,
             section,
             task,
             destination: None,

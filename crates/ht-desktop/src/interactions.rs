@@ -1658,8 +1658,8 @@ mod cmdk_parity_tests {
                     assert_eq!(keys("Get started"), ["createTaskWithAiWriter", "inviteBoard", "addColumn"]);
                 } else {
                     assert_eq!(keys("Inbox"), ["swipeThroughUnread"]);
-                    assert_eq!(keys("Board"), ["createTaskWithAiWriter", "sendFeedback", "inviteBoard", "manageMembers", "toggleRailExpanded"]);
-                    assert_eq!(keys("Get started"), ["createTaskWithAiWriter", "inviteBoard"]);
+                    assert_eq!(keys("Board"), ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"]);
+                    assert_eq!(keys("Get started"), ["createTaskWithAiWriter", "inviteBoard", "addColumn"]);
                 }
                 let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
                 groups.dedup();
@@ -1891,9 +1891,8 @@ mod cmdk_round3_tests {
                 assert_eq!(rows[0].keys, "");
             }).unwrap();
             cx.simulate_keystrokes("enter");
-            view.update(&mut cx, |this, window, cx| {
+            view.read_with(&mut cx, |this, _| {
                 assert!(this.interaction.modal.is_none());
-                let _ = (window, cx);
                 assert_eq!(this.search_query, query.trim());
                 assert_eq!(this.command_usage()["searchTasksHandover"]["frequency"], index + 1);
                 assert!(this.db.mutations().unwrap().is_empty());
@@ -2019,5 +2018,72 @@ mod cmdk_round3_tests {
             assert_eq!(measured(view, &mut cx, "command.search.icon")["w"], 13.);
             cx.simulate_keystrokes("escape");
         }
+    }
+}
+
+#[cfg(test)]
+mod cmdk_round3_board_tests {
+    use super::*;
+    use crate::ui::task_fields::tests::desktop;
+
+    #[gpui::test]
+    fn cmdk3_board_forms_work_from_inbox_board_and_task_without_changing_surface(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
+            for (label, variant, title, section) in [
+                ("Add board column", "AddColumn", Some("Review"), None),
+                ("Rename board column", "RenameColumn", Some("Backlog"), Some(10)),
+                ("Delete board column", "DeleteColumn", None, Some(10)),
+                ("Rename board", "RenameBoard", Some("New board name"), None),
+                ("Archive board", "ArchiveBoard", None, None),
+            ] {
+                let (view, cx) = cx.add_window_view(|window, cx| {
+                    let mut this = desktop(window, cx);
+                    this.db.apply_response(&serde_json::json!({"success":true,"projects":[
+                        {"id":15,"title":"Board","ownerId":42,"status":"Normal"},
+                        {"id":16,"title":"Other board","ownerId":7,"status":"Normal"}
+                    ]})).unwrap();
+                    this.screen = screen;
+                    if screen == Screen::Task { this.options.board = 16; }
+                    this.reload();
+                    this
+                });
+                cx.simulate_keystrokes("ctrl-k");
+                cx.simulate_input(label);
+                view.read_with(cx, |this, cx| assert_eq!(this.choices(cx)[0].name, label));
+                cx.simulate_keystrokes("enter");
+                if let Some(title) = title { cx.simulate_input(title); }
+                cx.simulate_keystrokes("enter");
+                view.read_with(cx, |this, _| {
+                    let rows = this.db.mutations().unwrap();
+                    assert_eq!(rows.len(), 1, "{screen:?} {label}");
+                    let change = &rows[0].payload_json["change"][variant];
+                    assert_eq!(change["project"], 15, "{screen:?} {label}");
+                    if let Some(section) = section { assert_eq!(change["section"], section); }
+                    if let Some(title) = title { assert_eq!(change["title"], title); }
+                    assert_eq!(this.screen, screen);
+                    assert_eq!(this.db.task(1).unwrap().unwrap().title, "Needle");
+                });
+            }
+        }
+    }
+
+    #[gpui::test]
+    fn cmdk3_board_forms_omit_missing_catalog_and_never_use_foreign_columns(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(desktop);
+        view.update_in(cx, |this, _, _| {
+            this.screen = Screen::Inbox;
+            this.options.board = 999;
+            for key in ["addColumn", "renameColumn", "deleteColumn", "renameBoard", "archiveBoards"] {
+                assert!(!this.command_rows().iter().any(|row| row.key == key), "{key}");
+            }
+            this.db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":999,"title":"Unloaded board"}]})).unwrap();
+            let rows = this.command_rows();
+            assert!(rows.iter().any(|row| row.key == "addColumn"));
+            assert!(rows.iter().any(|row| row.key == "renameBoard"));
+            for key in ["renameColumn", "deleteColumn"] { assert!(!rows.iter().any(|row| row.key == key)); }
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
     }
 }
