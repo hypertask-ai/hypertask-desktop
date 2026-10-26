@@ -7,7 +7,10 @@ Both its normal build and same-source retained-inbox-metadata control run withou
 trimming. Production projects inbox display metadata before Rust deserialization, then
 drops actor/identity JSON already represented by typed row fields. The full
 notification remains in SQLite and `inbox()`. Rows stream instead of retaining
-an intermediate complete JSON vector. The Windows segment heap was already
+an intermediate complete JSON vector. Ordinary releases also stop compiling
+unused GPUI performance history (a fixed 4 MiB journal plus histograms); the
+`input-benchmark` feature retains it for the frame-time gate. READY waits for
+successive native frame callbacks instead of retaining diagnostic histograms. The Windows segment heap was already
 enabled upstream; that hypothesis was rejected. The harness reads the actual PE
 manifest resource into `memory.json`; `mem5-proof.py` checks identical heap policy,
 lower working-set/private-commit medians at both capture points, identical

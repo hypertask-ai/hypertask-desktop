@@ -108,6 +108,7 @@ impl Options {
                     result.task = args.next().context("--task requires a task id")?.parse()?
                 }
                 "--bench-input" => {
+                    anyhow::ensure!(cfg!(feature = "input-benchmark"), "--bench-input requires --features input-benchmark");
                     result.bench_input =
                         args.next().context("--bench-input requires N")?.parse()?;
                     anyhow::ensure!(result.bench_input > 0, "--bench-input must be positive");
@@ -356,8 +357,6 @@ mod tests {
                 "/tmp/layout.json",
                 "--hold-after-ready",
                 "--print-memory",
-                "--bench-input",
-                "300",
             ]
             .map(str::to_owned),
         )
@@ -381,7 +380,13 @@ mod tests {
         assert_eq!(Options::parse(["--window-size", "1920x1009"].map(str::to_owned)).unwrap().window_size, (1920, 1009));
         assert!(opts.print_memory);
         assert!(!Options::parse([]).unwrap().print_memory);
-        assert_eq!(opts.bench_input, 300);
+        assert_eq!(opts.bench_input, 0);
+        let benchmark = Options::parse(["--bench-input", "300"].map(str::to_owned));
+        if cfg!(feature = "input-benchmark") {
+            assert_eq!(benchmark.unwrap().bench_input, 300);
+        } else {
+            assert!(benchmark.err().unwrap().to_string().contains("requires --features input-benchmark"));
+        }
         assert_eq!(opts.theme, ThemeName::Dia);
         for args in [
             vec!["--screen", "nope"],

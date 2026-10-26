@@ -88,3 +88,32 @@ counts, GPU/fonts/SQLite ownership, lower retained payload and inbox read alloca
 and lower Windows working-set/private-commit medians at both capture points.
 The regression explicitly preserves bool flags, actor precedence/multi-actor names,
 uncached titles, invitation fallback, splits, metadata and full stored photos.
+
+
+## Second receipt: real reduction, insufficient warm budget
+
+Run 40265726201 passed Linux/macOS/ARM64/workspace and the retained-metadata
+control. Demo cold WS before -> after: 61,657,088 -> 60,801,024 inbox;
+67,461,120 -> 66,371,584 board; 78,848,000 -> 77,926,400 task.
+Inbox net read ownership fell 2,260,424 -> 1,429,863 requested bytes on every
+screen. Warm WS remained 66,269,184 / 72,339,456 / 85,196,800 bytes; the frozen
+inbox warm limit correctly failed. No budget is changed.
+
+The next controlled owner is unconditional `gpui/profiler`. Its foreground
+journal allocates a fixed 4 MiB ring even without a diagnostic consumer;
+WindowProfiler also retains six histograms plus per-refresh clones. The maps'
+~4.55 MB common private allocation is consistent with these owners, not a
+stack-traced attribution. Ordinary release builds never consume them, except
+READY previously queried frame-duration histograms.
+
+Production now omits the profiler feature. `input-benchmark` opts into the same
+original profiler for the frame-time gate and a new CI command smoke. READY uses
+two successive native frame callbacks on both compared builds: GPUI drains a
+callback batch before draw/present, so the second batch follows presentation.
+The existing native Windows/Linux input and negative controls must still pass.
+No UI, draw path, bitmap, atlas, GPU format, or memory-measurement timing changes.
+The control retains both original inbox metadata and the profiler. Both sides
+now check out the exact head SHA, avoiding a head versus PR-merge BuildRevision
+mismatch in the stronger comparison contract. Require a >4 MB requested-Rust-heap
+reduction as well as lower commit/WS on every screen. No benchmark result is
+claimed from an uninstrumented executable; --bench-input explicitly rejects it.

@@ -8,11 +8,13 @@ use crate::{
     theme::{Theme, ThemeName, color},
 };
 use gpui::{
-    AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, KeyDownEvent, Keystroke,
-    ListAlignment, ListState, PlatformInput, ScrollAnchor, ScrollHandle, ScrollStrategy,
+    AnyElement, App, Context, Entity, FocusHandle, Focusable, FontWeight, KeyDownEvent,
+    ListAlignment, ListState, ScrollAnchor, ScrollHandle, ScrollStrategy,
     SharedString, UniformListScrollHandle, Window, div, list, point, prelude::*, px, rgba, svg,
     uniform_list,
 };
+#[cfg(feature = "input-benchmark")]
+use gpui::{Keystroke, PlatformInput};
 use ht_core::{BoardColumn, Db, InboxItem, TaskDetail, TaskView, Worker, Write};
 use std::{
     cell::RefCell,
@@ -1752,6 +1754,7 @@ impl Render for Desktop {
                     .zip(self.layout.clone())
                     .filter(|_| !self.options.background)
                     .map(|(path, capture)| (path, capture, self.screen, self.options.theme)),
+                false,
             );
         }
         if self.signin.phase != Phase::Ready {
@@ -1871,17 +1874,14 @@ fn ready_after_presentation(
     bench: usize,
     print_memory: bool,
     dump: Option<(PathBuf, Rc<RefCell<LayoutDump>>, Screen, ThemeName)>,
+    waited_for_frame: bool,
 ) {
     window.on_next_frame(move |window, cx| {
-        let presented = window
-            .frame_duration_snapshot()
-            .by_refresh_interval
-            .iter()
-            .any(|frames| {
-                frames.frames_on_time + frames.frames_late + frames.frames_unmeasured > 0
-            });
+        // GPUI drains callbacks before drawing/presenting. A callback queued by
+        // this callback runs on the following frame, after that presentation.
+        let presented = waited_for_frame;
         if !presented {
-            ready_after_presentation(window, exit, bench, print_memory, dump);
+            ready_after_presentation(window, exit, bench, print_memory, dump, true);
             return;
         }
         if let Some((path, capture, screen, theme)) = dump {
@@ -1904,12 +1904,15 @@ fn ready_after_presentation(
         let _ = std::io::stdout().flush();
         if exit {
             cx.quit();
-        } else if bench > 0 {
+        }
+        #[cfg(feature = "input-benchmark")]
+        if !exit && bench > 0 {
             bench_step(window, cx, bench, vec![]);
         }
     });
 }
 
+#[cfg(feature = "input-benchmark")]
 fn bench_step(window: &mut Window, cx: &mut App, total: usize, samples: Vec<f64>) {
     if samples.len() == total {
         let mut sorted = samples;
@@ -1944,6 +1947,7 @@ fn bench_step(window: &mut Window, cx: &mut App, total: usize, samples: Vec<f64>
     await_input_frame(window, previous, total, samples, 0);
 }
 
+#[cfg(feature = "input-benchmark")]
 fn await_input_frame(
     window: &Window,
     previous: gpui::profiler::InputLatencySnapshot,

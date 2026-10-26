@@ -55,8 +55,10 @@ for screen in ('inbox', 'board', 'task'):
         assert store_new == store_old, f'{screen}: SQLite/store ownership changed'
         app_new = load(current / f'{screen}-{run}-owners.app.json')
         app_old = load(control / f'{screen}-{run}-owners.app.json')
-        for key in app_old.keys() - {'RustLiveRequestedBytes', 'RustPeakRequestedBytes', 'DataReads', 'InboxJsonPayloadBytes'}:
+        for key in app_old.keys() - {'RustLiveRequestedBytes', 'RustPeakRequestedBytes', 'DataReads', 'InboxJsonPayloadBytes', 'InputBenchmarkProfiler'}:
             assert app_new[key] == app_old[key], f'{screen}: retained {key} changed'
+        assert app_new['InputBenchmarkProfiler'] is False and app_old['InputBenchmarkProfiler'] is True
+        assert app_old['RustLiveRequestedBytes'] - app_new['RustLiveRequestedBytes'] > 4_000_000
         assert app_new['InboxJsonPayloadBytes'] < app_old['InboxJsonPayloadBytes']
         assert app_new['DataReads']['InboxReadNetRequestedBytes'] < app_old['DataReads']['InboxReadNetRequestedBytes']
         print(f'MEM5_INBOX_OWNERS {screen} run={run}: {app_old["DataReads"]["InboxReadNetRequestedBytes"]} -> {app_new["DataReads"]["InboxReadNetRequestedBytes"]} requested bytes')

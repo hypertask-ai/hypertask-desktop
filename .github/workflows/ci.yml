@@ -55,6 +55,8 @@ jobs:
     timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Linux packages
         if: runner.os == 'Linux'
         run: |
@@ -233,6 +235,15 @@ jobs:
           name: windows-input
           path: evidence/windows-input/
           if-no-files-found: error
+      - name: Opt-in input benchmark smoke
+        if: runner.os == 'Linux'
+        run: |
+          cargo build --release -p ht-desktop --features input-benchmark
+          db_dir=$(mktemp -d)
+          target/release/ht-core-cli --db "$db_dir/local.db" import-fixtures fixtures/demo
+          set -o pipefail
+          xvfb-run -a -s '-screen 0 1440x900x24' target/release/ht-desktop --db "$db_dir/local.db" --offline --screen inbox --bench-input 4 | tee "$db_dir/benchmark.txt"
+          grep 'INPUT_TO_FRAME n=4 ' "$db_dir/benchmark.txt"
   windows-arm64:
     name: windows-arm64
     runs-on: windows-2025
@@ -250,7 +261,7 @@ jobs:
           path: target/aarch64-pc-windows-msvc/release/ht-desktop.exe
           retention-days: 14
   windows-memory-baselines:
-    name: memory-${{ github.head_ref == 'mem5' && 'retained-inbox-metadata' || github.head_ref == 'mem3' && 'heavy-full-task-reads' || github.head_ref == 'mem2' && 'eager-fonts-triple-buffer' || matrix.revision }}
+    name: memory-${{ github.head_ref == 'mem5' && 'retained-inbox-metadata-profiler' || github.head_ref == 'mem3' && 'heavy-full-task-reads' || github.head_ref == 'mem2' && 'eager-fonts-triple-buffer' || matrix.revision }}
     if: github.event_name == 'pull_request' && contains(fromJSON('["ram2","mem2","mem3","mem5"]'), github.head_ref)
     strategy:
       fail-fast: false
@@ -278,9 +289,9 @@ jobs:
       - name: Build identical code with full task reads
         if: github.head_ref == 'mem3'
         run: cargo build --release --no-default-features -p ht-desktop -p ht-core --features ht-desktop/lazy-theme-fonts,ht-core/bounded-sync-cache
-      - name: Build identical code retaining all inbox metadata
+      - name: Build identical code retaining inbox metadata and profiler
         if: github.head_ref == 'mem5'
-        run: cargo build --release --no-default-features -p ht-desktop -p ht-core --features ht-desktop/visible-board-columns,ht-desktop/lazy-theme-fonts,ht-core/bounded-sync-cache,ht-core/compact-task-reads
+        run: cargo build --release --no-default-features -p ht-desktop -p ht-core --features ht-desktop/visible-board-columns,ht-desktop/lazy-theme-fonts,ht-desktop/input-benchmark,ht-core/bounded-sync-cache,ht-core/compact-task-reads
       - name: Generate identical heavy account
         if: github.head_ref == 'mem3' || github.head_ref == 'mem5'
         run: python gates/heavy-fixture.py evidence/heavy-fixtures
