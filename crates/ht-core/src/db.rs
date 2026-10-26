@@ -419,7 +419,7 @@ impl Db {
                         Ok(self.task(id)?.map(|t| (t.title, t.ticket_number)))
                     }
                 }).transpose()?.flatten();
-                let title = task.as_ref().map(|t| t.0.clone()).unwrap_or_else(|| n.pointer("/task/title").or_else(|| n.get("message")).and_then(Value::as_str).unwrap_or("").to_owned());
+                let title = task.as_ref().map(|t| t.0.clone()).unwrap_or_else(|| n.pointer("/task/title").or_else(|| n.get("message").filter(|_| n["taskId"].is_null())).and_then(Value::as_str).unwrap_or("").to_owned());
                 let ticket_number = task.and_then(|t| t.1).or_else(|| n.pointer("/task/ticketNumber").and_then(Value::as_str).map(str::to_owned));
                 let id = integer(&n, "id")?;
                 let task_id = n["taskId"].as_i64();

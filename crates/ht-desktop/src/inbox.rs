@@ -473,7 +473,7 @@ impl Desktop {
         let show_actions = row == self.selected && self.interaction.bulk.is_empty();
         let kind = notification_content(&n.raw_json);
         let invitation = n.raw_json["type"] == "Invited";
-        let show_task = !invitation && n.raw_json["task"].is_object();
+        let show_task = !invitation && n.task_id.is_some();
         let metadata = if !show_task { String::new() } else { inbox_metadata(&n.raw_json["task"]) };
         let source = n.source.clone().unwrap_or_default();
         let source = match n.raw_json["unreadCount"]
@@ -753,16 +753,16 @@ mod tests {
         cx: &mut gpui::TestAppContext,
     ) {
         cx.update(crate::input::init);
-        for priority in [String::new(), "High".to_owned(), "High priority ".repeat(30)] {
-            let has_metadata = !priority.is_empty();
+        for label in [String::new(), "High".to_owned(), "Long real tag ".repeat(30)] {
+            let has_metadata = !label.is_empty();
             let view: WindowHandle<Desktop> = cx.add_window(|window, cx| {
                 let mut v = desktop(window, cx);
                 seed(&mut v);
                 v.db.apply_response(&json!({"success":true,"user_notifications":[{
                     "id":102,"taskId":2,"projectId":15,"status":"Normal","seen":true,
                     "createdAt":"2026-01-02T00:00:00Z","type":"TaskReminder",
-                    "task":{"title":"Other","ticketNumber":"HT-2","priority":
-                        if has_metadata { json!({"Priority_Value":priority}) } else { json!(null) }
+                    "task":{"title":"Other","ticketNumber":"HT-2","taskLabels":
+                        if has_metadata { json!([{"label":{"value":label}}]) } else { json!([]) }
                     }
                 }]})).unwrap();
                 v.reload();
@@ -780,10 +780,10 @@ mod tests {
                 let kind_right = kind["x"].as_f64().unwrap() + kind["w"].as_f64().unwrap();
                 let content_right = if has_metadata {
                     let meta = meta.expect("nonempty metadata must be rendered");
-                    assert_eq!(meta["text"], priority.chars().take(40).collect::<String>());
+                    assert_eq!(meta["text"], label.chars().take(40).collect::<String>());
                     assert!(meta["w"].as_f64().unwrap() <= 180.);
                     assert_eq!(meta["h"], kind["h"], "metadata must stay on the inherited single line");
-                    if priority.len() > 40 {
+                    if label.len() > 40 {
                         assert_eq!(meta["w"], 180.);
                     }
                     assert!((meta["x"].as_f64().unwrap() - kind_right - 8.).abs() <= 1.);

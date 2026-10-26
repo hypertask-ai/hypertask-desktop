@@ -159,6 +159,12 @@ Unavailable cursor-team-kit steps use serial source/diff review per host rules.
 - Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40398285917
   rejected a tooltip call after `layout_key` erased the element type. Moved
   capture to the chain end, keeping the real tooltip and click handler.
+- Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40399206180
+  passed all six new regressions and ARM64, but rejected three older native
+  contracts. Restored task-backed inbox titles without using message text as a
+  task title. Replaced the old count-only assignee fixture with actual people,
+  and used long real tag values rather than impossible long priority names.
+  All original geometry/overflow assertions remain unchanged.
 - Exact-head CI jobs, named-test output and the strict receipt are recorded at
   https://github.com/hypertask-ai/hypertask-desktop/pull/57 before completion.
   No VPS builds, tests, lints, app launches, test copies, laptop commands or
