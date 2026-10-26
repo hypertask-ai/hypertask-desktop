@@ -36,3 +36,17 @@ Native CI fixtures use the production Linux platform text system through `TestAp
 ## Imported cascade rules
 
 `src/styles/globals.scss:10` imports `src/styles/tailwind-entry.css:7-10`. Bootstrap is the earlier layer, so its important utilities win over Tailwind's normal utilities (also independently established by the round-10 rail capture). Resolve `pt-4`, `py-4`, `px-4`, `gap-4` as 24px, not Tailwind's 16px; `mb-3` as 16px, not 12px; bare `rounded` as 6px, not 4px. Arbitrary radii such as `rounded-[2px]` and `!rounded-lg` remain 2px and 8px. This affects header top padding/gap, welcome vertical padding/chips, message bubbles, and shortcut search/content/heading. These imported rules override the token-only shorthand in the table above. The projection incorporates them before accepting the baseline.
+
+
+## Resize-gutter coverage correction
+
+The original projection omitted the in-flow desktop resize control. The source
+requires a nonshrinking `w-1` (4px) sibling before the inner panel:
+`src/components/AI_CHAT/AI_Chat_Sidebar.tsx:251-256` and
+`src/components/AI_CHAT/AiChatSidebarResizeHandle.tsx:69-90`. The projection's
+`resize-gutter` class reserves exactly this width. The historical no-gutter
+projection still checks all original negative-control counts unchanged. The
+current projection then measures the source gutter and strictly compares every
+current native record. `resize-before.json` retains four real main records per
+AI state; each must fail the new strict box comparison. No frozen live capture,
+old record, tolerance, or original rejection assertion changes.

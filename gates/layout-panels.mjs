@@ -10,6 +10,7 @@ const font = readFileSync('crates/ht-desktop/assets/fonts/IBMPlexSans-400.ttf');
 const medium = readFileSync('crates/ht-desktop/assets/fonts/IBMPlexSans-500.ttf');
 const rows = JSON.parse(readFileSync('gates/fixtures/layout-panels/shortcuts.json', 'utf8'));
 const before = JSON.parse(readFileSync('gates/fixtures/layout-panels/before.json', 'utf8'));
+const resizeBefore = JSON.parse(readFileSync('gates/fixtures/layout-panels/resize-before.json', 'utf8'));
 const prompts = ['What should I work on next?', 'Summarize the last 3 days', "What's unassigned?", "What's blocking release?"];
 const key = (name, tag, content, attrs = '') => `<${tag} data-key="${name}" ${attrs}>${content}</${tag}>`;
 const svg = size => `<svg width="${size}" height="${size}"></svg>`;
@@ -52,20 +53,33 @@ try {
     await page.setContent(source.replace('<body></body>', `<body>${html(state)}</body>`));
     await page.addStyleTag({ content: `@font-face { font-family:WebPlex;src:url(data:font/ttf;base64,${font.toString('base64')});font-weight:400; } @font-face { font-family:WebPlex;src:url(data:font/ttf;base64,${medium.toString('base64')});font-weight:500; }` });
     await page.evaluate(async () => { await document.fonts.load('400 16px WebPlex'); await document.fonts.load('500 14px WebPlex'); await document.fonts.ready; });
-    const web = await page.evaluate(() => [...document.querySelectorAll('[data-key]')].map(element => {
+    const { web, historical } = await page.evaluate(() => {
+      const collect = () => [...document.querySelectorAll('[data-key]')].map(element => {
       const rect = element.getBoundingClientRect(); const s = getComputedStyle(element);
       const hex = color => {
         if (color === 'rgba(0, 0, 0, 0)') return null;
         const rgb = color.match(/\d+/g); return '#' + rgb.slice(0, 3).map(n => Number(n).toString(16).padStart(2, '0')).join('');
       };
       return { key: element.dataset.key, x: rect.x, y: rect.y, w: rect.width, h: rect.height, color: hex(s.color), bg: hex(s.backgroundColor), fontSize: parseFloat(s.fontSize), fontWeight: Number(s.fontWeight), lineHeight: parseFloat(s.lineHeight), radius: parseFloat(s.borderTopLeftRadius), borderColor: parseFloat(s.borderLeftWidth) ? hex(s.borderLeftColor) : null, text: element.textContent.slice(0, 40) };
-    }));
+      });
+      const historical = collect();
+      document.querySelector('.inner')?.classList.add('resize-gutter');
+      return { historical, web: collect() };
+    });
     const native = JSON.parse(readFileSync(`${out}/panels-native/${state}.json`, 'utf8'));
     assert.equal(native.width, 1440); assert.equal(native.height, 900);
     writeFileSync(`${out}/panels-web/${state}.json`, JSON.stringify({ width: 1440, height: 900, elements: web }, null, 2) + '\n');
-    const rejected = compare(web, before.states[state].elements);
+    const rejected = compare(historical, before.states[state].elements);
     assert.equal(rejected.length, before.states[state].differences, `Old native defect receipt drifted: ${state}`);
     console.log(`LAYOUT_PANELS_OLD_NATIVE_REJECTED ${state} ${rejected.length} revision=${before.revision}`);
+    if (state !== 'shortcuts') {
+      const prior = resizeBefore.states[state].elements;
+      const keys = new Set(prior.map(element => element.key));
+      const gutterDefects = compare(web.filter(element => keys.has(element.key)), prior);
+      assert.equal(gutterDefects.length, 4, 'Main without the web resize gutter must be rejected');
+      assert.ok(gutterDefects.every(record => record.property === 'box'));
+      console.log(`LAYOUT_RESIZE_GUTTER_OLD_NATIVE_REJECTED ${state} ${gutterDefects.length} revision=${resizeBefore.revision}`);
+    }
     const differences = compare(web, native.elements);
     report[state] = { measured: web.length, differences: differences.length, records: differences };
     const missing = compare(web, native.elements.filter(element => element.key !== web[0].key));

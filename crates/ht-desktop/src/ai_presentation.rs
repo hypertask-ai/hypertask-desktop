@@ -169,7 +169,15 @@ impl AiSidebar {
             .w(px(4.))
             .h_full()
             .cursor(gpui::CursorStyle::ResizeLeftRight)
-            .hover(|d| d.bg(color(self.colors.accent)))
+            .group("ai-resize")
+            .child(div().absolute().left(px(1.5)).top_0().w(px(1.)).h_full()
+                .bg(gpui::rgba(0xffffff26))
+                .group_hover("ai-resize", |d| d.bg(color(0x2383e2)))
+                .layout_key(&self.capture, "ai.resize.track", None))
+            .child(div().absolute().left(px(-0.5)).top(gpui::relative(0.5)).mt(px(-12.))
+                .w(px(5.)).h(px(24.)).border_1().border_color(gpui::rgba(0xffffff33)).rounded_full()
+                .group_hover("ai-resize", |d| d.bg(color(0x666666)))
+                .layout_key(&self.capture, "ai.resize.grip", None))
             .on_mouse_down(
                 MouseButton::Left,
                 cx.listener(|this, e: &MouseDownEvent, _, cx| {
