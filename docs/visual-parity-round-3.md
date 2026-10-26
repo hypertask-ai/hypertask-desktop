@@ -169,3 +169,7 @@ no-summary 16px Bootstrap bottom spacing remains unchanged.
 
 All acceptance constraints remain unchanged. Final exact-head receipt follows
 in the PR evidence comment, avoiding a self-referential documentation commit.
+
+## Permanent CI
+
+The round 2 before-and-after proof ran once, in CI run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40358575746, and gates/visual3-proof.py is kept as its record. Permanent CI keeps only the current capture of the visual3 fixture. The proof pinned expiring round 2 artifacts and asserted an unchanged AI sidebar, which would block later sidebar work.
