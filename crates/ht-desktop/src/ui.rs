@@ -1175,6 +1175,9 @@ impl Desktop {
             .child(
                 div()
                     .id("card")
+                    .relative()
+                    .group("kanban-selection")
+                    .child(self.card_controls(id, column, row, cx))
                     .bg(color(if active { t.active } else { t.card }))
                     .rounded(px(if self.options.theme == ThemeName::Dia {
                         10.
@@ -1228,6 +1231,8 @@ impl Desktop {
                         ]
                     })
                     .p(px(8.))
+                    .when(!self.interaction.bulk.is_empty(), |d| d.pl(px(28.)))
+                    .group_hover("kanban-selection", |d| d.pl(px(28.)))
                     .flex()
                     .flex_col()
                     .gap(px(6.))
@@ -1285,7 +1290,7 @@ impl Desktop {
                                     ),
                             )
                             .child(div().flex_1())
-                            .child(self.card_controls(id, column, row, cx))
+                            .child(self.card_command(id, column, row, cx))
                             .when(self.inbox.iter().any(|n| n.task_id == Some(id)), |d| {
                                 d.child(
                                     div()
