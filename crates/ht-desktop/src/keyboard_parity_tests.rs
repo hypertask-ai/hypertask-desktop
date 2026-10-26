@@ -727,3 +727,60 @@ fn cmdk_round2_remove_parent_uses_nullable_parent_field_and_hides_after_unlink(c
     cx.simulate_input("Remove as sub-task");
     view.read_with(cx, |this, cx| assert!(!this.choices(cx).iter().any(|row| row.name == "Remove as sub-task")));
 }
+
+#[gpui::test]
+fn cmdk_round2_branch_comment_starts_clean_chat_with_attributed_quote(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    view.update_in(cx, |this, _, _| {
+        this.db.apply_comments(1, &serde_json::json!({"success":true,"comments":[
+            {"id":7,"taskId":1,"text":"<p>Quoted é🙂</p>","creatorId":42,"creator":{"id":42,"displayName":"Alex"},"createdAt":"2026-01-01T00:00:00Z"}
+        ]})).unwrap();
+        this.reload();
+        this.interaction.task_part = 1;
+    });
+    cx.simulate_keystrokes("ctrl-q");
+    cx.simulate_input("Old draft must stay behind");
+    view.update_in(cx, |this, window, cx| window.focus(&this.focus, cx));
+    cx.simulate_keystrokes("ctrl-k");
+    cx.simulate_input("Branch in new chat");
+    view.read_with(cx, |this, cx| assert_eq!(this.choices(cx).first().unwrap().name, "Branch in new chat"));
+    cx.simulate_keystrokes("enter");
+    cx.simulate_keystrokes("ctrl-a ctrl-c");
+    cx.update(|_, cx| {
+        let text = cx.read_from_clipboard().unwrap().text().unwrap();
+        assert!(text.contains("Alex said"));
+        assert!(text.contains("Quoted é🙂"));
+        assert!(!text.contains("Old draft"));
+    });
+    view.read_with(cx, |this, _| assert!(this.db.mutations().unwrap().is_empty()));
+}
+
+#[gpui::test]
+fn cmdk_round2_summary_commands_reach_real_sender_and_preserve_offline_refusal(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    view.update_in(cx, |this, _, _| {
+        this.db.apply_comments(1, &serde_json::json!({"success":true,"comments":[
+            {"id":7,"taskId":1,"text":"<p>Quoted é🙂</p>","creatorId":42,"creator":{"id":42,"displayName":"Alex"},"createdAt":"2026-01-01T00:00:00Z"}
+        ]})).unwrap();
+        this.reload();
+        this.interaction.task_part = 1;
+    });
+    for (query, expected) in [
+        ("Summarize comment", "Summarize this comment concisely."),
+        ("Summarize ticket", "Summarize this ticket, its description and the key points from the comments, concisely."),
+    ] {
+        view.update_in(cx, |this, window, cx| window.focus(&this.focus, cx));
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input(query);
+        view.read_with(cx, |this, cx| assert_eq!(this.choices(cx).first().unwrap().name, query));
+        cx.simulate_keystrokes("enter ctrl-a ctrl-c");
+        cx.update(|_, cx| {
+            let text = cx.read_from_clipboard().unwrap().text().unwrap();
+            assert!(text.contains(expected), "{text}");
+            assert_eq!(text.contains("Quoted é🙂"), query == "Summarize comment");
+        });
+        view.read_with(cx, |this, _| assert!(this.db.mutations().unwrap().is_empty()));
+    }
+}

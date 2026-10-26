@@ -145,6 +145,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
 // Context producers append rows; order the complete list, not just the base registry.
 pub fn order(rows: &mut [Command], screen: Screen) {
     let task = ["acceptTask", "declineTask", "assignUser", "blockedByPerson", "assignToMe", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "starTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "removeParenttask", "renameTask", "showInInbox", "deleteTask"];
+    let ai = ["aiChatInterface", "pinAiChatOpen", "fullScreenAiChat", "branchInNewChat", "toggleAIChatView"];
     let board = ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"];
     rows.sort_by_key(|row| {
         let group = match row.group {
@@ -164,7 +165,7 @@ pub fn order(rows: &mut [Command], screen: Screen) {
             "Help" => 12,
             _ => 13,
         };
-        let keys: &[&str] = match row.group { "Task" if screen == Screen::Task => &task, "Board" => &board, _ => &[] };
+        let keys: &[&str] = match row.group { "Task" if screen == Screen::Task => &task, "Board" => &board, "AI" => &ai, _ => &[] };
         (group, keys.iter().position(|key| *key == row.key).unwrap_or(keys.len()))
     });
 }

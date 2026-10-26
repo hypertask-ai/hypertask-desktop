@@ -31,3 +31,11 @@ Pending source audit and GitHub CI.
 - Seven viable native actions selected. Existing CommandAction/Action and durable board/task queues reused. Added only desired inbox card action and nullable parent field to those queues.
 - CI f66b77e403926060885fd064d0ef4a78271cda75: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40279865752. Compile rejection on all three native platforms: E0433, missing Status import in the new test. This is compilation evidence, not behavioral red proof. Import corrected in follow-up.
 - Required source limitation: no full native UI claim for child picker, history feed, selected-content AI branch, description-history preview, or arbitrary-task reminders. The audit distinguishes exact missing fields from native implementation gaps. No false API blockers.
+
+## Second source pass
+
+- Selected-comment branch is not API-blocked. Web creates a new chat and inserts an attributed quote (`app/detail/[...slug]/useTaskDetailCommandActions.tsx:97-120`). Reuse native new-chat and quote operations, including both web Comment/AI labels.
+- Summaries are normal chat sends, not the cached-summary expansion action. Exact prompts and busy guards are in `hooks/MultiPages/AIChat/useCommentToAiChat.ts:93-129`. Reuse the existing sender with current task context; add native input and actual HTTP-request assertions against a synthetic refusal server. No live model answer claimed.
+- This raises viable command keys from seven to ten. The audit preserves remaining complete-child-picker, writer-editor, feed/version and server-contract gaps, rather than calling every MCP primitive equivalent.
+
+- CI 8e60339f053f9f4424d92b77dc390f4a396beec1: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40281044840. All desktop targets reject serde_json::Map::pointer (E0599). Replaced with typed Map::get then Value::get. No local compiler or test executed.

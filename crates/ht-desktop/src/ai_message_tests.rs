@@ -614,3 +614,30 @@ fn graphite_sidebar_source_measurements(cx: &mut gpui::TestAppContext) {
         }
     }
 }
+
+#[gpui::test]
+fn cmdk_summary_transport_keeps_web_prompt_quote_and_current_task_context(cx: &mut gpui::TestAppContext) {
+    for quote in [None, Some("<span data-type=\"mention\" data-id=\"42\">Alex</span> said <blockquote><p>Quoted é🙂</p></blockquote><p></p>".to_string())] {
+        let (base, server) = refusal_server();
+        let view = cx.add_window(|window, cx| {
+            let mut db = Db::memory().unwrap();
+            db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Task","status":"Normal"})).unwrap();
+            let focus = cx.focus_handle();
+            let mut sidebar = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
+            sidebar.client = Some(Client::with_base(&base, "synthetic-token".into()).unwrap());
+            sidebar.set_scope(Scope::load(&db, Screen::Task, 15, Some(1), 0), cx);
+            sidebar
+        });
+        let prompt = if quote.is_some() { "Summarize this comment concisely." } else { "Summarize this ticket, its description and the key points from the comments, concisely." };
+        view.update(cx, |sidebar, window, cx| sidebar.command_prompt(prompt, quote.clone(), window, cx)).unwrap();
+        let (headers, body) = server.join().unwrap();
+        assert!(headers.starts_with("POST /api/ai/chat/stream "));
+        assert!(headers.to_lowercase().contains("authorization: bearer synthetic-token"));
+        assert_eq!(body["default_context"]["task_id"], 1);
+        assert_eq!(body["default_context"]["project_id"], 15);
+        let message = body["message"].as_str().unwrap();
+        assert!(message.contains(prompt));
+        if let Some(quote) = quote { assert!(message.contains(&quote), "{message}"); }
+        else { assert_eq!(message, prompt); }
+    }
+}
