@@ -374,7 +374,7 @@ mod tests {
                     "id":1,"projectId":15,"sectionId":10,"title":"Needle",
                     "ticketNumber":"HT-1","status":"Normal",
                     "priority":"High","dueDate":"2026-10-26T12:00:00Z",
-                    "hasBoardDraft":true,"labels":[{"name":"Bug"}]
+                    "hasBoardDraft":true,"labels":[{"id":"bug","name":"Bug"}]
                 })).unwrap();
                 this.reload();
                 cx.notify();
