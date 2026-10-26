@@ -26,6 +26,7 @@ assert a['SuggestionSeed'] == b['SuggestionSeed'] == 7381
 heap_tag = '{http://schemas.microsoft.com/SMI/2020/WindowsSettings}heapType'
 assert ET.fromstring(a['ExecutableManifest']).find('.//' + heap_tag).text == 'SegmentHeap'
 assert a['ExecutableManifest'] == b['ExecutableManifest'], 'Heap policy must not change'
+arena_reduced = False
 for screen in ('inbox', 'board', 'task'):
     new = [r for r in a['Samples'] if r['Screen'] == screen]
     old = [r for r in b['Samples'] if r['Screen'] == screen]
@@ -65,6 +66,7 @@ for screen in ('inbox', 'board', 'task'):
         for key in app_old.keys() - {'RustLiveRequestedBytes', 'RustPeakRequestedBytes', 'DataReads', 'ShapedLineBytes', 'ElementArenaCapacityBytes'}:
             assert app_new[key] == app_old[key], f'{screen}: retained {key} changed'
         assert app_new['ElementArenaCapacityBytes'] <= app_old['ElementArenaCapacityBytes']
+        arena_reduced |= app_new['ElementArenaCapacityBytes'] < app_old['ElementArenaCapacityBytes']
         print(f'MEM6_ARENA {screen} run={run}: {app_old["ElementArenaCapacityBytes"]} -> {app_new["ElementArenaCapacityBytes"]} bytes')
         reduction(app_new['ShapedLineBytes'], app_old['ShapedLineBytes'])
         reduction(app_new['RustLiveRequestedBytes'], app_old['RustLiveRequestedBytes'])
@@ -74,9 +76,14 @@ for screen in ('inbox', 'board', 'task'):
         assert before.size == after.size
         assert ImageChops.difference(before.convert('RGB'), after.convert('RGB')).getbbox() is None, f'{screen}: warm pixels changed'
     print(f'MEM6_WARM_VISUAL_IDENTICAL {screen}')
+    layout = load(current / f'{screen}-3.json')
+    print(f'MEM6_LAYOUT_COUNTS {screen}: elements={len(layout["elements"])} missing={len(layout["missing"])}')
     for label, folder in [('before', control), ('after', current)]:
         regions = load(folder / f'{screen}-warm-inspection.json')['Regions']
         totals = {kind: sum(r['ResidentBytes'] for r in regions if r['Type'] == kind)
                   for kind in ('Private', 'Image', 'Mapped')}
         print(f'MEM6_RESIDENT {screen} {label}: {json.dumps(totals, sort_keys=True)}')
+if not (current / 'heavy-manifest.json').exists():
+    assert arena_reduced, 'The demo must release actual unused arena capacity'
+    print('MEM6_UNUSED_ARENA_CAPACITY_RELEASED')
 print('MEM6_ALLOCATION_REDUCTION_PROVEN')

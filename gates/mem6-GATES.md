@@ -97,3 +97,30 @@ unchanged. No memory/visual check is weakened. Retire the temporary allocation
 size histogram after attribution, avoiding an extra atomic operation on every
 production allocation. Original live/peak requested-byte counters remain exactly
 as before; both compared builds use the same measurement implementation.
+
+## Accepted final allocation policy
+
+CI 40291404083, source 92bbea228a5af9d15c26bcea7311a77c9ea712d4, passed all nine
+jobs, both updater jobs included. All three added regressions passed on Linux,
+Windows and macOS. Exact RGB/layout comparisons passed on both workloads and
+all three screens; all six warm RGB checks passed. Fixtures, GPU resources,
+registered fonts and stored-data ownership remain unchanged. Budget negative
+controls remain enforced. The original Linux native archive proof and Windows
+interaction/missing-effect controls passed.
+
+The arena unit releases 1,048,576 requested bytes on the demo board (all three
+samples). Heavy arena capacity does not change, so no heavy working-set saving
+is attributed to this third unit. The oracle now requires an actual demo arena
+capacity reduction, not merely a non-increase. Current heavy WS medians are
+67.289/83.464/83.624 MB cold and 65.327/85.262/82.604 MB warm. This is a real
+reduction, not proof of <80 MB on every heavy screen or <100 MB on the laptop.
+The remaining observed driver/atlas/swapchain costs cannot safely be removed by
+these allocation-only changes without a new independently proven hypothesis.
+
+Full cold/warm before/after values are recorded in docs/memory-ci.md. The final
+proof-only commit must still pass the strengthened arena oracle and every
+exact-head required job; final PR/CI identity belongs in the PR receipt, not a
+claim based on this earlier successful run. Shared-user gh watch exhausted its
+quota; fresh reads/watch used the same configured GitHub installation-token
+minter without storing/printing credentials. The supplied receipt script's
+read-only validation remains mandatory on the final completed head.
