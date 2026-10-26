@@ -162,3 +162,16 @@ Both CI sides receive seed 7381 as a fixture input, recorded in memory.json and
 required by the oracle. It selects the original four questions, not fewer/shorter
 content to meet a limit. This controls randomness, not memory policy; production
 and CI both keep stable choices. No screenshot masking/tolerance or budget change.
+
+
+## Fifth receipt: identical pixels; cache equality was over-constrained
+
+Run 40273407776 passed every build/native/budget job, all six cold exact RGB/layout
+comparisons, all demo warm RGB comparisons, and all demo allocation reductions.
+The heavy comparison failed at the equality of actual SQLite cache allocations:
+control used 266,216 bytes (task 266,208), candidate 266,184, on every sample.
+Persisted data, -256 setting, schema and statement bytes were exactly unchanged.
+The candidate legitimately used 24–32 fewer cache bytes; this is not a regression.
+The oracle now explicitly requires 0 < candidate cache <= control cache, with
+all other store fields still exactly equal and all frozen memory limits unchanged.
+The remainder of heavy warm/owner acceptance must still run; no green claim yet.

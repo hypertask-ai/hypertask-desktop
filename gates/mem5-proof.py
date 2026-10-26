@@ -57,6 +57,10 @@ for screen in ('inbox', 'board', 'task'):
         store_old = load(control / f'{screen}-{run}-owners.store.json')
         assert store_new.pop('CompactInboxMetadata') is True
         assert store_old.pop('CompactInboxMetadata') is False
+        cache_new = store_new.pop('SqliteCacheBytes')
+        cache_old = store_old.pop('SqliteCacheBytes')
+        assert 0 < cache_new <= cache_old, f'{screen}: SQLite cache grew'
+        print(f'MEM5_SQLITE_CACHE {screen} run={run}: {cache_old} -> {cache_new} bytes')
         assert store_new == store_old, f'{screen}: SQLite/store ownership changed'
         app_new = load(current / f'{screen}-{run}-owners.app.json')
         app_old = load(control / f'{screen}-{run}-owners.app.json')
