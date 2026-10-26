@@ -409,3 +409,13 @@ The regression uses real Ctrl+K input and observes assignment counts, retained
 people/agents, the durable payload, repeated-action idempotence and picker state.
 Negative input cases cover unknown identity, absent membership and archives.
 Exact-head CI evidence belongs in `docs/gaps-evidence.md`.
+
+## Round 2 re-audit
+
+The historical Blocked/Unsupported rows above are not current verdicts.
+See [cmdk-round2.md](cmdk-round2.md) for every unresolved declaration,
+exact handlers/routes, bearer comparisons, native gaps, and exclusions.
+Ten command keys now reuse native operations: person blocker,
+star/unstar, timer toggle, accept, decline, move to inbox, parent unlink,
+comment branch, ticket summary, and comment summary.
+Unknown cached state stays omitted; creation remains HTPR-7699.

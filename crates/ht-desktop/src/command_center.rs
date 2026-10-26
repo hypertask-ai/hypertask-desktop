@@ -35,6 +35,9 @@ pub enum ShellCommand {
     ToggleAiMode,
     CopyBranchName,
     AssignToMe,
+    MoveToInbox,
+    AcceptTask,
+    RemoveParent,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -141,25 +144,29 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
 
 // Context producers append rows; order the complete list, not just the base registry.
 pub fn order(rows: &mut [Command], screen: Screen) {
-    let task = ["assignUser", "assignToMe", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "renameTask", "deleteTask"];
+    let comment = rows.iter().any(|row| row.group == "Comment");
+    let task = ["acceptTask", "declineTask", "assignUser", "blockedByPerson", "assignToMe", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "starTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "removeParenttask", "renameTask", "showInInbox", "deleteTask"];
+    let ai = ["aiChatInterface", "pinAiChatOpen", "fullScreenAiChat", "branchInNewChat", "toggleAIChatView"];
     let board = ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"];
     rows.sort_by_key(|row| {
         let group = match row.group {
             "Selected tasks" | "Comment" => 0,
             "Task" if screen == Screen::Task => 1,
             "Board" if screen == Screen::Board => 1,
-            "Navigate" => 2,
-            "Inbox" => 3,
-            "App shell surfaces" => 4,
-            "Task" => 5,
-            "Board" => 6,
-            "AI" => 7,
-            "Appearance" => 8,
-            "Settings" => 9,
-            "Help" => 10,
-            _ => 11,
+            "Time" if screen == Screen::Task && !comment => 2,
+            "Navigate" => 3,
+            "Inbox" => 4,
+            "Time" => 5,
+            "App shell surfaces" => 6,
+            "Task" => 7,
+            "Board" => 8,
+            "AI" => 9,
+            "Appearance" => 10,
+            "Settings" => 11,
+            "Help" => 12,
+            _ => 13,
         };
-        let keys: &[&str] = match row.group { "Task" if screen == Screen::Task => &task, "Board" => &board, _ => &[] };
+        let keys: &[&str] = match row.group { "Task" if screen == Screen::Task => &task, "Board" => &board, "AI" => &ai, _ => &[] };
         (group, keys.iter().position(|key| *key == row.key).unwrap_or(keys.len()))
     });
 }

@@ -168,7 +168,7 @@ impl Desktop {
                     )));
                 }
             }
-            Action::CopyCommentToAiChat => {
+            Action::CopyCommentToAiChat | Action::BranchComment | Action::SummarizeComment => {
                 let Some(creator) = comment.extra.get("creator") else {
                     return;
                 };
@@ -182,7 +182,12 @@ impl Desktop {
                 );
                 if let Some(sidebar) = &self.ai_sidebar {
                     sidebar.update(cx, |sidebar, cx| {
-                        sidebar.insert_comment_quote(quote, window, cx)
+                        if action == Action::SummarizeComment {
+                            sidebar.command_prompt("Summarize this comment concisely.", Some(quote), window, cx);
+                        } else {
+                            if action == Action::BranchComment { sidebar.new_chat(window, cx); }
+                            sidebar.insert_comment_quote(quote, window, cx);
+                        }
                     });
                     self.shell.ai_open = true;
                 }
@@ -402,11 +407,13 @@ impl Desktop {
         if let Some(comment) = self.focused_comment() {
             let own =
                 comment.creator_id.is_some() && comment.creator_id == self.db.current_user_id();
+            let ai_quote = self.ai_sidebar.is_some() && comment.extra.get("creator").is_some_and(|creator| creator["id"].as_i64().is_some());
             let saved = comment.extra.get("savedContent").and_then(Value::as_array);
             let pinned = saved.is_some_and(|rows| rows.iter().any(|row| row["type"] == "Public"));
             let starred = saved.is_some_and(|rows| rows.iter().any(|row| row["type"] == "Private"));
             for (key, name, keys, action, enabled) in [
                 ("editcomment", "Edit comment", "", Action::EditComment, own),
+                ("summarizeComment", "Summarize comment", "", Action::SummarizeComment, ai_quote),
                 ("fastLikeComment", "Fast like", "", Action::LikeComment, true),
                 ("replyToComment", "Reply to comment", "ENTER", Action::ReplyComment, true),
                 ("reactToComment", "React to comment", "R", Action::ReactComment, true),
@@ -429,11 +436,18 @@ impl Desktop {
                 ),
                 ("starComment", if starred { "Unstar comment" } else { "Star comment" }, "CTRL SHIFT S", Action::StarComment, true),
                 (
+                    "branchInNewChat",
+                    "Branch in new chat",
+                    "",
+                    Action::BranchComment,
+                    ai_quote,
+                ),
+                (
                     "copyCommentToAiChat",
                     "Copy comment to AI chat",
                     "",
                     Action::CopyCommentToAiChat,
-                    self.ai_sidebar.is_some() && comment.extra.get("creator").is_some_and(|creator| creator["id"].as_i64().is_some()),
+                    ai_quote,
                 ),
                 (
                     "deletemessage",
@@ -454,6 +468,9 @@ impl Desktop {
                     });
                 }
             }
+        }
+        if commands.iter().any(|row| row.key == "branchInNewChat") {
+            rows.push(Command { key: "branchInNewChat".into(), name: "Ask AI about this".into(), group: "AI", keys: String::new(), keywords: "branch new ai chat comment context ask discuss conversation", action: CommandAction::Shortcut(Action::BranchComment) });
         }
         commands.push(Command {
             key: "toggleAllComments".into(),

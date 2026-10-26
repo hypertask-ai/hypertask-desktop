@@ -257,13 +257,19 @@ impl Desktop {
                     }
                 }
             }
+            SummarizeTask => {
+                if let Some(sidebar) = &self.ai_sidebar {
+                    sidebar.update(cx, |sidebar, cx| sidebar.command_prompt("Summarize this ticket, its description and the key points from the comments, concisely.", None, window, cx));
+                    self.shell.ai_open = true;
+                }
+            }
             ExpandSummary => {
                 if self.detail.as_ref().is_some_and(|d| !full_task_summary(&d.task.extra).is_empty()) {
                     self.task_fields.summary_open = !self.task_fields.summary_open;
                 }
             }
             PinAiChat | FullscreenAiChat => self.ai_command(action, cx),
-            StarComment | PinComment | CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
+            StarComment | PinComment | CopyCommentContent | CopyCommentLink | CopyCommentToAiChat | BranchComment | SummarizeComment | ReplyComment | EditComment | DeleteComment | ReactComment | LikeComment
             | ExpandComment | ExpandComments => self.run_comment_action(action, window, cx),
             Commands => self.show_modal(Modal::Commands, window, cx),
             Inbox | Board => {
@@ -818,6 +824,33 @@ impl Desktop {
         {
             rows.push(command_center::Command { key: "assignToMe".into(), name: "Assign to me".into(), group: "Task", keys: String::new(), keywords: "assign me self take claim mine my task i'll do it", action: CommandAction::Shell(command_center::ShellCommand::AssignToMe) });
         }
+        if context == Screen::Task && self.interaction.bulk.is_empty()
+            && self.db.current_user_id().is_some()
+            && let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten())
+        {
+            rows.push(command_center::Command { key: "showInInbox".into(), name: "Move task to inbox".into(), group: "Task", keys: String::new(), keywords: "inbox activity move notifications", action: CommandAction::Shell(command_center::ShellCommand::MoveToInbox) });
+            rows.push(command_center::Command { key: "blockedByPerson".into(), name: "Blocked by person…".into(), group: "Task", keys: "SHIFT B".into(), keywords: "blocked waiting blocker block person stuck", action: CommandAction::Shortcut(Action::BlockedBy) });
+            if task.status == Status::Normal {
+                rows.push(command_center::Command { key: "acceptTask".into(), name: "Accept task".into(), group: "Task", keys: String::new(), keywords: "accept task triage approve backlog ready next column intake", action: CommandAction::Shell(command_center::ShellCommand::AcceptTask) });
+                rows.push(command_center::Command { key: "declineTask".into(), name: "Decline task".into(), group: "Task", keys: String::new(), keywords: "decline task triage reject dismiss archive intake", action: CommandAction::Shortcut(Action::Archive) });
+            }
+            if let Some(saved) = task.extra.get("savedContent").and_then(serde_json::Value::as_array) {
+                rows.push(command_center::Command { key: "starTask".into(), name: if saved.is_empty() { "Star task" } else { "Unstar task" }.into(), group: "Task", keys: "ALT S".into(), keywords: "star favorite bookmark", action: CommandAction::Shortcut(Action::StarTask) });
+            }
+            if task.extra.get("parentTaskId").and_then(serde_json::Value::as_i64).is_some_and(|id| id > 0) {
+                rows.push(command_center::Command { key: "removeParenttask".into(), name: "Remove as sub-task".into(), group: "Task", keys: String::new(), keywords: "remove parent unlink", action: CommandAction::Shell(command_center::ShellCommand::RemoveParent) });
+            }
+            if self.screen == Screen::Task && self.ai_sidebar.is_some() {
+                rows.push(command_center::Command { key: "summarizeTicket".into(), name: "Summarize ticket".into(), group: "Task", keys: String::new(), keywords: "summarize summary tldr task ticket concise recap", action: CommandAction::Shortcut(Action::SummarizeTask) });
+            }
+            let tracking = task.extra.get("project").and_then(|project| project.get("timeTrackingEnabled")).and_then(serde_json::Value::as_bool)
+                .or_else(|| self.db.projects().ok()?.into_iter().find(|project| project["id"] == task.project_id)?["timeTrackingEnabled"].as_bool())
+                .or_else(|| self.db.kv_get(&format!("timer-state:{}", task.id)).ok().flatten()
+                    .and_then(|state| serde_json::from_str::<serde_json::Value>(&state).ok())?["timer_enabled"].as_bool());
+            if tracking == Some(true) {
+                rows.push(command_center::Command { key: "toggleTimeTracking".into(), name: "Start or stop timer".into(), group: "Time", keys: "W".into(), keywords: "start stop toggle time tracking timer work log", action: CommandAction::Shortcut(Action::ToggleTimer) });
+            }
+        }
         command_center::order(&mut rows, context);
         let context_groups = if rows.first().is_some_and(|row| row.group == "Comment") { 2 } else { 1 };
         let mut groups = 0;
@@ -1338,7 +1371,7 @@ impl Desktop {
                         this.run_choice(window, cx);
                     }))
                     .child(div().flex_1().flex().items_center().child(choice.name.clone())
-                        .when(modal == Modal::Commands && matches!(filtered[i].key.as_str(), "copyCommentToAiChat" | "assignToMe" | "cliInstall"), |d| d.child(
+                        .when(modal == Modal::Commands && (matches!(filtered[i].key.as_str(), "summarizeTicket" | "summarizeComment" | "copyCommentToAiChat" | "assignToMe" | "cliInstall") || (filtered[i].key == "branchInNewChat" && filtered[i].group == "Comment")), |d| d.child(
                             div().ml(px(8.)).px(px(5.)).py(px(2.)).rounded(px(2.))
                                 .bg(color(0x4455bb)).text_color(color(0xffffff)).text_size(px(11.))
                                 .font_weight(FontWeight::MEDIUM).line_height(px(11.)).child("New")
@@ -1499,7 +1532,10 @@ mod cmdk_parity_tests {
             let task: Vec<_> = rows.iter().filter(|row| row.group == "Task")
                 .map(|row| (row.key.as_str(), row.name.as_str(), row.keys.as_str())).collect();
             assert_eq!(task, vec![
+                ("acceptTask", "Accept task", ""),
+                ("declineTask", "Decline task", ""),
                 ("assignUser", "Assign task", "A"),
+                ("blockedByPerson", "Blocked by person…", "SHIFT B"),
                 ("setDueDate", "Set due date", "D"),
                 ("priorityModal", "Set priority", "P"),
                 ("labelmodal", "Set tags", "T"),
@@ -1514,7 +1550,9 @@ mod cmdk_parity_tests {
                 ("copyBranchName", "Copy branch name", ""),
                 ("toggleAllComments", "Expand / collapse all comments", "SHIFT O"),
                 ("renameTask", "Rename task", ""),
+                ("showInInbox", "Move task to inbox", ""),
                 ("deleteTask", "Delete task", "SHIFT 3"),
+                ("summarizeTicket", "Summarize ticket", ""),
             ]);
         }).unwrap();
     }
@@ -1565,26 +1603,31 @@ mod cmdk_parity_tests {
                 {"id":7,"text":"One","creatorId":42,"creator":{"id":42},"createdAt":"2026-01-01T00:00:00Z"},
                 {"id":8,"text":"Two","creatorId":43,"creator":{"id":43},"createdAt":"2026-01-02T00:00:00Z"}
             ]})).unwrap();
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","project":{"id":15,"timeTrackingEnabled":true}})).unwrap();
             this.reload();
+            let task_rows = this.command_rows();
+            assert!(task_rows.iter().position(|row| row.group == "Time").unwrap() < task_rows.iter().position(|row| row.group == "Navigate").unwrap());
             for (part, own) in [(1, true), (2, false)] {
                 this.interaction.task_part = part;
                 let rows = this.command_rows();
                 let comments = rows.iter().filter(|row| row.group == "Comment")
                     .map(|row| (row.key.as_str(), row.name.as_str(), row.keys.as_str())).collect::<Vec<_>>();
                 let mut expected = vec![
+                    ("summarizeComment", "Summarize comment", ""),
                     ("fastLikeComment", "Fast like", ""),
                     ("replyToComment", "Reply to comment", "ENTER"),
                     ("reactToComment", "React to comment", "R"),
                     ("pinComment", "Pin comment", "CTRL SHIFT P"),
                     ("copyCommentContent", "Copy comment content", ""),
                     ("starComment", "Star comment", "CTRL SHIFT S"),
+                    ("branchInNewChat", "Branch in new chat", ""),
                     ("copyCommentToAiChat", "Copy comment to AI chat", ""),
                 ];
                 if own { expected.insert(0, ("editcomment", "Edit comment", "")); expected.push(("deletemessage", "Delete comment", "")); }
                 assert_eq!(comments, expected);
                 let mut groups = rows.iter().map(|row| row.group).collect::<Vec<_>>();
                 groups.dedup();
-                assert_eq!(groups, ["Comment", "Task", "Navigate", "Inbox", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]);
+                assert_eq!(groups, ["Comment", "Task", "Navigate", "Inbox", "Time", "App shell surfaces", "Board", "AI", "Appearance", "Settings", "Help"]);
             }
         }).unwrap();
     }

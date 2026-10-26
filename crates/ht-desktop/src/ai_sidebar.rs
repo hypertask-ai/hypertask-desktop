@@ -474,6 +474,19 @@ impl AiSidebar {
         window.focus(&self.input.focus_handle(cx), cx);
     }
 
+    pub(crate) fn command_prompt(&mut self, prompt: &str, quote: Option<String>, window: &mut Window, cx: &mut Context<Self>) {
+        if self.active.is_some() || self.chat_pending.is_some() { return; }
+        self.draft_quotes.clear();
+        self.input.update(cx, |input, cx| input.reset(window, cx));
+        if let Some(quote) = quote { self.insert_comment_quote(quote, window, cx); }
+        let text = format!("{}{prompt}", self.input.read(cx).content);
+        self.input.update(cx, |input, cx| input.set_content(text.clone(), cx));
+        self.include_context = true;
+        self.set_open(true, cx);
+        window.focus(&self.input.focus_handle(cx), cx);
+        self.send(text, window, cx);
+    }
+
     fn prompt_body(&self, text: &str) -> String {
         let mut message = text.to_owned();
         if !self.draft_quotes.is_empty() {
