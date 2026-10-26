@@ -216,6 +216,16 @@ impl Desktop {
             return true;
         }
         if self.shell.destination == Destination::Search {
+            if key.key == "enter" && !ctrl && !m.shift && !m.alt && self.search_load.is_none() {
+                let query = self.shell.search_input.read(cx).content.to_string();
+                if !query.trim().is_empty() {
+                    let mut tasks = self.searched_tasks(&query, None);
+                    if let Some(board) = self.shell.search_board { tasks.sort_by_key(|task| task.project_id != board); }
+                    if let Some(task) = tasks.first() { self.open_task(task.id, cx); }
+                }
+                cx.stop_propagation();
+                return true;
+            }
             if key.key == "escape" {
                 self.shell.destination = Destination::Workspace;
                 window.focus(&self.focus, cx);
