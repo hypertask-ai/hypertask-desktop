@@ -91,7 +91,7 @@ impl Db {
             Write::Board { change } => {
                 change.request()?;
                 let user = db.current_user_id().context("sync your account before changing a board")?;
-                if let crate::BoardWrite::StarTask { task, project, .. } | crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
+                if let crate::BoardWrite::MoveToInbox { task, project } | crate::BoardWrite::StarTask { task, project, .. } | crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
                     ensure!(db.task(*task)?.is_some_and(|task| task.project_id == *project), "task is not cached in this board");
                 }
                 if let crate::BoardWrite::AssignToMe { user: target, task } = change {

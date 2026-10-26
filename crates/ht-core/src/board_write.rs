@@ -5,6 +5,7 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BoardWrite {
+    MoveToInbox { task: i64, project: i64 },
     WaitingOn { task: i64, user: Option<i64> },
     ToggleTimer { task: i64 },
     StarTask { task: i64, project: i64, active: bool },
@@ -70,6 +71,11 @@ impl BoardWrite {
             Self::ToggleTimer { task } => {
                 positive(*task)?;
                 ("POST", "/time/status".into(), json!({"task":task.to_string()}))
+            }
+            Self::MoveToInbox { task, project } => {
+                positive(*task)?;
+                positive(*project)?;
+                ("POST", "/tasks/card-actions".into(), json!({"task_id":task,"project_id":project,"action":"inbox","active":true}))
             }
             Self::StarTask { task, project, active } => {
                 positive(*task)?;
@@ -204,6 +210,10 @@ impl BoardWrite {
             Self::ToggleTimer { task } => {
                 ensure!(body["timer_running"].is_boolean() || body["timer_disabled"] == true, "missing timer acknowledgement");
                 db.kv_set(&format!("timer-state:{task}"), &body.to_string())?;
+            }
+            Self::MoveToInbox { .. } => {
+                ensure!(body["action"] == "inbox" && body["active"] == true, "missing move to inbox acknowledgement");
+                db.request_refetch("inbox", 0)?;
             }
             Self::StarTask { task, active, .. } => {
                 ensure!(body["action"] == "star" && body["active"] == *active, "missing task star acknowledgement");

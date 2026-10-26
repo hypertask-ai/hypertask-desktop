@@ -24,3 +24,10 @@ Repo pstack skills read. Unbundled cursor-team-kit unavailable; use serial sourc
 ## Evidence
 
 Pending source audit and GitHub CI.
+
+## Audit and first CI findings
+
+- Historical inventory: 151 unresolved declarations, 145 unique keys. Full row ledger and route/field distinctions: docs/cmdk-round2.md.
+- Seven viable native actions selected. Existing CommandAction/Action and durable board/task queues reused. Added only desired inbox card action and nullable parent field to those queues.
+- CI f66b77e403926060885fd064d0ef4a78271cda75: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40279865752. Compile rejection on all three native platforms: E0433, missing Status import in the new test. This is compilation evidence, not behavioral red proof. Import corrected in follow-up.
+- Required source limitation: no full native UI claim for child picker, history feed, selected-content AI branch, description-history preview, or arbitrary-task reminders. The audit distinguishes exact missing fields from native implementation gaps. No false API blockers.

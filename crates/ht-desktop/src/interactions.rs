@@ -818,6 +818,30 @@ impl Desktop {
         {
             rows.push(command_center::Command { key: "assignToMe".into(), name: "Assign to me".into(), group: "Task", keys: String::new(), keywords: "assign me self take claim mine my task i'll do it", action: CommandAction::Shell(command_center::ShellCommand::AssignToMe) });
         }
+        if context == Screen::Task && self.interaction.bulk.is_empty()
+            && self.db.current_user_id().is_some()
+            && let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten())
+        {
+            rows.push(command_center::Command { key: "showInInbox".into(), name: "Move task to inbox".into(), group: "Task", keys: String::new(), keywords: "inbox activity move notifications", action: CommandAction::Shell(command_center::ShellCommand::MoveToInbox) });
+            rows.push(command_center::Command { key: "blockedByPerson".into(), name: "Blocked by person…".into(), group: "Task", keys: "SHIFT B".into(), keywords: "blocked waiting blocker block person stuck", action: CommandAction::Shortcut(Action::BlockedBy) });
+            if task.status == Status::Normal {
+                rows.push(command_center::Command { key: "acceptTask".into(), name: "Accept task".into(), group: "Task", keys: String::new(), keywords: "accept task triage approve backlog ready next column intake", action: CommandAction::Shell(command_center::ShellCommand::AcceptTask) });
+                rows.push(command_center::Command { key: "declineTask".into(), name: "Decline task".into(), group: "Task", keys: String::new(), keywords: "decline task triage reject dismiss archive intake", action: CommandAction::Shortcut(Action::Archive) });
+            }
+            if let Some(saved) = task.extra.get("savedContent").and_then(serde_json::Value::as_array) {
+                rows.push(command_center::Command { key: "starTask".into(), name: if saved.is_empty() { "Star task" } else { "Unstar task" }.into(), group: "Task", keys: "ALT S".into(), keywords: "star favorite bookmark", action: CommandAction::Shortcut(Action::StarTask) });
+            }
+            if task.extra.get("parentTaskId").and_then(serde_json::Value::as_i64).is_some_and(|id| id > 0) {
+                rows.push(command_center::Command { key: "removeParenttask".into(), name: "Remove as sub-task".into(), group: "Task", keys: String::new(), keywords: "remove parent unlink", action: CommandAction::Shell(command_center::ShellCommand::RemoveParent) });
+            }
+            let tracking = task.extra.pointer("/project/timeTrackingEnabled").and_then(serde_json::Value::as_bool)
+                .or_else(|| self.db.projects().ok()?.into_iter().find(|project| project["id"] == task.project_id)?["timeTrackingEnabled"].as_bool())
+                .or_else(|| self.db.kv_get(&format!("timer-state:{}", task.id)).ok().flatten()
+                    .and_then(|state| serde_json::from_str::<serde_json::Value>(&state).ok())?["timer_enabled"].as_bool());
+            if tracking == Some(true) {
+                rows.push(command_center::Command { key: "toggleTimeTracking".into(), name: "Start or stop timer".into(), group: "Time", keys: "W".into(), keywords: "start stop toggle time tracking timer work log", action: CommandAction::Shortcut(Action::ToggleTimer) });
+            }
+        }
         command_center::order(&mut rows, context);
         let context_groups = if rows.first().is_some_and(|row| row.group == "Comment") { 2 } else { 1 };
         let mut groups = 0;
@@ -1499,7 +1523,10 @@ mod cmdk_parity_tests {
             let task: Vec<_> = rows.iter().filter(|row| row.group == "Task")
                 .map(|row| (row.key.as_str(), row.name.as_str(), row.keys.as_str())).collect();
             assert_eq!(task, vec![
+                ("acceptTask", "Accept task", ""),
+                ("declineTask", "Decline task", ""),
                 ("assignUser", "Assign task", "A"),
+                ("blockedByPerson", "Blocked by person…", "SHIFT B"),
                 ("setDueDate", "Set due date", "D"),
                 ("priorityModal", "Set priority", "P"),
                 ("labelmodal", "Set tags", "T"),
@@ -1514,6 +1541,7 @@ mod cmdk_parity_tests {
                 ("copyBranchName", "Copy branch name", ""),
                 ("toggleAllComments", "Expand / collapse all comments", "SHIFT O"),
                 ("renameTask", "Rename task", ""),
+                ("showInInbox", "Move task to inbox", ""),
                 ("deleteTask", "Delete task", "SHIFT 3"),
             ]);
         }).unwrap();

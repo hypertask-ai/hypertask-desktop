@@ -1,5 +1,6 @@
 use super::*;
 use crate::command_center::ShellCommand;
+use ht_core::{TaskPatch, generated::Status};
 
 impl Desktop {
     pub(in crate::ui) fn run_shell_command(
@@ -9,6 +10,33 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::RemoveParent => {
+                if let Some(task) = self.selected_task() {
+                    self.enqueue(Write::TaskPatch { task_id: task, patch: TaskPatch::Parent(None) }, cx);
+                }
+            }
+            ShellCommand::AcceptTask => {
+                let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return; };
+                if task.status != Status::Normal { return; }
+                let sections = self.db.sections(task.project_id).unwrap_or_default();
+                let intake = |section: &serde_json::Value| section["section_title"].as_str().unwrap_or("")
+                    .to_ascii_lowercase().split(|c: char| !c.is_ascii_alphanumeric())
+                    .any(|word| matches!(word, "triage" | "inbox" | "intake"));
+                let destination = sections.iter().position(|section| section["id"].as_i64() == task.section_id)
+                    .and_then(|index| sections[index + 1..].iter().find(|section| !intake(&sections[index]) || !intake(section)))
+                    .and_then(|section| section["id"].as_i64());
+                if let Some(section) = destination {
+                    self.enqueue(Write::Board { change: ht_core::BoardWrite::MoveTask { task: task.id, project: task.project_id, section } }, cx);
+                } else {
+                    self.error = Some("No later column is available for this task".into());
+                    cx.notify();
+                }
+            }
+            ShellCommand::MoveToInbox => {
+                if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
+                    self.enqueue(Write::Board { change: ht_core::BoardWrite::MoveToInbox { task: task.id, project: task.project_id } }, cx);
+                }
+            }
             ShellCommand::AssignToMe => {
                 let Some(user) = self.db.current_user_id() else { return; };
                 let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return; };

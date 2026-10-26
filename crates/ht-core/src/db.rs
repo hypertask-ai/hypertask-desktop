@@ -205,6 +205,9 @@ impl Db {
         if task.get("sectionId").is_none() && task.get("section").is_some() {
             task["sectionId"] = Value::Null;
         }
+        if let Some(parent) = task.get("parent_id").cloned() {
+            task["parentTaskId"] = parent;
+        }
         if let Some(count) = task.get("commentCount").cloned() {
             task["totalComments"] = count;
         } else if let Some(count) = task.get("totalComments").cloned() {
@@ -293,6 +296,10 @@ impl Db {
             .map(serde_json::from_value)
             .collect::<std::result::Result<_, _>>()?;
         Ok(Some(TaskDetail { task, comments }))
+    }
+
+    pub fn sections(&self, project_id: i64) -> Result<Vec<Value>> {
+        self.json_rows("SELECT raw_json FROM Section WHERE projectId=? AND deleted=0 ORDER BY ranking IS NULL,ranking,id", [project_id])
     }
 
     pub fn board(&self, project_id: i64) -> Result<Vec<BoardColumn>> {
