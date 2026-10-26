@@ -207,3 +207,39 @@ fn editor_pointer_formatting_preserves_shell_editing_on_all_three_surfaces(
         view.read_with(cx, |this, _| assert!(this.editing == Editing::None));
     }
 }
+
+#[gpui::test]
+fn task_web_comment_header_type_and_command_geometry(cx: &mut gpui::TestAppContext) {
+    use crate::ui::shell::tests::draw;
+    use gpui::{VisualTestContext, WindowHandle};
+    cx.update(crate::input::init);
+    let view: WindowHandle<Desktop> = cx.add_window(|window, cx| {
+        let mut view = desktop(window, cx);
+        view.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+        view.ready_scheduled = true;
+        view
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    draw(view, &mut cx);
+    view.read_with(&mut cx, |this, _| {
+        let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+        let element = |key: &str| elements.iter().find(|e| e["key"] == key).unwrap();
+        let author = element("task.comment.0.author");
+        let timestamp = element("task.comment.0.timestamp");
+        let options = element("task.comment.0.options");
+        let command = element("task.header.command");
+        let actions = element("task.header.actions");
+        let title = element("task.title");
+        assert_eq!(author["fontSize"], 14.);
+        assert_eq!(author["lineHeight"], 21.);
+        assert_eq!(timestamp["fontSize"], 12.);
+        assert_eq!(timestamp["lineHeight"], 18.);
+        assert_eq!(options["w"], 16.);
+        assert_eq!(options["h"], 14.);
+        assert_eq!(timestamp["x"].as_f64().unwrap() - options["x"].as_f64().unwrap() - options["w"].as_f64().unwrap(), 8.);
+        assert_eq!(command["w"], 16.);
+        assert_eq!(command["h"], 16.);
+        assert_eq!(actions["y"].as_f64().unwrap() - title["y"].as_f64().unwrap(), 9.75);
+        assert!(this.db.mutations().unwrap().is_empty());
+    }).unwrap();
+}
