@@ -153,6 +153,7 @@ fn synced_fidelity_refresh_removes_markers_and_keeps_web_summary_presence(
     for summary in [
         Some(serde_json::json!({"content":"#","updated_at":"2026-10-20T13:00:00Z"})),
         Some(Value::Null),
+        Some(serde_json::json!({"content":"#","updated_at":"2026-10-20T13:00:00Z"})),
         None,
     ] {
         let present = summary.as_ref().is_some_and(|s| !s.is_null());

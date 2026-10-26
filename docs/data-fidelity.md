@@ -40,19 +40,23 @@ Acceptance checks, written before implementation:
 Self-review stays serial; this change is one coupled sync/render contract.
 Owned paths are this ledger, `crates/ht-core/src/sync.rs`, its existing sync
 regressions, and native fidelity/render/shortcut files. Existing creator,
-summary and draft implementations are retained, not replaced.
+summary and draft implementations are retained, not replaced. The red-before run was
+not executed: this host forbids tests, and full hosted CI is the verification
+surface. The new regressions were committed before the production fix.
 
 ## Implemented
 
 - **Saved task AI summary:** consume the `ai_summary.content` / `updated_at`
   detail field shipped by hypertask PR #1996. A null or missing full-detail
   summary clears old saved content; partial writes and list deltas preserve it.
-  No generation request or cookie endpoint is used. The field is server-flagged
+  Presence follows stored content, not the shortened teaser; even a nonempty
+  heading with an empty teaser remains expandable. No generation request or
+  cookie endpoint is used. The field is server-flagged
   for user bearer tokens; disabled flags, agent tokens and management tokens do
   not expose it. The task hides an absent summary.
 - **Creator:** `/api/mcp/tasks?project_id=…` omits `createdBy`, while
   `?task_id=…` returns it. Board sync hydrates missing creators in batches of
-  100, also repairing existing list-only caches. Detail refresh still refetches
+  100, also repairing existing list-only and creator-only caches. Detail refresh still refetches
   the authoritative task. Later list deltas preserve detail-only fields. The description prefers the visible creator agent (including `createdBy.agent`),
   not that agent's human owner. An uncached/missing author is “Unknown author”, not a fictional “Hypertask”.
 - **Task-page drafts:** `/api/mcp/drafts?task_id=…` is scoped by the authenticated

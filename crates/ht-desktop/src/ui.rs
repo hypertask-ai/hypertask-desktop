@@ -1381,12 +1381,12 @@ impl Desktop {
             .child(div().id("task-back").absolute().left(px(23.)).top(px(51.)).cursor_pointer().on_click(cx.listener(|this, _, window, cx| this.run_shortcut(crate::shortcuts::Action::Back, window, cx))).child(icon("arrow-left", t.muted, 18.)).layout_key(&self.layout,"task.back",None))
             .child(div().absolute().left(px(12.)).top(px(88.)).w(px(40.)).h(px(68.)).rounded_full().bg(color(navigation_color)).shadow(shadow()).flex().flex_col().justify_center().items_center().gap(px(10.)).text_color(color(t.muted)).children(["chevron-up", "chevron-down"].into_iter().map(|name| div().opacity(0.4).child(icon(name, t.muted, 18.)))))
             .child(div().w_full().max_w(px(1136.)).min_h_full().flex_shrink_0().bg(color(t.detail)).flex().flex_col()
-            .child(div().flex_shrink_0().pt(px(36.)).pl(px(82.)).pr(px(64.)).pb(px(if self.summary.is_empty() { 16. } else { 8. })).relative()
+            .child(div().flex_shrink_0().pt(px(36.)).pl(px(82.)).pr(px(64.)).pb(px(if full_task_summary(&d.task.extra).is_empty() { 16. } else { 8. })).relative()
 
                 .child(div().w_full().flex().items_start().gap(px(8.)).font_weight(FontWeight::BOLD).text_size(px(24.)).line_height(px(36.)).min_h(px(37.)).child(title)
                     .child(div().flex_shrink_0().flex().items_center().gap(px(16.)).pt(px(10.25)).text_size(px(14.)).line_height(px(21.)).text_color(color(option_color))
                         .child(div().px(px(4.)).py(px(2.)).when(self.options.theme == ThemeName::Dia, |d| d.font_weight(FontWeight::MEDIUM)).child("Share")).child(icon("archive", option_color, 20.)).child(icon("circle-check", option_color, 20.)).child(icon("clock", option_color, 18.)).child(icon("layers", 0x696b6e, 16.))))
-                .when(!self.summary.is_empty(), |d| d.child(self.task_summary_view(cx))).layout_key(&self.layout, "task.header", None))
+                .when(!full_task_summary(&d.task.extra).is_empty(), |d| d.child(self.task_summary_view(cx))).layout_key(&self.layout, "task.header", None))
             .child(div().relative().flex().items_start().gap(px(16.)).mt(px(16.)).pl(px(64.)).pr(px(64.)).pb(px(32.)).flex_shrink_0()
                 .when(self.inbox_actions.review.is_some(), |d| d.flex_col())
 
