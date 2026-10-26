@@ -559,3 +559,42 @@ fn keyboard_star_refuses_unknown_state_and_rolls_back_on_account_refusal(cx: &mu
     });
     assert!(server.calls.is_empty());
 }
+
+#[gpui::test]
+fn cmdk_round2_existing_actions_use_web_labels_groups_and_native_effects(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    view.update_in(cx, |this, _, _| {
+        this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","savedContent":[],"project":{"id":15,"timeTrackingEnabled":true}})).unwrap();
+        this.reload();
+    });
+    for (query, label) in [("Blocked by person", "Blocked by person…"), ("Star task", "Star task"), ("Start or stop timer", "Start or stop timer"), ("Decline task", "Decline task")] {
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input(query);
+        view.read_with(cx, |this, cx| assert_eq!(this.choices(cx).first().map(|row| row.name.as_str()), Some(label), "{query}"));
+        cx.simulate_keystrokes("enter");
+        if query == "Blocked by person" {
+            cx.simulate_input("Alex");
+            cx.simulate_keystrokes("enter");
+            view.read_with(cx, |this, _| {
+                let rows = this.db.mutations().unwrap();
+                assert_eq!(rows.last().unwrap().payload_json["change"]["WaitingOn"], serde_json::json!({"task":1,"user":7}));
+                assert_eq!(this.db.task(1).unwrap().unwrap().assignee_count, 0);
+            });
+        } else {
+            view.read_with(cx, |this, _| {
+                let rows = this.db.mutations().unwrap();
+                let row = rows.last().unwrap();
+                match query {
+                    "Star task" => assert_eq!(row.payload_json["change"]["StarTask"], serde_json::json!({"task":1,"project":15,"active":true})),
+                    "Start or stop timer" => assert_eq!(row.payload_json["change"]["ToggleTimer"], serde_json::json!({"task":1})),
+                    "Decline task" => {
+                        assert_eq!(row.payload_json["status"], "Archive");
+                        assert_eq!(this.db.task(1).unwrap().unwrap().status, Status::Archive);
+                    }
+                    _ => unreachable!(),
+                }
+            });
+        }
+    }
+}
