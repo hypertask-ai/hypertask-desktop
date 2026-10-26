@@ -2,50 +2,55 @@
 
 Web contract inspected at `hypertask` commit `6f9901764d355aba7bfc76e4e62ff255e0b68b31`. Web paths below are relative to that repository. No web changes, authenticated application requests, VPS builds/tests/test copies, or owner-laptop access.
 
-## HTPR-7699: native CLI contracts implemented; QA live authorization pending
+## HTPR-7699: implemented CLI routes; partial creation parity
 
-Contracts re-read at server commit `489e9ea52`: `src/lib/auth/desktopCliTokenUser.ts`,
-POST `/api/ai/task-writer`, GET `/api/tasks/createGlobally`, POST
-`/api/savedContent/toggleSaved` (comment only), GET `/api/tasks/searchByParam`.
-All four accept the verified human CLI bearer only while `htpr-7699-desktop-cli-token`
-is enabled for that user. Cookie authentication is not added to desktop.
+Merged web change: https://github.com/hypertask-ai/hypertask/pull/2028
+(commit `489e9ea5203d85bf9904ac631fc389b382558791`).
+The following citations use `/home/valentin/projects/hypertask/src`.
 
-`compose.rs` implements Ctrl+J, Search/New Task tabs, Tab/Shift+Tab, Enter send,
-Shift+Enter newline, board chip and searchable board picker. The actual web writer
-body is built by `ht_core::desktop_cli::writer_request`, including `requestKind:
-compose-task`; it is not the MCP draft writer or sidebar chat. Streamed HTML and
-split JSON are parsed; unavailable writing retains the original note as web does.
-The durable queue freezes writer output before retrying idempotent bearer task
-creation. Errors preserve the compose note; navigation waits for acknowledgement.
+| Behavior | Current status | Exact web authorization / behavior |
+| --- | --- | --- |
+| Ctrl+J task writer | **Implemented**, mocked native response proof; save remains append-only | POST `/api/ai/task-writer`, `app/api/ai/task-writer/route.ts:52-61`. GET defaults `/api/tasks/createGlobally?projectId=…&position=top`, `pages/api/tasks/createGlobally.ts:17-44,91-101`. Request `lib/ai/composeTask.ts:79-81,95-128`; scope `lib/ai/taskWriterBoardContext.ts:28-36`; provider flags `lib/deriveCurrentBoardBilling.ts:32-36`. |
+| Comment star / pin, F115 / F116 | **Implemented**, mocked save/removal/refusal proof | POST `/api/savedContent/toggleSaved`, comment-only CLI fallback `pages/api/savedContent/toggleSaved.ts:16-23`; Private/Public and task/comment permission checks `:25-62`; saved 200 / removal 201 `:76-106`. Ctrl+Shift+S/P `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:545-558`. |
+| Comment @mentions, F587 | **Implemented**, mocked HTTP/native selection proof | GET `/api/tasks/searchByParam`, `pages/api/tasks/searchByParam.ts:5-9`; search `lib/api/task-writes/search-by-param.ts:12-24`; query and result/error labels `components/RTE/MentionData.js:12-44`. |
+| N / Shift+C quick entry | **Blocked**, not covered by the new flag | Shortcut/column choice `hooks/Homepage/useHandleKeyDownOperations.ts:98-120`; exact saves `hooks/MultiPages/useAddDeleteTaskInBoards.tsx:127-148,169-179`. POST `/api/tasks/create` and POST `/api/tasks/createGlobally` still use session-only `lib/api/task-writes/route.ts:35-38,101-106`; global POST dispatch `pages/api/tasks/createGlobally.ts:113-115`. |
 
-GET defaults is unlocked, **POST createGlobally is not**. Saving therefore uses
-existing `/api/mcp/tasks/create` with the returned section. That MCP contract
-appends to a column and cannot reproduce the web's returned top `ranking`, custom
-field values, or existing-empty-task fill. Those differences remain explicit;
-this is not a claim that every flagged compose extension has full parity.
+All four enabled contracts use `htpr-7699-desktop-cli-token`.
+Definition `lib/flags/definitions/htpr-7699-desktop-cli-token.ts:3-10` defaults to
+Owner+QA. Resolver `lib/auth/desktopCliTokenUser.ts:14-29,53-77` verifies the
+human CLI token, rejects agents/scoped tokens, and checks the user's flag.
+The owner reports that flag enabled. No live-account probe was run here.
+The old QA-user 4036 denial is historical, not evidence about today's owner.
 
-Named CI checks are in `crates/ht-core/tests/desktop_cli.rs`,
-`crates/ht-core/tests/http_cli.rs`, and GPUI `compose::tests` / `mentions::tests`.
-No builds, tests, test copies, or app launches run on the VPS or owner laptop.
+Existing native Compose retains Search/New Task tabs, board chip/picker,
+Enter send and Shift+Enter newline. Ctrl+Shift+B opens the same picker, matching
+`components/Modals/commands/HTC/ComposeTaskWriter.tsx:166-172,228-237`.
+The request includes the board's provider flags, never provider secrets.
+JSON and streamed HTML drafts use the existing durable queue.
 
-### QA production blocker (not a desktop authentication workaround)
+GET defaults is unlocked; **POST createGlobally is not**. Existing save uses
+`/api/mcp/tasks/create` with the returned section, appending rather than using
+the web's top rank. Custom fields, active-view defaults, existing-empty-task
+fill, focused legacy editor writing and other compose flags remain partial.
+No full-create or quick-entry substitute UI was added.
 
-The supplied QA-owner state is user **4036**, `valentin+qa-owner@hypertask.ai`.
-Its human CLI exchange succeeds and bearer GET comments for task 60253 on board
-7283 returns 200. The unchanged Rust fixture probe returns **401** from defaults,
-writer, mentions, star, and pin, so that account does not currently have the new
-route authorization. The inherited probe's alternate
-flag-QA identity **985** instead gets **404** for that task. No owner account,
-board membership change, flag write, or cookie-authenticated contract request is
-used to hide this mismatch; no live state was created by the failed seed attempt.
+Flag-off defaults/star/pin return `{message:"Unauthorized"}`; writer returns
+an SSE error with `content:"Unauthorized"`. Sources above and
+`app/api/ai/_lib/editorAi.ts:114-126` define those shapes. The queue now retains
+these messages through the native error view. Refusal keeps the note/comment
+and never creates a fallback task or changes saved state. Ordinary writer
+unavailability still preserves the original note as documented by
+`lib/ai/composeTask.ts:228-233`; that is not authorization success.
+Mention errors retain the existing web `Error loading results` label
+(`components/RTE/MentionData.js:43-44`), never fabricated suggestions.
 
-`internal/gates/ai-live-check.mjs --compose <CI compose-live-requests.json>` retains
-the storageState → browser consent → one-time code → CLI token exchange flow.
-It keeps the token in memory, uses bearer-only native fetch for contracts, and
-prints status/short shapes only. Its optional `--seed` creates a temporary QA
-comment only after defaults authorizes; pass that ID as CI `qa_comment_id` to
-produce unchanged Rust request fixtures, the probe removes that comment after
-star/pin cleanup, including on a failed contract. Never use fixture ID 7 as a real QA target without seeding.
+Native tests use actual keys and mocked responses, not successful receipt
+setters: `cli7699_native_ctrlj_mocked_writer_and_flag_off_keep_real_results`,
+`cli7699_native_star_pin_mocked_save_remove_and_flag_off_are_authoritative`,
+and `cli7699_native_mentions_apply_mocked_http_results_and_refusals`.
+Core tests also check exact bodies, refusals, identity and no unsafe replay.
+Acceptance: `GATES-cli7699.md`; proof is exact-head public GitHub CI only.
+No live owner-account authorization or laptop verification is claimed.
 
 ## Comments: authorized writes and local behavior
 
@@ -62,7 +67,7 @@ All writes use `Db::enqueue`/the existing durable mutation queue; none bypass it
 
 Identity comes from bearer **GET `/api/mcp/user/context`** (`src/lib/mcp/operations/user/context/operation.ts:34-43,182-186`). Identity lookup must not gate unrelated offline queue draining; existing worker regression test remains enabled.
 
-### Remaining auth/permission blockers
+### Implemented comments and remaining permission blockers
 
 * **F115 / F116 (comment star/pin)**: native focused-comment commands and
   Ctrl+Shift+S/P use the authorized `Private`/`Public` web body. Successful 200
@@ -74,8 +79,8 @@ Identity comes from bearer **GET `/api/mcp/user/context`** (`src/lib/mcp/operati
   Arrow/Enter and mouse selection retain web notification IDs and linkable task/
   page attributes; headings are skipped, stale results are ignored, Escape does
   not send, and insertion is one rich-editor undo transaction.
-* These rows are implemented with CI coverage, **not live-QA Done** until the QA
-  identity/flag mismatch above is resolved and the Rust-fixture probe succeeds.
+* These rows are **Implemented**, not authorization-blocked for a flagged human
+  CLI identity. Mocked native CI is the proof boundary; live QA remains unrun.
 
 * **Deleting other people's comments**: web POST **`/api/comments/deleteCommentById`** permits an accessible task's comment after **`getSessionUser`** (`src/pages/api/comments/deleteCommentById.ts:13-18,28-36`). MCP DELETE only permits own or configured HyperAI comments (`src/lib/mcp/operations/comments/[comment_id]/operation.ts:460-474`). No ownership bypass is attempted; full web delete permissions remain blocked by the cookie-only route. Native deletion is limited to the bearer route's allowed ownership.
 
@@ -115,7 +120,7 @@ Paths are relative to the web repository. An implemented subset does not remove 
 
 | Ref / rows | Exact route and auth helper | Reason / retained subset |
 | --- | --- | --- |
-| B17 — F001/F002/F003/F011/F115/F116/F587 live acceptance | The four HTPR-7699 routes use **getDesktopCliTokenUser**, gated by `htpr-7699-desktop-cli-token`. | Native code and CI coverage implemented. QA-owner 4036 has board 7283 access but all four bearer routes return 401; alternate flag-QA 985 gets 404 for the target task. Enable the flag for the board-owning QA account before calling these rows live-QA Done. F011's top ranking/custom-field/empty-task differences remain documented above. |
+| B17 — F001/F002/F003/F011/F115/F116/F587 | **Implemented CLI contracts**, flag `htpr-7699-desktop-cli-token`, `lib/auth/desktopCliTokenUser.ts:53-77`. Exact four route citations appear above. | Native mocked-response proof; no live-account proof. F011's exact ranking/custom-field/empty-task save remains partial because POST createGlobally is still session-only (`pages/api/tasks/createGlobally.ts:113-115`, `lib/api/task-writes/route.ts:101-106`). |
 | B1 — F058 | GET `/api/notifications/markAsUnseen?notificationId=…&seen=1`: `taskWriteHandler` → `taskWriteRoute` → **getSessionUser** (`src/pages/api/notifications/markAsUnseen.ts:1-5`, `src/lib/api/notification-writes/mark-unseen.ts:62-76`, `src/lib/api/task-writes/route.ts:32-35,89-91`). | Bearer POST `/api/mcp/inbox/seen` only sets **true** (`src/app/api/mcp/inbox/seen/route.ts:82-84`). No bearer unread operation exists. U is not a fake local toggle. Mark-read on open works. |
 | B2 — F056 | POST `/api/ai/audio-transcript`: **getSessionUser**, `src/app/api/ai/audio-transcript/route.ts:98-100`; caller `src/components/RTE/Components/AudioButton.tsx:406`. | Alt+V cannot honestly deliver dictation with the MCP bearer. No simulated recording/transcript. |
 | B3 — F498 | GET/POST `/api/notifications/splits`: `taskWriteHandler` → **getSessionUser**, `src/pages/api/notifications/splits.ts:1-6`, `src/lib/api/notification-writes/splits.ts:31-35,77-81`. | Native reads authoritative tab membership through MCP; cannot persist “Also in Important” settings. |

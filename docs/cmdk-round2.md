@@ -4,7 +4,7 @@ Web root: `/home/valentin/projects/hypertask/src`.
 Every web citation below is relative to that root.
 Historical inventory: `docs/cmdk-parity.md`.
 That table records pre-fix support, not current capabilities.
-No creation or quick-entry changes. HTPR-7699 remains.
+CLI7699 refresh below distinguishes unlocked reads from blocked saves.
 No authorization changes, cookies, laptop access, or VPS execution.
 
 ## Shape and decision
@@ -46,6 +46,39 @@ Comment context retains Navigate/Inbox/Time, `AllCommands.ts:1359-1362`.
 Board-name insertion stays unchanged, `commands.tsx:308-315`.
 Labels and context originate from the registry, not shortcuts.
 
+
+## CLI7699 status refresh
+
+Merged web PR https://github.com/hypertask-ai/hypertask/pull/2028.
+Web citations use `/home/valentin/projects/hypertask/src`.
+
+- **Implemented** Ctrl+J Compose uses POST `/api/ai/task-writer` and GET
+  `/api/tasks/createGlobally`. CLI adapters are `app/api/ai/task-writer/route.ts:52-61`
+  and `pages/api/tasks/createGlobally.ts:17-44`. The body follows
+  `lib/ai/composeTask.ts:111-128`, including board provider flags.
+- **Implemented** existing focused comment star/pin commands send Private/Public
+  POST `/api/savedContent/toggleSaved`. Comment-only CLI adapter and 200/201
+  contract: `pages/api/savedContent/toggleSaved.ts:16-23,76-106`.
+- **Implemented** comment @mention search uses GET `/api/tasks/searchByParam`.
+  CLI adapter `pages/api/tasks/searchByParam.ts:5-9`; query/result UI
+  `components/RTE/MentionData.js:12-44`. No new command row or substitute UI.
+- **Blocked** N/Shift+C and exact full creation still require POST
+  `/api/tasks/create` or `/api/tasks/createGlobally`. Saves are
+  `hooks/MultiPages/useAddDeleteTaskInBoards.tsx:127-148,169-179`;
+  session-only auth `lib/api/task-writes/route.ts:35-38,101-106`;
+  POST dispatch `pages/api/tasks/createGlobally.ts:113-115`.
+- **Native gap** N1 still needs focused-editor/flag context. Compose is not
+  an existing-comment or description rewrite. Exact creation remains partial
+  because MCP save appends, without the web rank/custom-field/empty-task contract.
+
+All four enabled routes require `htpr-7699-desktop-cli-token`.
+Resolver `lib/auth/desktopCliTokenUser.ts:14-29,53-77` rejects scoped/agent tokens.
+Owner reports the flag enabled; no live-account probe ran.
+Native response tests are named in `docs/compose-comments.md`.
+Flag-off refusals retain server messages and unsaved text.
+Tests cover mocked success, removal and refusal; not live-account acceptance.
+Acceptance: `GATES-cli7699.md`; exact-head GitHub CI only.
+
 ## Exact remaining contracts
 
 “Blocked” means missing an equivalent authorized contract.
@@ -60,10 +93,10 @@ These distinctions deliberately prevent false authorization blockers.
 | B3 | POST `/api/queues/inboxReminder`, task identity plus `remindTask` and reminder option. `components/commandDispatcher.ts:884-886`; `hooks/MultiPages/HTC/useHTCTaskAndComments.ts:271-274`; `app/detail/[...slug]/useTaskDetailCommandActions.tsx:56`; `components/Modals/RemindMe/RemindMeComponent.tsx:86-111`; `hooks/Inbox/useGlobalFocusHandler.tsx:87-99`; session `pages/api/queues/inboxReminder.ts:27-31`. | MCP `/inbox/archive` needs existing active notification IDs and supports a duration reminder, `lib/mcp/operations/inbox/archive/operation.ts:53-75,96-127,181-207`. No arbitrary-task `remindTask`/reminder-option contract. Cached Inbox reminder is not Set reminder parity. |
 | B4 | POST `/api/tasks/searchAll`, recent mode and all-project search, then `/api/tasks/addRelations`. Mode types `components/useCommandsState.ts:121-141`; panel `components/commandModalPanels2.tsx:105-121`; picker `components/Modals/TaskRelationPicker/TaskRelationPicker.tsx:26-61`; search `components/Modals/commands/searchTasks.tsx:35-76`; routes `lib/api/task-writes/search-all.ts:9-23,43-57`, `hooks/Task Detail/useTaskRelations.ts:24-39`, `pages/api/tasks/addRelations.ts:1-5`; session guard `lib/api/task-writes/route.ts:31-38`. | MCP relation writes exist, `lib/mcp/operations/tasks/relations/operation.ts:47-65,80-132`, but missing the authorized recent-task catalog. MCP search fields `lib/mcp/operations/tasks/search/operation.ts:30-64` do not include recent-work semantics. Duplicate additionally missing from allowed relation enum, `lib/mcp/tasks/relationType.ts:1-17`. Person-blocked is not task dependency. |
 | B5 | POST `/api/tasks/setStartDate`, `{taskId,startDate}`, `pages/api/tasks/setStartDate.ts:1-5`, `lib/api/task-writes/start-date.ts:10-28`; POST `/api/tasks/setRecurrence`, `pages/api/tasks/setRecurrence.ts:1-5`, `lib/api/task-writes/recurrence.ts:19-32`; panel `components/commandModalPanels2.tsx:160-190`; handler `components/boardCommandActions.ts:26-35`. | Session-only wrapper `lib/api/task-writes/route.ts:31-38`. MCP update lacks `startDate` and `recurrence`, `lib/mcp/tasks/fields/types.ts:50-75`. Due date is not either field. |
-| B6 | GET/POST `/api/task-templates`, `components/useCommandsState.ts:327`, `components/boardCommandActions.ts:39-57`; session guards `app/api/task-templates/route.ts:20-24,72-76`. | Missing authorized template catalog/save. Creation from template also HTPR-7699. No invented template UI. |
+| B6 | GET/POST `/api/task-templates`, `components/useCommandsState.ts:327`, `components/boardCommandActions.ts:39-57`; session guards `app/api/task-templates/route.ts:20-24,72-76`. | Missing authorized template catalog/save. Exact creation POST remains session-only after HTPR-7699. No invented template UI. |
 | B7 | POST `/api/follower/createFollower`, `/api/follower/unFollowTask`, plus follower-row ID lookup. Handler `hooks/MultiPages/HTC/useHTCTaskAndComments.ts`; dispatcher `components/commandDispatcher.ts:358-363`; guards `pages/api/follower/createFollower.ts:9-25`, `pages/api/follower/unFollowTask.ts:10-29`, `pages/api/follower/getFollower.ts:10-18,30-40`. | MCP task followers are user summaries, `lib/mcp/tasks/mappers.ts:282-286`, not mutation row IDs. Update fields omit followers, `lib/mcp/tasks/fields/types.ts:50-75`. |
 | B8 | GET/POST/PUT `/api/share/createShareLink`; session guard `pages/api/share/createShareLink.ts:12-21`; web handler `hooks/MultiPages/HTC/useHTCTaskAndComments.ts:130-141`, dispatcher `components/commandDispatcher.ts:775-780`. | Missing authorized share ID/type/live-expiry state. Private copy cannot replace public sharing. |
-| B9 | POST `/api/tasks/create`, GET/POST `/api/tasks/createGlobally`; exact form/default/rank contract remains HTPR-7699. Dispatcher `components/commandDispatcher.ts:640-648,668-670,695-697,757-759`; web duplicate read `hooks/MultiPages/HTC/useHTCTaskAndComments.ts:121-127`; task linker `components/Modals/SubtaskLinkingModal/SubtaskLinking.tsx:46-57,95-109,122-135`. | Existing bearer append/AI writer cannot promise full creation or duplicate source/defaults. Exact web create auth `lib/api/task-writes/create.ts:17-50`; defaults/save `lib/api/task-writes/create-global.ts:48-61,297-304,394`. Explicitly skipped. |
+| B9 | POST `/api/tasks/create`, GET/POST `/api/tasks/createGlobally`; **Partial** after HTPR-7699: GET defaults unlocked, exact POST saves/rank still blocked. Dispatcher `components/commandDispatcher.ts:640-648,668-670,695-697,757-759`; web duplicate read `hooks/MultiPages/HTC/useHTCTaskAndComments.ts:121-127`; task linker `components/Modals/SubtaskLinkingModal/SubtaskLinking.tsx:46-57,95-109,122-135`. | Existing bearer append/AI writer cannot promise full creation or duplicate source/defaults. Exact web create auth `lib/api/task-writes/create.ts:17-50`; defaults/save `lib/api/task-writes/create-global.ts:48-61,297-304,394`. Explicitly skipped. |
 | B10 | Personal view routes `/api/projects/views/unsaved-view`, `/update-view`, `/switch-view`, `/create-view`, `/delete-rename-view`. Constants `lib/constants/APIRouteConstants.ts:33-38`; writes `hooks/Homepage/Views/useKanbanViews.ts:195-215,257-267,279-356,387-429,436-458,490-527`; hide column `components/generalCommandActions.ts:229-255`; subtask settings `hooks/SubTask/useSubTask.ts:13-35`. | Missing personal unsaved view `baseViewId`, active layout/filter/columns/subtask-setting read/write. Named MCP view CRUD/apply is not that user preference. Compare `app/api/mcp/view/[viewId]/apply/route.ts:1-3`. |
 | B11 | Staleness, auto-archive, column auto-assign, status report routes. Exact calls `components/boardCommandActions.ts:72-75,96-102,127-133,182-187,217-223`; GET/personal sorting uses B10. Session guards `app/api/projects/staleness/route.ts:6-10`, `app/api/projects/auto-archive/route.ts:8-12`. | Missing equivalent project `staleness`/`autoArchive`/auto-assignment configuration and report fields. Task move/assignee primitives do not represent these policies. |
 | B12 | Manage columns combines personal view visibility (B10) with edits. Catalog POST `/api/section/getProjectSections`, `utils/api/global/apiHelpers/getAllManageColumnsAPI.ts:9`; tags POST/DELETE `/api/labels/updateLabel`, `utils/api/global/apiHelpers/updateLabelsAPI.ts:3-20`. | Existing native add/rename/delete column rows remain. Full manager visibility uses B10. MCP tag route exports GET/POST only, `app/api/mcp/projects/[projectId]/labels/route.ts:1-4`; no equivalent tag update/delete. |
@@ -75,7 +108,7 @@ These distinctions deliberately prevent false authorization blockers.
 | B18 | Suggest reply POST `/api/ai/suggest-reply`, `components/commandDispatcher.ts:925-932`, `components/RTE/useTaskDetailEditorEvents.tsx:166-194`, session `app/api/ai/suggest-reply/route.ts:160-170`. Speech POST `/api/ai/audio-transcript`, `app/api/ai/audio-transcript/route.ts:102-104`. | Missing authorized generation/audio contract; microphone capture absent too. MCP improve transforms supplied text, not task reply generation. |
 | B19 | Flag-gated selection rows `components/Modals/commands/HTC/navigationCommands.ts:301-322`; dispatcher `components/commandDispatcher.ts:55-65`. Smart split conditional registry `components/Modals/commands/HTC/AllCommands.ts:306-319`. | Missing authoritative account flag in native palette context. Selection capability alone does not enable flags. No server mutation needed for selection. Smart split also B10. |
 | B20 | Whole heterogeneous undo history; `components/commandDispatcher.ts:267-273`; `hooks/General/useUndo.tsx:194-220`; `/api/notifications/inbox-zero/undo` and saved toggle, `utils/undoActions/helperFuncs.ts:21-68`. | Missing whole action-history inverse contract. MCP inbox unarchive is only one inverse. Native text undo remains intact. |
-| N1 | Native editor/flag gap, not blanket API refusal. `components/commandDispatcher.ts:698-700`; callback `app/detail/[...slug]/useTaskDetailCommentActions.tsx:172-174`; exact dispatcher `hooks/Task Detail/useTaskDetailGlobalStates.ts:448-476` needs focused editor identity and `editWithAiEnabled`/`commentInlineAi` choices. | Native Compose is a creation draft, not this focused-description/comment writer. Missing authoritative editor/flag context, not an unavailable generic AI route. No substitute improvement action advertised. |
+| N1 | **Partial / native gap**, not API refusal. POST writer now accepts the flagged human CLI token (`app/api/ai/task-writer/route.ts:52-61`). `components/commandDispatcher.ts:698-700`; callback `app/detail/[...slug]/useTaskDetailCommentActions.tsx:172-174`; exact dispatcher `hooks/Task Detail/useTaskDetailGlobalStates.ts:448-476` needs focused editor identity and `editWithAiEnabled`/`commentInlineAi` choices. | Native Compose is a creation draft, not this focused-description/comment writer. Missing authoritative editor/flag context, not an unavailable generic AI route. No substitute improvement action advertised. |
 | N2 | Native gap. Web links feed GET `/api/urls/fetchUrls`, `components/Modals/LinksModal/index.tsx:83`, session `pages/api/urls/fetchUrls.ts:10-24`; actual view-subtasks callback `hooks/MultiPages/HTC/useHTCTaskAndComments.ts:223-225`. Remove-child picker needs complete child objects, `components/Modals/SubtaskLinkingModal/RemoveSubtask.tsx:15-18,28-49`. | Parent unlink U7 available. Child detach primitive also available, but complete native child-picker/read-model absent. MCP `sub_tasks` projection `lib/mcp/tasks/mappers.ts:218-232,255` is not a hydrated native child task cache. No missing write authorization claimed. |
 | N3 | DELETE `/api/ai-chat/delete-session?delete=ALL`, `components/generalCommandActions.ts:109-119`, dispatcher `components/commandDispatcher.ts:1031-1034`. Session/compat authentication `app/api/ai-chat/delete-session/route.ts:29-46`. | Missing equivalent atomic ALL scope. MCP item delete requires a UUID, `lib/mcp/ai/sessionHandler.ts:191-200`. Enumerating cached sessions cannot guarantee ALL. Individual bearer session deletion is available, not blocked. |
 | X | Explicit scope exclusion; declaration and dispatcher cited per row below. Destinations include account/team/billing, calendar/table, timer reports, agents/Agent Chat, archives/trash/drafts/favorites, developer setup, onboarding, and mobile-only browser actions. | No missing API inferred. These are not blocked in-scope commands. No new out-of-scope UI. |
