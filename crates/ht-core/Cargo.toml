@@ -9,6 +9,7 @@ default = []
 bounded-sync-cache = []
 compact-task-reads = []
 compact-inbox-metadata = []
+packed-inbox-metadata = []
 realtime-ws = ["dep:tungstenite"]
 
 [dependencies]

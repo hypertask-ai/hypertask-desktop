@@ -47,10 +47,17 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 struct MeasuredAllocator;
 static LIVE: AtomicUsize = AtomicUsize::new(0);
 static PEAK: AtomicUsize = AtomicUsize::new(0);
+static LIVE_SIZES: [AtomicUsize; usize::BITS as usize] = [const { AtomicUsize::new(0) }; usize::BITS as usize];
+
+fn size_bucket(bytes: usize) -> usize {
+    bytes.max(1).ilog2() as usize
+}
+
 #[global_allocator]
 static ALLOCATOR: MeasuredAllocator = MeasuredAllocator;
 
 fn allocated(bytes: usize) {
+    LIVE_SIZES[size_bucket(bytes)].fetch_add(bytes, Ordering::Relaxed);
     let live = LIVE.fetch_add(bytes, Ordering::Relaxed) + bytes;
     PEAK.fetch_max(live, Ordering::Relaxed);
 }
@@ -68,14 +75,19 @@ unsafe impl GlobalAlloc for MeasuredAllocator {
         ptr
     }
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
+        LIVE_SIZES[size_bucket(layout.size())].fetch_sub(layout.size(), Ordering::Relaxed);
         LIVE.fetch_sub(layout.size(), Ordering::Relaxed);
         unsafe { System.dealloc(ptr, layout) };
     }
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, size: usize) -> *mut u8 {
         let new = unsafe { System.realloc(ptr, layout, size) };
         if !new.is_null() {
-            if size >= layout.size() { allocated(size - layout.size()); }
-            else { LIVE.fetch_sub(layout.size() - size, Ordering::Relaxed); }
+            LIVE_SIZES[size_bucket(layout.size())].fetch_sub(layout.size(), Ordering::Relaxed);
+            LIVE_SIZES[size_bucket(size)].fetch_add(size, Ordering::Relaxed);
+            if size >= layout.size() {
+                let live = LIVE.fetch_add(size - layout.size(), Ordering::Relaxed) + size - layout.size();
+                PEAK.fetch_max(live, Ordering::Relaxed);
+            } else { LIVE.fetch_sub(layout.size() - size, Ordering::Relaxed); }
         }
         new
     }
@@ -85,6 +97,7 @@ pub fn rust_heap_usage() -> serde_json::Value {
     serde_json::json!({
         "RustLiveRequestedBytes": LIVE.load(Ordering::Relaxed),
         "RustPeakRequestedBytes": PEAK.load(Ordering::Relaxed),
+        "RustLiveSizeBuckets": LIVE_SIZES.iter().map(|value| value.load(Ordering::Relaxed)).collect::<Vec<_>>(),
     })
 }
 

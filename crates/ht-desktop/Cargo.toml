@@ -4,7 +4,7 @@ edition.workspace = true
 version.workspace = true
 
 [features]
-default = ["visible-board-columns", "lazy-theme-fonts", "ht-core/bounded-sync-cache", "ht-core/compact-task-reads", "ht-core/compact-inbox-metadata"]
+default = ["visible-board-columns", "lazy-theme-fonts", "ht-core/bounded-sync-cache", "ht-core/compact-task-reads", "ht-core/compact-inbox-metadata", "ht-core/packed-inbox-metadata"]
 lazy-theme-fonts = []
 visible-board-columns = []
 input-benchmark = ["gpui/profiler"]
