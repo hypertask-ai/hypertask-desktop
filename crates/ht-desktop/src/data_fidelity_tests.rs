@@ -1,5 +1,5 @@
 use super::*;
-use crate::ui::shell::tests::{draw, measured};
+use crate::ui::shell::tests::{click, draw, measured};
 use gpui::VisualTestContext;
 use ht_core::{Sync, Transport, http::{Response, TransportError}};
 use serde_json::Value;
@@ -39,6 +39,7 @@ fn synced_fidelity_fixture_renders_real_authors_saved_summary_and_web_draft_mark
     });
     let mut cx = VisualTestContext::from_window(view.into(), cx);
     draw(view, &mut cx);
+    assert_eq!(measured(view, &mut cx, "task.summary.toggle")["text"], "Stored summary, not generated.");
     assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "Real Human");
     assert_eq!(measured(view, &mut cx, "task.description.draft")["text"], "Draft");
     assert_eq!(measured(view, &mut cx, "task.composer.draft")["text"], "Draft");
@@ -88,4 +89,111 @@ fn creator_prefers_the_agent_not_the_agents_owner_and_handles_missing_agent_name
     ] {
         assert_eq!(creator_name(extra.as_object().unwrap()), expected);
     }
+}
+
+#[gpui::test]
+fn synced_fidelity_refresh_removes_markers_and_keeps_web_summary_presence(
+    cx: &mut gpui::TestAppContext,
+) {
+    cx.update(crate::input::init);
+    let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| {
+        let f: Value = serde_json::from_str(include_str!("../../../fixtures/task-fidelity.json")).unwrap();
+        let mut sync = Sync::new(Db::memory().unwrap(), Fixture(VecDeque::from([
+            f["sections"].clone(), f["list"].clone(), f["detail"].clone(), f["drafts"].clone(),
+        ])));
+        sync.board(15).unwrap();
+        sync.drafts(101).unwrap();
+        let options = Options::parse([
+            "--offline", "--screen", "task", "--task", "101", "--board", "15",
+        ].map(String::from)).unwrap();
+        let mut view = Desktop::new(sync.db, options, window, cx);
+        view.layout = Some(Rc::new(RefCell::new(LayoutDump::default())));
+        view.ready_scheduled = true;
+        window.focus(&view.focus, cx);
+        view
+    });
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    draw(view, &mut cx);
+    for (drafts, description, comment, board) in [
+        (serde_json::json!([]), false, false, false),
+        (serde_json::json!([{"id":1,"taskId":101,"draftType":"description","text":"<p>Private draft</p>"}]), true, false, false),
+        (serde_json::json!([{"id":2,"taskId":101,"draftType":"comment","text":"   "}]), false, false, true),
+    ] {
+        view.update(&mut cx, |this, _, _| {
+            let db = std::mem::replace(&mut this.db, Db::memory().unwrap());
+            let mut sync = Sync::new(db, Fixture(VecDeque::from([
+                serde_json::json!({"success":true,"drafts":drafts}),
+            ])));
+            sync.drafts(101).unwrap();
+            assert!(sync.transport.0.is_empty());
+            this.db = sync.db;
+            this.reload();
+        }).unwrap();
+        draw(view, &mut cx);
+        view.read_with(&mut cx, |this, _| {
+            let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+            for (key, visible) in [("task.description.draft", description), ("task.composer.draft", comment)] {
+                assert_eq!(elements.iter().any(|e| e["key"] == key), visible, "{key}");
+            }
+        }).unwrap();
+        assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "Real Human");
+        view.update(&mut cx, |this, _, cx| this.switch(Screen::Board, cx)).unwrap();
+        draw(view, &mut cx);
+        view.read_with(&mut cx, |this, _| {
+            let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+            assert_eq!(elements.iter().any(|e| e["key"] == "board.card.0.draft"), board);
+            assert!(!elements.iter().any(|e| e["key"].as_str().is_some_and(|key|
+                key.starts_with("board.card.") && (key.ends_with(".author") || key.ends_with(".summary")))));
+        }).unwrap();
+        view.update(&mut cx, |this, window, cx| {
+            this.open_task(101, cx);
+            window.focus(&this.focus, cx);
+        }).unwrap();
+    }
+    for summary in [
+        Some(serde_json::json!({"content":"#","updated_at":"2026-10-20T13:00:00Z"})),
+        Some(Value::Null),
+        None,
+    ] {
+        let present = summary.as_ref().is_some_and(|s| !s.is_null());
+        view.update(&mut cx, |this, _, _| {
+            let f: Value = serde_json::from_str(include_str!("../../../fixtures/task-fidelity.json")).unwrap();
+            let mut task = f["detail"]["tasks"][0].clone();
+            match summary {
+                Some(summary) => task["ai_summary"] = summary,
+                None => { task.as_object_mut().unwrap().remove("ai_summary"); }
+            }
+            let db = std::mem::replace(&mut this.db, Db::memory().unwrap());
+            let mut sync = Sync::new(db, Fixture(VecDeque::from([
+                serde_json::json!({"success":true,"tasks":[task]}),
+            ])));
+            sync.task(101).unwrap();
+            assert!(sync.transport.0.is_empty());
+            this.db = sync.db;
+            this.reload();
+        }).unwrap();
+        draw(view, &mut cx);
+        view.read_with(&mut cx, |this, _| {
+            let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+            assert_eq!(elements.iter().any(|e| e["key"] == "task.summary.toggle"), present);
+        }).unwrap();
+        cx.simulate_keystrokes("i");
+        if present {
+            assert_eq!(measured(view, &mut cx, "task.summary.full")["text"], "#");
+            cx.simulate_keystrokes("escape");
+            click(view, &mut cx, "task.summary.toggle");
+            assert_eq!(measured(view, &mut cx, "task.summary.full")["text"], "#");
+            cx.simulate_keystrokes("escape");
+        } else {
+            draw(view, &mut cx);
+            view.read_with(&mut cx, |this, _| {
+                let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
+                assert!(!elements.iter().any(|e| e["key"] == "task.summary.full"));
+            }).unwrap();
+        }
+    }
+    view.read_with(&mut cx, |this, _| {
+        assert_eq!(this.detail.as_ref().unwrap().task.description, "<p>Published description</p>");
+        assert!(this.db.mutations().unwrap().is_empty());
+    }).unwrap();
 }
