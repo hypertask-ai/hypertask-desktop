@@ -161,7 +161,9 @@ impl Desktop {
         let anchor = self.task_fields.summary_bounds.clone();
         div()
             .id("task-summary")
-            .pt(px(8.))
+            .mt(px(8.))
+            .h(px(21.))
+            .w_full()
             .relative()
             .text_size(px(13.))
             .line_height(px(19.5))
@@ -170,12 +172,22 @@ impl Desktop {
             .child(
                 div()
                     .id("task-summary-toggle")
+                    .group("task-summary-toggle")
+                    .flex().items_center().gap(px(4.))
+                    .max_w(gpui::relative(0.65))
+                    .font_weight(FontWeight::MEDIUM)
                     .cursor_pointer()
-                    .child(if self.task_fields.summary_open {
-                        SharedString::from("Summary")
-                    } else {
-                        self.summary.clone()
-                    })
+                    .child(div().flex_1().min_w_0().truncate()
+                        .when(!self.task_fields.summary_open, |d| d.mr(px(10.)))
+                        .child(if self.task_fields.summary_open {
+                            SharedString::from("Summary")
+                        } else {
+                            self.summary.clone()
+                        }))
+                    .child(div().flex_shrink_0()
+                        .when(!self.task_fields.summary_open, |d| d.opacity(0.)
+                            .group_hover("task-summary-toggle", |s| s.opacity(1.)))
+                        .child(icon(if self.task_fields.summary_open { "chevron-up" } else { "chevron-down" }, t.muted, 14.)))
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.task_fields.summary_open = !this.task_fields.summary_open;
                         cx.notify();
@@ -192,8 +204,11 @@ impl Desktop {
                     |_, _, _, _| {},
                 )
                 .absolute()
+                .top(px(0.))
+                .left(px(0.))
                 .size_full(),
             )
+            .layout_key(&self.layout, "task.summary.column", None)
             .into_any_element()
     }
     pub(super) fn task_summary_overlay(
@@ -225,16 +240,21 @@ impl Desktop {
         div()
             .id("task-summary-full")
             .absolute()
-            .left(bounds.origin.x)
+            .left(bounds.origin.x - px(82.))
             .top(bounds.origin.y + px(28.))
-            .w(bounds.size.width)
+            .w(bounds.size.width + px(146.))
             .max_h((window.viewport_size().height - bounds.origin.y - px(40.)).max(px(80.)))
             .overflow_y_scroll()
-            .p(px(16.))
+            .pl(px(82.))
+            .pr(px(64.))
+            .pt(px(8.))
+            .pb(px(44.))
+            .text_color(color(self.colors.text))
             .bg(color(self.colors.detail))
-            .shadow(shadow())
             .on_click(cx.listener(|_, _, _, cx| cx.stop_propagation()))
-            .child(RichText::parse(&html, self.colors).element())
+            .child(div().w(gpui::relative(0.65))
+                .child(RichText::parse(&html, self.colors).element())
+                .layout_key(&self.layout, "task.summary.content", None))
             .layout_key(&self.layout, "task.summary.full", Some(markdown.to_owned()))
     }
     pub(super) fn show_due_date(&mut self, window: &mut Window, cx: &mut Context<Self>) {

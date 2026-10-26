@@ -176,3 +176,10 @@ expanded panel used inset card padding instead of the full title-container
 width. Sources: `utils/summaryTeaser.ts:1-17`, `TopRow/TaskSummary.tsx:30-54`,
 `styles/globals.scss:68-70` (all relative to the web `src`). Native regressions
 are committed first; no red-before execution on this forbidden test host.
+
+Data shape remains unchanged: TaskView.extra retains `createdBy`/`agent`,
+`ai_summary`, and the three draft booleans. No new endpoint, worker state,
+cache policy or first-run path. Design choice: reuse the existing response
+normalizer and native summary view, not duplicate hydration or generate AI.
+Prove-it-works requires exact-head named native tests; sequence-verifiable-units
+keeps acceptance, regression, implementation and hosted evidence separate.

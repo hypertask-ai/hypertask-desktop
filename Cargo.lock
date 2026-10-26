@@ -2677,6 +2677,7 @@ dependencies = [
  "keyring",
  "open",
  "pulldown-cmark",
+ "regex",
  "scraper",
  "serde",
  "serde_json",

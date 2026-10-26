@@ -1472,10 +1472,14 @@ impl Desktop {
                 .when(self.inbox_actions.review.is_some(), |d| d.flex_col())
 
                 .child(div().flex_1().min_w(px(500.)).max_w(px(680.)).flex().flex_col().gap(px(16.))
-                    .child(div().id("task-description").anchor_scroll(Some(self.description_anchor.clone())).min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == 0 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
+                    .child(div().id("task-description").relative().anchor_scroll(Some(self.description_anchor.clone()))
+                        .when(d.task.extra.get("hasDescriptionDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child(
+                            div().absolute().left(px(0.)).top(px(0.)).bottom(px(0.)).w(px(4.)).bg(color(0xc2cfa5))
+                                .layout_key(&self.layout, "task.description.draft", None)))
+                        .min_h(px(207.)).pt(px(19.)).pb(px(23.)).pl(px(19.)).pr(px(15.)).bg(color(t.comment)).border_1().border_color(color(if self.interaction.task_part == 0 { t.accent } else { t.border })).rounded(px(if self.options.theme == ThemeName::Dia { 10. } else { 5. })).shadow_md().flex().flex_col()
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
-                            .child(div().child(self.creator.clone()).layout_key(&self.layout, "task.description.author", Some(self.creator.to_string()))).when(d.task.extra.get("hasDescriptionDraft").and_then(|v| v.as_bool()) == Some(true), |d| d.child(div().child("Draft").layout_key(&self.layout, "task.description.draft", Some("Draft".into())))).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
+                            .child(div().child(self.creator.clone()).layout_key(&self.layout, "task.description.author", Some(self.creator.to_string()))).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
                         .child(div().pt(px(8.)).min_h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.focused_editor(Editing::Description, cx))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
@@ -2160,31 +2164,27 @@ fn full_task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> &str
 }
 
 fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
+    use std::sync::LazyLock;
+    static MARKS: LazyLock<[regex::Regex; 4]> = LazyLock::new(|| [
+        regex::Regex::new(r"\*\*([^*]+)\*\*").unwrap(),
+        regex::Regex::new(r"\*([^*]+)\*").unwrap(),
+        regex::Regex::new(r"`([^`]+)`").unwrap(),
+        regex::Regex::new(r"\s*\[[0-9]+\]\s*$").unwrap(),
+    ]);
     let markdown = full_task_summary(extra);
     let first = markdown
         .lines()
         .map(str::trim)
         .find_map(|line| line.strip_prefix("- "))
-        .or_else(|| {
-            markdown
-                .lines()
-                .map(str::trim)
-                .find(|line| !line.is_empty() && !line.starts_with('#'))
-        })
-        .unwrap_or(markdown.trim());
-    let mut teaser = first
-        .trim_start_matches('#')
-        .trim_start()
-        .replace(['*', '`'], "");
-    if let Some((prefix, reference)) = teaser.rsplit_once('[') {
-        if reference
-            .strip_suffix(']')
-            .is_some_and(|n| !n.is_empty() && n.chars().all(|c| c.is_ascii_digit()))
-        {
-            teaser = prefix.trim_end().to_owned();
-        }
+        .map(str::trim_start)
+        .or_else(|| markdown.lines().map(str::trim)
+            .find(|line| !line.is_empty() && !line.starts_with('#')))
+        .unwrap_or(markdown);
+    let mut teaser = first.trim_start_matches('#').trim_start().to_owned();
+    for re in &MARKS[..3] {
+        teaser = re.replace_all(&teaser, "$1").into_owned();
     }
-    teaser.trim().to_owned()
+    MARKS[3].replace(&teaser, "").trim().to_owned()
 }
 
 fn comment_author(extra: &serde_json::Map<String, serde_json::Value>) -> String {
