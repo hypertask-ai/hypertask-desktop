@@ -42,24 +42,6 @@ impl Desktop {
             .flex()
             .flex_col()
             .on_click(cx.listener(|this, _, window, cx| this.edit_comment(window, cx)))
-            .when(
-                self.db.comment_draft(self.options.task).ok().flatten().is_some_and(|s| !s.is_empty()) || self.detail.as_ref().is_some_and(|d| {
-                    d.task
-                        .extra
-                        .get("hasCommentDraft")
-                        .and_then(|v| v.as_bool())
-                        == Some(true)
-                }),
-                |d| {
-                    d.child(
-                        div()
-                            .text_size(px(12.))
-                            .text_color(color(t.muted))
-                            .child("Draft")
-                            .layout_key(&self.layout, "task.composer.draft", Some("Draft".into())),
-                    )
-                },
-            )
             .child(
                 div()
                     .min_h(px(80.))

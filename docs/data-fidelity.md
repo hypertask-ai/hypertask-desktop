@@ -142,3 +142,81 @@ GPUI regression starts from that same sync contract and measures the rendered
 author, full-summary overlay and web-styled Draft markers. Existing sync tests
 also cover empty snapshots, null/missing summary removal and partial updates.
 CI run links and exact final SHA are recorded in the PR evidence.
+
+## Fidelity acceptance (backlog item 4 recheck)
+
+Written before changing implementation. Git baseline: `origin/main` at
+`8c6402b`; prior data3/mem2 work already stores creators, saved summaries and
+separate board/description/comment draft flags. Recheck rather than duplicate.
+
+1. Trace each requested field from the current web component and API mapper to
+   SQLite and native rendering. Record already-correct rows, including the web
+   card's assignee-only identity (no invented creator UI).
+2. Match author text and placement, saved-summary teaser/expanded placement,
+   and both task Draft markers against current web styles. Close only proven
+   gaps, preserving existing response fields and hydration paths.
+3. Every corrected behavior gets a native GPUI regression driven by mocked
+   MCP task/draft responses; assert visible text, geometry and style tokens.
+   Keep existing positive/removal and durable-reopen regressions.
+4. Leave `task_open_tests.rs` and worker `LoadTask` unchanged. No VPS builds,
+   tests, lint or test copies; no laptop commands.
+5. Rebase before push; require exact-head public GitHub CI jobs and the full
+   repository receipt. Retain named-test output, final SHA and CI/PR URLs.
+
+Current-source gaps found: task Draft **text** was invented. The web description
+uses a four-pixel green left border (`DescriptionContainer/index.tsx:141-151`);
+its top row has only author/actions (`TopRow/DescriptionTopRow.tsx:22-41`). The
+comment composer has no Draft text (`CommentContainer/NewCommentComponent.tsx:448-482`).
+Keep the existing server flags, replace description text with that border,
+and remove the invented composer label. Board Draft already matches.
+
+Saved-summary transport already matches. Presentation gaps: teaser removed
+unpaired Markdown markers, lacked medium weight/single-line 65% cap, and the
+expanded panel used inset card padding instead of the full title-container
+width. Sources: `utils/summaryTeaser.ts:1-17`, `TopRow/TaskSummary.tsx:30-54`,
+`styles/globals.scss:68-70` (all relative to the web `src`). Native regressions
+are committed first; no red-before execution on this forbidden test host.
+
+Data shape remains unchanged: TaskView.extra retains `createdBy`/`agent`,
+`ai_summary`, and the three draft booleans. No new endpoint, worker state,
+cache policy or first-run path. Design choice: reuse the existing response
+normalizer and native summary view, not duplicate hydration or generate AI.
+Prove-it-works requires exact-head named native tests; sequence-verifiable-units
+keeps acceptance, regression, implementation and hosted evidence separate.
+
+### Completed field audit
+
+All web paths remain relative to `/home/valentin/projects/hypertask/src`.
+
+| Requested item | Current web component / API field | Native store / render | Result |
+| --- | --- | --- | --- |
+| Board creator | `Kanban/KanbanTaskComponents/KanbanTaskCard.tsx:162-181`, `TaskTopRow.tsx:134-175` (under `components/PageComponents/`): assigned-user/agent avatars, **not** an author label. Creator API mapping: `lib/mcp/tasks/mappers.ts:47-61,331-336`, `createdBy`/`createdBy.agent`. | `crates/ht-core/src/sync.rs:62-81,150-172`; `db.rs:163-177,342-345` retains detail creator JSON on compact cards. | Already correct; no invented card author UI. |
+| Task creator | `components/PageComponents/TaskDetail/CommentAndDescription/index.tsx:109-118`: `agent.displayName` before `user.displayName`; `Common/CreatedBy.tsx:51-75`: avatar/name above description. Same API mapping as above. | Same SQLite path; `crates/ht-desktop/src/ui.rs:449-459,1480-1482,2094-2114`. | Already correct; real human and visible creator agent survive sync/navigation. |
+| Task AI summary | `components/PageComponents/TaskDetail/TopRow/TaskDetailTitleContainer.tsx:38-44`: `Task_Summary[0].content`; `TaskSummary.tsx:30-54`: teaser/expanded view. `lib/mcp/operations/tasks/operation.ts:283-300,340-350`: optional `ai_summary.content/updated_at`; `utils/summaryTeaser.ts:1-17`: teaser text. | `sync.rs:150-172,332-345` stores/clears saved snapshots; `db.rs:163-177` persists raw JSON; `ui.rs:2152-2187` consumes it; `task_fields.rs:159-258` presents it. | Store already correct; corrected teaser markers, weight, cap, slot, chevron and expanded placement/padding. |
+| Board Draft | `components/PageComponents/Kanban/KanbanTaskComponents/TaskTagsRow.tsx:140-143`: `hasDraft`, 11px/22px/medium/green. `hooks/General/useGetUserDrafts.ts:26-29,48-50`: draft task IDs; `utils/controllers/drafts/getUserDrafts.ts:5-7`: untrimmed nonempty comment content. `lib/mcp/operations/drafts/operation.ts:34-41`: `draftType/text`. | `sync.rs:176-214` stores `hasBoardDraft`; `ui.rs:1128-1136` renders before dates/tags. | Already correct; positive/removal, description-only and whitespace cases retained. |
+| Task Draft | `hooks/General/useHasDrafts.ts:5-17,34-40`: separate description/comment emptiness rules. `DescriptionContainer/index.tsx:141-151` below the task's `CommentAndDescription/`: green 4px left border, not Draft text. `TopRow/DescriptionTopRow.tsx:22-41`: author/actions only. `CommentContainer/NewCommentComponent.tsx:448-482`: no composer Draft label. | `sync.rs:176-214` already stores separate flags; `ui.rs:1475-1478` now shows the description marker; `comments.rs:42-48` no longer adds the invented label. | Corrected presentation; published description/creator unchanged. |
+
+No missing response field remained at this baseline. Existing detail hydration,
+summary null clearing, and separate draft snapshot storage remain intact.
+No task-open, worker LoadTask, or first-run edits.
+
+### Hosted evidence before final documentation commit
+
+SHA `a6bc6944722660ab3fb90da21d27025d3e298c81`,
+https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40304716394.
+The Linux workspace log reports these exact passing checks:
+
+- `synced_fidelity_fixture_renders_real_authors_saved_summary_and_web_draft_markers`
+- `synced_fidelity_refresh_removes_markers_and_keeps_web_summary_presence`
+- `synced_summary_teaser_preserves_unpaired_markers_like_web`
+- `fidelity_upgrades_list_only_database_and_persists_authors_summary_and_drafts`
+- `fidelity_upgrades_creator_only_cache_without_repeated_null_summary_hydration`
+
+Desktop suite: `254 passed; 0 failed`. Twelve populated screen/theme layouts
+reported no missing elements. Native archive proof:
+`DESKTOP_INPUT_ARCHIVE_VERIFIED action=e persisted=Archive queue=inbox_archive cleanup=complete evidence=retained`.
+Attempt 1 macOS failed before compilation because `index.crates.io` DNS failed.
+Retry attempt 2 passed every required job, plus both updater jobs. The strict
+receipt correctly rejected inherited attempt-1 artifacts, so the final docs
+commit triggers a fresh complete matrix. Exact final-head proof belongs in the
+PR, not a claim inferred from this earlier run. No VPS execution or laptop use.
