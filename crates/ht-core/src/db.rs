@@ -381,6 +381,9 @@ impl Db {
         if !cfg!(feature = "compact-task-reads") { return self.inbox(); }
         let projection = if cfg!(feature = "compact-inbox-metadata") {
             "json_object('id', n.id, 'taskId', n.taskId, 'seen', json(n.raw_json -> '$.seen'), 'createdAt', n.createdAt,
+                'commentId', json_extract(n.raw_json, '$.commentId'), 'userId', json_extract(n.raw_json, '$.userId'),
+                'reaction', json_extract(n.raw_json, '$.reaction'), 'staleNudgeDays', json_extract(n.raw_json, '$.staleNudgeDays'),
+                'returnedFromReminders', json(n.raw_json -> '$.returnedFromReminders'),
                 'message', json_extract(n.raw_json, '$.message'), 'type', json_extract(n.raw_json, '$.type'),
                 'computedSplit', json_extract(n.raw_json, '$.computedSplit'), 'directReply', json(n.raw_json -> '$.directReply'),
                 'unreadCount', json_extract(n.raw_json, '$.unreadCount'), 'project', json_extract(n.raw_json, '$.project'),
@@ -388,7 +391,7 @@ impl Db {
                 'fromUser', json_extract(n.raw_json, '$.fromUser'), 'fromAgent', json_extract(n.raw_json, '$.fromAgent'),
                 'recentActors', json_extract(n.raw_json, '$.recentActors'))"
         } else { "n.raw_json" };
-        self.read_inbox(&format!("CASE WHEN json_type(n.raw_json, '$.task')='object' THEN json_set({projection}, '$.task', json_object('id', json_extract(n.raw_json, '$.task.id'), 'title', json_extract(n.raw_json, '$.task.title'), 'ticketNumber', json_extract(n.raw_json, '$.task.ticketNumber'), 'projectId', json_extract(n.raw_json, '$.task.projectId'), 'uniqueIndex', json_extract(n.raw_json, '$.task.uniqueIndex'), 'status', json_extract(n.raw_json, '$.task.status'), 'dueDate', json_extract(n.raw_json, '$.task.dueDate'), 'priority', json_extract(n.raw_json, '$.task.priority'), 'estimate', json_extract(n.raw_json, '$.task.estimate'), 'taskLabels', json_extract(n.raw_json, '$.task.taskLabels'))) ELSE {projection} END"), cfg!(feature = "compact-inbox-metadata"))
+        self.read_inbox(&format!("CASE WHEN json_type(n.raw_json, '$.task')='object' THEN json_set({projection}, '$.task', json_object('id', json_extract(n.raw_json, '$.task.id'), 'title', json_extract(n.raw_json, '$.task.title'), 'ticketNumber', json_extract(n.raw_json, '$.task.ticketNumber'), 'projectId', json_extract(n.raw_json, '$.task.projectId'), 'uniqueIndex', json_extract(n.raw_json, '$.task.uniqueIndex'), 'status', json_extract(n.raw_json, '$.task.status'), 'section', json_extract(n.raw_json, '$.task.section'), 'savedContent', json_extract(n.raw_json, '$.task.savedContent'), 'waitingOnUserId', json_extract(n.raw_json, '$.task.waitingOnUserId'), 'dueDate', json_extract(n.raw_json, '$.task.dueDate'), 'priority', json_extract(n.raw_json, '$.task.priority'), 'estimate', json_extract(n.raw_json, '$.task.estimate'), 'taskLabels', json_extract(n.raw_json, '$.task.taskLabels'))) ELSE {projection} END"), cfg!(feature = "compact-inbox-metadata"))
     }
 
     pub fn inbox(&self) -> Result<Vec<InboxItem>> {
@@ -425,7 +428,7 @@ impl Db {
                 if display_only {
                     // Identity/source already live in typed fields; retain only rendered metadata.
                     n.as_object_mut().context("notification object missing")?.retain(|key, _| {
-                        matches!(key.as_str(), "type" | "computedSplit" | "directReply" | "unreadCount" | "project" | "comment" | "task")
+                        matches!(key.as_str(), "type" | "computedSplit" | "directReply" | "unreadCount" | "project" | "comment" | "task" | "message" | "commentId" | "userId" | "reaction" | "staleNudgeDays" | "returnedFromReminders")
                     });
                     if cfg!(feature = "packed-inbox-metadata") {
                         let old = std::mem::take(n.as_object_mut().unwrap());

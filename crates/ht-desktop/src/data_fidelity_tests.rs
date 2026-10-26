@@ -83,7 +83,7 @@ fn synced_fidelity_fixture_renders_real_authors_saved_summary_and_web_draft_mark
     view.read_with(&mut cx, |this, _| assert!(this.summary.is_empty())).unwrap();
     view.update(&mut cx, |this, _, cx| this.open_task(103, cx)).unwrap();
     draw(view, &mut cx);
-    assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "Unknown author");
+    assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "");
     view.update(&mut cx, |this, _, cx| this.switch(Screen::Board, cx)).unwrap();
     draw(view, &mut cx);
     let badge = measured(view, &mut cx, "board.card.0.draft");
@@ -103,8 +103,8 @@ fn creator_prefers_the_agent_not_the_agents_owner_and_handles_missing_agent_name
         (serde_json::json!({"createdBy":{"displayName":"Owner","agent":{"displayName":"Runner"}}}), "Runner"),
         (serde_json::json!({"agent":{"displayName":"Runner"},"user":{"displayName":"Owner"}}), "Runner"),
         (serde_json::json!({"agent":null,"createdBy":{"displayName":"Human"}}), "Human"),
-        (serde_json::json!({"createdBy":{"displayName":"","email":"human@example.test"}}), "human@example.test"),
-        (serde_json::json!({}), "Unknown author"),
+        (serde_json::json!({"createdBy":{"displayName":"","email":"human@example.test"}}), ""),
+        (serde_json::json!({}), ""),
     ] {
         assert_eq!(creator_name(extra.as_object().unwrap()), expected);
     }
@@ -267,7 +267,7 @@ fn data4_task_fields_use_web_names_indices_and_relative_dates(cx: &mut gpui::Tes
     let view = cx.open_window(gpui::size(px(1440.), px(900.)), |window, cx| {
         let now = chrono::Local::now().to_rfc3339();
         let mut sync = Sync::new(Db::memory().unwrap(), Fixture(VecDeque::from([
-            json!({"success":true,"tasks":[{"id":101,"projectId":15,"sectionId":10,"section":"Doing","boardTitle":"Real board","status":"Normal","title":"Read actual fields","createdAt":now,
+            json!({"success":true,"tasks":[{"id":101,"projectId":15,"sectionId":10,"section":"Doing","boardTitle":"Real board","status":"Normal","title":"Read actual fields","ticketNumber":"real-42","createdAt":now,
                 "createdBy":{"email":"not-a-display-name@example.test"},
                 "priority":{"priority_index":2,"Priority_Value":"Wrong label"},
                 "estimate":{"estimate_index":3,"estimate_value":"Wrong size"},
@@ -287,22 +287,23 @@ fn data4_task_fields_use_web_names_indices_and_relative_dates(cx: &mut gpui::Tes
     draw(view, &mut cx);
     assert_eq!(measured(view, &mut cx, "task.description.author")["text"], "");
     assert_eq!(measured(view, &mut cx, "task.description.timestamp")["text"], "Just now");
-    for (index, expected) in [(0,"Person Name"),(1,"Agent Name"),(2,""),(3,"Doing"),(5,"Real board"),(6,"High"),(7,"Small"),(8,"Real tag")] {
-        assert_eq!(measured(view, &mut cx, &format!("task.meta.{index}.value"))["text"], expected);
+    for (index, expected) in [(0,"Person Name"),(1,"Agent Name"),(2,"REAL-42"),(3,"Doing"),(5,"Real board"),(6,"High"),(7,"Small"),(8,"Real tag")] {
+        assert_eq!(measured(view, &mut cx, &if index == 2 { "task.id".into() } else { format!("task.property.{index}.value") })["text"], expected);
     }
     let due = chrono::DateTime::parse_from_rfc3339("2030-01-02T13:00:00Z").unwrap().with_timezone(&chrono::Local).format("%b %d, %Y").to_string();
-    assert_eq!(measured(view, &mut cx, "task.meta.4.value")["text"], due);
+    assert_eq!(measured(view, &mut cx, "task.property.4.value")["text"], due);
     assert_eq!(measured(view, &mut cx, "task.comment.0.author")["text"], "Live agent");
     assert_eq!(measured(view, &mut cx, "task.comment.0.timestamp")["text"], "Just now");
     view.update(&mut cx, |this, _, cx| {
-        this.db.apply_task(&json!({"id":101,"projectId":15,"status":"Normal","title":"Read actual fields","createdBy":{"displayName":"First Middle Last"},"assignees":[],"priority":null,"estimate":null,"dueDate":null,"labels":[]})).unwrap();
+        this.db.apply_task(&json!({"id":101,"projectId":15,"status":"Normal","title":"Read actual fields","ticketNumber":null,"createdBy":{"displayName":"First Middle Last"},"assignees":[],"priority":null,"estimate":null,"dueDate":null,"labels":[]})).unwrap();
         this.db.apply_comments(101,&json!({"success":true,"comments":[{"id":8,"taskId":101,"text":"<p>Anonymous</p>","createdAt":"2025-01-02T13:00:00Z","creator":{"email":"no-name@example.test"}}]})).unwrap();
         this.reload();cx.notify();
     }).unwrap();
     draw(view, &mut cx);
     for (index, expected) in [(0,"The Assignees"),(1,"No agents"),(4,"-"),(6,"No Priority"),(7,"-"),(8,"No tags")] {
-        assert_eq!(measured(view, &mut cx, &format!("task.meta.{index}.value"))["text"], expected);
+        assert_eq!(measured(view, &mut cx, &if index == 2 { "task.id".into() } else { format!("task.property.{index}.value") })["text"], expected);
     }
+    view.read_with(&mut cx, |this, _| assert!(!this.layout.as_ref().unwrap().borrow().interaction_elements().iter().any(|e|e["key"]=="task.id"))).unwrap();
     assert_eq!(measured(view, &mut cx, "task.comment.0.author")["text"], "");
     assert_eq!(measured(view, &mut cx, "task.comment.0.timestamp")["text"], "2 Jan 2025");
     view.read_with(&mut cx, |this, _| {
@@ -341,4 +342,80 @@ fn data4_board_shows_real_assignees_size_and_three_tags(cx: &mut gpui::TestAppCo
         assert_eq!(this.columns[0].cards[0].assignee_count,2);
         assert!(this.db.mutations().unwrap().is_empty());
     }).unwrap();
+}
+
+#[gpui::test]
+fn data4_inbox_renders_web_kinds_actors_indicators_and_metadata(cx: &mut gpui::TestAppContext) {
+    use serde_json::json;
+    cx.update(crate::input::init);
+    let view = cx.open_window(gpui::size(px(1440.),px(900.)), |window,cx| {
+        let options=Options::parse(["--offline","--screen","inbox"].map(String::from)).unwrap();
+        let mut view=Desktop::new(Db::memory().unwrap(),options,window,cx);
+        view.layout=Some(Rc::new(RefCell::new(LayoutDump::default())));view.ready_scheduled=true;view
+    });
+    let mut cx=VisualTestContext::from_window(view.into(),cx);
+    let base=json!({"id":100,"taskId":101,"userId":42,"status":"Normal","seen":false,"createdAt":"2026-10-20T12:00:00Z","unreadCount":3,
+        "fromUser":{"displayName":"Owner"},"fromAgent":{"displayName":"Real actor"},
+        "comment":{"text":"<blockquote>Old quote</blockquote><p><span data-type=\"mention\" data-label=\"name-1\">Old author</span> said:</p><p>Fresh &amp; real</p>"},
+        "task":{"id":101,"title":"Real task","ticketNumber":"REAL-1","status":"Normal","section":"Review","dueDate":"2030-01-02T13:00:00Z",
+            "priority":{"priority_index":2,"Priority_Value":"Wrong"},"estimate":{"estimate_index":3,"estimate_value":"Wrong"},
+            "taskLabels":[{"label":{"value":"One"}},{"label":{"value":"Two"}},{"label":{"value":"Three"}},{"label":{"value":"Four"}}]}});
+    for (kind, patch, expected) in [
+        ("Assigned",json!({}),"Assigned to you"),
+        ("Comment",json!({}),"Fresh & real"),
+        ("TaskArchived",json!({}),"Unarchived this task"),
+        ("TaskMoved",json!({}),"Moved to Review"),
+        ("AddedToFollowerInTask",json!({}),"Added you to followers and mentioned you"),
+        ("Mentioned",json!({}),"Mentioned in"),
+        ("Mentioned",json!({"commentId":7,"comment":{"text":"<p>Other paragraph</p><p>Hello <span data-type=\"mention\" data-label=\"name-42\">Alex</span> here</p>"}}),"Hello @Alex here"),
+        ("Invited",json!({}),"Click or press ENTER to accept invitation"),
+        ("TaskDueDate",json!({}),"Due date changed to 02 Jan 2030"),
+        ("TaskReminder",json!({}),"Task Reminder"),
+        ("TaskReminder",json!({"staleNudgeDays":5}),"No activity for 5 days"),
+        ("TaskMovedToInbox",json!({}),"Task moved to inbox"),
+        ("TaskOverdue",json!({}),""),
+        ("TaskUpdateDescription",json!({}),"Description updated"),
+        ("AgentMessage",json!({"message":"\u{001e}ht-agent-message:v1:12345678-1234-1234-1234-123456789012:<p>Actual agent message</p>"}),"Actual agent message"),
+        ("Reacted",json!({"reaction":{"emoji":"👍"}}),"Reacted with 👍 on description"),
+    ] {
+        let mut notification=base.clone(); notification["type"]=json!(kind);
+        for (key,value) in patch.as_object().unwrap() {notification[key]=value.clone();}
+        view.update(&mut cx,|this,_,cx| {
+            let db=std::mem::replace(&mut this.db,Db::memory().unwrap());
+            let mut sync=Sync::new(db,Fixture(VecDeque::from([json!({"success":true,"user_notifications":[notification]})])));
+            sync.inbox().unwrap();this.db=sync.db;this.reload();
+            this.split=this.splits.iter().position(|s|s=="All").unwrap();this.filter_inbox();cx.notify();
+        }).unwrap();
+        draw(view,&mut cx);
+        assert_eq!(measured(view,&mut cx,"inbox.row.0.kind")["text"],expected.chars().take(40).collect::<String>(),"{kind}");
+        assert_eq!(measured(view,&mut cx,"inbox.row.0.author")["text"],if kind=="Invited" {"Real actor"} else {"Real actor (3)"});
+        if kind == "Invited" {
+            view.read_with(&mut cx,|this,_| assert!(!this.layout.as_ref().unwrap().borrow().interaction_elements().iter().any(|e|e["key"]=="inbox.row.0.meta"))).unwrap();
+        } else {
+            let metadata=measured(view,&mut cx,"inbox.row.0.meta");
+            assert!(metadata["text"].as_str().unwrap().starts_with("Jan 02, 2030 · High · S · One · Two"),"{metadata}");
+        }
+    }
+    for (patch,colors,actor) in [
+        (json!({"seen":true}),vec![],"Real actor (3)"),
+        (json!({"returnedFromReminders":true}),vec!["#c2cfa5"],"Real actor (3)"),
+        (json!({"type":"TaskOverdue"}),vec!["#f88f9c"],"Real actor (3)"),
+        (json!({"task":{"title":"Real task","savedContent":[{"id":"saved"}],"waitingOnUserId":42}}),vec!["#ffcb33","#7f1d1d"],"Real actor (3)"),
+        (json!({"recentActors":[{"displayName":"First"},{"displayName":"Second"}]}),vec!["#5896f1"],"First, Second (3)"),
+        (json!({"fromAgent":{"displayName":""}}),vec!["#5896f1"]," (3)"),
+    ] {
+        let mut notification=base.clone();notification["type"]=json!("Comment");
+        for (key,value) in patch.as_object().unwrap(){notification[key]=value.clone();}
+        view.update(&mut cx,|this,_,cx| {
+            let db=std::mem::replace(&mut this.db,Db::memory().unwrap());
+            let mut sync=Sync::new(db,Fixture(VecDeque::from([json!({"success":true,"user_notifications":[notification]})])));
+            sync.inbox().unwrap();this.db=sync.db;this.reload();this.filter_inbox();cx.notify();
+        }).unwrap();draw(view,&mut cx);
+        assert_eq!(measured(view,&mut cx,"inbox.row.0.author")["text"],actor);
+        view.read_with(&mut cx,|this,_| {
+            let elements=this.layout.as_ref().unwrap().borrow().interaction_elements();
+            let actual: Vec<_>=elements.iter().filter(|e|e["key"].as_str().is_some_and(|k|k.starts_with("inbox.row.0.indicator."))).map(|e|e["bg"].as_str().unwrap()).collect();
+            assert_eq!(actual,colors);assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+    }
 }

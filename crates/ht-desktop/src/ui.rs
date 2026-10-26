@@ -450,12 +450,7 @@ impl Desktop {
                         self.description = RichText::parse(&detail.task.description, self.colors);
                         self.summary = task_summary(&detail.task.extra).into();
                         let creator = creator_name(&detail.task.extra);
-                        self.creator_initials = creator
-                            .chars()
-                            .take(2)
-                            .collect::<String>()
-                            .to_uppercase()
-                            .into();
+                        self.creator_initials = avatar_initials(&creator).into();
                         self.creator = creator.into();
                         self.comments = detail
                             .comments
@@ -1144,7 +1139,7 @@ impl Desktop {
             );
         }
         let priority = priority_name(&task.extra);
-        if priority != "No Priority" {
+        if !priority.is_empty() && task.extra.get("priority").is_some_and(|v| !v.is_null()) {
             tags.push(
                 pill()
                     .gap(px(4.))
@@ -1157,16 +1152,27 @@ impl Desktop {
                     .layout_key(&self.layout, format!("board.card.{index}.priority"), Some(priority.into())),
             );
         }
+        let estimate = estimate_name(task.extra.get("estimate").unwrap_or(&serde_json::Value::Null), false);
+        if !estimate.is_empty() {
+            tags.push(pill().child(estimate).layout_key(&self.layout, format!("board.card.{index}.size"), Some(estimate.into())));
+        }
         if let Some(labels) = labels {
-            tags.extend(labels.iter().filter_map(|label| {
-                label["name"].as_str().or_else(|| label["value"].as_str())
-            }).enumerate().map(|(i, label)| {
-                pill().child(label.to_owned()).layout_key(
-                    &self.layout,
-                    if i == 0 { format!("board.card.{index}.label") } else { format!("board.card.{index}.label.{i}") },
-                    Some(label.to_owned()),
-                )
+            let labels: Vec<_> = labels.iter().filter_map(|label| label["name"].as_str().or_else(|| label["value"].as_str()))
+                .filter(|name| !name.is_empty()).collect();
+            tags.extend(labels.iter().take(3).enumerate().map(|(i, label)| {
+                pill().child((*label).to_owned()).layout_key(&self.layout,
+                    if i == 0 { format!("board.card.{index}.label") } else { format!("board.card.{index}.label.{i}") }, Some((*label).to_owned()))
             }));
+            if labels.len() > 3 {
+                let more = format!("+{}", labels.len() - 3);
+                tags.push(div().text_size(px(11.)).opacity(0.6).child(more.clone())
+                    .layout_key(&self.layout, format!("board.card.{index}.labels.more"), Some(more)));
+            }
+        }
+        let assignments = task.extra.get("assignees").and_then(|v| v.as_array());
+        for (i, agent) in assignments.into_iter().flatten().filter_map(|v| v.get("agent").filter(|v| !v.is_null())).enumerate() {
+            let name = agent["displayName"].as_str().unwrap_or("");
+            tags.push(pill().child(name.to_owned()).layout_key(&self.layout, format!("board.card.{index}.agent.{i}"), Some(name.to_owned())));
         }
         div()
             .id(("task-card", id as u64))
@@ -1345,24 +1351,20 @@ impl Desktop {
                                                     .gap(px(4.))
                                                     .items_center()
                                                     .child(icon("message-square", t.muted, 12.))
-                                                    .child(task.comment_count.to_string()),
+                                                    .child(task.comment_count.to_string()).layout_key(&self.layout, format!("board.card.{index}.comments"), Some(task.comment_count.to_string())),
                                             )
                                         })
-                                        .when(task.assignee_count > 0, |d| {
-                                            d.child(
-                                                div()
-                                                    .flex()
-                                                    .gap(px(4.))
-                                                    .items_center()
-                                                    .child(icon("user-round", t.muted, 12.))
-                                                    .child(task.assignee_count.to_string()),
-                                            )
-                                        })
+                                        .children(assignments.into_iter().flatten().filter(|v| v["agent"].is_null()).take(5).enumerate().map(|(i, person)| {
+                                            let name = person["displayName"].as_str().unwrap_or("");
+                                            div().size(px(22.)).rounded_full().bg(color(t.active)).text_color(color(t.text))
+                                                .font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center()
+                                                .child(avatar_initials(name)).layout_key(&self.layout, format!("board.card.{index}.assignee.{i}"), Some(name.to_owned()))
+                                        }))
                                         .layout_key(
                                             &self.layout,
                                             format!("board.card.{index}.meta"),
                                             Some(
-                                                [task.comment_count, task.assignee_count]
+                                                [task.comment_count]
                                                     .into_iter()
                                                     .filter(|count| *count > 0)
                                                     .map(|count| count.to_string())
@@ -1486,7 +1488,7 @@ impl Desktop {
                         .when(self.options.theme == ThemeName::Graphite, |d| d.border_0().border_l(px(4.)).pt(px(20.)).pb(px(4. + 8. + 12.)).px(px(16.)).rounded(px(4.)).border_color(if self.interaction.task_part == 0 { color(t.accent) } else { gpui::transparent_black() }))
                         .child(div().h(px(21.)).flex().items_start().gap(px(8.)).text_color(color(0x8e9093)).text_size(px(14.)).line_height(px(21.))
                             .child(div().size(px(18.)).rounded_full().bg(color(avatar_color)).text_color(color(t.text)).text_size(px(11.)).line_height(px(16.5)).font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center().child(self.creator_initials.clone()))
-                            .child(div().child(self.creator.clone()).layout_key(&self.layout, "task.description.author", Some(self.creator.to_string()))).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(short_date(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or("")))))
+                            .child(div().child(self.creator.clone()).layout_key(&self.layout, "task.description.author", Some(self.creator.to_string()))).child(div().flex_1()).child(div().text_size(px(12.)).line_height(px(18.)).mt(px(1.5)).text_color(color(t.muted)).child(inbox::inbox_time(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or(""), chrono::Local::now())).layout_key(&self.layout, "task.description.timestamp", Some(inbox::inbox_time(d.task.extra.get("createdAt").and_then(|v| v.as_str()).unwrap_or(""), chrono::Local::now()))))))
                         .child(div().pt(px(8.)).min_h(px(88.)).text_size(px(16.)).line_height(px(24.)).when(self.editing != Editing::Description && self.description.text.trim().is_empty(), |d| d.child(div().text_size(px(14.)).line_height(px(21.)).text_color(color(placeholder)).child(div().font_weight(FontWeight::SEMIBOLD).text_size(px(18.)).line_height(px(21.6)).when(self.options.theme == ThemeName::Dia, |d| d.font_family("Newsreader").italic()).child("Add Description")).child("Tip: Hit ENTER to edit mode or CTRL+D to jump here"))).when(self.editing != Editing::Description && !self.description.text.trim().is_empty(), |d| d.child(self.description.element())).when(self.editing == Editing::Description, |d| d.child(self.focused_editor(Editing::Description, cx))).layout_key(&self.layout, "task.description", Some(self.description.text.to_string())))
                         .child(div().flex_1().min_h_0())
                         .child(div().pl(px(10.)).flex().items_center().text_size(px(12.)).line_height(px(18.)).text_color(color(t.muted))
@@ -1509,12 +1511,12 @@ impl Desktop {
             .map(|a| {
                 a.iter()
                     .filter(|v| v["agent"].is_null())
-                    .filter_map(|v| v["displayName"].as_str().or_else(|| v["email"].as_str()))
+                    .filter_map(|v| v["displayName"].as_str()).filter(|name| !name.is_empty())
                     .collect::<Vec<_>>()
                     .join(", ")
             })
             .filter(|s| !s.is_empty())
-            .unwrap_or_else(|| "No assignees".into());
+            .unwrap_or_else(|| "The Assignees".into());
         let rows = [
             ("Assignees", assignees),
             (
@@ -1535,9 +1537,7 @@ impl Desktop {
             ),
             (
                 "ID",
-                task.ticket_number
-                    .clone()
-                    .unwrap_or_else(|| task.id.to_string()),
+                task.ticket_number.clone().unwrap_or_default().to_uppercase(),
             ),
             ("Status", task.section.clone()),
             (
@@ -1551,12 +1551,7 @@ impl Desktop {
             ("Priority", priority_name(&task.extra).into()),
             (
                 "Task size",
-                task.extra
-                    .get("estimate")
-                    .and_then(|v| v.get("estimate_value"))
-                    .and_then(|v| v.as_str())
-                    .unwrap_or("-")
-                    .into(),
+                estimate_name(task.extra.get("estimate").unwrap_or(&serde_json::Value::Null), true).into(),
             ),
             (
                 "Tags",
@@ -1607,7 +1602,7 @@ impl Desktop {
             .line_height(px(21.))
             .flex()
             .flex_col()
-            .children(rows.into_iter().enumerate().map(|(i, (label, value))| {
+            .children(rows.into_iter().enumerate().filter(|(_, (label, value))| *label != "ID" || !value.is_empty()).map(|(i, (label, value))| {
                 div()
                     .id(SharedString::from(format!("property-{label}")))
                     .min_h(px(
@@ -1647,7 +1642,7 @@ impl Desktop {
                             .flex()
                             .items_center()
                             .gap(px(if label == "Project" { 6. } else { 10. }))
-                            .when(label == "Assignees" && value == "No assignees", |d| {
+                            .when(label == "Assignees" && value == "The Assignees", |d| {
                                 d.text_color(color(0x8e9093))
                             })
                             .when(label == "ID" && self.options.theme == ThemeName::Dia, |d| {
@@ -2069,21 +2064,23 @@ fn await_input_frame(
     });
 }
 
-fn notification_label(kind: &str) -> String {
-    let mut out = String::new();
-    for ch in kind.chars() {
-        if ch.is_uppercase() && !out.is_empty() {
-            out.push(' ');
-        }
-        out.push(ch);
-    }
-    out
+fn short_date(value: &str) -> String {
+    use chrono::Datelike;
+    let Ok(date) = chrono::DateTime::parse_from_rfc3339(value) else { return String::new(); };
+    let date = date.with_timezone(&chrono::Local);
+    date.format(if date.year() == chrono::Local::now().year() { "%b %d" } else { "%b %d, %Y" }).to_string()
 }
 
-fn short_date(value: &str) -> String {
-    chrono::DateTime::parse_from_rfc3339(value)
-        .map(|d| d.format("%-d %b").to_string())
-        .unwrap_or_else(|_| value.to_owned())
+fn avatar_initials(name: &str) -> String {
+    use unicode_segmentation::UnicodeSegmentation;
+    let words: Vec<_> = name.split_whitespace().collect();
+    let Some(first) = words.first() else { return "?".into(); };
+    let initials = if words.len() == 1 {
+        first.graphemes(true).take(2).collect::<Vec<_>>()
+    } else {
+        vec![first.graphemes(true).next().unwrap(), words.last().unwrap().graphemes(true).next().unwrap()]
+    };
+    initials.into_iter().filter_map(|s| s.to_uppercase().graphemes(true).next().map(str::to_owned)).collect()
 }
 
 fn inbox_date(value: Option<&str>) -> String {
@@ -2104,49 +2101,48 @@ fn inbox_date(value: Option<&str>) -> String {
 }
 
 fn creator_name(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    if let Some(name) = extra.get("agent").and_then(|agent| agent["displayName"].as_str())
-        .filter(|name| !name.is_empty())
-        .or_else(|| extra.get("createdBy").and_then(|creator| creator.pointer("/agent/displayName"))
-            .and_then(|name| name.as_str()).filter(|name| !name.is_empty()))
-    {
-        return name.to_owned();
-    }
-    ["createdBy", "user", "creator"]
-        .into_iter()
-        .find_map(|key| {
-            extra.get(key).and_then(|v| {
-                v["displayName"]
-                    .as_str()
-                    .filter(|s| !s.is_empty())
-                    .or_else(|| v["email"].as_str())
-            })
-        })
-        .or_else(|| extra.get("creatorName").and_then(|v| v.as_str()))
-        .unwrap_or("Unknown author")
-        .to_owned()
+    extra.get("agent").and_then(|v| v["displayName"].as_str())
+        .or_else(|| extra.get("createdBy").and_then(|v| v.pointer("/agent/displayName")).and_then(|v| v.as_str()))
+        .or_else(|| ["createdBy", "user", "creator"].into_iter().find_map(|key|
+            extra.get(key).and_then(|v| v["displayName"].as_str())))
+        .unwrap_or("").to_owned()
 }
 
 fn priority_name(extra: &serde_json::Map<String, serde_json::Value>) -> &str {
-    extra
-        .get("priority")
-        .and_then(|v| v.as_str().or_else(|| v["Priority_Value"].as_str()))
-        .unwrap_or("No Priority")
+    let Some(priority) = extra.get("priority").filter(|v| !v.is_null()) else { return "No Priority"; };
+    if let Some(index) = priority["priority_index"].as_i64() {
+        return match index { 0 => "No Priority", 1 => "Urgent", 2 => "High", 3 => "Medium", 4 => "Low", _ => "" };
+    }
+    match priority.as_str().or_else(|| priority["Priority_Value"].as_str()) {
+        Some(name @ ("No Priority" | "Urgent" | "High" | "Medium" | "Low")) => name,
+        _ => "",
+    }
+}
+
+fn estimate_name(estimate: &serde_json::Value, full: bool) -> &'static str {
+    match (estimate["estimate_index"].as_i64(), full) {
+        (Some(0), false) => "No size",
+        (Some(2), false) => "XS", (Some(2), true) => "Extra small",
+        (Some(3), false) => "S", (Some(3), true) => "Small",
+        (Some(4), false) => "M", (Some(4), true) => "Medium",
+        (Some(5), false) => "L", (Some(5), true) => "Large",
+        (Some(6), false) => "XL", (Some(6), true) => "Extra large",
+        (_, true) => "-", _ => "",
+    }
 }
 
 fn inbox_metadata(task: &serde_json::Value) -> String {
     let mut parts = Vec::new();
     if let Some(date) = task["dueDate"].as_str() {
-        parts.push(short_date(date));
+        let date = short_date(date);
+        if !date.is_empty() { parts.push(date); }
     }
-    if let Some(priority) = task["priority"]
-        .as_str()
-        .or_else(|| task["priority"]["Priority_Value"].as_str())
-    {
-        parts.push(priority.to_owned());
+    if !task["priority"].is_null() {
+        let priority = task.as_object().map(priority_name).unwrap_or("");
+        if !priority.is_empty() { parts.push(priority.to_owned()); }
     }
-    if let Some(estimate) = task["estimate"]["estimate_value"].as_str() {
-        parts.push(estimate.to_owned());
-    }
+    let estimate = estimate_name(&task["estimate"], false);
+    if !estimate.is_empty() { parts.push(estimate.to_owned()); }
     let labels: Vec<_> = task["taskLabels"]
         .as_array()
         .into_iter()
@@ -2200,28 +2196,12 @@ fn task_summary(extra: &serde_json::Map<String, serde_json::Value>) -> String {
 }
 
 fn comment_author(extra: &serde_json::Map<String, serde_json::Value>) -> String {
-    extra
-        .get("agent_display_name")
-        .and_then(|v| v.as_str())
-        .filter(|s| !s.is_empty())
-        .or_else(|| {
-            ["agent", "creator", "user"].into_iter().find_map(|key| {
-                extra.get(key).and_then(|v| {
-                    v["displayName"]
-                        .as_str()
-                        .filter(|s| !s.is_empty())
-                        .or_else(|| v["email"].as_str())
-                })
-            })
-        })
-        .unwrap_or(
-            if extra.get("pending").and_then(|v| v.as_bool()) == Some(true) {
-                "You · Pending"
-            } else {
-                "Unknown author"
-            },
-        )
-        .to_owned()
+    extra.get("agent").and_then(|v| v["displayName"].as_str())
+        .or_else(|| extra.get("agent_display_name").and_then(|v| v.as_str()))
+        .or_else(|| extra.get("agentDisplayName").and_then(|v| v.as_str()))
+        .or_else(|| extra.get("creator").and_then(|v| v["displayName"].as_str()))
+        .or_else(|| extra.get("user").and_then(|v| v["displayName"].as_str()))
+        .unwrap_or("").to_owned()
 }
 
 #[cfg(test)]
@@ -2295,7 +2275,7 @@ mod tests {
         );
         assert_eq!(
             creator_name(f["list"]["tasks"][0].as_object().unwrap()),
-            "Unknown author"
+            ""
         );
         assert_eq!(
             task_summary(f["webSummary"].as_object().unwrap()),
@@ -2312,16 +2292,16 @@ mod tests {
     }
 
     #[test]
-    fn comment_author_does_not_shadow_people_with_null_or_empty_agents() {
-        for extra in [
-            json!({"agent": null, "creator": null, "user": {"displayName": "Example Person"}}),
-            json!({"agent": {"displayName": ""}, "creator": {"displayName": "Example Person"}}),
+    fn comment_author_preserves_nullish_web_precedence_without_invented_names() {
+        for (extra, expected) in [
+            (json!({"agent": null, "creator": null, "user": {"displayName": "Example Person"}}), "Example Person"),
+            (json!({"agent": {"displayName": ""}, "creator": {"displayName": "Example Person"}}), ""),
         ] {
-            assert_eq!(comment_author(extra.as_object().unwrap()), "Example Person");
+            assert_eq!(comment_author(extra.as_object().unwrap()), expected);
         }
         assert_eq!(
             comment_author(json!({"pending": true}).as_object().unwrap()),
-            "You · Pending"
+            ""
         );
         assert_eq!(
             creator_name(
@@ -2329,7 +2309,7 @@ mod tests {
                     .as_object()
                     .unwrap()
             ),
-            "creator@example.com"
+            ""
         );
         assert_eq!(
             priority_name(json!({"priority": null}).as_object().unwrap()),
@@ -2339,13 +2319,13 @@ mod tests {
 
     #[test]
     fn inbox_metadata_uses_server_shapes_and_web_label_limit() {
-        let task = json!({"priority": {"Priority_Value": "High"}, "estimate": {"estimate_value": "S"},
+        let task = json!({"priority": {"Priority_Value": "High"}, "estimate": {"estimate_index": 3, "estimate_value": "S"},
             "dueDate": "2026-10-20T12:00:00Z", "taskLabels": [
                 {"label": {"value": "One"}}, {"label": {"value": "Two"}},
                 {"label": {"value": "Three"}}, {"label": {"value": "Four"}}]});
         assert_eq!(
             inbox_metadata(&task),
-            "20 Oct · High · S · One · Two · Three · +1"
+            format!("{} · High · S · One · Two · Three · +1", short_date("2026-10-20T12:00:00Z"))
         );
         assert_eq!(
             inbox_metadata(&json!({"priority": null, "dueDate": null})),

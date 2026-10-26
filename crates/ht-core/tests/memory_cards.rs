@@ -104,6 +104,7 @@ fn compact_inbox_keeps_rendered_metadata_and_preserves_full_store() {
     expected[0]["rawJson"]["task"] = json!({
         "id":task["id"],"title":task["title"],"ticketNumber":task["ticketNumber"],
         "projectId":task["projectId"],"uniqueIndex":task["uniqueIndex"],"status":task["status"],
+        "section":task["section"],"savedContent":task["savedContent"],"waitingOnUserId":task["waitingOnUserId"],
         "dueDate":task["dueDate"],"priority":task["priority"],"estimate":task["estimate"],"taskLabels":task["taskLabels"]
     });
     let mut actual = serde_json::to_value(&rows).unwrap();

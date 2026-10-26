@@ -633,9 +633,9 @@ impl Desktop {
                         div()
                             .id(("comment-timestamp", i))
                             .text_size(px(12.)).line_height(px(18.))
-                            .child(short_date(&comment.created_at))
+                            .child(inbox::inbox_time(&comment.created_at, chrono::Local::now()))
                             .tooltip(move |_, cx| comment_tooltip(exact.clone(), cx))
-                            .layout_key(&self.layout, format!("task.comment.{i}.timestamp"), None)
+                            .layout_key(&self.layout, format!("task.comment.{i}.timestamp"), Some(inbox::inbox_time(&comment.created_at, chrono::Local::now())))
                     }),
             )
             .child(if editing {
