@@ -145,6 +145,7 @@ impl AssetSource for Assets {
             "calendar",
             "sparkles",
             "search",
+            "command-search",
             "bot",
             "user-plus",
             "rocket",

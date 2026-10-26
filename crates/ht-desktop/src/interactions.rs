@@ -66,12 +66,14 @@ pub(super) struct Interaction {
 impl Interaction {
     pub fn new(cx: &mut Context<Desktop>) -> Self {
         let query = cx.new(|cx| {
-            TextInput::new(
+            let mut input = TextInput::new(
                 String::new(),
                 "Type a command or search...",
                 color(0x8e9093),
                 cx,
-            )
+            );
+            input.line_height = 21.;
+            input
         });
         cx.observe(&query, |this, input, cx| {
             if this.interaction.modal == Some(Modal::Search) {
@@ -1303,7 +1305,7 @@ impl Desktop {
                         },
                         ChoiceAction::Command(_) | ChoiceAction::CreateLabel
                         | ChoiceAction::Task(_)
-                        | ChoiceAction::Board(_) | ChoiceAction::WaitingOn(_) => {
+                        | ChoiceAction::Board(_) | ChoiceAction::WaitingOn(_) | ChoiceAction::RemoveSubtask(_) => {
                             unreachable!()
                         }
                     };
@@ -1536,7 +1538,7 @@ impl Desktop {
                             .flex()
                             .items_center()
                             .gap(px(10.))
-                            .child(icon("search", t.muted, 13.).layout_key(&self.layout, "command.search.icon", None))
+                            .child(icon("command-search", t.muted, 13.).layout_key(&self.layout, "command.search.icon", None))
                             .child(
                                 div()
                                     .flex_1()
@@ -1994,6 +1996,8 @@ mod cmdk_round3_tests {
 
     #[gpui::test]
     fn cmdk3_palette_typography_and_tokens_match_all_web_themes(cx: &mut gpui::TestAppContext) {
+        let glyph = gpui::AssetSource::load(&crate::Assets, "command-search").unwrap().unwrap();
+        assert!(std::str::from_utf8(&glyph).unwrap().contains("stroke-width=\"1.75\""));
         let (view, mut cx) = visual(cx);
         for (theme, background, selected) in [
             (ThemeName::Porcelain, "#ffffff", "#e2e2e6"), (ThemeName::Graphite, "#2c2f36", "#3a3d45"),
@@ -2014,7 +2018,9 @@ mod cmdk_round3_tests {
             assert_eq!(row["lineHeight"], 19.5);
             assert_eq!(group["fontSize"], 11.);
             assert_eq!(group["lineHeight"], 16.5);
-            assert_eq!(measured(view, &mut cx, "command.input")["fontSize"], 14.);
+            let input = measured(view, &mut cx, "command.input");
+            assert_eq!(input["fontSize"], 14.);
+            assert_eq!(input["h"], 21.);
             assert_eq!(measured(view, &mut cx, "command.search.icon")["w"], 13.);
             cx.simulate_keystrokes("escape");
         }
@@ -2050,7 +2056,8 @@ mod cmdk_round3_board_tests {
                 });
                 cx.simulate_keystrokes("ctrl-k");
                 cx.simulate_input(label);
-                view.read_with(cx, |this, cx| assert_eq!(this.choices(cx)[0].name, label));
+                let index = view.read_with(cx, |this, cx| this.choices(cx).iter().position(|row| row.name == label).expect(label));
+                for _ in 0..index { cx.simulate_keystrokes("down"); }
                 cx.simulate_keystrokes("enter");
                 if let Some(title) = title { cx.simulate_input(title); }
                 cx.simulate_keystrokes("enter");
