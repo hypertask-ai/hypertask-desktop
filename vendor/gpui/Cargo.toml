@@ -118,11 +118,6 @@ async-channel = { version = "2.5", default-features = false, features = ["std"] 
 [target."cfg(not(target_family = \"wasm\"))".dependencies]
 pollster = { version = "0.4.0" }
 
-[target."cfg(not(target_family = \"wasm\"))".dev-dependencies]
-http_client = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["test-support"] }
-proptest = { version = "1.12.0", features = ["attr-macro"] }
-reqwest_client = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["test-support"] }
-
 [target."cfg(any(target_os = \"macos\", target_os = \"linux\", target_os = \"windows\", target_os = \"ios\"))"]
 
 [target."cfg(any(target_os = \"macos\", target_os = \"linux\", target_os = \"windows\", target_os = \"ios\"))".dependencies]
@@ -137,10 +132,6 @@ subsecond = { version = "=0.7.10", optional = true }
 [target."cfg(target_family = \"wasm\")".dependencies]
 getrandom = { version = "0.3.4", features = ["wasm_js"] }
 uuid = { version = "1.1", features = ["serde", "js"] }
-
-[target."cfg(target_family = \"wasm\")".dev-dependencies]
-wasm-bindgen = { version = "0.2.120" }
-web-sys = { version = "0.3" }
 
 [target."cfg(any(target_os = \"macos\", target_os = \"ios\"))"]
 
@@ -172,19 +163,3 @@ windows = { version = "0.62", features = ["Win32_Foundation", "Win32_Graphics_Gd
 
 [build-dependencies]
 embed-resource = { version = "3.0", optional = true }
-
-[dev-dependencies]
-backtrace = { version = "0.3" }
-bench_metrics = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["test-support"] }
-collections = { version = "0.1.0", git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["test-support"] }
-env_logger = { version = "0.11" }
-futures-concurrency = { version = "7.7.1" }
-postage = { version = "0.5", default-features = false, features = ["blocking"] }
-web-time = { version = "1.1.0" }
-gpui_platform = { default-features = false, git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["font-kit", "wayland", "x11"] }
-gpui_util = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9" }
-lyon = { version = "1.0", features = ["extra"] }
-rand = { version = "0.9", default-features = true, features = ["std", "std_rng", "os_rng"] }
-scheduler = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9", features = ["test-support"] }
-unicode-segmentation = { version = "1.10" }
-util_macros = { git = "https://github.com/zed-industries/zed", rev = "784e431c42c5c6ef2f10da9b20503a5e8f506df9" }

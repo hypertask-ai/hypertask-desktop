@@ -1,6 +1,7 @@
 [workspace]
 resolver = "2"
-members = ["crates/*", "vendor/gpui", "vendor/gpui_windows", "vendor/gpui_wgpu"]
+members = ["crates/*", "vendor/gpui_windows", "vendor/gpui_wgpu"]
+exclude = ["vendor/gpui"]
 
 [workspace.package]
 edition = "2024"
