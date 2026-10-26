@@ -2094,3 +2094,46 @@ mod cmdk_round3_board_tests {
         });
     }
 }
+
+#[cfg(test)]
+mod cmdk_round4_tests {
+    use super::*;
+    use crate::ui::{shell::tests::{draw, measured}, task_fields::tests::visual};
+
+    #[gpui::test]
+    fn cmdk4_remove_subtask_uses_projected_children_without_loading_their_details(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = visual(cx);
+        view.update(&mut cx, |this, _, _| {
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","sub_tasks":[
+                {"id":98,"ticketNumber":"HT-98","title":"First child","uniqueIndex":98},
+                {"id":99,"ticketNumber":"HT-99","title":"Cold child","uniqueIndex":99}
+            ]})).unwrap();
+            this.reload();
+            assert!(this.db.task(98).unwrap().is_none());
+            assert!(this.db.task(99).unwrap().is_none());
+            let rows = this.command_rows();
+            let row = rows.iter().find(|row| row.key == "removeSubtask").expect("web child projection is sufficient");
+            assert_eq!((row.name.as_str(), row.group, row.keys.as_str()), ("Remove a sub-task", "Task", ""));
+            assert!(rows.iter().position(|row| row.key == "toggleAllComments").unwrap() < rows.iter().position(|row| row.key == "removeSubtask").unwrap());
+            assert!(rows.iter().position(|row| row.key == "removeSubtask").unwrap() < rows.iter().position(|row| row.key == "renameTask").unwrap());
+        }).unwrap();
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Remove a sub-task");
+        cx.simulate_keystrokes("enter");
+        draw(view, &mut cx);
+        assert_eq!(measured(view, &mut cx, "command.choice.0")["text"], "HT-98 First child");
+        assert_eq!(measured(view, &mut cx, "command.choice.1")["text"], "HT-99 Cold child");
+        cx.simulate_input("Cold child");
+        cx.simulate_keystrokes("enter");
+        view.read_with(&mut cx, |this, _| {
+            let rows = this.db.mutations().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].kind, "board_write");
+            assert_eq!(rows[0].payload_json["change"], serde_json::json!({"RemoveSubtask":{"task":99,"parent":1}}));
+            assert_eq!(this.options.task, 1);
+            assert!(this.db.task(99).unwrap().is_none(), "do not invent a full child task from a projection");
+            assert!(this.interaction.modal.is_none());
+            assert_eq!(this.command_usage()["removeSubtask"]["frequency"], 1);
+        }).unwrap();
+    }
+}
