@@ -1767,7 +1767,8 @@ impl Render for Desktop {
             let task = (self.screen != Screen::Board)
                 .then(|| self.selected_task())
                 .flatten();
-            let scope = Scope::load(&self.db, self.screen, self.options.board, task);
+            let seed = sidebar.read(cx).suggestion_seed;
+            let scope = Scope::load(&self.db, self.screen, self.options.board, task, seed);
             sidebar.update(cx, |sidebar, cx| { sidebar.capture = self.layout.clone(); sidebar.fit_viewport(f32::from(window.viewport_size().width), cx); sidebar.set_scope(scope, cx); });
         }
         if self.shell.settings {

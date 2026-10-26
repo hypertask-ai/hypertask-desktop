@@ -177,7 +177,7 @@ fn sidebar_web_header_welcome_composer_and_tall_input_geometry(cx: &mut gpui::Te
         let focus = cx.focus_handle();
         let mut this = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
         this.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
-        this.set_scope(Scope::load(&Db::memory().unwrap(), Screen::Inbox, 0, None), cx);
+        this.set_scope(Scope::load(&Db::memory().unwrap(), Screen::Inbox, 0, None, this.suggestion_seed), cx);
         this
     })));
     let view = host.read_with(cx, |host, _| host.0.clone());
@@ -387,7 +387,7 @@ fn task_summary_mouse_action_sends_exact_web_prompt_and_context(cx: &mut gpui::T
         let mut this = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
         this.client = Some(Client::with_base(&base, "synthetic-token".into()).unwrap());
         this.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
-        this.set_scope(Scope::load(&db, Screen::Task, 123, Some(456)), cx);
+        this.set_scope(Scope::load(&db, Screen::Task, 123, Some(456), this.suggestion_seed), cx);
         this
     });
     click(&view, cx, "ai.task.summary");

@@ -96,6 +96,7 @@ if ($Assets) {
 }
 try {
 $rows = @()
+$env:HT_MEMORY_SUGGESTION_SEED = '7381'
 foreach ($round in 1..3) {
     foreach ($screen in 'inbox', 'board', 'task') {
         $db = Join-Path $Out "run-$screen-$round.db"
@@ -199,6 +200,7 @@ $medians = @(foreach ($screen in 'inbox', 'board', 'task') {
 })
 $result = [pscustomobject]@{
     Revision = $Revision; BuildRevision = (& git rev-parse HEAD); RunnerImage = $env:ImageVersion
+    SuggestionSeed = [long]$env:HT_MEMORY_SUGGESTION_SEED
     ExecutableManifest = [MemoryWindow]::Manifest($Exe)
     ExeSHA256 = (Get-FileHash $Exe).Hash; DatabaseSHA256 = (Get-FileHash $seed).Hash
     DisplayRequestResult = $displayResult; DisplayWidth = $display.Width; DisplayHeight = $display.Height
@@ -216,6 +218,7 @@ if ($env:GITHUB_STEP_SUMMARY) {
 }
 
 } finally {
+    Remove-Item Env:HT_MEMORY_SUGGESTION_SEED -ErrorAction SilentlyContinue
     Remove-Item Env:HT_MEMORY_AI_HISTORY -ErrorAction SilentlyContinue
     if ($assetServer -and -not $assetServer.HasExited) {
         Stop-Process -Id $assetServer.Id -Force

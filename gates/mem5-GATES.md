@@ -140,3 +140,25 @@ The CI-only mapped-instance-buffers control retains the old policy. Actual
 ID3D11Buffer descriptions prove CPU-writable instance capacity goes to zero,
 while all other GPU capacities and font/SQLite/retained-visible-data checks stay.
 The end-to-end CI gates, not assumed driver behavior, decide whether this helps.
+
+
+## Fourth receipt: all budgets green; random content invalidated A/B pixels
+
+Run 40271021927 passed all four platforms, both updater jobs, native interactions,
+and all unchanged demo/heavy cold/warm budgets. The comparison correctly failed
+at inbox pixels (1548,413)-(1721,549): the saved PNGs show different AI welcome
+questions, not a font/renderer difference. Both layout dumps have 37 elements.
+Heavy warm WS after is 65.999/90.804/89.694 MB, with lower private commit on all
+screens. This is still not accepted pixel proof.
+
+Root cause: suggestions sorted by fresh UUIDs on every Scope::load, despite the
+comment promising stable rerenders. Scope equality includes suggestions, so the
+random order also repeatedly invalidated the sidebar. Production now chooses one
+random seed per sidebar and ranks the same full original pool consistently.
+Context/card changes still recompute eligible text/counts; ordinary rerenders
+keep their selected questions. The test re-loads the same scope and proves equality.
+
+Both CI sides receive seed 7381 as a fixture input, recorded in memory.json and
+required by the oracle. It selects the original four questions, not fewer/shorter
+content to meet a limit. This controls randomness, not memory policy; production
+and CI both keep stable choices. No screenshot masking/tolerance or budget change.

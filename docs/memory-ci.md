@@ -14,6 +14,9 @@ successive native frame callbacks instead of retaining diagnostic histograms.
 Structured instance buffers use GPU-default storage with bounded uploads, not
 CPU-writable discard maps that permit driver staging/renaming. Constant buffers
 remain dynamic. Actual D3D buffer descriptions report the writable capacity.
+AI welcome choices now use one random sidebar seed instead of changing on every
+render (which also invalidated the view). Both CI builds use recorded fixture
+seed 7381 for comparable content, without masking pixels or shrinking the pool.
 The Windows segment heap was already
 enabled upstream; that hypothesis was rejected. The harness reads the actual PE
 manifest resource into `memory.json`; `mem5-proof.py` checks identical heap policy,

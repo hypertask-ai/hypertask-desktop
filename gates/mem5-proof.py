@@ -22,6 +22,7 @@ subprocess.run([sys.executable, str(Path(__file__).with_name('windows-memory-che
 a, b = load(current / 'memory.json'), load(control / 'memory.json')
 assert a['Revision'] == b['Revision'] == a['BuildRevision'] == b['BuildRevision']
 assert a['ExeSHA256'] != b['ExeSHA256']
+assert a['SuggestionSeed'] == b['SuggestionSeed'] == 7381
 heap_tag = '{http://schemas.microsoft.com/SMI/2020/WindowsSettings}heapType'
 assert ET.fromstring(a['ExecutableManifest']).find('.//' + heap_tag).text == 'SegmentHeap'
 assert a['ExecutableManifest'] == b['ExecutableManifest'], 'Heap policy must not change'
