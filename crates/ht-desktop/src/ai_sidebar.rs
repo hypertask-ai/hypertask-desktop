@@ -657,12 +657,12 @@ impl AiSidebar {
                 }
                 Update::Event(Event::Title(title)) => chat.title = title,
                 Update::Event(Event::Error(error)) => {
-                    chat.error = Some(error);
+                    chat.error = Some(stream_error(&error));
                     chat.status.clear();
                 }
                 Update::Event(Event::Done(done)) => {
                     if done.status == "error" && !done.cancelled && chat.error.is_none() {
-                        chat.error = Some("AI reply failed".into());
+                        chat.error = Some(stream_error(""));
                     }
                     if done.cancelled && chat.messages[active.assistant].message.content.is_empty() {
                         chat.messages[active.assistant].message.content = "Stream cancelled.".into();
@@ -697,13 +697,10 @@ impl AiSidebar {
             if chat.error.is_some() {
                 chat.status.clear();
             }
-            let finished_chat = active.chat;
             self.active = None;
-            if finished_chat == self.selected {
-                if let Some(next) = self.queued.pop_front() {
-                    if !self.start_turn(next.text.clone(), next.prompt.clone(), cx) {
-                        self.queued.push_front(next);
-                    }
+            if let Some(next) = self.queued.pop_front() {
+                if !self.start_turn(next.text.clone(), next.prompt.clone(), cx) {
+                    self.queued.push_front(next);
                 }
             }
         }
@@ -776,6 +773,34 @@ fn quote_text_html(text: &str) -> String {
             .replace('>', "&gt;")
             .replace('\n', "<br>")
     )
+}
+
+fn stream_error(raw: &str) -> String {
+    if raw.trim().is_empty() {
+        return "Sorry, an error occurred while processing your request.".into();
+    }
+    if let Some((_, after)) = raw.split_once("\"message\"") {
+        if let Some((_, value)) = after.split_once(':') {
+            if let Some(Ok(message)) = serde_json::Deserializer::from_str(value.trim()).into_iter::<String>().next() {
+                return message;
+            }
+        }
+    }
+    if let Some((_, after)) = raw.split_once("'message':") {
+        if let Some(value) = after.trim_start().strip_prefix('\'') {
+            if let Some(end) = value.find('\'') { return value[..end].to_owned(); }
+        }
+    }
+    let lower = raw.to_lowercase();
+    if raw.contains("context_length_exceeded") || (lower.contains("exceed") && lower.contains("limit") && lower.contains("token")) {
+        return "The conversation or attachments are too large for the model token limit. Try shortening your message or removing some context.".into();
+    }
+    if raw.encode_utf16().count() > 800 {
+        let mut units = 0;
+        let prefix: String = raw.chars().take_while(|c| { units += c.len_utf16(); units <= 797 }).collect();
+        return format!("{prefix}…");
+    }
+    raw.to_owned()
 }
 
 fn markdown(text: &str, colors: Theme) -> RichText {
@@ -936,14 +961,21 @@ impl Render for AiSidebar {
                             .layout_key(&self.capture, "ai.stream.status", Some(chat.status.clone())),
                     );
                 }
-                let mut row = div().id(("ai-message", index)).mb(px(8.)).flex().flex_col()
+                if !human && index + 1 == chat.messages.len() {
+                    if let Some(error) = &chat.error {
+                        body = body.child(div().text_color(color(0xe07171)).child(error.clone())
+                            .layout_key(&self.capture, "ai.error", Some(error.clone())));
+                    }
+                }
+                let mut row = div().id(("ai-message", index)).flex().flex_col()
+                    .when(index + 1 < chat.messages.len(), |d| d.mb(px(8.)))
                     .when(human, |d| d.items_end())
-                    .child(body);
-                if !streaming && !message.message.content.is_empty() {
+                    .child(body.layout_key(&self.capture, format!("ai.message.{index}.body"), None));
+                if !streaming && (!message.message.content.is_empty() || (index + 1 == chat.messages.len() && chat.error.is_some())) {
                     let mut actions = div().flex().gap(px(4.)).px(px(8.)).text_size(px(11.));
                     if human {
                         actions = actions.child(
-                            div().id(("ai-edit-message", index)).cursor_pointer().child(icon("square-pen", t.muted))
+                            div().id(("ai-edit-message", index)).tab_index(0).cursor_pointer().child(icon("square-pen", t.muted))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     let content = this.chats[this.selected].messages[index].message.content.clone();
                                     this.draft_quotes.clear();
@@ -955,7 +987,7 @@ impl Render for AiSidebar {
                     }
                     if human || (index + 1 == chat.messages.len() && chat.error.is_some()) {
                         actions = actions.child(
-                            div().id(("ai-retry-message", index)).cursor_pointer().child(icon("rotate-cw", t.muted))
+                            div().id(("ai-retry-message", index)).tab_index(0).cursor_pointer().child(icon("rotate-cw", t.muted))
                                 .on_click(cx.listener(move |this, _, window, cx| {
                                     let messages = &this.chats[this.selected].messages;
                                     let content = if messages[index].message.role == "human" {
@@ -969,8 +1001,8 @@ impl Render for AiSidebar {
                                 .layout_key(&self.capture, format!("ai.message.{index}.retry"), None),
                         );
                     }
-                    actions = actions.child(
-                        div().id(("ai-copy-response", index)).cursor_pointer().child(icon("copy", t.muted))
+                    actions = actions.when(!message.message.content.is_empty(), |d| d.child(
+                        div().id(("ai-copy-response", index)).tab_index(0).cursor_pointer().child(icon("copy", t.muted))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 let message = &this.chats[this.selected].messages[index];
                                 let text = if message.message.role == "human" {
@@ -981,13 +1013,13 @@ impl Render for AiSidebar {
                                 cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
                             }))
                             .layout_key(&self.capture, format!("ai.response.{index}.copy"), None),
-                    );
+                    ));
                     row = row.child(actions);
                 }
                 transcript = transcript.child(row.layout_key(&self.capture, format!("ai.message.{index}"), Some(message.message.content.clone())));
             }
         }
-        let error = chat.error.clone();
+        let error = chat.error.clone().filter(|_| chat.messages.last().is_none_or(|message| message.message.role != "assistant"));
         let mut header = div()
             .h(px(48.))
             .flex_shrink_0()
@@ -1273,7 +1305,8 @@ impl Render for AiSidebar {
                         .pb(px(8.))
                         .text_size(px(12.))
                         .text_color(color(0xe07171))
-                        .child(error),
+                        .child(error.clone())
+                        .layout_key(&self.capture, "ai.error", Some(error)),
                 )
             });
         let mut composer = div()

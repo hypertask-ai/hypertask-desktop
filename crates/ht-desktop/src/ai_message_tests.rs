@@ -167,14 +167,20 @@ fn click(view: &Entity<AiSidebar>, cx: &mut gpui::VisualTestContext, key: &str) 
 
 #[gpui::test]
 fn sidebar_web_header_welcome_composer_and_tall_input_geometry(cx: &mut gpui::TestAppContext) {
-    let (view, cx) = cx.add_window_view(|window, cx| {
+    struct Host(Entity<AiSidebar>);
+    impl Render for Host {
+        fn render(&mut self, _: &mut Window, _: &mut Context<Self>) -> impl IntoElement {
+            div().w(px(420.)).h(px(900.)).child(self.0.clone())
+        }
+    }
+    let (host, cx) = cx.add_window_view(|window, cx| Host(cx.new(|cx| {
         let focus = cx.focus_handle();
         let mut this = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
         this.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
         this.set_scope(Scope::load(&Db::memory().unwrap(), Screen::Inbox, 0, None), cx);
         this
-    });
-    cx.draw(point(px(0.), px(0.)), size(px(420.), px(900.)), |_, _| view.clone().into_element());
+    })));
+    let view = host.read_with(cx, |host, _| host.0.clone());
     assert_eq!(element(&view, cx, "ai.header")["h"], 48.);
     let welcome = element(&view, cx, "ai.welcome");
     let suggestion = element(&view, cx, "ai.suggestion.0");
@@ -185,7 +191,6 @@ fn sidebar_web_header_welcome_composer_and_tall_input_geometry(cx: &mut gpui::Te
     view.update_in(cx, |this, _, cx| {
         this.input.update(cx, |input, cx| input.set_content("Line\n".repeat(80), cx));
     });
-    cx.draw(point(px(0.), px(0.)), size(px(420.), px(900.)), |_, _| view.clone().into_element());
     assert_eq!(element(&view, cx, "ai.input")["h"], 380.);
     click(&view, cx, "ai.suggestion.0");
     view.read_with(cx, |this, cx| {
@@ -208,6 +213,9 @@ fn human_message_copy_and_edit_are_real_mouse_actions(cx: &mut gpui::TestAppCont
         this
     });
     click(&view, cx, "ai.response.0.copy");
+    cx.update(|_, cx| assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap().trim(), "Hello é🙂"));
+    cx.update(|_, cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string("control".into())));
+    cx.simulate_keystrokes("enter");
     cx.update(|_, cx| assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap().trim(), "Hello é🙂"));
     click(&view, cx, "ai.message.0.edit");
     cx.simulate_keystrokes("end");
@@ -327,6 +335,8 @@ fn ai_composer_rich_marks_keep_enter_send_and_skills_only(cx: &mut gpui::TestApp
         let input = this.input.read(cx);
         assert!(input.html().contains("<strong>Bold é🙂</strong>"), "{}", input.html());
         assert_eq!(input.content.as_ref(), "Bold é🙂\nNormal");
+        assert!(input.editor_control_bounds("block-drag-0").is_none());
+        assert!(input.editor_control_bounds("format-0").is_none());
     });
     cx.simulate_keystrokes("enter");
     view.read_with(cx, |this, cx| {
@@ -486,4 +496,55 @@ fn queued_followup_drains_after_done_with_original_history(cx: &mut gpui::TestAp
         assert_eq!(this.chats[0].messages[2].message.content, "Followup é🙂");
         assert!(this.active.is_some());
     });
+}
+
+#[gpui::test]
+fn assistant_errors_are_readable_in_the_failed_message_and_retryable(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let focus = cx.focus_handle();
+        let mut this = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
+        this.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
+        this.chats[0].messages = vec![
+            ChatMessage { message: Message { role: "human".into(), content: "Question".into() }, rich: RichText::default() },
+            ChatMessage { message: Message { role: "assistant".into(), content: String::new() }, rich: RichText::default() },
+        ];
+        this.chats[0].error = Some(stream_error(r#"{"error":{"message":"Provider refused é🙂"}}"#));
+        this
+    });
+    let error = element(&view, cx, "ai.error");
+    let body = element(&view, cx, "ai.message.1.body");
+    assert_eq!(error["text"], "Provider refused é🙂");
+    assert!(error["y"].as_f64().unwrap() >= body["y"].as_f64().unwrap());
+    assert!(error["y"].as_f64().unwrap() + error["h"].as_f64().unwrap() <= body["y"].as_f64().unwrap() + body["h"].as_f64().unwrap());
+    click(&view, cx, "ai.message.1.retry");
+    view.read_with(cx, |this, _| {
+        assert!(this.active.is_none());
+        assert!(this.chats[0].error.as_deref().unwrap().contains("offline"));
+        assert_eq!(this.chats[0].messages.len(), 2);
+    });
+    assert_eq!(stream_error(""), "Sorry, an error occurred while processing your request.");
+    assert!(stream_error("context_length_exceeded").starts_with("The conversation or attachments are too large"));
+    assert!(stream_error(&"é🙂".repeat(400)).encode_utf16().count() <= 798);
+}
+
+#[gpui::test]
+fn message_rows_use_web_alignment_padding_and_eight_pixel_gap(cx: &mut gpui::TestAppContext) {
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let focus = cx.focus_handle();
+        let mut this = AiSidebar::new(crate::theme::THEMES[0], None, focus, window, cx);
+        this.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
+        this.chats[0].messages = vec![
+            ChatMessage { message: Message { role: "human".into(), content: "Hello".into() }, rich: RichText::default() },
+            ChatMessage { message: Message { role: "assistant".into(), content: "Answer".into() }, rich: markdown("Answer", this.colors) },
+        ];
+        this
+    });
+    let transcript = element(&view, cx, "ai.transcript");
+    let human = element(&view, cx, "ai.message.0.body");
+    let assistant = element(&view, cx, "ai.message.1.body");
+    assert!(human["x"].as_f64().unwrap() > assistant["x"].as_f64().unwrap());
+    assert_eq!(assistant["x"].as_f64().unwrap() - transcript["x"].as_f64().unwrap(), 8.);
+    let first = element(&view, cx, "ai.message.0");
+    let second = element(&view, cx, "ai.message.1");
+    assert_eq!(second["y"].as_f64().unwrap() - first["y"].as_f64().unwrap() - first["h"].as_f64().unwrap(), 8.);
 }

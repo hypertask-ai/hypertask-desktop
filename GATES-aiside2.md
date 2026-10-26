@@ -47,3 +47,12 @@ Pending source audit, implementation and current-head hosted CI.
   GUI thread constructs its per-chat ScrollHandle. No local checks ran.
 - Queue followup proof now includes real keyboard input, explicit done event,
   worker HTTP capture of the next message and original chat history.
+- Run 40258634315: all new native actions/stream/queue tests passed on Linux,
+  Windows and macOS; 220 desktop tests passed, one geometry fixture failed.
+  Its one-off 420px draw was replaced by the next normal 1920px window frame
+  (measured composer 1903px). The fixture now owns a persistent 420px host;
+  403px composer assertion remains unchanged. ARM64 build passed.
+- Serial review also removed rich-editor grips absent from web AI, kept queue
+  ownership through chat switches, enabled delivered-action keyboard focus,
+  normalized source-backed errors inside their failed message and added native
+  alignment/error regressions. No generic editor UI or live auth claimed.
