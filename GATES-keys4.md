@@ -39,3 +39,21 @@ Serial self-review; unavailable external review plugins not claimed.
 
 Pending source audit and exact-head GitHub receipt. CI is synthetic native proof,
 not live-owner server acceptance. No blocked/partial row promoted by green CI.
+
+### Source and first CI evidence
+
+Source snapshot: `58363f91a86fde94a140bafa21eb106b95166162`.
+Full scoped registry/hint/runtime additions and R1-R26 refresh are in
+`docs/keyboard-parity.md`, Round 4. Source-based self-review found task GG only
+selects/scrolls the comment region; it must not activate the editor. Corrected
+that behavior and kept the no-send test. Web picker digits index the complete
+catalog, not search results or estimate_index. Compose skill Tab selects a
+skill before traversing the compose controls; existing bearer skills read reused.
+
+First CI run: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40321278071
+at `7f0f5497203708b1c43fe18c3b80986c9a3d9ff4`.
+Linux job `121566533572` rejected a test accessing private TaskFields.due
+(E0616). Replaced the internal-field assertion with observed restored workspace
+focus after the durable due write. No production visibility widened and no
+behavior assertion weakened. Other newly added tests were not executed in that
+compiler-rejected run. Final evidence must use the subsequent exact head.

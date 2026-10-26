@@ -8,7 +8,7 @@ Runtime handlers take precedence over help text.
 Native means local input and queue behavior only.
 It never means live server acceptance.
 
-Acceptance: `GATES-keys2.md` and `GATES-keys3.md`.
+Acceptance: `GATES-keys2.md`, `GATES-keys3.md`, `GATES-keys4.md`.
 B references identify `docs/p2-parity.md` blocker rows.
 Formatting limits remain in `docs/editor-formatting.md`.
 AI transport limits remain in `docs/ai-parity.md`.
@@ -27,7 +27,7 @@ Excluded destinations remain labeled, not silently omitted.
 | App shell surfaces | `3` | Table | Native 3 navigation; table editing outside scope. | `lib/constants/shortcuts.ts:56` |
 | App shell surfaces | `4` | Calendar | Outside scope; no native destination. | `lib/constants/shortcuts.ts:57` |
 | App shell surfaces | `5` | Toggle AI chat | Native AI panel toggle; OEM ? alias included. | `lib/constants/shortcuts.ts:58` |
-| App shell surfaces | `` | Toggle AI chat (alternative) | Native AI panel toggle; OEM ? alias included. | `lib/constants/shortcuts.ts:59` |
+| App shell surfaces | `]` | Toggle AI chat (alternative) | Native AI panel toggle; OEM ? alias included. | `lib/constants/shortcuts.ts:59` |
 | App shell surfaces | `6` | Search | Partial cached search; web document route requires session. R18. | `lib/constants/shortcuts.ts:60` |
 | App shell surfaces | `7` | Running timers | Outside scope; no native destination. | `lib/constants/shortcuts.ts:61` |
 | App shell surfaces | `[` | Collapse / expand sidebar | Native [ rail toggle. | `lib/constants/shortcuts.ts:62` |
@@ -76,7 +76,7 @@ Excluded destinations remain labeled, not silently omitted.
 | Board | `Ctrl/Cmd+Shift+C` | Add task at top | Blocked exact full-create/defaults/ranking contract; compose differs. R14 / creation-parity.md. | `lib/constants/shortcuts.ts:120` |
 | Board | `Shift+C` | Add task at bottom | Blocked exact POST creation; GET defaults alone unlocked. See CLI7699 audit below. | `lib/constants/shortcuts.ts:121` |
 | Board | `ENTER` | Open task | Native Enter opens selected cached task. | `lib/constants/shortcuts.ts:122` |
-| Board | `` | Next view | Blocked unsavedView/view_order/default_view_order/rendered tabs. R6. | `lib/constants/shortcuts.ts:126` |
+| Board | `]` | Next view | Blocked unsavedView/view_order/default_view_order/rendered tabs. R6. | `lib/constants/shortcuts.ts:126` |
 | Board | `[` | Previous view | Blocked unsavedView/view_order/default_view_order/rendered tabs. R6. | `lib/constants/shortcuts.ts:127` |
 | Board | `gg` | Move focus to top | Native gg and Shift+G G boundaries. | `lib/constants/shortcuts.ts:129` |
 | Board | `GG` | Move focus to bottom | Native gg and Shift+G G boundaries. | `lib/constants/shortcuts.ts:130` |
@@ -240,7 +240,7 @@ Conflicting hints stay explicit below.
 | Task | Up/Down, Tab/Shift+Tab | Description, comment and composer focus | Supported | `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:607,662-701` |
 | Task | R | React to focused comment | Supported cached comment reaction picker | `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:573-576` |
 | Task | L | Like focused comment | Supported | `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:578-587` |
-| Task | Ctrl/Cmd+Shift+A | AI suggest reply to focused comment | Blocked cookie-only task-context reply HTML generation. R10. | `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:535-541` |
+| Task | Ctrl/Cmd+Shift+A | Upload for focused description/comment | Blocked staged upload ticket/grant and file delivery. R13. | `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:535-541` |
 | Task | Ctrl/Cmd+, | Copy private title, ticket and URL | Supported semicolon alias | `app/detail/[...slug]/taskDetailNavigationKeymap.ts:165-179` |
 | Task | Alt+T | Toggle timer | Native authoritative timer toggle; one effect attempt. U3. | `app/detail/[...slug]/taskDetailNavigationKeymap.ts:278-290` |
 | Task | Alt+V | Dictation alias | Blocked session-only audio transcription; native capture absent. R12. | `app/detail/[...slug]/taskDetailEditingKeymap.ts:165-174` |
@@ -407,3 +407,140 @@ Out-of-scope global destinations remain excluded, not “blocked APIs”.
 - `keyboard_star_refuses_unknown_state_and_rolls_back_on_account_refusal`
 
 Evidence: `GATES-keys3.md`; exact-head GitHub CI only.
+
+## Round 4 source re-derivation
+
+Source root remains `/home/valentin/projects/hypertask/src`, revision
+`58363f91a86fde94a140bafa21eb106b95166162`.
+This section supersedes stale runtime citations above.
+Registry/footer rows are retained, including help-only claims.
+`Done` describes native input, never live-owner server acceptance.
+
+Read-only inventory queries:
+
+```sh
+rg -n -i 'useHotkeys|hotkey|keydown|event\.key|e\.key|shortcut' src/app/{inbox,detail} src/hooks/{Homepage,MultiPages/AIChat} src/components/{notifications,PageComponents/Kanban,PageComponents/TaskDetail,RTE,AI_CHAT} src/lib/{constants/shortcuts.ts,keyboard,contexts/Kanban,configs/inbox.config.ts}
+rg -n 'useHotkeys|addKeyboardShortcuts|addEventListener.*keydown|onKeyDown|handleKeyDown' src --glob '*.{ts,tsx,js,jsx}'
+```
+
+No `useHotkeys` or `hotkeys(` calls exist in this snapshot.
+Listeners, React handlers and editor keymaps supply the bindings.
+Followed shared provider, modal, bulk-selection and editor imports.
+Calendar, table editing, agent-room destinations and tutorials stay excluded.
+Ordinary browser text movement is not a new app command.
+
+### Previously omitted rows
+
+Keys grouped within one row share scope and result.
+Popup navigation rows include their parent action's blockers.
+No inaccessible popup was invented merely for its keys.
+
+| Surface | Web shortcut | Runtime action | Native status | Web source |
+| --- | --- | --- | --- | --- |
+| Priority picker, inbox/board/task | `0-4` | Select unfiltered catalog position, despite search | **Done**, durable priority write; 9 ignored | `components/Modals/TaskPriority/index.tsx:60-96`, `lib/constants/constants.ts:86-113` |
+| Size picker, inbox/board/task | `0-5` | Select unfiltered catalog position; 1 selects XS/index 2 | **Done**, durable size write; 9 ignored | `components/Modals/TaskEstimate/TaskEstimate.tsx:64-100`, `lib/constants/constants.ts:115-153` |
+| Task | `gg` | Select and scroll to description | **Done**, no edit or send | `app/detail/[...slug]/useTaskDetailNavigationActions.tsx:117-140` |
+| Task | `GG` | Select and scroll to new-comment region | **Done**, no editor activation or send | `app/detail/[...slug]/useTaskDetailNavigationActions.tsx:117-140`, `hooks/Task Detail/useTaskDetailGlobalStates.ts:382-399` |
+| Task, focused read-only comment | `Ctrl/Cmd+Enter` | Edit own comment; never quote or send | **Done**, other-user comment refused; existing edit/save UI | `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:522-523`, `hooks/Task Detail/useTaskDetailGlobalStates.ts:458-475,573-597` |
+| Board, no columns | `C` | Open Add Column, not task creation | **Done**, existing column form and durable AddColumn | `hooks/Homepage/useHandleKeyDownOperations.ts:137-148`, `components/Modals/commands/addColumn.tsx:20-57` |
+| Workspace, AI hidden | `Ctrl/Cmd+Shift+O/J` | Reopen AI, retain current session/draft | **Done**; visible AI still resets, as separately listed | `components/ProviderGlobal/GloablProviders.tsx:1085-1096` |
+| Due picker | `J/K`, Down/Up, Enter | Move choice, apply due date | **Done**, existing due-date UI/write | `components/Modals/DueDate/index.tsx:299-315` |
+| Due calendar | `Ctrl+Enter`, Shift+Escape | Apply selected day; return to presets | Existing native calendar; Control is the web chord | `components/Modals/DueDate/index.tsx:157-168` |
+| Reminder picker | `J/K`, Down/Up, Enter, Escape, Tab | Choose, apply/cancel, suppress Tab | Existing native notification reminder; arbitrary task reminder still lacks authorized `/api/queues/inboxReminder` | `components/Modals/RemindMe/RemindMeComponent.tsx:153-175`, `pages/api/queues/inboxReminder.ts:27-30` |
+| Task | `H` | Open reminder | Existing notification-ID subset only; arbitrary task contract above unavailable | `components/PageComponents/TaskDetail/TaskOptions/RemindMeTaskDetail.tsx:43-59` |
+| Task, description | `R`, `L` | React picker / thumbs-up description | **Blocked R22**, not comment reactions | `hooks/Task Detail/CommentAndDescriptionHooks/useDescriptionReactions.ts:26-35,84-91`, `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:578-600` |
+| Board card | `F`, Alt+F, Ctrl/Cmd+S, Ctrl/Cmd+period, Ctrl/Cmd+Shift+period | Follow/unfollow, share/copy public links | **Blocked R1/R7**, same session routes as detail | `components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:583-594,701-709,746-755` |
+| Board card | `Ctrl/Cmd+Shift+O` | Link subtask | **Blocked R15**; not AI reset on the card | `components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:725-732` |
+| Board card | `Alt+V` | Open audio reply | **Blocked R12**, not ordinary reply | `components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:758-762` |
+| Board card | `Ctrl/Cmd+M`, Ctrl/Cmd+I, Ctrl/Cmd+Shift+I, Ctrl/Cmd+comma, Ctrl/Cmd+semicolon, Ctrl/Cmd+Shift+semicolon, F2 | Reply, private clipboard variants, rename | Existing native task-targeted actions | `components/PageComponents/Kanban/KanbanTaskComponents/task.tsx:644-649,675-721,765-772` |
+| App shell board | `]` | AI toggle; board listener also requests column-right focus | Existing AI toggle; conflicting column listener retained as source conflict, not invented key | `hooks/Homepage/useAppShellSurfaceShortcuts.ts:25,119-127`, `hooks/Homepage/useHandleKeyDownOperations.ts:239-243` |
+| Board first-task hint | `Ctrl/Cmd+J` | Compose first task | Existing flagged compose; exact placement still R14 | `components/PageComponents/Kanban/KanbanSectionComponents/FirstTaskPointer.tsx:57-69` |
+| AI sidebar | `@`, Up/Down, Enter, Escape | Context entity picker | **Blocked R23**; comment mention search is a different route | `components/RTE/Components/AI_Chat/MentionData.js:10-22,78-85`, `components/RTE/Components/AI_Chat/MentionList.tsx:47-116,155-175` |
+| AI sidebar header menus | `Escape` | Close history/overflow before stream cancellation | Existing native menu close | `components/AI_CHAT/ChatHeader.tsx:194-207` |
+| AI message actions | Enter | Activate focused copy/edit/retry button | Existing native focusable controls and Enter copy proof | `components/AI_CHAT/MessageItem.tsx:119-142` |
+| AI sidebar conversation commands | Up/Down, Enter/Space, Tab, Escape | Choose conversation; close and restore anchor focus | Native history subset; mixed agent conversation membership R23/R24; no invented agent rooms | `components/AI_CHAT/AgentSidebarChatCommands.tsx:93-110,137-156` |
+| AI message / composer overflow | `Escape` | Close overflow | Existing native overflow close | `components/AI_CHAT/MessageItem.tsx:377-393`, `components/AI_CHAT/AiChatComposerActionRow.tsx:45-55` |
+| AI sidebar, workspace focus | `Ctrl/Cmd+Shift+D` | Start recording, unless another input focused | **Blocked R12**, same audio contract | `components/AI_CHAT/AI_Tiptap_Container.tsx:218-240` |
+| App shell | `Alt+Shift+Up/Down` | Cycle teams outside agent room too | **Blocked R24**, ordered team/recent-board membership, not arbitrary board order | `components/ProviderGlobal/GloablProviders.tsx:1003-1061` |
+| Shortcuts sheet | `Escape`; any key outside text input | Close help; search input retains typing | Existing Escape; outside-input dismissal **Done** | `components/sidebars/keyboardShortcuts.tsx:60-76` |
+| Assignee / blocked-by / tags / board picker | Up/Down, Enter, Escape | Navigate, select or cancel existing choices | Existing native picker behavior; active-view filter variants remain R5 | `components/Modals/AssignToUser/AssignToUser.tsx:255-322`, `components/Modals/BlockedByPerson/BlockedByPerson.tsx:109-139`, `hooks/MultiPages/Tasks/useTagsModal.ts:127-145`, `components/Modals/MoveTaskToBoard/index.tsx:197-255` |
+| Task/comment options and links | Up/Down, Enter, Escape | Navigate and invoke focused option/link | Existing native options; complete links feed still R8 | `hooks/General/useHandleKeydownBasic.ts:7-24`, `components/Modals/LinksModal/index.tsx:153-188` |
+| Priority / size picker | Tab | Suppress native Tab traversal | Existing native suppression | `components/Modals/TaskPriority/index.tsx:60-64`, `components/Modals/TaskEstimate/TaskEstimate.tsx:64-68` |
+| Board filters | Up/Down, Enter; Ctrl/Cmd+Enter date; Shift+Escape back | Navigate/apply filter values | **Blocked R5**, personal unsaved view write, not task property write | `hooks/MultiPages/Filters/useAssigneeFilter.ts:133-149`, `hooks/MultiPages/Filters/useBlockedByPersonFilter.ts:118-138`, `hooks/MultiPages/Filters/useDateFilter.ts:189-209`, `hooks/MultiPages/Filters/useFilterView.ts:144-157` |
+| Full-create form | A/P/D/M/S/Shift+M/T, arrows/Tab, Enter, Ctrl+D/J, Escape | Edit draft properties, focus and editor/writer | **Blocked R14**, exact save and authoritative active-view defaults; not compose substitutions | `components/Modals/CreateTaskGloballyModal/CreateTaskModalBody.tsx:180-270` |
+| Inline AI writer | Enter, Shift+Enter, Up/Down, Escape | Submit/newline, response option navigation, discard confirmation | Partial; compose implemented, legacy context fields **R25**; audio/upload **R12/R13** | `components/PageComponents/TaskDetail/AI Task Writer/AITaskWriterContainer.tsx:441-475,1057-1065`, `components/PageComponents/TaskDetail/AI Task Writer/AI_OPTIONS.tsx:151-165` |
+| Inline draft AI | Enter, Tab/Shift+Tab, Escape, empty-editor Shift+R | Submit prompt, trap focus, close, suggest reply | Legacy editor context **R25**; task reply generation **R10** | `components/RTE/Components/InlineDraftAiFloat.tsx:435-488,878-884`, `components/RTE/useTaskDetailEditorKeyboard.tsx:28-41` |
+| Writer/compose skill menu | `/`, Up/Down, Enter/Tab, Escape | Insert skill, not send prompt | AI-sidebar skills implemented; compose integration **Done**; legacy writer R25 | `components/PageComponents/TaskDetail/AI Task Writer/useSkillSlashMenu.tsx:112-179`, `components/Modals/commands/HTC/ComposeTaskWriter.tsx:164`, `components/RTE/Extensions/SlashCommands/CommandsList.tsx:137-153` |
+| Compose | `Ctrl/Cmd+U`, Tab/Shift+Tab, Enter, Shift+Enter, Escape | Upload; cycle search/new-task/board; send/newline/close | Existing native focus/send/close; upload **R13** | `components/Modals/commands/HTC/ComposeTaskWriter.tsx:226-245`, `components/Modals/commands/HTC/commands.tsx:710-750` |
+| Comment/description editor | `@`, Up/Down, Enter, Escape | Server mention picker | Done by CLI7699; not AI-sidebar entity context | `components/RTE/MentionData.js:12-44`, `components/RTE/MentionList.jsx:141-162` |
+| Snippet picker | Up/Down, Enter, Escape | Pick snippet, close | **Blocked R2**, missing authorized `settings.snippets` | `components/RTE/Extensions/Snippets/SnippetsList.tsx:39-56`, `components/RTE/Extensions/Snippets/RenderSnippets.tsx:64-73` |
+| Editor emoji/GIF picker | Tab, arrows, Enter, Escape | Switch emoji/GIF tabs, choose GIF, close | Emoji input exists; GIF-specific keys **R26** | `components/RTE/Components/EmojiGifPicker.tsx:114-129,144-168,217-242`, `components/RTE/EmojiList.jsx:39-53` |
+| Active audio recorder | Enter, Escape | Stop recording / cancel | **Blocked R12**, no native microphone/transcription | `components/RTE/Components/AudioButton.tsx:473-490` |
+| Time-log modal | Tab/Shift+Tab, Enter, Escape | Trap focus, add/save/cancel entry | **Blocked R9**, all-user entries and canManage absent | `components/Modals/TimeLog/TimeLogModal.tsx:259-281,402-434,449-451,558-577` |
+| Task custom field input | Enter, Escape | Save/cancel field value | Not a global binding; authoritative custom-field UI remains native gap, not an authorization claim | `components/PageComponents/TaskDetail/TaskInfoColumn/TaskInfo.tsx:1033-1042` |
+| Attachment preview controls | Enter/Space, Escape | Remove/open attachment; close gallery | **Blocked R13** staged upload contract; existing downloaded attachment links remain separate | `components/Common/AttachmentsUpload/AttachmentControls.tsx:57-62`, `components/Common/AttachmentsUpload/SingleFileInputPreview.tsx:219-225`, `components/Common/AttachmentsUpload/ImageGalleryView.tsx:133-135` |
+| Confirm dialog | Enter or Ctrl/Cmd+Enter, Escape | Confirm configured action / cancel | Existing native confirmations; parent operation's auth limits retained | `components/Modals/Common Modals/ConfirmDialog.tsx:52-73` |
+
+### Main capability refresh (all incomplete rows)
+
+Main base `d51b95b47623` includes desktop PRs
+https://github.com/hypertask-ai/hypertask-desktop/pull/45 and
+https://github.com/hypertask-ai/hypertask-desktop/pull/48.
+PR45 already implements flagged compose, comment star/pin and mentions.
+PR48 fetches inbox, boards, catalogs, task detail and comments.
+Fetching does not add a web-session authorization exception.
+Existing A/M/P/S/T/D and board selection now use those fetched catalogs.
+Search still returns tasks, not ranked web documents.
+
+Every incomplete in-scope registry, hint and runtime row resolves below.
+Outside-scope destinations remain excluded, not API-blocked.
+
+| Audit | Exact missing route or field, current web citation | Round 4 result |
+| --- | --- | --- |
+| R1 follow | POST `/api/follower/createFollower`, `/api/follower/unFollowTask`, `/api/follower/getFollower`; session and follower row ID. `pages/api/follower/createFollower.ts:9-25`, `unFollowTask.ts:10-29`, `getFollower.ts:10-40`. | Still blocked, board and task. |
+| R2 snippets | GET `/api/users/preferences`, `settings.snippets`; `app/api/users/preferences/route.ts:65-85,125-142`, `lib/snippets.ts:58-69`. | Still blocked, global/editor picker. |
+| R3 favorite digits | GET `/api/favorites/getFavorites`, `{index,project}`; `pages/api/favorites/getFavorites.ts:5-18`, `components/ProviderGlobal/GloablProviders.tsx:724-739`. | Still blocked; fetched project order is not favorite.index. |
+| R4 ranking | Two PUT `/api/tasks/single` rank writes; `hooks/Homepage/useMoveTasks.ts:146-178,216-253`, `lib/api/task-writes/update.ts:17-18,30-34,72`. MCP update's accepted fields omit ranking: `lib/mcp/tasks/fields/text.ts:1-33`. | Still blocked; not section-move parity. |
+| R5 filters/sort/archive | POST `/api/projects/views/unsaved-view`; `baseViewId`, personal `unsavedView.board_filters`; `lib/api/project-writes/views/unsaved-view.ts:31-54`, `hooks/Homepage/Views/useKanbanViews.ts:195-215`. | Still blocked; named MCP view settings differ. |
+| R6 saved-view cycling | `/api/projects/detail` personal `view_order`, `default_view_order`, `unsavedView`; POST update/order/reset routes. `pages/api/projects/detail.ts:12-20`, `hooks/Homepage/Views/useOrderedViews.ts:17-57`, `useRenderedViews.ts:24-43,86-93`. | Still blocked; native column Tab remains explicitly partial. |
+| R7 public share | GET/POST/PUT `/api/share/createShareLink`; live share ID/type/state; `pages/api/share/createShareLink.ts:12-21,64-95`. | Still blocked; no fake public URL. |
+| R8 links | GET `/api/urls/fetchUrls?taskId=…&commentId=…`; stored and saved-source URLs; `pages/api/urls/fetchUrls.ts:10-24`, `utils/controllers/urls/fetchUrls.ts:9-118`. | Still blocked; attachment/HTML URLs are not this feed. |
+| R9 full time log | GET/POST/PATCH/DELETE `/api/time/entries`, all-user `entries` and `canManage`; `app/api/time/entries/route.ts:40-58`, `app/api/time/_lib.ts:11-20`. | Still blocked; MCP timer toggle remains implemented. |
+| R10 suggest reply | POST `/api/ai/suggest-reply`, task-context reply HTML; `app/api/ai/suggest-reply/route.ts:160-170`. | Still cookie-only; task Shift+R only. Ctrl/Cmd+Shift+A actually uploads. |
+| R11 history | `agentRunActivities[].link/options/selectedOption/selectedAt/selectedBy`; `lib/agentRuns/model.ts:64-75`, full feed `pages/api/comments/getByTask.ts:21-27`. MCP comment activity metadata `lib/mcp/comments/activityMetadata.ts:3-16` does not supply the interactive run feed. | Still partial; local toggle alone cannot deliver full agent log. |
+| R12 audio | POST `/api/ai/audio-transcript`, form-data audio; `app/api/ai/audio-transcript/route.ts:102-104`. | Still blocked; native capture also absent. |
+| R13 staged files | POST `/api/tasks/uploadUrl`, storage PUT, POST `/api/tasks/n8nUpload`; `lib/storage/uploadViaApi.ts:95-140,159-178`, session wrapper `lib/api/task-writes/route.ts:35-40`. | Still blocked; direct MCP attachments are not staged web files. |
+| R14 exact creation | POST `/api/tasks/create`, POST `/api/tasks/createGlobally`, caller rank and mixed assignee defaults; `lib/api/task-writes/create.ts:20-24`, `pages/api/tasks/createGlobally.ts:113-115`, `lib/api/task-writes/route.ts:35-40,101-106`. | GET defaults/writer unblocked and implemented; exact POST saves remain blocked. Empty-board C is separately Done. |
+| R15 linker | GET `/api/tasks/searchOrphans`, POST `/api/tasks/addParent`, exact empty-result create fallback; `components/Modals/SubtaskLinkingModal/SubtaskLinking.tsx:46-57,95-135`, `pages/api/tasks/searchOrphans.ts:1-5`, `addParent.ts:1-5`. | Still blocked; command palette is not a linker. |
+| R16 unseen | GET `/api/notifications/markAsUnseen`, false/toggle seen; `lib/api/notification-writes/mark-unseen.ts:13-16,35-42,58-75`; MCP seen only true `app/api/mcp/inbox/seen/route.ts:79-85`. | Still blocked; open's seen=true does not satisfy U. |
+| R17 whole undo | Heterogeneous action-history inverse routes, including `/api/notifications/inbox-zero/undo` and bulk archive; `hooks/General/useUndo.tsx:194-220`, `utils/undoActions/helperFuncs.ts:21-68`. | Still blocked as a complete stack; isolated native/editor undo not promoted. |
+| R18 document search | POST `/api/search/document`, ranked document hits and contextProjectId; `pages/api/search/document.ts:10-12,30-40`, `utils/controllers/search/searchDocuments.ts:16`. | Server task search works after PR48; document parity still partial. |
+| R19 video | No current Ctrl+Y runtime handler; registry `lib/constants/shortcuts.ts:224`; browser player `components/RTE/Extensions/YoutubeTiptap/index.tsx:110-140`. | Registry-only key; URL insertion not a native video player. No fake API blocker. |
+| R20 double Tab | No current sentence-completion handler/route; registry `lib/constants/shortcuts.ts:225`; actual Tab handling `hooks/Task Detail/CommentAndDescriptionHooks/useCommentAndDescriptions.ts:607,638-704`. | Registry-only, not an invented AI binding. |
+| R21 inbox Shift+S | Hint `lib/configs/inbox.config.ts:71`; actual linker Ctrl/Cmd+Shift+O `components/notifications/inboxSplit/index.tsx:616-620`. | Hint-only; actual linker R15. |
+| R22 description reactions | POST `/api/tasks/reactToDescription`, `{descriptionId,taskId,userId,unified,emoji,names}`; `lib/api/task-writes/description-reaction.ts:10-35`, session wrapper `lib/api/task-writes/route.ts:35-40`. | Still blocked; comment reaction API must not receive description IDs. |
+| R23 AI mentions | GET `/api/ai/chat/mention?param=…&projectId=…`, `pages/api/ai/chat/mention.ts:21`; request `components/RTE/Components/AI_Chat/MentionData.js:10-22`. | Still blocked; CLI `mention-search` only adapts `/api/tasks/searchByParam`. |
+| R24 team cycling | POST `/api/teams/getAllSidebar`, ordered teams and their recent boards; `pages/api/teams/getAllSidebar.ts:8`, `components/ProviderGlobal/GloablProviders.tsx:1032-1057`. | Still blocked; favorite and team ordering cannot be inferred from fetched projects. |
+| R25 legacy inline writer | Generation POST `/api/ai/task-writer` now authorizes CLI, `app/api/ai/task-writer/route.ts:52-61`. Exact legacy request also consumes board model/BYOK settings and related task context: `lib/ai/taskWriterBoardContext.ts:18-35`, `lib/ai/taskWriterTaskIds.ts:18-30`, `hooks/MultiPages/AiWriter/useAiTaskWriter.ts:198-224`. | Partial, not generation-auth-blocked. Missing authoritative `byokProviderFlags`, `ai_custom_instructions[].model_selected`, relatedFromTasks/relatedToTasks and flag-selected editor handoff; do not silently replace with compose. |
+| R26 GIF picker | `NEXT_PUBLIC_GIPHY_API_KEY`, GET `https://api.giphy.com/v1/gifs/{search,trending}`; `components/RTE/Components/EmojiGifPicker.tsx:144-168`. | Native GIF panel absent; authorized public Giphy configuration not provided. Emoji controls are not GIF parity. |
+
+The endpoint allowlist still has exactly task-writer, task-defaults,
+comment-star-pin and mention-search (`lib/auth/desktopCliTokenUser.ts:7`).
+No cookies or credentials were copied. No owner writes ran.
+Native-only limitations are explicitly not described as server refusals.
+
+### Round 4 native input checks
+
+- `keyboard_picker_digits_use_unfiltered_web_catalog_positions`
+- `keyboard_task_gg_and_gg_shift_focus_description_and_composer_without_sending`
+- `keyboard_command_enter_edits_focused_own_comment_instead_of_quoting`
+- `keyboard_empty_board_c_adds_column_but_never_substitutes_task_creation`
+- `keyboard_hidden_ai_aliases_reopen_existing_draft_without_reset`
+- `keyboard_due_picker_j_k_match_arrow_navigation_without_leaking_to_tasks`
+- `keyboard_shortcut_sheet_keeps_search_keys_but_dismisses_outside_input`
+- `keyboard_compose_skills_wrap_select_with_tab_enter_and_escape_without_sending`
+- `keyboard_compose_skills_reject_invalid_tokens_and_changed_scope`
+- Existing `human_message_copy_and_edit_are_real_mouse_actions` also sends Enter
+  and verifies the clipboard, not merely the enum.
+
+Evidence: exact-head GitHub receipt in `GATES-keys4.md` and draft PR.
