@@ -311,11 +311,11 @@ impl Desktop {
         self.compose.skill_choice = 0;
         cx.notify();
     }
-    fn compose_skill_key(&mut self, event: &KeyDownEvent, window: &mut Window, cx: &mut Context<Self>) -> bool {
+    fn compose_skill_navigation(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
         if !self.compose.input.focus_handle(cx).is_focused(window) { return false; }
         let choices = self.compose_skill_choices(cx);
         if choices.is_empty() { return false; }
-        match event.keystroke.key.as_str() {
+        match key {
             "up" => self.compose.skill_choice = (self.compose.skill_choice + choices.len() - 1) % choices.len(),
             "down" => self.compose.skill_choice = (self.compose.skill_choice + 1) % choices.len(),
             "enter" | "tab" => self.choose_compose_skill(self.compose.skill_choice, window, cx),
@@ -360,7 +360,7 @@ impl Desktop {
         if !self.compose.open {
             return false;
         }
-        if self.compose_skill_key(event, window, cx) { return true; }
+        if self.compose_skill_navigation(&key.key, window, cx) { return true; }
         if key.key == "escape" {
             if self.compose.picker {
                 self.compose.picker = false;
@@ -655,6 +655,15 @@ impl Desktop {
         };
         div()
             .id("compose-backdrop")
+            .capture_action(cx.listener(|this, _: &crate::input::Up, window, cx| {
+                if !this.compose_skill_navigation("up", window, cx) { cx.propagate(); }
+            }))
+            .capture_action(cx.listener(|this, _: &crate::input::Down, window, cx| {
+                if !this.compose_skill_navigation("down", window, cx) { cx.propagate(); }
+            }))
+            .capture_action(cx.listener(|this, _: &crate::input::Newline, window, cx| {
+                if !this.compose_skill_navigation("enter", window, cx) { cx.propagate(); }
+            }))
             .absolute()
             .size_full()
             .top_0()

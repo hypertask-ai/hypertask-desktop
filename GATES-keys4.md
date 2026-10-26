@@ -71,3 +71,21 @@ observable-text oracle and added intermediate Up/Down selection assertions.
 Also moved hidden-AI reopen into the existing shell input/modal guards, with a
 native title-input regression. Visible chat reset behavior remains unchanged.
 Failed receipt retained separately; never counted as passing final evidence.
+
+### Dispatch premise corrected
+
+Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40323864123
+at `afe85992de4074824457a7728cd7361661feb6fe` reported 271 passed,
+3 failed per native platform. The immediate Up assertion disproved the premise
+that raw keydown reaches compose navigation: GPUI TextInput Up/Down bindings
+run actions first (`input.rs:1166-1167`), exactly as the existing mention capture
+comment explains (`ui.rs`, capture_action block). Capture those actions inside
+the compose overlay, sharing the raw-key navigation function. This also covers
+compose launched over settings. No navigation assertion weakened.
+
+AI reopen's existing toggle only changes visibility, not composer focus; use
+focus_composer behind the existing shell guards instead. The new title guard
+fixture had no selected inbox notification, so F2 never opened an editor.
+Use the established task fixture and assert title focus before each alias.
+Final draft PR remains https://github.com/hypertask-ai/hypertask-desktop/pull/51.
+Rebased onto main `857db531cdbf26c85644534922a31813b3bacdf7` (fidelity merged).
