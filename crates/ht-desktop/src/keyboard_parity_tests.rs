@@ -784,3 +784,160 @@ fn cmdk_round2_summary_commands_reach_real_sender_and_preserve_offline_refusal(c
         view.read_with(cx, |this, _| assert!(this.db.mutations().unwrap().is_empty()));
     }
 }
+
+#[gpui::test]
+fn keyboard_picker_digits_use_unfiltered_web_catalog_positions(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
+        for (picker, field, values) in [
+            ("p", "priority", vec![0, 1, 2, 3, 4]),
+            ("s", "estimate", vec![0, 2, 3, 4, 5, 6]),
+        ] {
+            for (digit, value) in values.into_iter().enumerate() {
+                let (view, cx) = cx.add_window_view(|window, cx| {
+                    let mut this = super::task_fields::tests::desktop(window, cx);
+                    this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[
+                        {"id":101,"taskId":1,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-01T00:00:00Z"}
+                    ]})).unwrap();
+                    this.screen = screen;
+                    this.reload();
+                    if screen == Screen::Inbox {
+                        this.split = this.splits.iter().position(|s| s == "All").unwrap();
+                        this.filter_inbox();
+                    }
+                    this
+                });
+                cx.simulate_keystrokes(picker);
+                cx.simulate_input("no matching results");
+                cx.simulate_keystrokes("9");
+                view.read_with(cx, |this, _| {
+                    assert!(this.interaction.modal.is_some());
+                    assert!(this.db.mutations().unwrap().is_empty());
+                });
+                cx.simulate_keystrokes(&digit.to_string());
+                view.read_with(cx, |this, _| {
+                    let rows = this.db.mutations().unwrap();
+                    assert_eq!(rows.len(), 1, "{screen:?} {picker} {digit}");
+                    assert_eq!(rows[0].payload_json["task_id"], 1);
+                    assert_eq!(rows[0].payload_json[field], value);
+                    assert!(this.interaction.modal.is_none());
+                    assert_eq!(this.screen, screen);
+                });
+            }
+        }
+    }
+}
+
+#[gpui::test]
+fn keyboard_task_gg_and_gg_shift_focus_description_and_composer_without_sending(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    cx.simulate_keystrokes("tab g g");
+    view.update_in(cx, |this, window, _| {
+        assert_eq!(this.interaction.task_part, 0);
+        assert!(this.focus.is_focused(window));
+    });
+    cx.simulate_keystrokes("shift-g shift-g");
+    view.update_in(cx, |this, window, cx| {
+        assert_eq!(this.interaction.task_part, this.comments.len() + 1);
+        assert!(this.comment_input.focus_handle(cx).is_focused(window));
+        assert!(this.db.mutations().unwrap().is_empty());
+    });
+    cx.simulate_input("g g stays text");
+    view.read_with(cx, |this, cx| assert!(this.comment_input.read(cx).content.contains("g g stays text")));
+}
+
+#[gpui::test]
+fn keyboard_command_enter_edits_focused_own_comment_instead_of_quoting(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for chord in ["ctrl-enter", "cmd-enter"] {
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let mut this = super::task_fields::tests::desktop(window, cx);
+            this.db.apply_comments(1, &serde_json::json!({"success":true,"comments":[
+                {"id":701,"text":"<p>Own comment</p>","creatorId":42,"createdAt":"2026-01-01T00:00:00Z"},
+                {"id":702,"text":"<p>Other comment</p>","creatorId":43,"createdAt":"2026-01-02T00:00:00Z"}
+            ]})).unwrap();
+            this.reload();
+            this
+        });
+        cx.simulate_keystrokes("tab tab");
+        cx.simulate_keystrokes(chord);
+        view.read_with(cx, |this, _| {
+            assert!(this.comment_actions.edit_id.is_none());
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
+        cx.simulate_keystrokes("shift-tab");
+        cx.simulate_keystrokes(chord);
+        view.update_in(cx, |this, window, cx| {
+            assert_eq!(this.comment_actions.edit_id, Some(701));
+            assert!(this.comment_actions.input.focus_handle(cx).is_focused(window));
+            assert_eq!(this.comment_actions.input.read(cx).html(), "<p>Own comment</p>");
+            assert!(this.comment_input.read(cx).is_empty());
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
+        cx.simulate_keystrokes("ctrl-a");
+        cx.simulate_input("Edited from keyboard");
+        cx.simulate_keystrokes(chord);
+        view.read_with(cx, |this, _| {
+            let rows = this.db.mutations().unwrap();
+            assert_eq!(rows.len(), 1);
+            assert_eq!(rows[0].payload_json["comment_id"], 701);
+            assert_eq!(rows[0].payload_json["change"]["action"], "edit");
+            assert!(rows[0].payload_json["change"]["text"].as_str().unwrap().contains("Edited from keyboard"));
+        });
+    }
+}
+
+#[gpui::test]
+fn keyboard_empty_board_c_adds_column_but_never_substitutes_task_creation(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(|window, cx| {
+        let mut this = super::task_fields::tests::desktop(window, cx);
+        this.db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":16,"title":"Empty"}]})).unwrap();
+        this.options.board = 16;
+        this.screen = Screen::Board;
+        this.reload();
+        this
+    });
+    for chord in ["n", "shift-c", "ctrl-c", "alt-c"] { cx.simulate_keystrokes(chord); }
+    view.read_with(cx, |this, _| assert!(this.db.mutations().unwrap().is_empty()));
+    cx.simulate_keystrokes("c");
+    cx.simulate_input("New column");
+    cx.simulate_keystrokes("enter enter");
+    view.read_with(cx, |this, _| {
+        let rows = this.db.mutations().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].payload_json["change"]["AddColumn"], serde_json::json!({"project":16,"title":"New column"}));
+        assert!(this.columns.is_empty());
+    });
+}
+
+#[gpui::test]
+fn keyboard_hidden_ai_aliases_reopen_existing_draft_without_reset(cx: &mut TestAppContext) {
+    let (view, mut cx) = setup(cx);
+    for chord in ["ctrl-shift-o", "cmd-shift-o", "ctrl-shift-j", "cmd-shift-j"] {
+        cx.simulate_keystrokes("ctrl-q ctrl-a");
+        cx.simulate_input("Keep this draft");
+        cx.simulate_keystrokes("ctrl-shift-/");
+        view.read_with(&cx, |this, _| assert!(!this.shell.ai_open)).unwrap();
+        cx.simulate_keystrokes(chord);
+        view.read_with(&cx, |this, _| assert!(this.shell.ai_open)).unwrap();
+        cx.simulate_keystrokes("ctrl-a ctrl-c");
+        cx.update(|_, cx| assert_eq!(cx.read_from_clipboard().and_then(|item| item.text()), Some("Keep this draft".into()), "{chord}"));
+    }
+}
+
+#[gpui::test]
+fn keyboard_due_picker_j_k_match_arrow_navigation_without_leaking_to_tasks(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    cx.simulate_keystrokes("d j k j enter");
+    view.read_with(cx, |this, _| {
+        let rows = this.db.mutations().unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].payload_json["task_id"], 1);
+        assert!(rows[0].payload_json["due_date"].is_string());
+        assert!(this.task_fields.due.is_none());
+        assert_eq!(this.options.task, 1);
+    });
+}

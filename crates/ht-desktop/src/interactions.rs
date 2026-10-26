@@ -129,6 +129,23 @@ impl Desktop {
             cx.stop_propagation();
             return;
         }
+        if matches!(self.interaction.modal, Some(Modal::Priority | Modal::Size))
+            && !ctrl && !key.modifiers.alt && !key.modifiers.shift
+            && key.key.len() == 1 && key.key.as_bytes()[0].is_ascii_digit()
+        {
+            let index = (key.key.as_bytes()[0] - b'0') as usize;
+            let action = match self.interaction.modal {
+                Some(Modal::Priority) if index < 5 => Some(ChoiceAction::Priority(index as u8)),
+                // Web digits index the catalog, not estimate_index (1 selects XS/2).
+                Some(Modal::Size) => [0, 2, 3, 4, 5, 6].get(index).copied().map(ChoiceAction::Size),
+                _ => None,
+            };
+            if let Some(action) = action {
+                self.apply_choice(Choice { name: String::new(), action }, window, cx);
+            }
+            cx.stop_propagation();
+            return;
+        }
         if self.interaction.modal.is_some() {
             let count = self.choices(cx).len();
             match key.key.as_str() {
@@ -244,6 +261,20 @@ impl Desktop {
         use Action::*;
         match action {
             Compose => self.open_compose(window, cx),
+            CreateTask => {
+                if self.screen == Screen::Board && self.columns.is_empty() {
+                    self.open_board_form(crate::command_center::BoardAction::AddColumn, window, cx);
+                }
+            }
+            EditTaskPart => {
+                if self.interaction.task_part == 0 {
+                    self.edit_description(window, cx);
+                } else if self.interaction.task_part <= self.comments.len() {
+                    self.run_comment_action(EditComment, window, cx);
+                } else {
+                    self.edit_comment(window, cx);
+                }
+            }
             BlockedBy => self.show_modal(Modal::BlockedBy, window, cx),
             ToggleTimer => self.toggle_task_timer(window, cx),
             StarTask => {
@@ -401,6 +432,17 @@ impl Desktop {
                     self.selected.saturating_sub(1)
                 };
                 self.clamp_selection();
+            }
+            First | Last if self.screen == Screen::Task => {
+                if action == First {
+                    self.interaction.task_part = 0;
+                    self.description_anchor.scroll_to(window, cx);
+                    window.focus(&self.focus, cx);
+                } else {
+                    self.interaction.task_part = self.comments.len() + 1;
+                    self.composer_anchor.scroll_to(window, cx);
+                    self.edit_comment(window, cx);
+                }
             }
             First | Last => {
                 self.selected = if action == First { 0 } else { usize::MAX };
@@ -1070,6 +1112,9 @@ impl Desktop {
         let Some(choice) = choice else {
             return;
         };
+        self.apply_choice(choice, window, cx);
+    }
+    fn apply_choice(&mut self, choice: Choice, window: &mut Window, cx: &mut Context<Self>) {
         if self.interaction.modal == Some(Modal::Commands) {
             let rows = self.command_rows();
             let query: &str = self.interaction.query.read(cx).content.as_ref();

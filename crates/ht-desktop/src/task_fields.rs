@@ -399,8 +399,8 @@ impl Desktop {
             let count = self.due_choices(cx).len();
             let due = self.task_fields.due.as_mut().unwrap();
             match key.key.as_str() {
-                "down" if !ctrl => due.choice = (due.choice + 1).min(count.saturating_sub(1)),
-                "up" if !ctrl => due.choice = due.choice.saturating_sub(1),
+                "down" | "j" if !ctrl && !key.modifiers.alt => due.choice = (due.choice + 1).min(count.saturating_sub(1)),
+                "up" | "k" if !ctrl && !key.modifiers.alt => due.choice = due.choice.saturating_sub(1),
                 "enter" => {
                     let choice = due.choice;
                     self.choose_due(choice, window, cx);
