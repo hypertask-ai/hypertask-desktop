@@ -25,8 +25,15 @@ not complete visual or interaction parity. Fixture people remain synthetic.
 ## Field inventory
 
 `exact` includes intentionally absent values where web has no such UI.
-`missing` means absent UI/data, not a made-up replacement. After status describes implemented behavior. Hosted proof remains pending
-until the exact-head receipt. No runtime claim follows from source review.
+`missing` means absent UI/data, not a made-up replacement. After status describes
+implemented behavior. Runtime evidence belongs in the draft PR's exact-head
+receipt, not an inference from this source audit.
+
+54 inventory rows. Exact rows increase from 21 to 50. The baseline contains
+21 wrong rows, five placeholders and seven missing rows. After implementation,
+all wrong/placeholder rows are exact; four missing rows stay explicit below.
+The three newly populated rows are board size, board saved/unread indicator,
+and task subtask links. These are row counts, not claims of full app parity.
 
 | ID | Visible value | Web source field and file:line | Native source before | Before | After |
 | --- | --- | --- | --- | --- | --- |
@@ -140,7 +147,7 @@ Unavailable cursor-team-kit steps use serial source/diff review per host rules.
 - Acceptance first, commit `2b2746b`; native regressions next, `fd52fdc`.
 - Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40396170922
   rejected a closing delimiter in the description timestamp chain. Simplified
-  that chain; no thresholds changed. No runtime test passed in that run.
+  that chain; no thresholds changed. No new fidelity runtime test ran.
 - Native regressions exercise `data4_task_fields_use_web_names_indices_and_relative_dates`,
   `data4_board_shows_real_assignees_size_and_three_tags`,
   `data4_inbox_renders_web_kinds_actors_indicators_and_metadata` and
@@ -149,6 +156,22 @@ Unavailable cursor-team-kit steps use serial source/diff review per host rules.
   the native task regression also measures the actual grouped reaction count.
   Core regression `data4_inbox_full_snapshot_clears_old_actor_and_event_context`
   covers snapshot removal. Existing saved-summary/draft tests stay intact.
-- Exact-head CI and strict receipt pending. No VPS builds, tests, lints, app
-  launches, test copies, laptop commands or workflow changes.
+- Exact-head CI jobs, named-test output and the strict receipt are recorded at
+  https://github.com/hypertask-ai/hypertask-desktop/pull/57 before completion.
+  No VPS builds, tests, lints, app launches, test copies, laptop commands or
+  workflow changes.
+
+### Native read and display paths
+
+- `crates/ht-core/src/sync.rs:150-173` stores detail reads; `:259-329` applies
+  authoritative inbox snapshots without stale optional event/actor data.
+- `crates/ht-core/src/db.rs:342-345,380-439` projects visible board/inbox
+  metadata while retaining complete task/notification snapshots on disk.
+- `crates/ht-desktop/src/ui.rs:1529-1624,2089-2186,2220-2228` chooses the real
+  property fields, dates, initials, constants and author names.
+- `crates/ht-desktop/src/inbox.rs:93-146` chooses the web's event copy and
+  notification indicators, never enum-name fallback text.
+- `crates/ht-desktop/src/comment_actions.rs:65-80,503-740` groups real reaction
+  identities/counts and renders comment author/time from their source fields.
+
 
