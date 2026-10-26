@@ -179,6 +179,7 @@ impl AssetSource for Assets {
             "ai-sparkles",
             "ai-scope-board",
             "ai-scope-task",
+            "ai-send",
             "send-archive",
             "square-pen",
             "copy",
