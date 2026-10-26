@@ -61,3 +61,9 @@ src/lib/firstScreen/display.ts:5-24. No sample-specific dates are hard-coded.
 Native tests inbox_selected_actions_replace_web_timestamp_without_moving_content
 and inbox_timestamp_uses_web_relative_time_boundaries_and_year pin these values.
 Existing archive/reminder click/queue tests remain unchanged.
+
+Inbox CI 40328007098 rejected a real pointer/keyboard regression. Native
+on_hover also fires when the bulk toolbar moves rows under a stationary
+pointer. This reset keyboard selection mid-command. Pointer selection now uses
+actual mouse movement, not layout-driven hover transitions. Existing keyboard
+code and the failing reminder/bulk regression remain unchanged.

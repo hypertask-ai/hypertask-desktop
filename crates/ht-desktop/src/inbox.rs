@@ -437,8 +437,8 @@ impl Desktop {
                 },
             )
             .hover(|d| d.bg(color(t.hover)))
-            .on_hover(cx.listener(move |this, hovered: &bool, _, cx| {
-                if *hovered && this.selected != row {
+            .on_mouse_move(cx.listener(move |this, _, _, cx| {
+                if this.selected != row {
                     this.selected = row;
                     cx.notify();
                 }
@@ -560,7 +560,6 @@ impl Desktop {
                             .relative()
                             .flex_shrink_0()
                             .flex()
-                            .items_center()
                             .items_center()
                             .justify_end()
                             .gap(px(10.))
