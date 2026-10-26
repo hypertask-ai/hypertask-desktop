@@ -408,7 +408,7 @@ fn keyboard_alt_s_toggles_private_task_star_on_every_surface_and_reconciles_real
     for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
         let (view, cx) = cx.add_window_view(|window, cx| {
             let mut this = super::task_fields::tests::desktop(window, cx);
-            this.db.apply_task(&serde_json::json!({"id":1,"savedContent":[]})).unwrap();
+            this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","savedContent":[]})).unwrap();
             this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[{"id":101,"taskId":1,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
             this.screen = screen;
             this.reload();
@@ -547,7 +547,7 @@ fn keyboard_star_refuses_unknown_state_and_rolls_back_on_account_refusal(cx: &mu
     view.update_in(cx, |this, _, _| {
         assert!(this.db.mutations().unwrap().is_empty());
         assert!(this.error.as_ref().unwrap().contains("Sync this task"));
-        this.db.apply_task(&serde_json::json!({"id":1,"savedContent":[{"id":"old-star","type":"Private"}]})).unwrap();
+        this.db.apply_task(&serde_json::json!({"id":1,"projectId":15,"title":"Needle","status":"Normal","savedContent":[{"id":"old-star","type":"Private"}]})).unwrap();
     });
     cx.simulate_keystrokes("alt-s");
     let mut server = KeyboardWriteServer::new();

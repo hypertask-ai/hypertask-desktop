@@ -27,7 +27,9 @@ native keyboard tests. No VPS builds/tests/lints, laptop access, or live writes.
 
 ## Evidence
 
-Pending source audit and GitHub verification.
+Source audit: docs/keyboard-parity.md, U1-U3 and R1-R21.
+Final exact-SHA CI evidence: draft PR final verification comment and
+external scratchpad/receipt-keys3/receipt.json; valid only after receipt success.
 
 ### Grounding and design
 
@@ -71,3 +73,18 @@ Native options/compose/column-focus subsets remain explicitly partial.
 Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40260330688
 rejected test calls to nonexistent `drain_one`; corrected them to the existing
 public `Db::drain_once`. Compiler evidence only, no weakened runtime assertions.
+
+
+### Behavioral rejection and root fix
+
+Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40260601962
+at `2296094a823f27f303f8e28b1b7ca2bfbf85af53`: each native desktop suite
+reported 214 passed, 3 failed. Timer aliases, disabled-running stop, account
+fencing and uncertain-effect no-replay checks passed.
+
+Two star fixtures supplied partial TaskView input; supplied required fields.
+WaitingOn revealed a real acknowledgement bug: web returns only identity and
+waitingOn fields, not a full TaskView. Merge those acknowledged fields into the
+cached task before validation; never assume title/status in that response.
+No shared task validation weakened. Native key and persisted-field assertions
+remain unchanged. Failed receipt retained, never counted as green proof.

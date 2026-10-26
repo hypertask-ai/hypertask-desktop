@@ -195,7 +195,11 @@ impl BoardWrite {
             Self::WaitingOn { task, user } => {
                 let row = &body["task"];
                 ensure!(row["id"] == *task && row.get("waitingOnUserId").is_some() && row["waitingOnUserId"] == json!(user), "missing blocked by person acknowledgement");
-                db.upsert_task(row)?;
+                let mut current = db.raw("Task", &json!(task))?.context("task is not cached")?;
+                for field in ["waitingOnUserId", "waitingOnSetById", "waitingOnSetAt"] {
+                    current[field] = row.get(field).context("incomplete blocked by person acknowledgement")?.clone();
+                }
+                db.upsert_task(&current)?;
             }
             Self::ToggleTimer { task } => {
                 ensure!(body["timer_running"].is_boolean() || body["timer_disabled"] == true, "missing timer acknowledgement");
