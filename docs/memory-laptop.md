@@ -73,7 +73,10 @@ Two buffers are already the flip-model minimum; reducing to one is invalid.
 Disabling DirectComposition can add HWND redirection surfaces, so it is not a
 justified blind replacement either.
 
-## Production change and CI contract
+## Historical mem4 production change and CI contract
+
+Mem5 removes this eviction policy. Its allocation-only comparison and current
+evidence live in [memory-ci.md](memory-ci.md) and [mem5-GATES.md](../gates/mem5-GATES.md).
 
 Once, five seconds after opening the foreground window, Windows is asked to
 evict the process's working set (`EmptyWorkingSet`). There is no periodic trim,

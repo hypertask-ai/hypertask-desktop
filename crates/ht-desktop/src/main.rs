@@ -255,8 +255,6 @@ fn run() -> Result<()> {
             .detach();
             if !background {
                 cx.activate(true);
-                #[cfg(all(windows, not(feature = "untrimmed-startup")))]
-                memory::trim_after_startup(cx);
             }
         });
     Ok(())
