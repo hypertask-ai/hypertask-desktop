@@ -506,7 +506,7 @@ impl Db {
                     match response {
                         Ok(Response {status:200, body}) if body["saved"]["commentId"] == row.payload_json["comment_id"] => Ok(Response {status:200,body:json!({"success":true,"active":true,"saved":body["saved"]})}),
                         Ok(Response {status:201, body}) if body.as_object().is_some_and(|v|v.is_empty()) => Ok(Response {status:201,body:json!({"success":true,"active":false})}),
-                        Ok(Response {status, ..}) if (400..500).contains(&status) => Ok(Response {status,body:json!({"success":false})}),
+                        Ok(response) if (400..500).contains(&response.status) => Ok(response),
                         _ => Ok(Response {status:409,body:json!({"success":false,"error":"Saved-comment result uncertain; refresh before trying again"})}),
                     }
                 }
@@ -526,7 +526,12 @@ impl Db {
                     Err(_) => (false, "invalid success response".to_owned()),
                 }
             }
-            Ok(Response { status, .. }) => (permanent(status), format!("HTTP {status}")),
+            Ok(Response { status, body }) => {
+                let cli_contract = row.kind == "compose_task"
+                    || (row.kind == "comment_action" && row.payload_json["change"]["action"] == "saved");
+                let message = if cli_contract { crate::desktop_cli::response_error(&body) } else { None };
+                (permanent(status), message.unwrap_or_else(|| format!("HTTP {status}")))
+            }
             Err(error) => (false, error.to_string()),
         };
         let result = if row.kind == "board_write" && row.payload_json["change"].get("ToggleTimer").is_some() {

@@ -56,9 +56,15 @@ pub fn escape(text: &str) -> String {
 pub fn writer_request(project: &Value, text: &str, time_zone: &str) -> Request {
     let html = format!("<p>{}</p>", escape(text).replace('\n', "<br>"));
     let settings = &project["ai_custom_instructions"][0];
+    let providers: Vec<_> = project["team"]["byokApiKeys"]
+        .as_array()
+        .into_iter()
+        .flatten()
+        .map(|key| json!({"enabled":key["enabled"],"provider":key["provider"]}))
+        .collect();
     let mut body = json!({
-        "projectId":project["id"],"teamId":project.get("teamId").unwrap_or(&json!(-1)),
-        "byokProviderFlags":[],
+        "projectId":project["id"],"teamId":project.get("teamId").filter(|id| !id.is_null()).unwrap_or(&json!(-1)),
+        "byokProviderFlags":providers,
         "PROMPT":format!("Write a task title and description from this note in the board's style.\n\n{html}"),
         "userRetrievalTexts":[text],"customInstructions":settings["customInstruction"].as_str().unwrap_or(""),
         "sourceSelected":settings["source_selected"].as_str().unwrap_or("openai"),
@@ -230,12 +236,10 @@ pub(crate) fn compose(
         );
         let response = transport.mutate(&req.method, &req.path, &req.body, key);
         let (drafts, failed) = match response {
-            Ok(Response { status: 402, body }) if body["code"] == "PLAN_LIMIT_REACHED" => {
-                return refused(402);
+            Ok(response) if response.status == 402 && response.body["code"] == "PLAN_LIMIT_REACHED" => {
+                return Ok(response);
             }
-            Ok(Response {
-                status: 401 | 403, ..
-            }) => return refused(403),
+            Ok(response) if matches!(response.status, 401 | 403) => return Ok(response),
             Ok(Response { status, body }) if (200..300).contains(&status) => {
                 match writer_drafts(&body) {
                     Ok(drafts) => (drafts, false),
@@ -318,6 +322,22 @@ pub(crate) fn compose(
         status: 200,
         body: json!({"success":true,"tasks":tasks,"writerFailed":prepared["writerFailed"],"failedTitles":failed_titles}),
     })
+}
+
+pub(crate) fn response_error(body: &Value) -> Option<String> {
+    if let Some(message) = body["message"].as_str().or_else(|| body["error"].as_str()) {
+        return Some(message.to_owned());
+    }
+    let stream = body.as_str()?;
+    for frame in stream.split("\n\n") {
+        if !frame.lines().any(|line| line.trim() == "event: error") {
+            continue;
+        }
+        let data = frame.lines().find_map(|line| line.strip_prefix("data: "))?;
+        let value: Value = serde_json::from_str(data).ok()?;
+        return value["content"].as_str().map(str::to_owned);
+    }
+    None
 }
 
 pub fn mention_html(item: &Value) -> Option<String> {

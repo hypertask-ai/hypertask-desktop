@@ -252,6 +252,10 @@ impl Desktop {
                 _ => return false,
             }
             cx.notify();
+        } else if self.compose.writing
+            && ctrl && key.modifiers.shift && !key.modifiers.alt && key.key == "b"
+        {
+            self.compose_picker(window, cx);
         } else if key.key == "tab" && !ctrl && !key.modifiers.alt {
             if !self.compose.writing {
                 self.compose_tab(true, window, cx);
@@ -348,9 +352,7 @@ impl Desktop {
         };
         self.compose.pending = None;
         if let Some(error) = value["error"].as_str() {
-            self.compose.error = Some(format!(
-                "Couldn’t create the task ({error}). Your note is still here."
-            ));
+            self.compose.error = Some(error.to_owned());
         } else if let Some(id) = value["tasks"][0]["id"].as_i64() {
             let _ = self
                 .db
@@ -719,4 +721,75 @@ mod tests {
         })
         .unwrap();
     }
+    struct CliServer {
+        refusal: Option<&'static str>,
+        calls: Vec<String>,
+    }
+    impl ht_core::Transport for CliServer {
+        fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            self.calls.push(path.into());
+            Ok(if path == "/user/context" {
+                ht_core::http::Response { status: 200, body: json!({"success":true,"user":{"id":985}}) }
+            } else {
+                assert_eq!(path, "/api/tasks/createGlobally?projectId=7283&position=top");
+                if self.refusal == Some("defaults") {
+                    ht_core::http::Response { status: 401, body: json!({"message":"Unauthorized"}) }
+                } else {
+                    ht_core::http::Response { status: 200, body: json!({"sectionId":11,"section":"Todo","ranking":"A0100"}) }
+                }
+            })
+        }
+        fn post(&mut self, path: &str, body: &Value, _: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+            self.calls.push(path.into());
+            Ok(match path {
+                "/api/ai/task-writer" if self.refusal == Some("writer") => ht_core::http::Response { status: 401, body: json!("event: error\ndata: {\"content\":\"Unauthorized\"}\n\nevent: done\ndata: {\"status\":\"error\"}\n\n") },
+                "/api/ai/task-writer" => {
+                    assert_eq!(body["requestKind"], "compose-task");
+                    assert_eq!(body["userRetrievalTexts"], json!(["Native note"]));
+                    ht_core::http::Response { status: 200, body: json!("<h1 id='ai-generated-task-title'>Written title</h1><p>Written body</p>") }
+                }
+                "/tasks/create" => {
+                    assert_eq!(body["title"], "Written title");
+                    assert_eq!(body["description"], "<p>Written body</p>");
+                    assert_eq!(body["section_id"], 11);
+                    ht_core::http::Response { status: 200, body: json!({"success":true,"task":{"id":9,"projectId":7283,"title":body["title"],"description":body["description"],"status":"Normal"}}) }
+                }
+                _ => panic!("unexpected native compose request {path}"),
+            })
+        }
+    }
+    #[gpui::test]
+    fn cli7699_native_ctrlj_mocked_writer_and_flag_off_keep_real_results(
+        cx: &mut gpui::TestAppContext,
+    ) {
+        cx.update(crate::input::init);
+        for refusal in [Some("defaults"), Some("writer"), None] {
+            let (view, visual) = cx.add_window_view(desktop);
+            visual.simulate_keystrokes("ctrl-j");
+            visual.simulate_input("Native note");
+            visual.simulate_keystrokes("ctrl-shift-b");
+            view.read_with(visual, |this, _| assert!(this.compose.picker));
+            visual.simulate_keystrokes("escape shift-tab enter");
+            view.update_in(visual, |this, window, cx| {
+                let mut server = CliServer { refusal, calls: vec![] };
+                let outcome = this.db.drain_once(&mut server, chrono::Utc::now().timestamp()).unwrap();
+                this.poll_compose(window, cx);
+                if refusal.is_some() {
+                    assert!(matches!(outcome, ht_core::Drain::Failed(_)));
+                    assert_eq!(this.compose.error.as_deref(), Some("Unauthorized"));
+                    assert!(this.compose.open);
+                    assert_eq!(this.compose.input.read(cx).content.as_ref(), "Native note");
+                    assert!(this.db.task(9).unwrap().is_none());
+                    assert!(!server.calls.iter().any(|path| path == "/tasks/create"));
+                } else {
+                    assert!(matches!(outcome, ht_core::Drain::Applied(_)));
+                    assert!(!this.compose.open);
+                    assert_eq!(this.options.task, 9);
+                    assert_eq!(this.db.task(9).unwrap().unwrap().title, "Written title");
+                    assert!(this.compose.input.read(cx).content.is_empty());
+                }
+            });
+        }
+    }
+
 }
