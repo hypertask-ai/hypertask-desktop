@@ -1081,7 +1081,7 @@ impl Element for TextElement {
 impl Render for TextInput {
     fn render(&mut self, _window: &mut Window, cx: &mut Context<Self>) -> impl IntoElement {
         let menu = self.editor_menu(_window, cx);
-        let handles = self.block_drag_handles(cx);
+        let handles = if self.editor_newlines { self.block_drag_handles(cx) } else { vec![] };
         div()
             .id("text-input")
             .flex()
@@ -1206,6 +1206,12 @@ impl TextInput {
 
     pub fn multiline(mut self) -> Self {
         self.multiline = true;
+        self
+    }
+
+    pub fn ai_composer(mut self) -> Self {
+        self.multiline = true;
+        self.editor = Some(EditorState::new(self.content.as_ref()));
         self
     }
 

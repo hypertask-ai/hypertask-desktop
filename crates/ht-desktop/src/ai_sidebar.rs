@@ -14,6 +14,7 @@ use ht_core::{
     ai_chat::{self, Client, DefaultContext, Event, MODELS, Message, Session, TurnIds},
 };
 use std::{
+    collections::VecDeque,
     sync::{
         Arc,
         mpsc::{self, Receiver},
@@ -112,6 +113,7 @@ struct Chat {
     messages: Vec<ChatMessage>,
     status: String,
     error: Option<String>,
+    scroll: ScrollHandle,
 }
 
 impl Chat {
@@ -122,8 +124,14 @@ impl Chat {
             messages: vec![],
             status: String::new(),
             error: None,
+            scroll: ScrollHandle::new(),
         }
     }
+}
+
+struct QueuedPrompt {
+    text: String,
+    prompt: String,
 }
 
 enum Update {
@@ -163,11 +171,12 @@ pub struct AiSidebar {
     history_pending: Option<Receiver<Result<Vec<Arc<Session>>, String>>>,
     history_error: Option<String>,
     history_limit: usize,
-    chat_pending: Option<Receiver<Chat>>,
+    chat_pending: Option<Receiver<(String, String, Vec<ChatMessage>)>>,
     more_menu: bool,
     collapsed: bool,
     scroll: ScrollHandle,
     active: Option<ActiveTurn>,
+    queued: VecDeque<QueuedPrompt>,
 }
 
 impl AiSidebar {
@@ -199,7 +208,7 @@ impl AiSidebar {
                 color(colors.muted),
                 cx,
             )
-            .multiline()
+            .ai_composer()
         });
         let input_scroll = ScrollHandle::new();
         let scroll = input_scroll.clone();
@@ -223,6 +232,8 @@ impl AiSidebar {
             }
         })
         .detach();
+        let chat = Chat::new();
+        let scroll = chat.scroll.clone();
         let mut sidebar = Self {
             colors,
             presentation: Presentation::default(),
@@ -237,7 +248,7 @@ impl AiSidebar {
             client: token.and_then(|t| Client::new(t).ok()),
             scope: None,
             include_context: true,
-            chats: vec![Chat::new()],
+            chats: vec![chat],
             selected: 0,
             model: 0,
             model_menu: false,
@@ -249,8 +260,9 @@ impl AiSidebar {
             chat_pending: None,
             more_menu: false,
             collapsed: false,
-            scroll: ScrollHandle::new(),
+            scroll,
             active: None,
+            queued: VecDeque::new(),
         };
         sidebar.load_memory_history(cx);
         sidebar
@@ -260,6 +272,8 @@ impl AiSidebar {
         self.stop(cx);
         self.active = None;
         self.chats = vec![Chat::new()];
+        self.scroll = self.chats[0].scroll.clone();
+        self.queued.clear();
         self.selected = 0;
         self.history.clear();
         self.draft_quotes.clear();
@@ -291,7 +305,7 @@ impl AiSidebar {
 
     pub fn focus_composer(&mut self, window: &mut Window, cx: &mut Context<Self>) {
         let focus = self.input.focus_handle(cx);
-        if focus.is_focused(window) {
+        if focus.is_focused(window) && self.mode() == DisplayMode::Sidebar && !self.collapsed {
             if let Some(previous) = &self.previous_focus {
                 window.focus(previous, cx);
             }
@@ -305,6 +319,11 @@ impl AiSidebar {
             window.focus(&focus, cx);
         }
         cx.notify();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn draft_text(&self, cx: &App) -> String {
+        self.input.read(cx).content.to_string()
     }
 
     pub fn has_focus(&self, window: &Window, cx: &App) -> bool {
@@ -369,13 +388,7 @@ impl AiSidebar {
                         ChatMessage { message, rich }
                     })
                     .collect();
-                let _ = send.send(Chat {
-                    id,
-                    title,
-                    messages,
-                    status: String::new(),
-                    error: None,
-                });
+                let _ = send.send((id, title, messages));
             }) {
             Ok(_) => self.chat_pending = Some(receive),
             Err(error) => self.history_error = Some(error.to_string()),
@@ -404,11 +417,12 @@ impl AiSidebar {
         }
         if let Some(pending) = &self.chat_pending {
             match pending.try_recv() {
-                Ok(chat) => {
+                Ok((id, title, messages)) => {
                     self.chat_pending = None;
-                    self.chats.push(chat);
+                    self.chats.push(Chat { id, title, messages, status: String::new(), error: None, scroll: ScrollHandle::new() });
                     self.selected = self.chats.len() - 1;
-                    self.scroll.scroll_to_bottom();
+                    self.scroll = self.chats[self.selected].scroll.clone();
+                    self.queued.clear();
                     self.history_menu = false;
                     cx.notify();
                 }
@@ -427,6 +441,8 @@ impl AiSidebar {
         self.draft_quotes.clear();
         self.chats.push(Chat::new());
         self.selected = self.chats.len() - 1;
+        self.scroll = self.chats[self.selected].scroll.clone();
+        self.queued.clear();
         self.include_context = true;
         self.history_menu = false;
         self.more_menu = false;
@@ -471,16 +487,28 @@ impl AiSidebar {
             &text
         });
         let text = text.trim().to_owned();
-        if text.is_empty() || self.active.is_some() {
+        if text.is_empty() { return; }
+        if self.active.is_some() {
+            self.queued.push_back(QueuedPrompt { text, prompt: message });
+            self.draft_quotes.clear();
+            self.input.update(cx, |input, cx| input.reset(window, cx));
+            cx.notify();
             return;
         }
+        if self.start_turn(text, message, cx) {
+            self.draft_quotes.clear();
+            self.input.update(cx, |input, cx| input.reset(window, cx));
+        }
+    }
+
+    fn start_turn(&mut self, text: String, message: String, cx: &mut Context<Self>) -> bool {
         let chat = &mut self.chats[self.selected];
         chat.error = None;
         let Some(client) = self.client.clone() else {
             chat.error =
                 Some("AI chat is unavailable offline. Sign in and reconnect to send.".into());
             cx.notify();
-            return;
+            return false;
         };
         let ids = TurnIds::new(chat.id.clone());
         let mut context = self
@@ -517,7 +545,7 @@ impl AiSidebar {
         {
             chat.error = Some(error.to_string());
             cx.notify();
-            return;
+            return false;
         }
         chat.messages.push(ChatMessage {
             message: Message {
@@ -545,9 +573,8 @@ impl AiSidebar {
             stopping: false,
             client,
         });
-        self.draft_quotes.clear();
-        self.input.update(cx, |input, cx| input.reset(window, cx));
         cx.notify();
+        true
     }
 
     fn stop(&mut self, cx: &mut Context<Self>) {
@@ -582,7 +609,7 @@ impl AiSidebar {
     fn poll(&mut self, cx: &mut Context<Self>) {
         self.poll_skills(cx);
         self.poll_history(cx);
-        let follow_latest = !self.away_from_latest();
+        let follow_latest = f32::from(self.scroll.max_offset().y + self.scroll.offset().y) <= 48.;
         let Some(active) = &mut self.active else {
             return;
         };
@@ -606,8 +633,9 @@ impl AiSidebar {
                 Ok(update) => update,
                 Err(mpsc::TryRecvError::Empty) => break,
                 Err(mpsc::TryRecvError::Disconnected) => {
-                    chat.error =
-                        Some("AI reply interrupted before done; partial text is preserved".into());
+                    if chat.error.is_none() {
+                        chat.error = Some("AI reply interrupted before done; partial text is preserved".into());
+                    }
                     terminal = true;
                     changed = true;
                     break;
@@ -628,10 +656,17 @@ impl AiSidebar {
                     }
                 }
                 Update::Event(Event::Title(title)) => chat.title = title,
-                Update::Event(Event::Error(error)) => chat.error = Some(error),
+                Update::Event(Event::Error(error)) => {
+                    chat.error = Some(stream_error(&error));
+                    chat.status.clear();
+                }
                 Update::Event(Event::Done(done)) => {
-                    if done.status == "error" && chat.error.is_none() {
-                        chat.error = Some("AI reply failed".into());
+                    if done.status == "error" && !done.cancelled && chat.error.is_none() {
+                        chat.error = Some(stream_error(""));
+                    }
+                    if done.cancelled && chat.messages[active.assistant].message.content.is_empty() {
+                        chat.messages[active.assistant].message.content = "Stream cancelled.".into();
+                        content_changed = true;
                     }
                     // Stream owns persistence. Never call add-message for a persisted turn.
                     chat.status = if done.cancelled {
@@ -663,6 +698,11 @@ impl AiSidebar {
                 chat.status.clear();
             }
             self.active = None;
+            if let Some(next) = self.queued.pop_front() {
+                if !self.start_turn(next.text.clone(), next.prompt.clone(), cx) {
+                    self.queued.push_front(next);
+                }
+            }
         }
         if changed {
             cx.notify();
@@ -680,6 +720,13 @@ impl AiSidebar {
             && matches!(key, "o" | "j")
         {
             self.new_chat(window, cx);
+        } else if (modifiers.control || modifiers.platform) && !modifiers.alt
+            && ((modifiers.shift && matches!(key, "/" | "?")) || key == "?")
+        {
+            self.set_open(false, cx);
+            if let Some(previous) = &self.previous_focus {
+                window.focus(previous, cx);
+            }
         } else if key == "escape" {
             if self.model_menu || self.history_menu || self.more_menu {
                 self.model_menu = false;
@@ -691,8 +738,6 @@ impl AiSidebar {
             }
             if self.active.is_some() {
                 self.stop(cx);
-            } else if let Some(previous) = &self.previous_focus {
-                window.focus(previous, cx);
             }
             self.model_menu = false;
             self.history_menu = false;
@@ -728,6 +773,34 @@ fn quote_text_html(text: &str) -> String {
             .replace('>', "&gt;")
             .replace('\n', "<br>")
     )
+}
+
+fn stream_error(raw: &str) -> String {
+    if raw.trim().is_empty() {
+        return "Sorry, an error occurred while processing your request.".into();
+    }
+    if let Some((_, after)) = raw.split_once("\"message\"") {
+        if let Some((_, value)) = after.split_once(':') {
+            if let Some(Ok(message)) = serde_json::Deserializer::from_str(value.trim()).into_iter::<String>().next() {
+                return message;
+            }
+        }
+    }
+    if let Some((_, after)) = raw.split_once("'message':") {
+        if let Some(value) = after.trim_start().strip_prefix('\'') {
+            if let Some(end) = value.find('\'') { return value[..end].to_owned(); }
+        }
+    }
+    let lower = raw.to_lowercase();
+    if raw.contains("context_length_exceeded") || (lower.contains("exceed") && lower.contains("limit") && lower.contains("token")) {
+        return "The conversation or attachments are too large for the model token limit. Try shortening your message or removing some context.".into();
+    }
+    if raw.encode_utf16().count() > 800 {
+        let mut units = 0;
+        let prefix: String = raw.chars().take_while(|c| { units += c.len_utf16(); units <= 797 }).collect();
+        return format!("{prefix}…");
+    }
+    raw.to_owned()
 }
 
 fn markdown(text: &str, colors: Theme) -> RichText {
@@ -811,8 +884,7 @@ impl Render for AiSidebar {
             .overflow_y_scroll()
             .track_scroll(&self.scroll)
             .on_scroll_wheel(cx.listener(|_, _, _, cx| cx.notify()))
-            .px(px(24.))
-            .py(px(16.))
+            .p(px(if empty { 0. } else { 8. }))
             .when(self.mode() == DisplayMode::Fullscreen, |d| {
                 d.w_full().max_w(px(800.)).mx_auto()
             });
@@ -822,8 +894,20 @@ impl Render for AiSidebar {
                 .flex()
                 .flex_col()
                 .justify_center()
-                .px(px(20.))
+                .px(px(40.))
+                .py(px(16.))
                 .gap(px(8.));
+            if self.scope.as_ref().is_some_and(|scope| scope.context.surface == "task_detail" && scope.context.task_id.is_some()) {
+                welcome = welcome.child(
+                    div().id("ai-task-summary").w_full().p(px(8.)).rounded(px(4.))
+                        .border_1().border_color(color(t.accent)).text_size(px(12.))
+                        .cursor_pointer().child("Summarize the current task")
+                        .on_click(cx.listener(|this, _, window, cx| {
+                            this.send("/i Summarize the current task".into(), window, cx);
+                        }))
+                        .layout_key(&self.capture, "ai.task.summary", Some("Summarize the current task".into())),
+                );
+            }
             for (index, prompt) in self
                 .scope
                 .as_ref()
@@ -840,7 +924,7 @@ impl Render for AiSidebar {
                         .min_h(px(34.))
                         .px(px(8.))
                         .py(px(8.))
-                        .rounded(px(6.))
+                        .rounded(px(4.))
                         .bg(color(t.active))
                         .text_size(px(12.))
                         .cursor_pointer()
@@ -848,72 +932,102 @@ impl Render for AiSidebar {
                         .on_click(cx.listener(move |this, _, window, cx| {
                             this.send(prompt.clone(), window, cx)
                         }))
-                        .child(label),
+                        .child(label.clone())
+                        .layout_key(&self.capture, format!("ai.suggestion.{index}"), Some(label)),
                 );
             }
-            transcript = transcript.child(welcome);
+            transcript = transcript.child(welcome.layout_key(&self.capture, "ai.welcome", None));
         } else {
             for (index, message) in chat.messages.iter().enumerate() {
-                if message.message.role == "human" {
-                    transcript = transcript.child(
-                        div()
-                            .id(("ai-message", index))
-                            .mb(px(16.))
-                            .p(px(12.))
-                            .rounded(px(8.))
-                            .bg(color(t.card))
-                            .child(message.message.content.clone()),
-                    );
-                } else {
-                    transcript = transcript.child(
-                        div()
-                            .id(("ai-message", index))
-                            .mb(px(20.))
-                            .child(message.rich.element())
-                            .when(!message.message.content.is_empty(), |d| {
-                                d.child(
-                                    div()
-                                        .id(("ai-copy-response", index))
-                                        .text_size(px(11.))
-                                        .cursor_pointer()
-                                        .child("Copy response")
-                                        .on_click(cx.listener(move |this, _, _, cx| {
-                                            let text = this.chats[this.selected].messages[index]
-                                                .rich
-                                                .text
-                                                .clone();
-                                            cx.write_to_clipboard(gpui::ClipboardItem::new_string(
-                                                text,
-                                            ));
-                                        }))
-                                        .layout_key(
-                                            &self.capture,
-                                            format!("ai.response.{index}.copy"),
-                                            None,
-                                        ),
-                                )
-                            }),
+                let human = message.message.role == "human";
+                let streaming = self.active.as_ref().is_some_and(|active| active.chat == self.selected && active.assistant == index);
+                let mut body = div().px(px(8.)).py(px(4.)).rounded(px(4.))
+                    .when(human, |d| d.bg(color(t.card)))
+                    .child(if human {
+                        RichText::parse(&message.message.content, t).element()
+                    } else {
+                        message.rich.element()
+                    });
+                if streaming && chat.error.is_none() {
+                    body = body.child(
+                        div().text_color(color(t.muted))
+                            .child(if !chat.status.is_empty() {
+                                chat.status.clone()
+                            } else if message.message.content.trim().is_empty() {
+                                "•••".into()
+                            } else {
+                                "▍".into()
+                            })
+                            .layout_key(&self.capture, "ai.stream.status", Some(chat.status.clone())),
                     );
                 }
+                if !human && index + 1 == chat.messages.len() {
+                    if let Some(error) = &chat.error {
+                        body = body.child(div().text_color(color(0xe07171)).child(error.clone())
+                            .layout_key(&self.capture, "ai.error", Some(error.clone())));
+                    }
+                }
+                let mut row = div().id(("ai-message", index)).flex().flex_col()
+                    .when(index + 1 < chat.messages.len(), |d| d.mb(px(8.)))
+                    .when(human, |d| d.items_end())
+                    .child(body.layout_key(&self.capture, format!("ai.message.{index}.body"), None));
+                if !streaming && (!message.message.content.is_empty() || (index + 1 == chat.messages.len() && chat.error.is_some())) {
+                    let mut actions = div().flex().gap(px(4.)).px(px(8.)).text_size(px(11.));
+                    if human {
+                        actions = actions.child(
+                            div().id(("ai-edit-message", index)).tab_index(0).cursor_pointer().child(icon("square-pen", t.muted))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    let content = this.chats[this.selected].messages[index].message.content.clone();
+                                    this.draft_quotes.clear();
+                                    this.input.update(cx, |input, cx| input.set_html(&content, cx));
+                                    window.focus(&this.input.focus_handle(cx), cx);
+                                }))
+                                .layout_key(&self.capture, format!("ai.message.{index}.edit"), None),
+                        );
+                    }
+                    if human || (index + 1 == chat.messages.len() && chat.error.is_some()) {
+                        actions = actions.child(
+                            div().id(("ai-retry-message", index)).tab_index(0).cursor_pointer().child(icon("rotate-cw", t.muted))
+                                .on_click(cx.listener(move |this, _, window, cx| {
+                                    let messages = &this.chats[this.selected].messages;
+                                    let content = if messages[index].message.role == "human" {
+                                        Some(messages[index].message.content.clone())
+                                    } else {
+                                        messages.iter().rev().find(|message| message.message.role == "human")
+                                            .map(|message| message.message.content.clone())
+                                    };
+                                    if let Some(content) = content { this.send(content, window, cx); }
+                                }))
+                                .layout_key(&self.capture, format!("ai.message.{index}.retry"), None),
+                        );
+                    }
+                    actions = actions.when(!message.message.content.is_empty(), |d| d.child(
+                        div().id(("ai-copy-response", index)).tab_index(0).cursor_pointer().child(icon("copy", t.muted))
+                            .on_click(cx.listener(move |this, _, _, cx| {
+                                let message = &this.chats[this.selected].messages[index];
+                                let text = if message.message.role == "human" {
+                                    RichText::parse(&message.message.content, this.colors).text
+                                } else {
+                                    message.rich.text.clone()
+                                };
+                                cx.write_to_clipboard(gpui::ClipboardItem::new_string(text));
+                            }))
+                            .layout_key(&self.capture, format!("ai.response.{index}.copy"), None),
+                    ));
+                    row = row.child(actions);
+                }
+                transcript = transcript.child(row.layout_key(&self.capture, format!("ai.message.{index}"), Some(message.message.content.clone())));
             }
         }
-        let error = chat.error.clone();
-        let status = if self
-            .active
-            .as_ref()
-            .is_some_and(|a| a.chat != self.selected)
-        {
-            "Replying in another chat…".into()
-        } else {
-            chat.status.clone()
-        };
+        let error = chat.error.clone().filter(|_| chat.messages.last().is_none_or(|message| message.message.role != "assistant"));
         let mut header = div()
-            .h(px(72.))
+            .h(px(48.))
             .flex_shrink_0()
             .flex()
             .items_center()
-            .px(px(16.))
-            .gap(px(8.))
+            .px(px(8.))
+            .pt(px(16.))
+            .gap(px(16.))
             .child(
                 div()
                     .id("ai-history-toggle")
@@ -930,7 +1044,8 @@ impl Render for AiSidebar {
                             .font_weight(FontWeight::SEMIBOLD)
                             .child(title),
                     )
-                    .child(icon("chevron-down", t.muted)),
+                    .child(icon("chevron-down", t.muted))
+                    .layout_key(&self.capture, "ai.history.toggle", None),
             )
             .child(
                 div()
@@ -1015,7 +1130,7 @@ impl Render for AiSidebar {
                     cx.notify();
                 }
             }))
-            .child(header);
+            .child(header.layout_key(&self.capture, "ai.header", None));
         let mut panel = div()
             .id("ai-sidebar")
             .w_full()
@@ -1051,11 +1166,13 @@ impl Render for AiSidebar {
                         .on_click(cx.listener(move |this, _, _, cx| {
                             this.chat_pending = None;
                             this.selected = index;
-                            this.scroll.scroll_to_bottom();
+                            this.scroll = this.chats[index].scroll.clone();
+                            this.queued.clear();
                             this.history_menu = false;
                             cx.notify();
                         }))
-                        .child(chat.title.clone()),
+                        .child(chat.title.clone())
+                        .layout_key(&self.capture, format!("ai.history.{index}"), None),
                 );
             }
             for (index, session) in self.history.iter().enumerate().take(self.history_limit) {
@@ -1166,8 +1283,8 @@ impl Render for AiSidebar {
         }
         panel = panel
             .child(header_area)
-            .child(transcript)
-            .when(self.away_from_latest(), |d| {
+            .child(transcript.layout_key(&self.capture, "ai.transcript", None))
+            .when(self.away_from_latest() && self.active.is_none(), |d| {
                 d.child(
                     div()
                         .id("ai-scroll-latest")
@@ -1181,16 +1298,6 @@ impl Render for AiSidebar {
                         .layout_key(&self.capture, "ai.latest", None),
                 )
             })
-            .when(!status.is_empty(), |d| {
-                d.child(
-                    div()
-                        .px(px(20.))
-                        .pb(px(8.))
-                        .text_size(px(12.))
-                        .text_color(color(t.muted))
-                        .child(status),
-                )
-            })
             .when_some(error, |d, error| {
                 d.child(
                     div()
@@ -1198,7 +1305,8 @@ impl Render for AiSidebar {
                         .pb(px(8.))
                         .text_size(px(12.))
                         .text_color(color(0xe07171))
-                        .child(error),
+                        .child(error.clone())
+                        .layout_key(&self.capture, "ai.error", Some(error)),
                 )
             });
         let mut composer = div()
@@ -1209,7 +1317,7 @@ impl Render for AiSidebar {
                     cx.notify();
                 }
             }))
-            .mx(px(12.))
+            .mx(px(8.))
             .mb(px(8.))
             .p(px(8.))
             .rounded(px(8.))
@@ -1222,11 +1330,26 @@ impl Render for AiSidebar {
                     .id("ai-composer-input")
                     .track_scroll(&self.input_scroll)
                     .min_h(px(40.))
-                    .max_h(px(160.))
+                    .max_h(px(380.))
                     .overflow_y_scroll()
                     .text_size(px(14.))
-                    .child(self.input.clone()),
+                    .child(self.input.clone())
+                    .layout_key(&self.capture, "ai.input", None),
             );
+        if !self.queued.is_empty() {
+            composer = composer.child(
+                div().mb(px(8.)).p(px(8.)).rounded(px(5.)).border_1().border_color(color(t.border))
+                    .child("Queued · sends when reply finishes")
+                    .children(self.queued.iter().enumerate().map(|(index, item)| {
+                        div().id(("ai-queued", index)).flex().gap(px(8.)).text_size(px(12.))
+                            .child(div().flex_1().truncate().child(item.text.clone()))
+                            .child(div().id(("ai-queue-remove", index)).cursor_pointer().child(icon("x", t.muted))
+                                .on_click(cx.listener(move |this, _, _, cx| { this.queued.remove(index); cx.notify(); }))
+                                .layout_key(&self.capture, format!("ai.queue.{index}.remove"), None))
+                            .layout_key(&self.capture, format!("ai.queue.{index}"), Some(item.text.clone()))
+                    })),
+            );
+        }
         if !self.skill_choices(cx).is_empty() { composer = composer.child(self.skill_menu(cx)); }
         if self.model_menu {
             let mut menu = div()
@@ -1312,28 +1435,23 @@ impl Render for AiSidebar {
                         t.muted,
                     )),
             )
-            .child(
-                div()
-                    .id("ai-send-stop")
-                    .cursor_pointer()
+            .when(self.active.is_some(), |d| d.child(
+                div().id("ai-stop").cursor_pointer().child("Stop")
+                    .on_click(cx.listener(|this, _, _, cx| this.stop(cx)))
+                    .layout_key(&self.capture, "ai.stop", None),
+            ))
+            .when(self.active.is_none() || !self.input.read(cx).content.trim().is_empty(), |d| d.child(
+                div().id("ai-send").cursor_pointer().child(icon("send", t.muted))
                     .on_click(cx.listener(|this, _, window, cx| {
-                        if this.active.is_some() {
-                            this.stop(cx);
-                        } else {
-                            this.send(this.input.read(cx).content.to_string(), window, cx);
-                        }
+                        this.send(this.input.read(cx).content.to_string(), window, cx);
                     }))
-                    .child(if self.active.is_some() {
-                        div().child("Stop")
-                    } else {
-                        div().child(icon("send", t.muted))
-                    }),
-            );
+                    .layout_key(&self.capture, "ai.send", None),
+            ));
         composer = composer.child(controls);
         if self.mode() == DisplayMode::Fullscreen {
             composer = composer.w_full().max_w(px(800.)).mx_auto();
         }
-        panel = panel.child(composer);
+        panel = panel.child(composer.layout_key(&self.capture, "ai.composer", None));
         if self.mode() == DisplayMode::Sidebar {
             panel = panel.child(self.resize_edge(cx));
         }

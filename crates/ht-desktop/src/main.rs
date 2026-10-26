@@ -177,6 +177,8 @@ impl AssetSource for Assets {
             "ai-sparkles",
             "send-archive",
             "square-pen",
+            "copy",
+            "rotate-cw",
             "minimize-2",
             "minus"
         ))
