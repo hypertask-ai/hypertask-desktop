@@ -800,7 +800,7 @@ fn sidebar_task_summary_web_tint_icon_and_compact_prompt_geometry(cx: &mut gpui:
     let icon = element(&view, cx, "ai.task.summary.icon");
     let prompt = element(&view, cx, "ai.suggestion.0");
     assert_eq!(summary["h"], 34.);
-    assert_eq!(summary["radius"], 4.);
+    assert_eq!(summary["radius"], 6.);
     assert_eq!(summary["fontSize"], 12.);
     assert_eq!(summary["lineHeight"], 16.);
     assert_eq!(icon["w"], 14.);

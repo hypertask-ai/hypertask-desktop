@@ -21,14 +21,14 @@ One-pixel horizontal residues remain disclosed, not compensated.
 ## Before inventory
 
 Each C row applies independently to Inbox, Board, Task,
-except C16, which does not apply to Board.
+except matched C02 and Board C16, which are not counted.
 Bounds are [x,y,width,height]. Font weights are numeric.
 Colors are RGB unless a source token is shown.
 
 | Row | Property | Frozen web | Main Windows | Decision |
 | --- | --- | --- | --- | --- |
 | C01 | Starter stack vertical position | Inbox/Board y394,436,478,520; Task summary y377 and prompts y419,459,499,539 | Inbox/Board y396,438,480,522; Task summary y374 and prompts y418,460,502,544 | Open. Flow follows composer and task line boxes, not absolute offsets. |
-| C02 | Starter corner radius | 4px | 6px | Open. Existing source projection also incorrectly uses 6px. No projection or fixture changed. |
+| C02 | Starter corner radius | 6px after Bootstrap important cascade | 6px | Matched, not counted. Pixel audit gives first opaque top-edge fill at offset6 in both. Raster residual stays C18. |
 | C03 | Composer y/height | [1513,908,399,93] | [1514,913,398,88] | Open. Preserve real input/action flow. |
 | C04 | Placeholder color | #adb5bd, dominant opaque web pixels (173,181,189) | #8e9093, source native input tint (142,144,147) | Correct source tint. |
 | C05 | Model label weight | 500, 13px/19.5px | 400, 13px/19.5px | Correct to 500. |
@@ -57,16 +57,18 @@ Colors are RGB unless a source token is shown.
 | T05 | Summary line height | 12px text / 16px line | 12px text / 18px line | Correct source text-xs. |
 | T06 | Summary height | 34px, including 1px borders and 8px padding | 36px | Natural source line-box correction. |
 | T07 | Task prompt line/height | 12px/16px, 32px tall | 12px/18px, 34px tall | Correct source text-xs. Inbox/Board remain text-meta 12px/18px. |
+| T08 | Summary corner radius | 6px, Bootstrap important rounded | 4px | Correct source cascade; same rounding as the other starter buttons. |
 
 Inbox-only I01. Header title is QA Team Board on web,
 New AI Chat natively. Board/Task header labels already match.
 This remains selected-scope/session state, not a new fixed title.
 
-Before counts are Inbox 21, Board 19, Task 27, total 67.
+Before counts are Inbox 20, Board 18, Task 27, total 65.
+Matched C02 is excluded on all three screens.
 Board C16 is not counted: both images say QA Team Board.
 C04..C09 are eighteen candidate closures across three screens.
 Board C10 contributes one more glyph-shape closure.
-T01..T07 are seven candidate closures. No closure claimed before CI.
+T01..T08 are eight candidate closures. No closure claimed before CI.
 
 ### Tolerated residues and unchanged matches
 
@@ -93,6 +95,7 @@ No dimensions come from the native implementation or visual guesses.
 | C05 model weight500, C06 margin4; 13px dense, line-normal, padding8/4; chevron16 | src/components/Global/ModelSelectorDropdown.tsx:493,511,522-527 |
 | C07 scope weight500, C08 margin4, C09 13px icon and state-selected path | src/components/AI_CHAT/AI_Tiptap_Container.tsx:608-637; src/components/AI_CHAT/ChatScopeChip.tsx:16,24-49 |
 | Task fill10%, border70%, 8px padding/gap, text-xs and icon14 | src/components/AI_CHAT/WelcomeScreen.tsx:314-338; purple literal also src/components/Common/IconsGlobal.tsx:20 |
+| Summary and starter rounded cascade, 6px | src/components/AI_CHAT/WelcomeScreen.tsx:320,335,403; src/styles/tailwind-entry.css:7-11; src/styles/globals.scss:843-850 documents Bootstrap important rounded |
 | Inbox/Board text-meta remains distinct from task text-xs | src/components/AI_CHAT/WelcomeScreen.tsx:335,398-407 |
 | Composer dynamic input and max380 remain unchanged | src/components/AI_CHAT/AI_Tiptap_Container.tsx:298-305,326-375; src/styles/tiptap.module.scss:45-53 |
 | Missing actions remain missing, not invented | src/components/AI_CHAT/AiChatComposerActionRow.tsx:146-152 |
@@ -135,7 +138,7 @@ The regression now independently requires the actual fill quad at
 that same origin, plus the 70% border and 1px width.
 No expected source value or acceptance threshold changed.
 
-### Hosted Windows product measurement
+### Hosted Windows measurement before final cascade correction
 
 SHA 74a6f599499d41b06aa4e843472acdb0ed0e5b60.
 Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40384092379.
@@ -157,17 +160,20 @@ Its memory.json revision and build revision match the SHA above.
 | Sidebar changed pixels versus main | 3,323 | 2,971 | 25,285 |
 | Unequal web/sidebar pixels before | 20,938 | 22,563 | 38,022 |
 | Unequal web/sidebar pixels after | 21,038 | 22,626 | 26,100 |
-| Inventory before | 21 | 19 | 27 |
-| Closed source properties | 6 | 7 | 13 |
-| Inventory after | 15 | 12 | 14 |
+| Inventory before | 20 | 18 | 27 |
+| Closed source properties | 6 | 7 | 14 |
+| Inventory after | 14 | 11 | 13 |
 
-Twenty-six source/property rows close, not pixel identity.
-Nineteen closures remain even excluding both 1px spacing corrections
+The final source correction closes twenty-seven property rows.
+Twenty closures remain even excluding both 1px spacing corrections
 and the Board glyph-shape correction. No thresholds changed.
 Unequal-pixel counts include different content and shifted text.
 They can rise despite correct source font weights and spacing.
 Task's summary interior now measures (43,36,55), matching web.
 Its prompts naturally shrink from 34px to 32px.
+The final correction also restores the summary rounded radius6.
+Its source is Bootstrap important cascade, not Tailwind default4.
+The final exact-head capture must remeasure this corner.
 The composer remains [1514,913,398,88], not web [1513,908,399,93].
 The Task stack still starts 2px below web after correction.
 All remaining rows above remain open, including missing actions.
@@ -177,3 +183,10 @@ web model [1530,971,55,10], native model [1531,974,99,10].
 Web scope label Inbox [1648,971,85,10], Board/Task [1648,971,95,12].
 Native scope label Inbox/Task [1698,975,150,11], Board [1698,974,90,12].
 These different-content bounds remain diagnostic, not font-width targets.
+
+The corner audit corrected an inventory false positive.
+Web and native regular starter radii already match6.
+They are not counted before or after.
+The summary alone used radius4 before, versus source6.
+Its new native regression now pins6, including the imported cascade.
+No frozen image, projection, fixture or tolerance changed.

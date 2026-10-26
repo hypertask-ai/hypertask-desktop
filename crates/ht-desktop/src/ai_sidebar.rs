@@ -921,7 +921,7 @@ impl Render for AiSidebar {
                 .gap(px(8.));
             if self.scope.as_ref().is_some_and(|scope| scope.context.surface == "task_detail" && scope.context.task_id.is_some()) {
                 welcome = welcome.child(
-                    div().id("ai-task-summary").w_full().p(px(8.)).rounded(px(4.))
+                    div().id("ai-task-summary").w_full().p(px(8.)).rounded(px(6.))
                         .border_1().border_color(color(0xc668ff).opacity(0.7)).bg(color(0xc668ff).opacity(0.1))
                         .text_size(px(12.)).line_height(px(16.)).flex().items_center().gap(px(8.))
                         .cursor_pointer()
