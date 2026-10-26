@@ -2350,3 +2350,7 @@ mod tests {
 #[cfg(test)]
 #[path = "data_fidelity_tests.rs"]
 mod data_fidelity_tests;
+
+#[cfg(test)]
+#[path = "visual_parity_tests.rs"]
+mod visual_parity_tests;
