@@ -363,12 +363,13 @@ mod tests {
                 this.layout.as_ref().unwrap().borrow().interaction_elements()
             }).unwrap();
             let element = |key: &str| elements.iter().find(|e| e["key"] == key).unwrap();
+            let current_card = element("board.card.0");
             let selector = element("board.card.1.select");
             let command = element("board.card.1.commands");
             assert_eq!((selector["w"].as_f64(), selector["h"].as_f64()), (Some(15.), Some(15.)));
             assert_eq!((command["w"].as_f64(), command["h"].as_f64()), (Some(14.), Some(16.)));
-            assert_eq!(selector["x"].as_f64().unwrap() - card["x"].as_f64().unwrap(), 12.);
-            assert_eq!(selector["y"].as_f64().unwrap() - card["y"].as_f64().unwrap(), 8.);
+            assert_eq!(selector["x"].as_f64().unwrap() - current_card["x"].as_f64().unwrap(), 12.);
+            assert_eq!(selector["y"].as_f64().unwrap() - current_card["y"].as_f64().unwrap(), 8.);
             assert_eq!(element("board.card.0.title")["x"].as_f64().unwrap() - idle_title["x"].as_f64().unwrap(), if hovered || selected { 20. } else { 0. });
             let painted = cx.update(|window, _| {
                 let origin = point(px(selector["x"].as_f64().unwrap() as f32), px(selector["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
