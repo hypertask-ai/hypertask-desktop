@@ -72,3 +72,8 @@ The remaining 43rd identity is Task footer.text's measured x coordinate. The rej
 ## One-off hosted comparison
 
 The separate gates/visual-artifact-proof.py takes before/after run IDs at invocation. It downloads exact-run windows-visual3 artifacts, validates capture SHA, compares with the unchanged oracle, reports all original counts, checks every sidebar pixel, and rejects changes to protected code, fixtures or thresholds. It never pins an expiring artifact in permanent CI. The separate Visual artifact comparison workflow runs manually or after a PR description edit, selecting already-completed base/head CI runs without polling; .github/workflows/ci.yml is unchanged. Its receipt distinguishes valid evidence from the unmet product target.
+
+
+## Hosted regression correction
+
+CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40385775426 passed 290 existing desktop tests on every platform and rejected the new paint assertion. GPUI does not submit a painted border quad for a transparent border. The test now requires the 4px left-only painted quad exactly when selected, and no such quad when unselected. Both states still reserve the source border geometry. No product value or comparison threshold changed.

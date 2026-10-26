@@ -182,10 +182,10 @@ fn task_graphite_description_selection_and_property_surfaces_follow_web(cx: &mut
                     && quad.border_widths.top == px(0.).scale(window.scale_factor())
                     && quad.border_widths.right == px(0.).scale(window.scale_factor())
                     && quad.border_widths.bottom == px(0.).scale(window.scale_factor())
-                    && quad.border_color == if selected { color(0x707788) } else { gpui::transparent_black() }
+                    && quad.border_color == color(0x707788)
             })
         });
-        assert!(painted, "Description must paint only the source left selection border");
+        assert_eq!(painted, selected, "Only selected descriptions paint the source left border");
         assert_eq!(properties["radius"], 4.);
         assert_eq!(properties["borderColor"], "#363b44");
         assert_eq!(properties["bg"], "#262a30");
