@@ -32,3 +32,29 @@ Review is serial self-review; unavailable Cursor-only review tools are not claim
 Data shape: each InboxItem retains seven metadata fields after extracting typed identity/source. The SQL object starts with fifteen fields; IndexMap-backed serde_json retain drops values but keeps its larger backing allocation. Rebuild that one map with Map::with_capacity(retained_len), moving keys/values without cloning. Do not alter nested payloads, serialized content or order. The CI-only control omits packed-inbox-metadata; all other production features remain identical.
 
 Rejected alternatives: another allocator (prior measured regression); font-atlas repacking (prior changed pixel); globally compacting arbitrary JSON trees (unnecessary breadth). This unit measures its own effect before pursuing larger UI allocations. Fixed-size atomic log2 buckets now report requested live Rust allocations by size on both builds, not stack attribution or an allocation change. No forced heap collection.
+
+## First receipt and next unit
+
+CI 40279953684 passed all eight build/control/native jobs and cold RGB/layout equality.
+Packing lowered heavy requested Rust heap by 1,536,000 bytes on each screen and
+cold WS 69.210 -> 67.486 / 87.667 -> 86.073 / 89.985 -> 88.535 MB.
+The strict comparison rejected demo warm private commit: inbox 30,613,504 ->
+31,281,152 bytes, board 38,023,168 -> 38,674,432, task 48,443,392 -> 48,906,240.
+No gate or budget is relaxed. This unit alone is insufficient.
+
+The size buckets show 6.95 MB of heavy-board requested live heap in 1–2 MiB
+allocations, 5.02 MB of task heap in 64–128 KiB allocations, and multiple MB of
+small text/UI allocations. These are requested allocation sizes, not stack traces.
+Source identifies a concrete layout owner: ShapedLine embeds 32 DecorationRuns
+for every line; WrappedLine reserves 32 even for one uniformly colored run.
+Task readers retain vectors of these shaped lines for hit testing. Normal labels
+also retain wrapped-line vectors. Only one style is common, not 32.
+
+Selected shape: SmallVec with one inline decoration, and Vec starting at one.
+Both grow normally for arbitrary style counts. No algorithm or public method changes.
+A CI-only legacy-line-storage feature restores the old capacities. A size receipt
+and size regression prove the owner changed; exact cold/warm RGB and full layout
+comparison prove the original glyph/decorations/geometry remain. The pinned GPUI
+crate is vendored with its unchanged license because these fields are private;
+unsafe casts or mutating shared Cargo sources were rejected. The large source
+import is mechanical; only two upstream source files change.

@@ -279,7 +279,7 @@ jobs:
           path: target/aarch64-pc-windows-msvc/release/ht-desktop.exe
           retention-days: 14
   windows-memory-baselines:
-    name: memory-${{ github.head_ref == 'mem6' && 'unpacked-inbox-metadata' || github.head_ref == 'mem5' && 'retained-inbox-metadata-profiler-mapped-buffers' || github.head_ref == 'mem3' && 'heavy-full-task-reads' || github.head_ref == 'mem2' && 'eager-fonts-triple-buffer' || matrix.revision }}
+    name: memory-${{ github.head_ref == 'mem6' && 'oversized-line-storage' || github.head_ref == 'mem5' && 'retained-inbox-metadata-profiler-mapped-buffers' || github.head_ref == 'mem3' && 'heavy-full-task-reads' || github.head_ref == 'mem2' && 'eager-fonts-triple-buffer' || matrix.revision }}
     if: github.event_name == 'pull_request' && contains(fromJSON('["ram2","mem2","mem3","mem5","mem6"]'), github.head_ref)
     strategy:
       fail-fast: false
@@ -310,9 +310,9 @@ jobs:
       - name: Build identical code retaining metadata, profiler and mapped buffers
         if: github.head_ref == 'mem5'
         run: cargo build --release --no-default-features -p ht-desktop -p ht-core -p gpui_windows --features ht-desktop/visible-board-columns,ht-desktop/lazy-theme-fonts,ht-desktop/input-benchmark,ht-core/bounded-sync-cache,ht-core/compact-task-reads,gpui_windows/mapped-instance-buffers
-      - name: Build identical code retaining notification map capacity
+      - name: Build identical code retaining oversized line and notification storage
         if: github.head_ref == 'mem6'
-        run: cargo build --release --no-default-features -p ht-desktop -p ht-core --features ht-desktop/visible-board-columns,ht-desktop/lazy-theme-fonts,ht-core/bounded-sync-cache,ht-core/compact-task-reads,ht-core/compact-inbox-metadata
+        run: cargo build --release --no-default-features -p ht-desktop -p ht-core --features ht-desktop/visible-board-columns,ht-desktop/lazy-theme-fonts,ht-core/bounded-sync-cache,ht-core/compact-task-reads,ht-core/compact-inbox-metadata,gpui/legacy-line-storage
       - name: Generate identical heavy account
         if: github.head_ref == 'mem3' || github.head_ref == 'mem5' || github.head_ref == 'mem6'
         run: python gates/heavy-fixture.py evidence/heavy-fixtures
