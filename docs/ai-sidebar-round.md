@@ -109,3 +109,16 @@ and clicks the real summary action to retain offline refusal behavior.
 ## Exact-head verification
 
 Pending hosted CI and final capture measurement.
+
+### First hosted correction
+
+Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40380658015
+compiled on all platforms. Both new layout tests failed before drawing.
+Exact error was `missing field status` in the new in-memory task seed.
+The test seeds now include the required Normal status.
+Existing capture fixtures remain unchanged.
+Source review also replaced remembered glyph paths with the actual
+Lucide symbols imported by the cited web components.
+Native asset tests now pin those paths and the 1.75 stroke.
+Summary alpha now uses exact source 0.7 and 0.1,
+not byte-quantized approximations.

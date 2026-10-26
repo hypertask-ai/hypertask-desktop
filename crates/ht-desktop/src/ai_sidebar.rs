@@ -922,7 +922,7 @@ impl Render for AiSidebar {
             if self.scope.as_ref().is_some_and(|scope| scope.context.surface == "task_detail" && scope.context.task_id.is_some()) {
                 welcome = welcome.child(
                     div().id("ai-task-summary").w_full().p(px(8.)).rounded(px(4.))
-                        .border_1().border_color(gpui::rgba(0xc668ffb3)).bg(gpui::rgba(0xc668ff1a))
+                        .border_1().border_color(color(0xc668ff).opacity(0.7)).bg(color(0xc668ff).opacity(0.1))
                         .text_size(px(12.)).line_height(px(16.)).flex().items_center().gap(px(8.))
                         .cursor_pointer()
                         .child(svg().path("ai-sparkles").size(px(14.)).flex_shrink_0().text_color(color(0xc668ff))
@@ -1389,6 +1389,13 @@ impl Render for AiSidebar {
         } else {
             "All boards".into()
         };
+        let scope_icon = if !self.include_context {
+            "layers"
+        } else if self.scope.as_ref().is_some_and(|s| s.context.task_id.is_some()) {
+            "ai-scope-task"
+        } else {
+            "ai-scope-board"
+        };
         let controls = div()
             .w_full().pt(px(8.))
             .flex()
@@ -1427,9 +1434,9 @@ impl Render for AiSidebar {
                         this.include_context = !this.include_context;
                         cx.notify();
                     }))
-                    .child(svg().path(if !self.include_context { "layers" } else if self.scope.as_ref().is_some_and(|s| s.context.task_id.is_some()) { "ai-scope-task" } else { "ai-scope-board" })
+                    .child(svg().path(scope_icon)
                         .size(px(13.)).flex_shrink_0().text_color(color(t.muted))
-                        .layout_key(&self.capture, "ai.context.icon", None))
+                        .layout_key(&self.capture, "ai.context.icon", Some(scope_icon.into())))
                     .child(div().truncate().font_weight(FontWeight::MEDIUM).child(label.clone()).layout_key(&self.capture, "ai.context", Some(label)))
                     .child(icon(
                         if self.include_context {

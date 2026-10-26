@@ -731,7 +731,7 @@ fn sidebar_web_control_labels_icons_and_spacing(cx: &mut gpui::TestAppContext) {
     for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
         let (host, cx) = cx.add_window_view(|window, cx| Host(cx.new(|cx| {
             let mut db = Db::memory().unwrap();
-            db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"QA Team Board","teamId":1}],"tasks":[{"id":103,"projectId":15,"title":"Task","ticketNumber":"QABO-5"}]})).unwrap();
+            db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"QA Team Board","teamId":1}],"tasks":[{"id":103,"projectId":15,"title":"Task","ticketNumber":"QABO-5","status":"Normal"}]})).unwrap();
             let focus = cx.focus_handle();
             let mut sidebar = AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx);
             sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
@@ -755,6 +755,7 @@ fn sidebar_web_control_labels_icons_and_spacing(cx: &mut gpui::TestAppContext) {
         assert_eq!(chevron["h"], 16.);
         assert_eq!(icon["w"], 13.);
         assert_eq!(icon["h"], 13.);
+        assert_eq!(icon["text"], if screen == Screen::Task { "ai-scope-task" } else { "ai-scope-board" });
         assert_eq!(context["x"].as_f64().unwrap() - icon["x"].as_f64().unwrap() - icon["w"].as_f64().unwrap(), 4.);
         assert_eq!(element(&view, cx, "ai.input")["color"], "#adb5bd");
         view.update_in(cx, |sidebar, _, cx| sidebar.input.update(cx, |input, cx| input.set_content("Actual message".into(), cx)));
@@ -774,7 +775,7 @@ fn sidebar_task_summary_web_tint_icon_and_compact_prompt_geometry(cx: &mut gpui:
     }
     let (host, cx) = cx.add_window_view(|window, cx| Host(cx.new(|cx| {
         let mut db = Db::memory().unwrap();
-        db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"QA Team Board","teamId":1}],"tasks":[{"id":103,"projectId":15,"title":"Task","ticketNumber":"QABO-5"}]})).unwrap();
+        db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"QA Team Board","teamId":1}],"tasks":[{"id":103,"projectId":15,"title":"Task","ticketNumber":"QABO-5","status":"Normal"}]})).unwrap();
         let focus = cx.focus_handle();
         let mut sidebar = AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx);
         sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
@@ -801,11 +802,26 @@ fn sidebar_task_summary_web_tint_icon_and_compact_prompt_geometry(cx: &mut gpui:
     cx.update(|window, _| {
         let origin = point(px(summary["x"].as_f64().unwrap() as f32), px(summary["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
         let quads = window.painted_quads();
-        let quad = quads.iter().find(|quad| quad.bounds.origin == origin && quad.border_color == gpui::rgba(0xc668ffb3).into()).expect("painted web summary border");
-        assert_eq!(quad.background, gpui::Background::from(gpui::rgba(0xc668ff1a)));
+        let quad = quads.iter().find(|quad| quad.bounds.origin == origin && quad.border_color == color(0xc668ff).opacity(0.7).into()).expect("painted web summary border");
+        assert_eq!(quad.background, gpui::Background::from(color(0xc668ff).opacity(0.1)));
         assert_eq!(quad.border_widths.left, px(1.).scale(window.scale_factor()));
     });
     click(&view, cx, "ai.task.summary");
     view.read_with(cx, |sidebar, _| assert!(sidebar.chats[0].error.as_deref().unwrap().contains("offline")));
     println!("AI_SIDEBAR_WEB_TASK summary=34 prompt=32 line=16 icon=14 gap=8 border=#c668ff/70 fill=#c668ff/10");
+}
+
+#[test]
+fn sidebar_scope_glyphs_match_web_symbols() {
+    use gpui::AssetSource;
+    for (name, paths) in [
+        ("ai-scope-board", &["M8 7v7", "M12 7v4", "M16 7v9"][..]),
+        ("ai-scope-task", &["M13 5h8", "M13 12h8", "M13 19h8", "m3 17 2 2 4-4"][..]),
+    ] {
+        let bytes = crate::Assets.load(name).unwrap().unwrap();
+        let svg = std::str::from_utf8(&bytes).unwrap();
+        assert!(svg.contains("viewBox=\"0 0 24 24\""));
+        assert!(svg.contains("stroke-width=\"1.75\""));
+        for path in paths { assert!(svg.contains(path), "{name}: missing {path}"); }
+    }
 }
