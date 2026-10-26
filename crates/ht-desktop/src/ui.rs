@@ -98,6 +98,10 @@ mod board;
 mod interactions;
 
 #[cfg(test)]
+#[path = "task_open_tests.rs"]
+mod task_open_tests;
+
+#[cfg(test)]
 #[path = "keyboard_parity_tests.rs"]
 mod keyboard_parity_tests;
 
@@ -119,6 +123,7 @@ pub struct Desktop {
     columns: Vec<BoardColumn>,
     column_lists: Vec<ListState>,
     detail: Option<TaskDetail>,
+    task_load: Option<std::sync::mpsc::Receiver<anyhow::Result<()>>>,
     description: RichText,
     summary: SharedString,
     creator: SharedString,
@@ -238,6 +243,7 @@ impl Desktop {
             columns: vec![],
             column_lists: vec![],
             detail: None,
+            task_load: None,
             description: RichText::default(),
             summary: SharedString::default(),
             creator: SharedString::default(),
@@ -358,18 +364,38 @@ impl Desktop {
         cx.notify();
     }
 
-    fn request_sync(&self) {
+    fn request_sync(&mut self) {
+        self.task_load = None;
         if let Some(worker) = &self.worker {
             let handle = worker.handle();
             let _ = match self.screen {
                 Screen::Inbox => handle.sync_inbox(),
                 Screen::Board => handle.sync_board(self.options.board),
+                Screen::Task if self.detail.is_none() => {
+                    match handle.load_task(self.options.task) {
+                        Ok(receive) => self.task_load = Some(receive),
+                        Err(error) => self.error = Some(error.to_string()),
+                    }
+                    Ok(())
+                }
                 Screen::Task => handle.sync_task(self.options.task),
             };
         }
     }
 
     fn reload(&mut self) {
+        if let Some(receive) = &self.task_load {
+            match receive.try_recv() {
+                Ok(result) => {
+                    self.task_load = None;
+                    if let Err(error) = result {
+                        self.error = Some(error.to_string());
+                    }
+                }
+                Err(std::sync::mpsc::TryRecvError::Disconnected) => self.task_load = None,
+                Err(std::sync::mpsc::TryRecvError::Empty) => {}
+            }
+        }
         let result: anyhow::Result<()> = (|| {
             self.inbox = crate::memory::measure_read(0, || self.db.inbox_rows())?;
             match self.screen {
@@ -1342,10 +1368,16 @@ impl Desktop {
     fn task_screen(&self, cx: &mut Context<Self>) -> AnyElement {
         let t = self.colors;
         let Some(d) = &self.detail else {
+            let message = if self.task_load.is_some() {
+                "Loading..."
+            } else {
+                "Task is not available offline. Sync this task first."
+            };
             return div()
                 .flex_1()
                 .p(px(64.))
-                .child("Task is not available offline. Sync this task first.")
+                .child(message)
+                .layout_key(&self.layout, "task.unavailable", Some(message.into()))
                 .into_any_element();
         };
         let title = if self.editing == Editing::Title {
