@@ -91,16 +91,17 @@ impl Db {
             Write::Board { change } => {
                 change.request()?;
                 let user = db.current_user_id().context("sync your account before changing a board")?;
-                if let crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
+                if let crate::BoardWrite::StarTask { task, project, .. } | crate::BoardWrite::CreateTaskLabel { task, project, .. } = change {
                     ensure!(db.task(*task)?.is_some_and(|task| task.project_id == *project), "task is not cached in this board");
                 }
                 if let crate::BoardWrite::AssignToMe { user: target, task } = change {
                     ensure!(*target == user, "self assignment belongs to another account");
                     ensure!(db.task(*task)?.is_some_and(|task| task.status == crate::generated::Status::Normal), "unarchive this task before assigning it");
                 }
-                let mut before = if let crate::BoardWrite::AssignAgent { task, .. } | crate::BoardWrite::AssignToMe { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
+                let mut before = if let crate::BoardWrite::AssignAgent { task, .. } | crate::BoardWrite::AssignToMe { task, .. } | crate::BoardWrite::StarTask { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
                 // Upserts merge omitted fields, so rollback needs explicit empty assignment fields.
                 if !before.is_null() {
+                    if before.get("savedContent").is_none() { before["savedContent"] = json!([]); }
                     if before.get("assignees").is_none() { before["assignees"] = json!([]); }
                     if before.get("assigneeCount").is_none() { before["assigneeCount"] = json!(before["assignees"].as_array().map_or(0, Vec::len)); }
                 }
@@ -209,6 +210,11 @@ impl Db {
         match kind {
             "shell_write" | "compose_task" => (),
             "board_write" => {
+                if let crate::BoardWrite::StarTask { task, active, .. } = serde_json::from_value(payload["change"].clone())? {
+                    let mut row = self.raw("Task", &json!(task))?.context("task is not cached")?;
+                    row["savedContent"] = if active { json!([{"id":format!("pending:{id}"),"type":"Private"}]) } else { json!([]) };
+                    self.upsert_task(&row)?;
+                }
                 if let crate::BoardWrite::AssignToMe { task, user } = serde_json::from_value(payload["change"].clone())? {
                     let mut task_row = self.raw("Task", &json!(task))?.context("task is not cached")?;
                     let project = task_row["projectId"].as_i64().context("missing task board")?;
@@ -444,7 +450,11 @@ impl Db {
             match transport.get("/user/context") {
                 Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true => {
                     if response.body["user"]["id"] == row.payload_json["user_id"] {
-                        transport.mutate(method, &path, &body, &row.client_id)
+                        if let crate::BoardWrite::ToggleTimer { task } = change {
+                            if row.attempts > 1 {
+                                Ok(Response { status:409, body:json!({"success":false,"error":"Timer outcome unknown; refresh before retrying"}) })
+                            } else { crate::board_write::toggle_timer(transport, task, &row.client_id) }
+                        } else { transport.mutate(method, &path, &body, &row.client_id) }
                     } else { Ok(Response { status:403, body:json!({"success":false,"error":"Board write belongs to another account"}) }) }
                 }
                 response => response,
@@ -519,6 +529,9 @@ impl Db {
             Ok(Response { status, .. }) => (permanent(status), format!("HTTP {status}")),
             Err(error) => (false, error.to_string()),
         };
+        let result = if row.kind == "board_write" && row.payload_json["change"].get("ToggleTimer").is_some() {
+            (true, format!("Timer outcome unavailable; refresh before retrying ({})", result.1))
+        } else { result };
         self.transaction(|db| {
             let current: Option<String> = db.conn.query_row("SELECT client_id FROM mutation_queue WHERE id=? AND attempts=?", params![row.id,row.attempts], |r| r.get(0)).optional()?;
             if current.is_none() { return Ok(()); }

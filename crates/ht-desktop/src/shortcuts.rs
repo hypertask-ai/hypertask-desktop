@@ -6,6 +6,9 @@ pub enum Action {
     Commands,
     Compose,
     StarComment,
+    StarTask,
+    ToggleTimer,
+    BlockedBy,
     PinComment,
     Back,
     Open,
@@ -108,6 +111,10 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         };
     }
     match (k, ctrl, shift, m.alt) {
+        ("b", false, true, false) if screen == Screen::Task => Some(Action::BlockedBy),
+        ("s", false, false, true) => Some(Action::StarTask),
+        ("w", false, false, false) if screen != Screen::Inbox => Some(Action::ToggleTimer),
+        ("t", false, false, true) if screen == Screen::Task => Some(Action::ToggleTimer),
         ("s", true, true, false) if screen == Screen::Task => Some(Action::StarComment),
         ("p", true, true, false) if screen == Screen::Task => Some(Action::PinComment),
         ("3", true, true, false) if screen == Screen::Task => Some(Action::DeleteComment),

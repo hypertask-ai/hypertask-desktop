@@ -363,3 +363,152 @@ fn keyboard_escape_keeps_description_when_lossless_save_is_refused(cx: &mut Test
         assert!(this.db.mutations().unwrap().is_empty());
     });
 }
+
+struct KeyboardWriteServer {
+    calls: Vec<(String, serde_json::Value)>,
+    running: bool,
+    enabled: bool,
+    fail_effect: bool,
+}
+impl KeyboardWriteServer {
+    fn new() -> Self { Self { calls: vec![], running: false, enabled: true, fail_effect: false } }
+}
+impl ht_core::Transport for KeyboardWriteServer {
+    fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+        assert_eq!(path, "/user/context");
+        Ok(ht_core::http::Response { status: 200, body: serde_json::json!({"success":true,"user":{"id":42}}) })
+    }
+    fn post(&mut self, path: &str, body: &serde_json::Value, _: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
+        use serde_json::json;
+        self.calls.push((path.into(), body.clone()));
+        let response = match path {
+            "/tasks/card-actions" => {
+                assert_eq!(body["action"], "star");
+                assert_eq!(body["project_id"], 15);
+                let active = body["active"].as_bool().unwrap();
+                json!({"success":true,"action":"star","active":active,"saved_content":if active {json!([{"id":"saved-real","type":"Private"}])} else {json!([])}})
+            }
+            "/tasks/waiting-on" => json!({"success":true,"task":{"id":body["taskId"],"waitingOnUserId":body["userId"],"waitingOnSetById":42,"waitingOnSetAt":"2026-10-26T12:00:00Z"}}),
+            "/time/status" => json!({"success":true,"summary":{"enabled":self.enabled,"runningEntry":if self.running {json!({"id":90,"taskId":1,"endedAt":null})} else {json!(null)}}}),
+            "/time/start" | "/time/stop" => {
+                if self.fail_effect { return Err(ht_core::http::TransportError::Timeout); }
+                self.running = path == "/time/start";
+                json!({"success":true,"entry":{"id":90,"taskId":1,"endedAt":if self.running {json!(null)} else {json!("2026-10-26T12:00:00Z")}})
+            }
+            _ => panic!("unexpected keyboard request {path}"),
+        };
+        Ok(ht_core::http::Response { status: 200, body: response })
+    }
+}
+
+#[gpui::test]
+fn keyboard_alt_s_toggles_private_task_star_on_every_surface_and_reconciles_real_ids(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for screen in [Screen::Inbox, Screen::Board, Screen::Task] {
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let mut this = super::task_fields::tests::desktop(window, cx);
+            this.db.apply_task(&serde_json::json!({"id":1,"savedContent":[]})).unwrap();
+            this.db.apply_response(&serde_json::json!({"success":true,"user_notifications":[{"id":101,"taskId":1,"projectId":15,"status":"Normal","seen":true,"createdAt":"2026-01-01T00:00:00Z"}]})).unwrap();
+            this.screen = screen;
+            this.reload();
+            if screen == Screen::Inbox { this.split = this.splits.iter().position(|s| s == "All").unwrap(); this.filter_inbox(); }
+            this
+        });
+        let mut server = KeyboardWriteServer::new();
+        for active in [true, false] {
+            cx.simulate_keystrokes("alt-s");
+            view.update_in(cx, |this, _, cx| {
+                let row = this.db.mutations().unwrap().into_iter().find(|r| r.status == "pending").unwrap();
+                assert_eq!(row.payload_json["change"]["StarTask"], serde_json::json!({"task":1,"project":15,"active":active}));
+                let optimistic = this.db.task(1).unwrap().unwrap();
+                assert_eq!(!optimistic.extra["savedContent"].as_array().unwrap().is_empty(), active);
+                assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+                this.reload();
+                cx.notify();
+                let task = this.db.task(1).unwrap().unwrap();
+                assert_eq!(task.extra["savedContent"], if active {serde_json::json!([{"id":"saved-real","type":"Private"}])} else {serde_json::json!([])});
+            });
+        }
+        assert_eq!(server.calls.len(), 2);
+    }
+}
+
+#[gpui::test]
+fn keyboard_shift_b_picks_only_people_and_clear_without_assigning_them(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    let mut server = KeyboardWriteServer::new();
+    for (query, user) in [("Alex", Some(7)), ("Nobody", None)] {
+        cx.simulate_keystrokes("shift-b");
+        cx.simulate_input(query);
+        cx.run_until_parked();
+        cx.simulate_keystrokes("enter");
+        view.update_in(cx, |this, _, _| {
+            let row = this.db.mutations().unwrap().into_iter().find(|r| r.status == "pending").unwrap();
+            assert_eq!(row.payload_json["change"]["WaitingOn"], serde_json::json!({"task":1,"user":user}));
+            assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+            assert_eq!(this.db.task(1).unwrap().unwrap().extra["waitingOnUserId"], serde_json::json!(user));
+            assert!(this.db.task(1).unwrap().unwrap().extra.get("assignees").is_none());
+        });
+    }
+    assert_eq!(server.calls[0], ("/tasks/waiting-on".into(), serde_json::json!({"taskId":1,"userId":7})));
+    assert_eq!(server.calls[1].1["userId"], serde_json::Value::Null);
+}
+
+#[gpui::test]
+fn keyboard_timer_aliases_read_authoritative_state_and_stop_disabled_running_timers(cx: &mut TestAppContext) {
+    let (view, mut cx) = super::task_fields::tests::visual(cx);
+    let mut server = KeyboardWriteServer::new();
+    for (chord, running) in [("w", true), ("alt-t", false)] {
+        cx.simulate_keystrokes(chord);
+        cx.simulate_keystrokes(chord); // Held/repeated input cannot enqueue a second toggle.
+        view.update(&mut cx, |this, _, cx| {
+            assert_eq!(this.db.mutations().unwrap().iter().filter(|r| r.status == "pending").count(), 1);
+            assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+            assert!(!this.poll_timer_shortcut(cx));
+        }).unwrap();
+        assert_eq!(measured(view, &mut cx, "task.timer.control")["text"], if running { "Stop" } else { "Start" });
+    }
+    assert_eq!(server.calls.iter().map(|(path, _)| path.as_str()).collect::<Vec<_>>(), ["/time/status","/time/start","/time/status","/time/stop"]);
+    assert!(server.calls.iter().all(|(_, body)| *body == serde_json::json!({"task":"1"})));
+    server.enabled = false;
+    for running in [false, true] {
+        server.running = running;
+        let before = server.calls.len();
+        cx.simulate_keystrokes("w");
+        view.update(&mut cx, |this, _, cx| {
+            assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Applied(_)));
+            this.poll_timer_shortcut(cx);
+        }).unwrap();
+        assert_eq!(server.calls.len()-before, if running {2} else {1});
+        assert!(!server.running);
+    }
+}
+
+#[gpui::test]
+fn keyboard_timer_unknown_effect_is_never_automatically_replayed(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    cx.simulate_keystrokes("w");
+    let mut server = KeyboardWriteServer::new();
+    server.fail_effect = true;
+    view.update_in(cx, |this, _, cx| {
+        let now = chrono::Utc::now().timestamp()+1;
+        assert!(matches!(this.db.drain_one(&mut server, now).unwrap(), ht_core::Drain::Failed(_)));
+        assert!(matches!(this.db.drain_one(&mut server, now+100).unwrap(), ht_core::Drain::Empty));
+        this.poll_timer_shortcut(cx);
+        assert!(this.error.as_ref().unwrap().contains("refresh before retrying"));
+    });
+    assert_eq!(server.calls.len(), 2);
+}
+
+#[gpui::test]
+fn keyboard_new_task_actions_never_escape_text_inputs_or_extra_modifiers(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for activate in ["f2", "ctrl-m", "ctrl-d"] {
+        let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+        cx.simulate_keystrokes(activate);
+        for key in ["alt-s", "shift-b", "w", "alt-t"] { cx.simulate_keystrokes(key); }
+        view.read_with(cx, |this, _| assert!(this.db.mutations().unwrap().is_empty()));
+    }
+}

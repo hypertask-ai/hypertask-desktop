@@ -85,6 +85,8 @@ mod inbox;
 mod comments;
 #[path = "task_fields.rs"]
 mod task_fields;
+#[path = "keyboard_timer.rs"]
+mod keyboard_timer;
 #[path = "board_mutations.rs"]
 mod board_mutations;
 #[path = "board.rs"]
@@ -135,6 +137,7 @@ pub struct Desktop {
     task_fields: task_fields::TaskFields,
     board_actions: board::BoardActions,
     board_forms: board_mutations::Forms,
+    timer_shortcut: keyboard_timer::TimerShortcut,
     comment_actions: comment_actions::CommentActions,
     comment_drafts: comment_drafts::CommentDrafts,
     moving: bool,
@@ -253,6 +256,7 @@ impl Desktop {
             task_fields: task_fields::TaskFields::new(cx),
             board_actions: board::BoardActions::new(cx),
             board_forms: board_mutations::Forms::new(cx),
+            timer_shortcut: keyboard_timer::TimerShortcut::default(),
             comment_actions: comment_actions::CommentActions::new(cx),
             comment_drafts: comment_drafts::CommentDrafts::default(),
             moving: false,
@@ -1579,6 +1583,7 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, format!("task.meta.{i}"), None)
             }))
+            .child(self.task_timer_control(task.id, cx))
             .when(self.moving, |d| {
                 d.child(
                     div()
