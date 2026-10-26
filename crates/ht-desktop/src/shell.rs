@@ -1269,6 +1269,21 @@ mod surface_tests {
     }
 
     #[gpui::test]
+    fn graphite_shortcut_sheet_source_measurements(cx: &mut gpui::TestAppContext) {
+        let (view, mut cx) = setup(cx);
+        view.update(&mut cx, |this, _, cx| this.apply_shell_theme(ThemeName::Graphite, cx)).unwrap();
+        cx.simulate_keystrokes("?");
+        draw(view, &mut cx);
+        let elements = view.read_with(&cx, |this, _| this.layout.as_ref().unwrap().borrow().interaction_elements()).unwrap();
+        assert!(elements.iter().any(|e| e["key"] == "shell.shortcuts"));
+        if cfg!(target_os = "linux") && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+            let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/layout/panels-native");
+            std::fs::create_dir_all(&out).unwrap();
+            std::fs::write(out.join("shortcuts.json"), serde_json::to_vec_pretty(&serde_json::json!({"width":1440,"height":900,"elements":elements})).unwrap()).unwrap();
+        }
+    }
+
+    #[gpui::test]
     fn shell_question_opens_searchable_shortcut_sidebar_and_escape_preserves_task(
         cx: &mut TestAppContext,
     ) {

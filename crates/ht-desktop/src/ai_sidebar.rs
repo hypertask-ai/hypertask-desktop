@@ -1042,7 +1042,8 @@ impl Render for AiSidebar {
                         div()
                             .truncate()
                             .font_weight(FontWeight::SEMIBOLD)
-                            .child(title),
+                            .child(title.clone())
+                            .layout_key(&self.capture, "ai.title", Some(title)),
                     )
                     .child(icon("chevron-down", t.muted))
                     .layout_key(&self.capture, "ai.history.toggle", None),
@@ -1447,7 +1448,7 @@ impl Render for AiSidebar {
                     }))
                     .layout_key(&self.capture, "ai.send", None),
             ));
-        composer = composer.child(controls);
+        composer = composer.child(controls.layout_key(&self.capture, "ai.controls", None));
         if self.mode() == DisplayMode::Fullscreen {
             composer = composer.w_full().max_w(px(800.)).mx_auto();
         }
@@ -1455,7 +1456,7 @@ impl Render for AiSidebar {
         if self.mode() == DisplayMode::Sidebar {
             panel = panel.child(self.resize_edge(cx));
         }
-        panel.into_any_element()
+        panel.layout_key(&self.capture, "ai.panel", None)
     }
 }
 

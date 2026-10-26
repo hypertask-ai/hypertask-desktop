@@ -552,3 +552,57 @@ fn message_rows_use_web_alignment_padding_and_eight_pixel_gap(cx: &mut gpui::Tes
     let second = element(&view, cx, "ai.message.1");
     assert_eq!(second["y"].as_f64().unwrap() - first["y"].as_f64().unwrap() - first["h"].as_f64().unwrap(), 8.);
 }
+
+#[gpui::test]
+fn graphite_sidebar_source_measurements(cx: &mut gpui::TestAppContext) {
+    struct Fixture(gpui::Entity<AiSidebar>);
+    impl gpui::Render for Fixture {
+        fn render(&mut self, _: &mut gpui::Window, _: &mut gpui::Context<Self>) -> impl IntoElement {
+            div().size_full().flex().justify_end().font_family("IBM Plex Sans")
+                .text_size(px(16.)).line_height(gpui::relative(1.5))
+                .text_color(color(0xffffff))
+                .child(div().w(px(420.)).h_full().child(self.0.clone()))
+        }
+    }
+    cx.update(|cx| { crate::input::init(cx); crate::fonts::load(crate::theme::ThemeName::Graphite, cx); });
+    let view = cx.open_window(size(px(1440.), px(900.)), |window, cx| {
+        let sidebar = cx.new(|cx| {
+            let focus = cx.focus_handle();
+            let mut sidebar = AiSidebar::new(crate::theme::THEMES[1], None, focus, window, cx);
+            sidebar.capture = Some(Rc::new(RefCell::new(crate::layout::LayoutDump::default())));
+            let mut db = Db::memory().unwrap();
+            db.apply_response(&serde_json::json!({"success":true,"projects":[{"id":15,"title":"Alpha","teamId":1}]})).unwrap();
+            let mut scope = Scope::load(&db, Screen::Board, 15, None);
+            scope.suggestions = vec!["What should I work on next?".into(), "Summarize the last 3 days".into(), "What's unassigned?".into(), "What's blocking release?".into()];
+            sidebar.scope = Some(scope);
+            sidebar
+        });
+        Fixture(sidebar)
+    });
+    let mut visual = gpui::VisualTestContext::from_window(view.into(), cx);
+    for state in ["ai-welcome", "ai-messages"] {
+        view.update(&mut visual, |fixture, window, cx| {
+            if state == "ai-messages" {
+                fixture.0.update(cx, |sidebar, cx| {
+                    sidebar.capture.as_ref().unwrap().borrow_mut().begin(0);
+                    for (role, content) in [("human", "Hello"), ("assistant", "Hello back")] {
+                        sidebar.chats[0].messages.push(ChatMessage {
+                            message: Message { role: role.into(), content: content.into() },
+                            rich: markdown(content, sidebar.colors),
+                        });
+                    }
+                    cx.notify();
+                });
+            }
+            window.refresh(); cx.notify();
+        }).unwrap();
+        visual.run_until_parked();
+        let elements = view.read_with(&visual, |fixture, cx| fixture.0.read(cx).capture.as_ref().unwrap().borrow().interaction_elements()).unwrap();
+        assert!(elements.iter().any(|e| e["key"] == "ai.panel"));
+        if cfg!(target_os = "linux") && std::env::var("GITHUB_ACTIONS").as_deref() == Ok("true") {
+            let out = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../evidence/layout/panels-native");
+            std::fs::create_dir_all(&out).unwrap();
+            std::fs::write(out.join(format!("{state}.json")), serde_json::to_vec_pretty(&serde_json::json!({"width":1440,"height":900,"elements":elements})).unwrap()).unwrap();
+        }
+    }
+}

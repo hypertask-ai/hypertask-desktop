@@ -1,0 +1,15 @@
+# Round 12 acceptance and evidence
+
+## Acceptance recorded before implementation
+
+1. Add an additive Graphite source-projected browser measurement for AI sidebar welcome, suggestions, populated user/assistant messages, composer, and the `?` shortcut sheet. Cite every projected value to the read-only web source under `/home/valentin/projects/hypertask/src`. Do not invent UI or change existing references, tolerances, or budgets.
+2. Collect native layouts through GitHub CI, using the real renderers and matched content. Retain complete per-element geometry/style differences and baseline counts in the `layout-dumps` artifact before product corrections.
+3. Fix every source-proven difference, largest visible area first. Run the identical additive measure after fixes; preserve before and after CI artifacts and exact revision identities. Include missing-control and perturbed-box negative controls.
+4. Preserve existing inbox, board, task, typography, keyboard, and memory checks. No VPS builds, tests, lint, app launches, test copies, or laptop commands. Only public GitHub CI supplies runtime proof.
+5. Fetch/rebase main before each push. Deliver draft branch `look12` with exact-head required jobs green, downloaded before/after counts, last SHA, PR URL, CI URL and every job result.
+
+## Work plan and shape
+
+Use the existing layout-key JSON records (`key`, box, typography, colors) and Playwright source-projection approach. Add a separate panel comparison; existing frozen screens remain untouched. First deliver measurement-only baseline, then source-backed corrections, then exact-head evidence. Serial source/diff self-review replaces unavailable cursor-team-kit tooling; no independent review claimed.
+
+Principle-prove-it-works requires hosted renderer measurements, not inferred parity. Principle-sequence-verifiable-units requires the baseline artifact before correction. Throughput checkpoint: keep collection separate from corrections; inspect complete counts before choosing edits.
