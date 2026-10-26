@@ -5,6 +5,9 @@ use serde_json::{Value, json};
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum BoardWrite {
+    WaitingOn { task: i64, user: Option<i64> },
+    ToggleTimer { task: i64 },
+    StarTask { task: i64, project: i64, active: bool },
     ArchiveBoard {
         project: i64,
     },
@@ -59,6 +62,20 @@ impl BoardWrite {
             Ok::<(), anyhow::Error>(())
         };
         let request = match self {
+            Self::WaitingOn { task, user } => {
+                positive(*task)?;
+                if let Some(user) = user { positive(*user)?; }
+                ("POST", "/tasks/waiting-on".into(), json!({"taskId":task,"userId":user}))
+            }
+            Self::ToggleTimer { task } => {
+                positive(*task)?;
+                ("POST", "/time/status".into(), json!({"task":task.to_string()}))
+            }
+            Self::StarTask { task, project, active } => {
+                positive(*task)?;
+                positive(*project)?;
+                ("POST", "/tasks/card-actions".into(), json!({"task_id":task,"project_id":project,"action":"star","active":active}))
+            }
             Self::ArchiveBoard { project } => {
                 positive(*project)?;
                 (
@@ -175,6 +192,27 @@ impl BoardWrite {
     }
     pub(crate) fn resolve(&self, db: &mut Db, body: &Value, now: i64) -> Result<()> {
         match self {
+            Self::WaitingOn { task, user } => {
+                let row = &body["task"];
+                ensure!(row["id"] == *task && row.get("waitingOnUserId").is_some() && row["waitingOnUserId"] == json!(user), "missing blocked by person acknowledgement");
+                let mut current = db.raw("Task", &json!(task))?.context("task is not cached")?;
+                for field in ["waitingOnUserId", "waitingOnSetById", "waitingOnSetAt"] {
+                    current[field] = row.get(field).context("incomplete blocked by person acknowledgement")?.clone();
+                }
+                db.upsert_task(&current)?;
+            }
+            Self::ToggleTimer { task } => {
+                ensure!(body["timer_running"].is_boolean() || body["timer_disabled"] == true, "missing timer acknowledgement");
+                db.kv_set(&format!("timer-state:{task}"), &body.to_string())?;
+            }
+            Self::StarTask { task, active, .. } => {
+                ensure!(body["action"] == "star" && body["active"] == *active, "missing task star acknowledgement");
+                let saved = body["saved_content"].as_array().context("missing saved task state")?;
+                ensure!(!saved.is_empty() == *active && saved.iter().all(|row| row["type"] == "Private" && row["id"].as_str().is_some_and(|id| !id.is_empty())), "invalid saved task state");
+                let mut row = db.raw("Task", &json!(task))?.context("task is not cached")?;
+                row["savedContent"] = json!(saved);
+                db.upsert_task(&row)?;
+            }
             Self::AssignAgent { task, .. } | Self::AssignToMe { task, .. } => {
                 let rows = body["assignees"]
                     .as_array()
@@ -325,4 +363,27 @@ impl Db {
             Ok(value)
         })
     }
+}
+
+// Time routes have no idempotency contract. Never automatically replay a toggle.
+pub(crate) fn toggle_timer(transport: &mut impl crate::Transport, task: i64, client_id: &str) -> std::result::Result<crate::http::Response, crate::http::TransportError> {
+    use crate::http::{Response, TransportError};
+    let body = json!({"task":task.to_string()});
+    let status = transport.post("/time/status", &body, client_id)?;
+    if !(200..300).contains(&status.status) || status.body["success"] != true { return Ok(status); }
+    let summary = &status.body["summary"];
+    let enabled = summary["enabled"].as_bool().ok_or(TransportError::InvalidResponse)?;
+    let running = summary.get("runningEntry").ok_or(TransportError::InvalidResponse)?;
+    if !running.is_null() && !running.is_object() { return Err(TransportError::InvalidResponse); }
+    if !enabled && running.is_null() { return Ok(Response { status:200, body:json!({"success":true,"timer_disabled":true}) }); }
+    let start = running.is_null();
+    let mut response = transport.post(if start { "/time/start" } else { "/time/stop" }, &body, client_id)?;
+    if (200..300).contains(&response.status) && response.body["success"] == true {
+        let entry = &response.body["entry"];
+        if start && (entry["taskId"] != task || !entry["endedAt"].is_null()) { return Err(TransportError::InvalidResponse); }
+        if !start && !entry.is_null() && (entry["taskId"] != task || !entry["endedAt"].is_string()) { return Err(TransportError::InvalidResponse); }
+        response.body["timer_running"] = json!(start);
+        response.body["timer_enabled"] = json!(enabled);
+    }
+    Ok(response)
 }

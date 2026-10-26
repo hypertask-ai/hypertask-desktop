@@ -16,6 +16,7 @@ pub(super) enum Modal {
     Column,
     Priority,
     Assign,
+    BlockedBy,
     Tags,
     Size,
     DueDate,
@@ -32,6 +33,7 @@ enum ChoiceAction {
     Column(i64),
     Priority(u8),
     Assignee(i64),
+    WaitingOn(Option<i64>),
     Agent(usize),
     Label(usize),
     Size(u8),
@@ -239,6 +241,22 @@ impl Desktop {
         use Action::*;
         match action {
             Compose => self.open_compose(window, cx),
+            BlockedBy => self.show_modal(Modal::BlockedBy, window, cx),
+            ToggleTimer => self.toggle_task_timer(window, cx),
+            StarTask => {
+                if let Some(task) = self.selected_task() {
+                    match self.db.task(task) {
+                        Ok(Some(row)) if row.extra.get("savedContent").is_some_and(|saved| saved.is_array()) => {
+                            let active = row.extra["savedContent"].as_array().unwrap().is_empty();
+                            {
+                                let project = row.project_id;
+                                self.enqueue(Write::Board { change: ht_core::BoardWrite::StarTask { task, project, active } }, cx);
+                            }
+                        }
+                        _ => self.error = Some("Sync this task before changing its star".into()),
+                    }
+                }
+            }
             ExpandSummary => {
                 if self.detail.as_ref().is_some_and(|d| !full_task_summary(&d.task.extra).is_empty()) {
                     self.task_fields.summary_open = !self.task_fields.summary_open;
@@ -718,7 +736,7 @@ impl Desktop {
             cx.notify();
             return;
         }
-        if matches!(modal, Modal::Assign | Modal::Tags) {
+        if matches!(modal, Modal::Assign | Modal::Tags | Modal::BlockedBy) {
             if let Some(worker) = &self.worker {
                 let project = self
                     .selected_task()
@@ -894,6 +912,11 @@ impl Desktop {
                     })
                     .collect()
             }
+            Some(Modal::BlockedBy) => std::iter::once(Choice { name: "Nobody (clear)".into(), action: ChoiceAction::WaitingOn(None) })
+                .chain(self.db.project_members(self.selected_task().and_then(|id| self.db.task(id).ok().flatten()).map_or(self.options.board, |t| t.project_id)).unwrap_or_default().iter()
+                    .filter(|member| member["agent"].is_null() && member["id"].is_i64())
+                    .filter_map(|member| Some(Choice { name: member["displayName"].as_str().or(member["email"].as_str())?.into(), action: ChoiceAction::WaitingOn(member["id"].as_i64()) })))
+                .collect(),
             Some(Modal::Boards) => self
                 .db
                 .projects()
@@ -1031,6 +1054,9 @@ impl Desktop {
             && !(self.screen == Screen::Board && !self.interaction.bulk.is_empty());
         if !keep_open { self.close_modal(window, cx); }
         match choice.action {
+            ChoiceAction::WaitingOn(user) => {
+                if let Some(task) = self.selected_task() { self.enqueue(Write::Board { change: ht_core::BoardWrite::WaitingOn { task, user } }, cx); }
+            }
             ChoiceAction::Command(CommandAction::Shortcut(action)) => {
                 self.run_shortcut(action, window, cx)
             }
@@ -1169,7 +1195,7 @@ impl Desktop {
                         },
                         ChoiceAction::Command(_) | ChoiceAction::CreateLabel
                         | ChoiceAction::Task(_)
-                        | ChoiceAction::Board(_) => {
+                        | ChoiceAction::Board(_) | ChoiceAction::WaitingOn(_) => {
                             unreachable!()
                         }
                     };
@@ -1249,6 +1275,7 @@ impl Desktop {
                     Modal::Boards => "Switch boards",
                     Modal::Column => "Move task to column",
                     Modal::Assign => "Assign task",
+                    Modal::BlockedBy => "Blocked by person",
                     Modal::Tags => "Set tags",
                     Modal::Priority => "Set priority",
                     Modal::Size => "Set task size",

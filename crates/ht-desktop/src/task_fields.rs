@@ -582,7 +582,7 @@ pub(super) mod tests {
         window.focus(&view.focus, cx);
         view
     }
-    fn visual(cx: &mut gpui::TestAppContext) -> (WindowHandle<Desktop>, VisualTestContext) {
+    pub(in super::super) fn visual(cx: &mut gpui::TestAppContext) -> (WindowHandle<Desktop>, VisualTestContext) {
         cx.update(crate::input::init);
         let view = cx.open_window(gpui::size(px(1440.), px(900.)), desktop);
         let mut cx = VisualTestContext::from_window(view.into(), cx);
