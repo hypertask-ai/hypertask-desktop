@@ -101,3 +101,10 @@ opening, author data resolution, draft markers and AI sidebar are untouched.
 The original 30-fewer-record target is not achieved by these additional fixes:
 they were not original ledger rows. Report original counts without changing
 the denominator. Pixel identity remains unmet.
+
+The task unit CI 40334143210 passed 278 desktop tests and rejected only the
+new margin assertion on all three platforms. Presented bounds gave 9.5px
+for the source 9.75px margin. Product margin remains 9.75px; the new native
+assertion accounts for half one device pixel, rather than equating continuous
+source coordinates with quantized presented bounds. Every frozen comparison,
+its 1.5px limit, and all pre-existing assertions remain unchanged.

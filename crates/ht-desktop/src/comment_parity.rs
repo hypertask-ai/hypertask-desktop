@@ -221,6 +221,7 @@ fn task_web_comment_header_type_and_command_geometry(cx: &mut gpui::TestAppConte
     });
     let mut cx = VisualTestContext::from_window(view.into(), cx);
     draw(view, &mut cx);
+    let half_device_pixel = cx.update(|window, _| 0.5 / f64::from(window.scale_factor()));
     view.read_with(&mut cx, |this, _| {
         let elements = this.layout.as_ref().unwrap().borrow().interaction_elements();
         let element = |key: &str| elements.iter().find(|e| e["key"] == key).unwrap();
@@ -239,7 +240,9 @@ fn task_web_comment_header_type_and_command_geometry(cx: &mut gpui::TestAppConte
         assert_eq!(timestamp["x"].as_f64().unwrap() - options["x"].as_f64().unwrap() - options["w"].as_f64().unwrap(), 8.);
         assert_eq!(command["w"], 16.);
         assert_eq!(command["h"], 16.);
-        assert_eq!(actions["y"].as_f64().unwrap() - title["y"].as_f64().unwrap(), 9.75);
+        let offset = actions["y"].as_f64().unwrap() - title["y"].as_f64().unwrap();
+        // Presented bounds quantize the source's fractional margin to device pixels.
+        assert!((offset - 9.75).abs() <= half_device_pixel, "source margin 9.75, presented offset {offset}");
         assert!(this.db.mutations().unwrap().is_empty());
     }).unwrap();
 }
