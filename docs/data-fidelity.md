@@ -142,3 +142,23 @@ GPUI regression starts from that same sync contract and measures the rendered
 author, full-summary overlay and web-styled Draft markers. Existing sync tests
 also cover empty snapshots, null/missing summary removal and partial updates.
 CI run links and exact final SHA are recorded in the PR evidence.
+
+## Fidelity acceptance (backlog item 4 recheck)
+
+Written before changing implementation. Git baseline: `origin/main` at
+`8c6402b`; prior data3/mem2 work already stores creators, saved summaries and
+separate board/description/comment draft flags. Recheck rather than duplicate.
+
+1. Trace each requested field from the current web component and API mapper to
+   SQLite and native rendering. Record already-correct rows, including the web
+   card's assignee-only identity (no invented creator UI).
+2. Match author text and placement, saved-summary teaser/expanded placement,
+   and both task Draft markers against current web styles. Close only proven
+   gaps, preserving existing response fields and hydration paths.
+3. Every corrected behavior gets a native GPUI regression driven by mocked
+   MCP task/draft responses; assert visible text, geometry and style tokens.
+   Keep existing positive/removal and durable-reopen regressions.
+4. Leave `task_open_tests.rs` and worker `LoadTask` unchanged. No VPS builds,
+   tests, lint or test copies; no laptop commands.
+5. Rebase before push; require exact-head public GitHub CI jobs and the full
+   repository receipt. Retain named-test output, final SHA and CI/PR URLs.
