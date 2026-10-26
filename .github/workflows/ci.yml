@@ -113,6 +113,9 @@ jobs:
       - name: Hosted Windows interaction dependencies
         if: runner.os == 'Windows'
         run: python -m pip install Pillow==11.3.0
+      - name: Web-source Windows advances and unopted text preservation
+        if: runner.os == 'Windows'
+        run: cargo test --release -p gpui_windows --lib web_pixel_advances_preserve_unopted_text -- --nocapture
       - name: Native Windows interactions
         if: runner.os == 'Windows'
         run: python gates/windows-input.py
@@ -219,6 +222,17 @@ jobs:
         with:
           name: windows-memory-heavy
           path: evidence/windows-memory-heavy/
+          if-no-files-found: error
+      - name: Windows reference-content capture
+        if: runner.os == 'Windows'
+        shell: pwsh
+        run: ./gates/windows-memory.ps1 -Exe target/release/ht-desktop.exe -CoreExe target/release/ht-core-cli.exe -Fixtures gates/fixtures/visual3 -TaskId 103 -Revision '${{ github.event.pull_request.head.sha || github.sha }}' -Out evidence/windows-visual3
+      - name: Upload Windows visual captures
+        if: runner.os == 'Windows' && always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-visual3
+          path: evidence/windows-visual3/**
           if-no-files-found: error
       - name: Upload Windows app
         if: runner.os == 'Windows'

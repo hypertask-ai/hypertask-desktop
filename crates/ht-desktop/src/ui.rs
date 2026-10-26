@@ -1439,6 +1439,7 @@ impl Desktop {
                 .id("task-title")
                 .flex_1()
                 .min_w_0()
+                .min_h(px(37.))
                 .whitespace_normal()
                 .cursor_text()
                 .on_click(cx.listener(|this, _, window, cx| this.edit_title(window, cx)))
@@ -1908,6 +1909,8 @@ impl Render for Desktop {
                     .min_w_0()
                     .h_full()
                     .flex()
+                    // Main content uses web pixel advances; the AI sibling stays unchanged.
+                    .when(cfg!(windows) && self.options.theme == ThemeName::Graphite, |d| d.font_family("IBM Plex Sans Web"))
                     .child(self.rail(cx))
                     .child(
                         div()
@@ -2350,3 +2353,7 @@ mod tests {
 #[cfg(test)]
 #[path = "data_fidelity_tests.rs"]
 mod data_fidelity_tests;
+
+#[cfg(test)]
+#[path = "visual_parity_tests.rs"]
+mod visual_parity_tests;

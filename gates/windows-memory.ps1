@@ -4,6 +4,7 @@ param(
     [Parameter(Mandatory)][string]$Fixtures,
     [Parameter(Mandatory)][string]$Revision,
     [Parameter(Mandatory)][string]$Out,
+    [int]$TaskId = 58006,
     [string]$HeavyManifest,
     [string]$AiHistory,
     [string]$Assets,
@@ -105,7 +106,7 @@ foreach ($round in 1..3) {
         $env:GPUI_MEMORY_RECEIPT = Join-Path $Out "$screen-$round-owners.json"
         $p = Start-Process $Exe -WindowStyle Maximized -PassThru -ArgumentList @(
             '--db', "`"$db`"", '--offline', '--theme', 'graphite', '--screen', $screen,
-            '--board', '15', '--task', '58006', '--dump-layout', "`"$dump`""
+            '--board', '15', '--task', "$TaskId", '--dump-layout', "`"$dump`""
         )
         try {
             $deadline = [DateTime]::UtcNow.AddSeconds(30)

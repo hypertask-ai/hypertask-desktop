@@ -1,0 +1,146 @@
+{
+  "success": true,
+  "projects": [
+    {
+      "id": 15,
+      "title": "QA Team Board"
+    }
+  ],
+  "sections": [
+    {
+      "id": 1,
+      "projectId": 15,
+      "section_title": "Todo",
+      "ranking": "1",
+      "visibility": true,
+      "deleted": false
+    },
+    {
+      "id": 2,
+      "projectId": 15,
+      "section_title": "Doing",
+      "ranking": "2",
+      "visibility": true,
+      "deleted": false
+    },
+    {
+      "id": 3,
+      "projectId": 15,
+      "section_title": "Done",
+      "ranking": "3",
+      "visibility": true,
+      "deleted": false
+    }
+  ],
+  "tasks": [
+    {
+      "id": 101,
+      "projectId": 15,
+      "boardTitle": "QA Team Board",
+      "title": "HTPR-7638 two-user dummy check",
+      "ticketNumber": "QABO-7",
+      "sectionId": 1,
+      "section": "Todo",
+      "status": "Normal",
+      "description": "",
+      "createdAt": "2026-10-23T12:00:00Z",
+      "updatedAt": "2026-10-23T12:00:44Z",
+      "createdBy": {
+        "id": 1,
+        "displayName": "valentin+qa-owner"
+      },
+      "assignees": [],
+      "labels": [],
+      "Task_Summary": []
+    },
+    {
+      "id": 103,
+      "projectId": 15,
+      "boardTitle": "QA Team Board",
+      "title": "HTPR-7175 QA reminder check (safe to delete)",
+      "ticketNumber": "QABO-5",
+      "sectionId": 1,
+      "section": "Todo",
+      "status": "Normal",
+      "description": "",
+      "createdAt": "2026-10-13T12:00:00Z",
+      "updatedAt": "2026-10-23T12:00:43Z",
+      "createdBy": {
+        "id": 1,
+        "displayName": "valentin+qa-owner"
+      },
+      "assignees": [],
+      "labels": [],
+      "Task_Summary": [
+        {
+          "content": "QA reminder check task, marked safe to delete; no real work scope."
+        }
+      ]
+    }
+  ],
+  "user_notifications": [
+    {
+      "id": 1,
+      "taskId": 103,
+      "projectId": 15,
+      "userId": 1,
+      "status": "Normal",
+      "seen": true,
+      "createdAt": "2026-10-23T12:00:00Z",
+      "type": "TaskReminder",
+      "fromUser": {
+        "displayName": "valentin+qa-owner"
+      }
+    },
+    {
+      "id": 2,
+      "taskId": null,
+      "projectId": 15,
+      "userId": 1,
+      "status": "Normal",
+      "seen": true,
+      "createdAt": "2026-10-23T12:00:00Z",
+      "type": "Invited",
+      "fromUser": {
+        "displayName": "valentin+qa-owner"
+      }
+    }
+  ],
+  "structuredData": {
+    "tabs": [
+      {
+        "project": "Important"
+      },
+      {
+        "project": "Agents"
+      },
+      {
+        "project": "MyBoard"
+      },
+      {
+        "project": "QA Team Board"
+      },
+      {
+        "project": "All"
+      }
+    ],
+    "data": [
+      [
+        0
+      ],
+      [
+        1
+      ],
+      [
+        1
+      ],
+      [
+        0
+      ],
+      [
+        0,
+        1
+      ]
+    ]
+  }
+}
