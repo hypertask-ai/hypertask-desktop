@@ -28,3 +28,5 @@ real native driving remains a coverage gap, even when its unit tests pass.
 Maintenance checks index equality, source links, actual CI steps and artifacts.
 
 - [Silent Windows updates](./updater.md) maps release packaging and supervised swaps.
+
+Hosted Windows migrations and rejection evidence: [coverage ledger](../../../../docs/coverage.md).

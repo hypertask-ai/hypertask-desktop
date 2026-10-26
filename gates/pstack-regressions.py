@@ -56,6 +56,11 @@ class ReceiptRegression(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "expired proof artifact"):
             receipt.validate(self.sha, self.run, self.jobs, self.artifacts)
 
+    def test_missing_native_windows_evidence_is_not_green(self):
+        artifacts = [a for a in self.artifacts if a["name"] != "windows-input"]
+        with self.assertRaisesRegex(ValueError, "windows-input"):
+            receipt.validate(self.sha, self.run, self.jobs, artifacts)
+
     def test_other_workflow_cannot_supply_proof(self):
         self.run["path"] = ".github/workflows/bench.yml"
         with self.assertRaisesRegex(ValueError, "desktop CI workflow"):
