@@ -37,7 +37,9 @@ impl Transport for Server {
             json!({"success":true,"user_notifications":[{"id":901,"taskId":101,"projectId":15,
                 "status":"Normal","seen":true,"type":"TaskMention","createdAt":"2026-10-20T12:00:00Z",
                 "fromUser":{"id":42,"displayName":"Server author"},
-                "project":{"id":15,"title":"Server board"},"task":task(101)}]})
+                "project":{"id":15,"title":"Server board"},"task":{
+                    "id":101,"title":"Server task 101","ticketNumber":"NEW-101","projectId":15,"section":"In progress",
+                    "taskLabels":[{"label":{"id":71,"value":"Server tag"}}]}}]})
         } else if path.starts_with("/projects?limit=") {
             json!({"success":true,"projects":[{"id":15,"title":"Server board","status":"Normal","ownerId":42}],"total":1})
         } else if path == "/projects/15/sections?include_hidden=false" {
@@ -53,7 +55,7 @@ impl Transport for Server {
             if self.fail_comments { return Err(TransportError::Offline); }
             let id = if path.contains("task_id=102&") {102} else {101};
             json!({"success":true,"comments":[{"id":id+1000,"taskId":id,"text":"<p>Server comment</p>",
-                "createdAt":"2026-10-20T12:00:00Z","createdBy":{"id":42,"displayName":"Server author"}}],"total":1})
+                "createdAt":"2026-10-20T12:00:00Z","creatorId":42,"creator":{"id":42,"displayName":"Server author"}}],"total":1})
         } else if path.starts_with("/drafts?") {
             let id = if path.ends_with("=102") {102} else {101};
             json!({"success":true,"drafts":[{"id":201,"taskId":id,"draftType":"comment",
@@ -158,6 +160,7 @@ fn fresh_signin_inbox_row_board_card_walkthrough_fetches_real_content(cx: &mut g
     h.wait(|this| !this.inbox.is_empty() && this.collection_load.is_none() && !this.db.projects().unwrap().is_empty());
     assert_eq!(measured(h.view,&mut h.cx,"inbox.row.0.title")["text"],"Server task 101");
     assert_eq!(measured(h.view,&mut h.cx,"inbox.row.0.author")["text"],"Server author");
+    assert_eq!(measured(h.view,&mut h.cx,"inbox.row.0.meta")["text"],"Server tag");
     let send = h.block("/tasks?task_id=101");
     click(h.view,&mut h.cx,"inbox.row.0");
     assert_eq!(measured(h.view,&mut h.cx,"task.unavailable")["text"],"Loading...");
@@ -206,6 +209,7 @@ fn never_synced_board_loads_instead_of_blank_and_embeds_uncached_metadata(cx: &m
     assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"Server board");
     h.view.read_with(&h.cx,|this,_| {
         let task = &this.columns[0].cards[0];
+        assert_eq!(task.extra["createdBy"]["displayName"],"Server author");
         assert_eq!(task.extra["assignees"][0]["displayName"],"Server assignee");
         assert_eq!(task.extra["labels"][0]["name"],"Server tag");
         assert_eq!(task.section,"In progress");
@@ -251,7 +255,9 @@ fn fresh_search_fetches_uncached_result_then_opens_full_task(cx: &mut gpui::Test
 fn fresh_command_search_fetches_and_keyboard_opens_uncached_task(cx: &mut gpui::TestAppContext) {
     let mut h = setup(cx,false);
     let send = h.block("/tasks?search=");
-    h.view.update(&mut h.cx,|this,window,cx|this.show_modal(interactions::Modal::Search,window,cx)).unwrap();
+    h.cx.simulate_keystrokes("ctrl-k");
+    h.cx.simulate_input("Search");
+    h.cx.simulate_keystrokes("enter");
     h.cx.simulate_input("Server");
     assert_eq!(measured(h.view,&mut h.cx,"command.loading")["text"],"Loading tasks…");
     send.send(()).unwrap();
@@ -260,4 +266,23 @@ fn fresh_command_search_fetches_and_keyboard_opens_uncached_task(cx: &mut gpui::
     h.wait(|this|task_ready(this,102));
     assert_eq!(measured(h.view,&mut h.cx,"task.title")["text"],"Server task 102");
     assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"NEW-102 Server task 102");
+}
+
+#[gpui::test]
+fn fresh_task_waits_for_draft_owner_before_allowing_comment_input(cx: &mut gpui::TestAppContext) {
+    let mut h = setup(cx,false);
+    let send = h.block("/user/context");
+    h.view.update(&mut h.cx,|this,_,cx|this.open_task(101,cx)).unwrap();
+    h.wait(|this|this.task_load.is_none() && this.detail.is_some());
+    assert_eq!(measured(h.view,&mut h.cx,"task.title")["text"],"Server task 101");
+    h.cx.simulate_keystrokes("ctrl-m");
+    h.view.read_with(&h.cx,|this,_| {
+        assert!(this.db.current_user_id().is_none());
+        assert!(this.editing == Editing::None);
+        assert!(!this.layout.as_ref().unwrap().borrow().interaction_elements().iter().any(|e|e["key"]=="task.composer"));
+    }).unwrap();
+    send.send(()).unwrap();
+    h.wait(|this|task_ready(this,101));
+    measured(h.view,&mut h.cx,"task.composer");
+    h.view.read_with(&h.cx,|this,cx|assert_eq!(this.comment_input.read(cx).content.as_ref(),"Server draft")).unwrap();
 }

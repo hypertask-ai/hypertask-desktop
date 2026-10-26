@@ -634,6 +634,7 @@ impl Desktop {
     }
 
     fn edit_comment(&mut self, window: &mut Window, cx: &mut Context<Self>) {
+        if self.worker.is_some() && self.db.current_user_id().is_none() { return; }
         if self.comment_input.read(cx).is_empty() {self.restore_editor(self.comment_input.clone(),Some(ht_core::DraftType::Comment),cx);}
         self.editing = Editing::Comment;
         self.composer_anchor.scroll_to(window, cx);
@@ -932,7 +933,7 @@ impl Desktop {
                     )
                     .layout_key(&self.layout, "board.header", None),
             )
-            .when(self.collection_load.is_some() && self.columns.is_empty(), |d| d.child(
+            .when(self.collection_load.is_some() && self.columns.iter().all(|column| column.cards.is_empty()), |d| d.child(
                 div().p(px(16.)).child("Loading board…").layout_key(&self.layout, "board.loading", Some("Loading board…".into()))))
             .when(self.board_actions.searching, |d| d.child(self.board_search(cx)))
             .when(!self.interaction.bulk.is_empty(), |d| d.child(self.board_selection_bar(cx)))
@@ -1482,7 +1483,7 @@ impl Desktop {
                             .child(div().ml(px(16.)).flex().items_center().gap(px(4.)).child(icon("plus", t.muted, 8.)).child("Add page"))
                             .child(div().flex_1()).child(icon("ai-sparkles", 0xc668ff, 12.)).child(div().ml(px(8.)).mr(px(10.)).child("Edit with AI"))))
                     .children(d.comments.iter().zip(&self.comments).enumerate().map(|(i, (comment, body))| self.comment_row(i, comment, body, cx)))
-                    .child(self.comment_composer(cx)))
+                    .when(self.worker.is_none() || self.db.current_user_id().is_some(), |d| d.child(self.comment_composer(cx))))
                 .child(properties)))
             .into_any_element()
     }
