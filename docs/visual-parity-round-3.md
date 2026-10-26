@@ -96,3 +96,35 @@ QABO-5 only. The unsupported guessed assignee was also removed. No UI is hidden.
 The old-binary capture records the current harness checkout in BuildRevision;
 its actual executable SHA-256 must match the original round 2 dense receipt.
 The current capture must similarly match the unchanged current dense binary.
+
+## Windows typography correction
+
+CI 40347917535 passed both new GPUI tests on all three platforms, plus both
+unchanged Windows memory workloads. Real captures reduced measured rows
+71 to 39 (Inbox 24 to 18, Board 24 to 12, Task 23 to 9). Dense and matched
+sidebar comparisons each returned zero changed pixels for all three screens.
+The strict new capture gate correctly rejected remaining Windows inbox widths.
+
+DirectWrite uses fractional design advances for these unhinted source fonts.
+Linux already uses FreeType normal pixel advances. For example the source font
+requires Important 70px, Agents 46px, and an 11px counter 7px, but the Windows
+layout gives Important's complete tab 93px rather than 96px. The same cause
+shortens the reference task title from 283px to 276px, moving the kind column.
+
+Windows Graphite main content now opts into the existing Linux measurement
+policy using an internal IBM Plex Sans Web family alias. It selects the same
+embedded IBM Plex Sans face, not a replacement font. FreeType normal advances
+come from the actual DirectWrite-selected font bytes and glyph IDs; shaping
+adjustments retain the pixel grid. Fixed-pitch text, zero-advance marks, color
+emoji and unopted text keep their existing behavior. The AI sibling does not
+opt in. No string-specific widths, padding compensation or global font changes.
+
+Web authority: src/lib/fonts/ibmPlexSans.ts:3-9;
+src/styles/tailwindThemes/graphite.css:169-172;
+src/styles/tailwind-entry.css:7-11. Font sizes and spacing remain those of
+SplitTitle.tsx and TaskTitle.tsx cited above. Existing CI FreeType and Chromium
+font probes independently pin the same source advances. New Windows backend
+test web_pixel_advances_preserve_unopted_text pins 106/70/46/7 advances and
+checks unchanged original-font glyph IDs, positions and byte indices afterward.
+The hosted capture gate still requires every requested source box within the
+original 1.5px tolerance, and exact zero sidebar pixel changes.

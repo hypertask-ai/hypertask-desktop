@@ -38,6 +38,7 @@ struct FontInfo {
     features: IDWriteTypography,
     fallbacks: Option<IDWriteFontFallback>,
     font_collection: IDWriteFontCollection1,
+    web_metrics: bool,
 }
 
 pub(crate) struct DirectWriteTextSystem {
@@ -84,6 +85,7 @@ struct DirectWriteState {
     font_to_font_id: HashMap<Font, FontId>,
     font_info_cache: HashMap<usize, FontId>,
     layout_line_scratch: Vec<u16>,
+    web_metrics: HashMap<FontId, Option<crate::web_metrics::WebMetrics>>,
 }
 
 impl GPUState {
@@ -222,6 +224,7 @@ impl DirectWriteTextSystem {
                 font_to_font_id: HashMap::default(),
                 font_info_cache: HashMap::default(),
                 layout_line_scratch: Vec::new(),
+                web_metrics: HashMap::default(),
             }),
         })
     }
@@ -472,6 +475,8 @@ impl DirectWriteState {
         system_font_collection: &IDWriteFontCollection1,
         system_ui_font_name: &SharedString,
     ) -> Option<FontInfo> {
+        let web_metrics = family.as_str() == "IBM Plex Sans Web";
+        let family = if web_metrics { &SharedString::from("IBM Plex Sans") } else { family };
         const SYSTEM_UI_FONT_NAME: &str = ".SystemUIFont";
         let family = if family == SYSTEM_UI_FONT_NAME {
             system_ui_font_name
@@ -508,6 +513,7 @@ impl DirectWriteState {
                     features: direct_write_features,
                     fallbacks,
                     font_collection: collection.clone(),
+                    web_metrics,
                 };
                 Some(font_info)
             });
@@ -614,6 +620,7 @@ impl DirectWriteState {
                 break_ligatures = !break_ligatures;
             }
 
+            let web_metrics = self.fonts[font_runs[0].font_id.0].web_metrics;
             let mut runs = Vec::new();
             let mut renderer_context = RendererContext {
                 text_system: self,
@@ -621,6 +628,7 @@ impl DirectWriteState {
                 index_converter: StringIndexConverter::new(text),
                 runs: &mut runs,
                 width: 0.0,
+                web_metrics,
             };
             text_layout.Draw(
                 Some((&raw mut renderer_context).cast::<c_void>().cast_const()),
@@ -1404,6 +1412,7 @@ struct RendererContext<'t, 'a, 'b> {
     index_converter: StringIndexConverter<'a>,
     runs: &'b mut Vec<ShapedRun>,
     width: f32,
+    web_metrics: bool,
 }
 
 #[derive(Debug)]
@@ -1612,7 +1621,14 @@ impl IDWriteTextRenderer_Impl for TextRenderer_Impl {
                     index: context.index_converter.utf8_ix,
                     is_emoji,
                 });
-                context.width += glyph_advances[this_glyph_idx];
+                let advance = glyph_advances[this_glyph_idx];
+                let advance = if context.web_metrics && !color_font && advance != 0. {
+                    let metrics = context.text_system.web_metrics.entry(font_id)
+                        .or_insert_with(|| crate::web_metrics::WebMetrics::new(font_face));
+                    metrics.as_mut().and_then(|metrics| metrics.advance(glyphrun.fontEmSize, *glyph_id))
+                        .map_or(advance, |(hinted, linear)| hinted + (advance - linear).round())
+                } else { advance };
+                context.width += advance;
             }
             glyph_idx += cluster_glyph_count;
         }
@@ -1973,6 +1989,40 @@ mod tests {
         D3D11_TEXTURE2D_DESC, D3D11_USAGE_DEFAULT,
     };
     use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_SAMPLE_DESC};
+
+    #[test]
+    fn web_pixel_advances_preserve_unopted_text() -> Result<()> {
+        use gpui::{FontRun, FontWeight, font};
+        use std::borrow::Cow;
+        let system = DirectWriteTextSystem::new(None)?;
+        system.add_fonts(vec![
+            Cow::Borrowed(include_bytes!("../../../crates/ht-desktop/assets/fonts/IBMPlexSans-400.ttf")),
+            Cow::Borrowed(include_bytes!("../../../crates/ht-desktop/assets/fonts/IBMPlexSans-600.ttf")),
+        ])?;
+        for (text, size, weight, width) in [
+            ("Command center", 14., FontWeight::NORMAL, 106.),
+            ("Important", 14., FontWeight::SEMIBOLD, 70.),
+            ("Agents", 14., FontWeight::NORMAL, 46.),
+            ("1", 11., FontWeight::NORMAL, 7.),
+        ] {
+            let original = system.font_id(&Font { weight, ..font("IBM Plex Sans") })?;
+            let before = system.layout_line(text, px(size), &[FontRun { len: text.len(), font_id: original }]);
+            let web = system.font_id(&Font { weight, ..font("IBM Plex Sans Web") })?;
+            let layout = system.layout_line(text, px(size), &[FontRun { len: text.len(), font_id: web }]);
+            assert!((f32::from(layout.width) - width).abs() < 0.05, "{text}: {:?}", layout.width);
+            let after = system.layout_line(text, px(size), &[FontRun { len: text.len(), font_id: original }]);
+            assert_eq!(before.width, after.width);
+            assert_eq!(before.runs.len(), after.runs.len());
+            for (before, after) in before.runs.iter().zip(&after.runs) {
+                for (before, after) in before.glyphs.iter().zip(&after.glyphs) {
+                    assert_eq!(before.id, after.id);
+                    assert_eq!(before.position, after.position);
+                    assert_eq!(before.index, after.index);
+                }
+            }
+        }
+        Ok(())
+    }
 
     #[test]
     fn custom_font_stream_retains_original_borrowed_and_owned_bytes() -> Result<()> {

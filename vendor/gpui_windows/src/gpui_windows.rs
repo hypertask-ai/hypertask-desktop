@@ -17,6 +17,7 @@ mod system_notifications;
 mod system_settings;
 mod util;
 mod vsync;
+mod web_metrics;
 mod window;
 mod wrapper;
 

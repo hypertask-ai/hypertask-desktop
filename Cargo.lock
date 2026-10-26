@@ -2484,6 +2484,7 @@ dependencies = [
  "collections",
  "dunce",
  "etagere",
+ "freetype-sys",
  "futures",
  "gpui",
  "gpui_util",

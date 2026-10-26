@@ -113,6 +113,9 @@ jobs:
       - name: Hosted Windows interaction dependencies
         if: runner.os == 'Windows'
         run: python -m pip install Pillow==11.3.0
+      - name: Web-source Windows advances and unopted text preservation
+        if: runner.os == 'Windows'
+        run: cargo test --release -p gpui_windows --lib web_pixel_advances_preserve_unopted_text -- --nocapture
       - name: Native Windows interactions
         if: runner.os == 'Windows'
         run: python gates/windows-input.py

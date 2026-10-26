@@ -1908,6 +1908,8 @@ impl Render for Desktop {
                     .min_w_0()
                     .h_full()
                     .flex()
+                    // Main content uses web pixel advances; the AI sibling stays unchanged.
+                    .when(cfg!(windows) && self.options.theme == ThemeName::Graphite, |d| d.font_family("IBM Plex Sans Web"))
                     .child(self.rail(cx))
                     .child(
                         div()
