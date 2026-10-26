@@ -15,6 +15,14 @@ pub(super) struct Compose {
     identity_loading: bool,
     identity_generation: u64,
     error: Option<String>,
+    skills: Vec<Value>,
+    skill_owner: Option<(i64, Option<String>)>,
+    skill_choice: usize,
+    skill_query: Option<(std::ops::Range<usize>, String)>,
+    skill_generation: u64,
+    skill_loading: bool,
+    skill_fetched: Option<std::time::Instant>,
+    skill_dismissed: Option<String>,
 }
 impl Compose {
     pub fn new(cx: &mut Context<Desktop>) -> Self {
@@ -23,7 +31,15 @@ impl Compose {
         });
         let board_query =
             cx.new(|cx| TextInput::new(String::new(), "Search boards", color(0x8e9093), cx));
-        cx.observe(&input, |_, _, cx| cx.notify()).detach();
+        cx.observe(&input, |this, _, cx| {
+            let query = this.compose_skill_token(cx);
+            if this.compose.skill_query != query {
+                this.compose.skill_query = query;
+                this.compose.skill_choice = 0;
+            }
+            this.request_compose_skills(cx);
+            cx.notify();
+        }).detach();
         cx.observe(&board_query, |this, _, cx| {
             this.compose.choice = 0;
             cx.notify();
@@ -42,6 +58,14 @@ impl Compose {
             identity_loading: false,
             identity_generation: 0,
             error: None,
+            skills: vec![],
+            skill_owner: None,
+            skill_choice: 0,
+            skill_query: None,
+            skill_generation: 0,
+            skill_loading: false,
+            skill_fetched: None,
+            skill_dismissed: None,
         }
     }
 }
@@ -84,6 +108,7 @@ impl Desktop {
             };
         }
         window.focus(&self.compose.input.focus_handle(cx), cx);
+        self.request_compose_skills(cx);
         if !self.options.offline {
             self.compose_identity(window, cx);
         }
@@ -210,6 +235,115 @@ impl Desktop {
         window.focus(&self.compose.board_query.focus_handle(cx), cx);
         cx.notify();
     }
+    fn compose_skill_token(&self, cx: &App) -> Option<(std::ops::Range<usize>, String)> {
+        let input = self.compose.input.read(cx);
+        let (range, query) = input.slash_token()?;
+        let boundary = input.content[..range.start].chars().next_back();
+        (boundary.is_none_or(|c| c.is_whitespace() || c == '(')
+            && query.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')).then_some((range, query))
+    }
+    fn request_compose_skills(&mut self, cx: &mut Context<Self>) {
+        if !self.compose.open || !self.compose.writing || self.compose_skill_token(cx).is_none() { return; }
+        // Web's writer menu uses currentProject, not the destination board chip.
+        let owner = (self.options.board, self.cli_token());
+        if self.compose.skill_owner.as_ref() == Some(&owner) {
+            if self.compose.skill_loading || self.compose.skill_fetched.is_some_and(|at| at.elapsed() < Duration::from_secs(60)) { return; }
+        } else {
+            self.compose.skills.clear();
+            self.compose.skill_owner = Some(owner.clone());
+            self.compose.skill_fetched = None;
+        }
+        self.compose.skill_generation += 1;
+        let generation = self.compose.skill_generation;
+        let Some(token) = owner.1.clone() else { self.compose.skill_loading = false; return; };
+        self.compose.skill_loading = true;
+        let (send, receive) = std::sync::mpsc::channel();
+        let project = (owner.0 > 0).then_some(owner.0);
+        std::thread::spawn(move || {
+            let result = ht_core::Http::new(token).map_err(|error| error.to_string())
+                .and_then(|mut http| crate::ai_sidebar::skills::fetch_skills(&mut http, project));
+            let _ = send.send(result);
+        });
+        cx.spawn(async move |view, cx| {
+            loop {
+                match receive.try_recv() {
+                    Ok(result) => {
+                        let _ = view.update(cx, |this, cx| {
+                            if this.compose.skill_generation == generation && this.compose.skill_owner.as_ref() == Some(&owner)
+                                && (this.options.board, this.cli_token()) == owner
+                            {
+                                this.compose.skill_loading = false;
+                                if let Ok(rows) = result {
+                                    this.compose.skills = rows;
+                                    this.compose.skill_fetched = Some(std::time::Instant::now());
+                                }
+                                this.compose.skill_choice = 0;
+                                cx.notify();
+                            }
+                        });
+                        break;
+                    }
+                    Err(std::sync::mpsc::TryRecvError::Empty) => cx.background_executor().timer(Duration::from_millis(50)).await,
+                    Err(_) => break,
+                }
+            }
+        }).detach();
+    }
+    fn compose_skill_choices(&self, cx: &App) -> Vec<Value> {
+        if !self.compose.open || !self.compose.writing || self.compose.picker || self.compose.pending.is_some()
+            || self.compose.skill_owner.as_ref() != Some(&(self.options.board, self.cli_token()))
+            || self.compose.skill_dismissed.as_deref() == Some(self.compose.input.read(cx).content.as_ref())
+        { return vec![]; }
+        let Some((_, query)) = self.compose_skill_token(cx) else { return vec![]; };
+        let query = query.to_lowercase();
+        self.compose.skills.iter().filter(|row| {
+            row["slug"].as_str().unwrap_or("").to_lowercase().contains(&query)
+                || row["name"].as_str().unwrap_or("").to_lowercase().contains(&query)
+        }).cloned().collect()
+    }
+    fn choose_compose_skill(&mut self, index: usize, window: &mut Window, cx: &mut Context<Self>) {
+        let Some(skill) = self.compose_skill_choices(cx).get(index).cloned() else { return; };
+        let Some((range, _)) = self.compose_skill_token(cx) else { return; };
+        let prefix = self.compose.input.read(cx).content[..range.start].chars().next_back()
+            .filter(|c| !c.is_whitespace() && *c != '(').map_or("", |_| " ");
+        let text = format!("{prefix}/{} ", skill["slug"].as_str().unwrap());
+        self.compose.input.update(cx, |input, cx| input.replace_token(range, &text, window, cx));
+        self.compose.skill_choice = 0;
+        cx.notify();
+    }
+    fn compose_skill_navigation(&mut self, key: &str, window: &mut Window, cx: &mut Context<Self>) -> bool {
+        if !self.compose.input.focus_handle(cx).is_focused(window) { return false; }
+        let choices = self.compose_skill_choices(cx);
+        if choices.is_empty() { return false; }
+        match key {
+            "up" => self.compose.skill_choice = (self.compose.skill_choice + choices.len() - 1) % choices.len(),
+            "down" => self.compose.skill_choice = (self.compose.skill_choice + 1) % choices.len(),
+            "enter" | "tab" => self.choose_compose_skill(self.compose.skill_choice, window, cx),
+            "escape" => self.compose.skill_dismissed = Some(self.compose.input.read(cx).content.to_string()),
+            _ => return false,
+        }
+        cx.notify();
+        cx.stop_propagation();
+        true
+    }
+    fn compose_skill_menu(&self, cx: &mut Context<Self>) -> AnyElement {
+        let choices = self.compose_skill_choices(cx);
+        if choices.is_empty() { return div().into_any_element(); }
+        let t = self.colors;
+        div().id("compose-skills").max_h(px(288.)).w(px(340.)).overflow_y_scroll()
+            .children(choices.into_iter().enumerate().map(|(i, skill)| {
+                div().id(("compose-skill", i)).px(px(8.)).py(px(4.)).cursor_pointer()
+                    .when(i == self.compose.skill_choice, |d| d.bg(color(t.hover)))
+                    .child(format!("SKILL /{}", skill["slug"].as_str().unwrap_or("")))
+                    .child(div().text_color(color(t.muted)).child(skill["description"].as_str().filter(|s| !s.is_empty())
+                        .or(skill["name"].as_str()).unwrap_or("").to_owned()))
+                    .on_mouse_down(MouseButton::Left, cx.listener(move |this, _, window, cx| {
+                        cx.stop_propagation();
+                        this.choose_compose_skill(i, window, cx);
+                    }))
+                    .layout_key(&self.layout, format!("compose.skill.{i}"), None)
+            })).into_any_element()
+    }
     pub(super) fn compose_key(
         &mut self,
         event: &KeyDownEvent,
@@ -226,6 +360,7 @@ impl Desktop {
         if !self.compose.open {
             return false;
         }
+        if self.compose_skill_navigation(&key.key, window, cx) { return true; }
         if key.key == "escape" {
             if self.compose.picker {
                 self.compose.picker = false;
@@ -505,6 +640,7 @@ impl Desktop {
                                 .layout_key(&self.layout, "compose.send", None),
                         ),
                 )
+                .child(self.compose_skill_menu(cx))
                 .child(
                     div()
                         .text_size(px(11.))
@@ -519,6 +655,15 @@ impl Desktop {
         };
         div()
             .id("compose-backdrop")
+            .capture_action(cx.listener(|this, _: &crate::input::Up, window, cx| {
+                if !this.compose_skill_navigation("up", window, cx) { cx.propagate(); }
+            }))
+            .capture_action(cx.listener(|this, _: &crate::input::Down, window, cx| {
+                if !this.compose_skill_navigation("down", window, cx) { cx.propagate(); }
+            }))
+            .capture_action(cx.listener(|this, _: &crate::input::Newline, window, cx| {
+                if !this.compose_skill_navigation("enter", window, cx) { cx.propagate(); }
+            }))
             .absolute()
             .size_full()
             .top_0()
@@ -816,6 +961,65 @@ mod tests {
         assert_eq!(error["text"], "Unauthorized");
         assert!(error["w"].as_f64().unwrap() > 0.);
         view.read_with(&visual, |this, cx| assert_eq!(this.compose.input.read(cx).content.as_ref(), "Native note")).unwrap();
+    }
+
+    #[gpui::test]
+    fn keyboard_compose_skills_wrap_select_with_tab_enter_and_escape_without_sending(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        for select in ["enter", "tab", "shift-tab"] {
+            let (view, cx) = cx.add_window_view(desktop);
+            cx.simulate_keystrokes("ctrl-j");
+            cx.simulate_input("é🙂 (");
+            view.update_in(cx, |this, _, _| {
+                this.compose.skill_owner = Some((7283, None));
+                this.compose.skill_fetched = Some(std::time::Instant::now());
+                this.compose.skills = vec![json!({"slug":"review","name":"Review","description":"Review changes"}), json!({"slug":"write","name":"Write"})];
+            });
+            cx.simulate_input("/");
+            cx.simulate_keystrokes("up");
+            view.read_with(cx, |this, _| assert_eq!(this.compose.skill_choice, 1));
+            cx.simulate_keystrokes("down down");
+            view.read_with(cx, |this, _| assert_eq!(this.compose.skill_choice, 1));
+            cx.simulate_keystrokes(select);
+            view.update_in(cx, |this, window, cx| {
+                assert_eq!(this.compose.input.read(cx).content.as_ref(), "é🙂 (/write ");
+                assert!(this.compose.input.focus_handle(cx).is_focused(window));
+                assert!(this.compose_skill_choices(cx).is_empty());
+                assert!(this.db.mutations().unwrap().is_empty());
+            });
+            cx.simulate_input("/rev");
+            cx.simulate_keystrokes("escape");
+            view.read_with(cx, |this, cx| {
+                assert!(this.compose.open);
+                assert!(this.compose_skill_choices(cx).is_empty());
+                assert!(this.compose.input.read(cx).content.ends_with("/rev"));
+                assert!(this.db.mutations().unwrap().is_empty());
+            });
+        }
+    }
+    #[gpui::test]
+    fn keyboard_compose_skills_reject_invalid_tokens_and_changed_scope(cx: &mut gpui::TestAppContext) {
+        cx.update(crate::input::init);
+        let (view, cx) = cx.add_window_view(desktop);
+        cx.simulate_keystrokes("ctrl-j");
+        view.update_in(cx, |this, _, _| {
+            this.compose.skill_owner = Some((7283, None));
+            this.compose.skill_fetched = Some(std::time::Instant::now());
+            this.compose.skills = vec![json!({"slug":"review","name":"Review"})];
+        });
+        for text in ["https://rev", "/rév", "/rev_"] {
+            cx.simulate_keystrokes("ctrl-a");
+            cx.simulate_input(text);
+            view.read_with(cx, |this, cx| assert!(this.compose_skill_choices(cx).is_empty()));
+        }
+        cx.simulate_keystrokes("ctrl-a");
+        cx.simulate_input("/rev");
+        view.read_with(cx, |this, cx| assert_eq!(this.compose_skill_choices(cx).len(), 1));
+        view.update_in(cx, |this, _, _| { this.options.board = 7284; });
+        view.read_with(cx, |this, cx| {
+            assert!(this.compose_skill_choices(cx).is_empty());
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
     }
 
 }

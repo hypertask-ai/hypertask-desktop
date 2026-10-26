@@ -177,7 +177,7 @@ impl Desktop {
             return true;
         }
         if self.shell.shortcuts {
-            if key.key == "escape" {
+            if key.key == "escape" || !self.shortcut_search_focused(window, cx) {
                 self.shell.shortcuts = false;
                 window.focus(&self.focus, cx);
                 cx.stop_propagation();
@@ -257,6 +257,13 @@ impl Desktop {
             ("5" | "]", false, false, false)
             | ("/" | "?", true, true, false)
             | ("?", true, false, false) => self.toggle_ai(window, cx),
+            ("o" | "j", true, true, false) if !self.shell.ai_open => {
+                if let Some(sidebar) = &self.ai_sidebar {
+                    self.shell.ai_open = true;
+                    sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
+                    cx.notify();
+                }
+            }
             ("?", false, _, false) => self.open_shortcuts(window, cx),
             ("2", false, false, false) => self.navigate_board(cx),
             ("3", false, false, false) => self.navigate_table(cx),

@@ -26,6 +26,8 @@ pub enum Action {
     ArchiveNotification,
     Rename,
     Description,
+    EditTaskPart,
+    CreateTask,
     Inbox,
     Board,
     Search,
@@ -114,6 +116,8 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
         };
     }
     match (k, ctrl, shift, m.alt) {
+        ("enter", true, false, false) if screen == Screen::Task => Some(Action::EditTaskPart),
+        ("c", false, false, false) if screen == Screen::Board => Some(Action::CreateTask),
         ("b", false, true, false) if screen == Screen::Task => Some(Action::BlockedBy),
         ("s", false, false, true) => Some(Action::StarTask),
         ("w", false, false, false) if screen != Screen::Inbox => Some(Action::ToggleTimer),
@@ -183,7 +187,7 @@ pub fn resolve(key: &Keystroke, screen: Screen, editor: bool) -> Option<Action> 
 
 pub fn sequence(key: &str, shifted: bool, screen: Screen) -> Option<Action> {
     match key {
-        "g" if screen != Screen::Task => Some(if shifted { Action::Last } else { Action::First }),
+        "g" => Some(if shifted { Action::Last } else { Action::First }),
         "i" => Some(Action::Inbox),
         "b" => Some(Action::Board),
         "t" if matches!(screen, Screen::Inbox | Screen::Task) => Some(Action::Board),
@@ -299,11 +303,11 @@ mod tests {
             }
             assert_eq!(
                 sequence("g", false, screen),
-                (screen != Screen::Task).then_some(First)
+                Some(First)
             );
             assert_eq!(
                 sequence("g", true, screen),
-                (screen != Screen::Task).then_some(Last)
+                Some(Last)
             );
             assert_eq!(sequence("i", false, screen), Some(Inbox));
             assert_eq!(sequence("b", false, screen), Some(Board));
