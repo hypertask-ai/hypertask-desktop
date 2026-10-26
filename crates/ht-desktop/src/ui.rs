@@ -728,7 +728,7 @@ impl Desktop {
             .flex_shrink_0()
             .flex()
             .items_center()
-            .justify_center()
+            .p(px(8.))
             .bg(color(self.colors.footer))
             .relative()
             .overflow_hidden()
@@ -736,33 +736,24 @@ impl Desktop {
                 div()
                     .flex()
                     .items_center()
-                    .gap(px(16.))
-                    .mr(px(18.))
+                    .justify_center()
+                    .gap(px(2.))
+                    .flex_1()
+                    .min_w_0()
+                    .overflow_hidden()
                     .whitespace_nowrap()
-                    .flex_shrink_0()
-                    .children(items.iter().enumerate().map(|(i, &(key, label))| {
+                    .children(items.iter().enumerate().flat_map(|(i, &(key, label))| {
                         let label = format!("{}{}", label[..1].to_uppercase(), &label[1..]);
-                        div()
+                        let hint = div()
                             .flex()
                             .flex_shrink_0()
                             .items_center()
                             .gap(px(8.))
-                            .relative()
-                            .when(i > 0, |d| {
-                                d.child(
-                                    div()
-                                        .absolute()
-                                        .left(px(-10.))
-                                        .top(px(8.5))
-                                        .size(px(4.))
-                                        .rounded_full()
-                                        .bg(color(0x8e9093)),
-                                )
-                            })
                             .child(
                                 div().flex().items_center().gap(px(4.)).children(
                                     key.split(if key.starts_with("CTRL ") { " " } else { "\0" })
-                                        .map(|key| {
+                                        .enumerate()
+                                        .map(|(j, key)| {
                                             div()
                                                 .px(px(6.25))
                                                 .h(px(20.))
@@ -786,6 +777,7 @@ impl Desktop {
                                                 ))
                                                 .text_color(color(0xffffff))
                                                 .child(key)
+                                                .layout_key(&self.layout, format!("footer.key.{i}.{j}"), Some(key.into()))
                                         }),
                                 ),
                             )
@@ -794,7 +786,19 @@ impl Desktop {
                                 if i == 0 { "footer.text".to_owned() } else { format!("footer.hint.{i}") },
                                 Some(label),
                             ))
-                    })),
+                            .layout_key(&self.layout, format!("footer.group.{i}"), None);
+                        let separator = (i + 1 < items.len()).then(|| {
+                            div()
+                                .size(px(4.))
+                                .mx(px(4.))
+                                .flex_shrink_0()
+                                .rounded_full()
+                                .bg(color(0x8e9093))
+                                .layout_key(&self.layout, format!("footer.separator.{i}"), None)
+                        });
+                        std::iter::once(hint).chain(separator)
+                    }))
+                    .layout_key(&self.layout, "footer.shortcuts", None),
             )
             .child(
                 div()
@@ -843,14 +847,15 @@ impl Desktop {
             .child(
                 div()
                     .id("close-tips")
-                    .absolute()
-                    .right(px(8.))
+                    .flex_shrink_0()
+                    .size(px(18.))
                     .cursor_pointer()
                     .on_click(cx.listener(|this, _, _, cx| {
                         this.footer = false;
                         cx.notify();
                     }))
-                    .child(icon("x", self.colors.text, 18.)),
+                    .child(icon("x", self.colors.text, 18.))
+                    .layout_key(&self.layout, "footer.close", None),
             )
             .layout_key(&self.layout, "footer", None)
     }

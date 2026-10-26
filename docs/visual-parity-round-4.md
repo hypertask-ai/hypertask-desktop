@@ -19,3 +19,22 @@
 Principle Prove It Works chooses actual hosted captures and executable native regressions. Principle Sequence Verifiable Units chooses component commits and exact-head hosted verification. Self-review only; unavailable Cursor-only tools use repository-native evidence instead.
 
 Owned files are this document, inbox/board/task portions of crates/ht-desktop/src/ui.rs and their native layout tests, plus narrowly required source-backed main-content styling. AI/sidebar, shortcuts, command center, fixtures, references, thresholds and other helpers' files are excluded.
+
+## Baseline inventory limit
+
+Main CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40369851241 succeeded at 2ceb3255911725f8e780ede25c2ec4f415b0a269. Downloaded windows-visual3 memory.json records that Revision and BuildRevision, 1920x1009 clients, 96 DPI, and executable B6CD3F8A6FD86E6E89C26514A3BD9E34316C36623ECAD1895B389581161D81BF.
+
+Only one measured editable row remains, Task footer.text. Twenty-four measured presence rows are rail.icon.5 through rail.icon.12 on each screen. The frozen collector sampled only five rail icons; actual rail controls exist in the web and native screenshots. Deleting them or suppressing their capture keys would violate the no-hiding and unchanged-reference requirements. Eighteen screenshot-only rows comprise six classes per screen, all preserved. Four classes belong to the protected AI sidebar, one is account state, and one is the original footer rasterization class. A 20-row product reduction is therefore impossible within this scope. Do not report these rows as closed by filtering or renaming them.
+
+### Footer source correction
+
+Data shape stays the existing ordered hint tuples. The layout now models the source's actual sequence of hint group, in-flow separator, hint group. Absolute decorative dots plus a guessed fixed total gap do not model the source flex items' sizing and centering.
+
+| Source value | Component authority | Token authority | Native regression |
+| --- | --- | --- | --- |
+| Outer 8px padding; flexible clipped inner row; separate 18px close reserve | src/components/Global/BottomSettings_QuickTips.tsx:371,375,425 | src/styles/tailwind-entry.css:10-11 | footer_web_in_flow_separators_and_close_reserve |
+| Inner gap 2px; group gap 8px; in-flow 4px separator with 4px side margins and #8e9093 | src/components/Global/BottomSettings_QuickTips.tsx:375,391,418 | src/styles/tailwind-entry.css:10-11 | same test, each separator on all three screens |
+| Key gap 4px; padding 6.25px; 20px height; 12px font, 14px line, weight 600, radius 2px | src/components/Global/BottomSettings_QuickTips.tsx:402,407; src/components/Common/kbd.tsx:13 | src/styles/tailwind-entry.css:10-11; tailwind.config.ts:171 | same test |
+| Label 14px, 21px line, normal weight | src/components/Global/BottomSettings_QuickTips.tsx:413 | src/styles/tailwindThemes/graphite.css:169-172; tailwind.config.ts:173; src/styles/tailwind-entry.css:10-11 | same test |
+
+Web paths are relative to /home/valentin/projects/hypertask. No shortcut mapping, keyboard handler, or command center implementation changes.
