@@ -118,6 +118,7 @@ pub fn payload_bytes(value: &impl serde::Serialize) -> usize {
 
 #[cfg(test)]
 mod tests {
+    use gpui::AppContext as _;
     #[test]
     fn shaped_line_keeps_only_one_style_inline() {
         assert!(std::mem::size_of::<gpui::ShapedLine>() < 256);
