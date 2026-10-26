@@ -17,3 +17,5 @@ Principle-prove-it-works requires hosted renderer measurements, not inferred par
 ## Baseline collector review
 
 Before trusting a count, source review found GPUI's ordinary test context uses `NoopTextSystem`. The measurement fixtures now explicitly use the production Linux platform text system. This prevents fake glyph widths from masquerading as product defects. Added shortcut child keys use distinct prefixes so the existing row-search behavior contract remains unchanged. The composer projection includes source selector padding (4px vertical), not just its text height. These are collector corrections before baseline acceptance, not product styling changes.
+
+The source cascade audit also found Bootstrap's important `pt-4`, `py-4`, `px-4`, `gap-4`, `mb-3` and bare `rounded` utilities. The web entrypoint imports them into the earlier layer (`src/styles/tailwind-entry.css:7-10`), so they win at 24px, 16px and 6px as documented in the projection authority. The token-only first projection is rejected before accepting a baseline. No native product correction has occurred.

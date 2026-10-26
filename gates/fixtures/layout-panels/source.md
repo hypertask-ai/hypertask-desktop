@@ -32,3 +32,7 @@ The composer controls projection measures their shared outer row and send icon, 
 Web source revision: `003a872014c35eeba1ab21047cdfdf70160e654e`.
 
 Native CI fixtures use the production Linux platform text system through `TestAppContext::build_with_text_system`, not GPUI's default no-op test font metrics. They paint real renderer elements in an isolated 1440x900 test window. This measures native layout and typography, not GPU screenshot equivalence. Windows/macOS retain their ordinary behavior-test contexts.
+
+## Imported cascade rules
+
+`src/styles/globals.scss:10` imports `src/styles/tailwind-entry.css:7-10`. Bootstrap is the earlier layer, so its important utilities win over Tailwind's normal utilities (also independently established by the round-10 rail capture). Resolve `pt-4`, `py-4`, `px-4`, `gap-4` as 24px, not Tailwind's 16px; `mb-3` as 16px, not 12px; bare `rounded` as 6px, not 4px. Arbitrary radii such as `rounded-[2px]` and `!rounded-lg` remain 2px and 8px. This affects header top padding/gap, welcome vertical padding/chips, message bubbles, and shortcut search/content/heading. These imported rules override the token-only shorthand in the table above. The projection incorporates them before accepting the baseline.
