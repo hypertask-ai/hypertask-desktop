@@ -386,7 +386,7 @@ The following route/field distinctions remain authoritative. Source citations be
 
 Fixed-key availability is 87 before, 90 after (three newly exposed keys, excluding dynamic Boards). This is not a claim of 90 fully equivalent workflows. Search engine, cold-child loading and existing partial rows retain their limits. Five existing board-form commands additionally gain Inbox/Task contexts.
 
-Pending exact-head GitHub CI. Tests added in `interactions.rs`:
+Exact-head CI evidence is published on draft PR https://github.com/hypertask-ai/hypertask-desktop/pull/54. The verified implementation snapshot `ebbe642f300852a1ddf40f8845f81616f829b2ee` reports 287 native tests passed on each platform in https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40353373314. Subsequent documentation-only heads require their own receipt on that PR. Tests added in `interactions.rs`:
 
 - `cmdk3_search_handover_follows_ranked_rows_and_keeps_query`
 - `cmdk3_search_handover_is_last_not_an_empty_query_recommendation`
@@ -397,4 +397,4 @@ Pending exact-head GitHub CI. Tests added in `interactions.rs`:
 - `cmdk3_board_forms_work_from_inbox_board_and_task_without_changing_surface`
 - `cmdk3_board_forms_omit_missing_catalog_and_never_use_foreign_columns`
 
-Existing complete-sequence, saved-label, queue-restart, parent HTTP and summary-request tests remain required. No VPS builds/tests/lint/test copies or laptop access. Exact-head receipt, SHA, jobs and test output will be recorded in GATES-cmdk3.md.
+Existing complete-sequence, saved-label, queue-restart, parent HTTP and summary-request tests remain required. No VPS builds/tests/lint/test copies or laptop access. The implementation receipt is recorded in GATES-cmdk3.md. Final-head receipt, job results and retained artifact identities are published on the draft PR.
