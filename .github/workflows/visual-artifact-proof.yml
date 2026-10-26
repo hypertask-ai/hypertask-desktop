@@ -1,0 +1,43 @@
+name: Visual artifact comparison
+on:
+  workflow_dispatch:
+    inputs:
+      before_run:
+        description: Completed baseline CI run
+        required: true
+        type: string
+      after_run:
+        description: Completed candidate CI run
+        required: true
+        type: string
+  pull_request:
+    types: [edited]
+permissions:
+  actions: read
+  contents: read
+jobs:
+  compare:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m pip install Pillow==11.3.0
+      - name: Compare retained hosted captures
+        env:
+          GH_TOKEN: ${{ github.token }}
+          BEFORE_RUN: ${{ inputs.before_run }}
+          AFTER_RUN: ${{ inputs.after_run }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          HEAD_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          if [ -z "$BEFORE_RUN" ]; then
+            BEFORE_RUN=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$BASE_SHA" --status success --json databaseId --jq '.[0].databaseId')
+            AFTER_RUN=$(gh run list -R "$GITHUB_REPOSITORY" --workflow ci.yml --commit "$HEAD_SHA" --status success --json databaseId --jq '.[0].databaseId')
+          fi
+          python3 gates/visual-artifact-proof.py --before-run "$BEFORE_RUN" --after-run "$AFTER_RUN" --output evidence/visual-artifact-proof
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: visual-artifact-proof
+          path: evidence/visual-artifact-proof/
+          if-no-files-found: error

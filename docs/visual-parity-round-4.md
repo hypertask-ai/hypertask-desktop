@@ -35,6 +35,35 @@ Data shape stays the existing ordered hint tuples. The layout now models the sou
 | Outer 8px padding; flexible clipped inner row; separate 18px close reserve | src/components/Global/BottomSettings_QuickTips.tsx:371,375,425 | src/styles/tailwind-entry.css:10-11 | footer_web_in_flow_separators_and_close_reserve |
 | Inner gap 2px; group gap 8px; in-flow 4px separator with 4px side margins and #8e9093 | src/components/Global/BottomSettings_QuickTips.tsx:375,391,418 | src/styles/tailwind-entry.css:10-11 | same test, each separator on all three screens |
 | Key gap 4px; padding 6.25px; 20px height; 12px font, 14px line, weight 600, radius 2px | src/components/Global/BottomSettings_QuickTips.tsx:402,407; src/components/Common/kbd.tsx:13 | src/styles/tailwind-entry.css:10-11; tailwind.config.ts:171 | same test |
-| Label 14px, 21px line, normal weight | src/components/Global/BottomSettings_QuickTips.tsx:413 | src/styles/tailwindThemes/graphite.css:169-172; tailwind.config.ts:173; src/styles/tailwind-entry.css:10-11 | same test |
+| Label 14px, 21px line, normal weight | src/components/Global/BottomSettings_QuickTips.tsx:413 | src/styles/tailwindThemes/graphite.css:169-172; tailwind.config.ts:174; src/styles/tailwind-entry.css:10-11 | same test |
 
 Web paths are relative to /home/valentin/projects/hypertask. No shortcut mapping, keyboard handler, or command center implementation changes.
+
+### Exact retained row identities and blockers
+
+Each row below applies independently to Inbox, Board and Task. No row is removed from the denominator.
+
+| Identity | Rows | Exact source-backed reason retained |
+| --- | ---: | --- |
+| rail.icon.5 | 3 | Calendar is real UI, AppShellRail.tsx:268-279. Frozen JSON did not sample it; deleting UI or capture keys is forbidden. |
+| rail.icon.6 | 3 | AI Chat is real UI, AppShellRail.tsx:281-290. Same collector omission, not a layout defect. |
+| rail.icon.7 | 3 | Search is real UI, AppShellRail.tsx:292-314. Same collector omission. |
+| rail.icon.8 | 3 | Agents is real UI, AppShellRail.tsx:349-362. Same collector omission. |
+| rail.icon.9 | 3 | Invite is real UI, AppShellRail.tsx:363-373. Same collector omission. |
+| rail.icon.10 | 3 | News is real UI, AppShellRail.tsx:374-389. Same collector omission. |
+| rail.icon.11 | 3 | Feedback is real UI, AppShellRail.tsx:390-400. Same collector omission. |
+| rail.icon.12 | 3 | Settings is real UI, AppShellRail.tsx:401-406. Same collector omission. |
+| AI composer top/height | 3 | Protected AI sidebar. Source flows context, input and actual controls, AI_Tiptap_Container.tsx:298-305,323-324; AiChatComposerActionRow.tsx:146-152. Fixed-height padding would conceal missing actions. |
+| AI attachment | 3 | Protected AI sidebar action, AiChatComposerActionRow.tsx:148. Decorative icons without an action are forbidden. |
+| AI recording | 3 | Protected AI sidebar action, AiChatComposerActionRow.tsx:149. Same scope and missing-action blocker. |
+| AI context-add | 3 | Protected AI sidebar action, AiChatComposerActionRow.tsx:150. Same scope and missing-action blocker. |
+| AI model/scope/prompts | 3 | Protected synthetic account state. WelcomeScreen.tsx:166-176 derives task/demo/random suggestions; AI_Tiptap_Container.tsx:323-324 renders actual contextList. Fixture changes are forbidden. |
+| Footer glyph rasterization | 3 | Source family is IBM Plex Sans, graphite.css:169-172; 14px normal label, BottomSettings_QuickTips.tsx:413. Glyph coverage differs between native DirectWrite and frozen Chromium. Geometry convergence alone does not prove pixel identity. No replacement font or text-specific compensation. |
+
+AppShellRail.tsx is src/components/PageComponents/Kanban/HeaderComponents/AppShellRail.tsx. AI component names are under src/components/AI_CHAT. graphite.css is src/styles/tailwindThemes/graphite.css. All source paths remain under /home/valentin/projects/hypertask/src.
+
+The remaining 43rd identity is Task footer.text's measured x coordinate. The native regression pins genuine source structure rather than hard-coding the frozen label's position. Source-equivalent total spacing need not close that row; the hosted capture decides. Even closing it leaves 42 original rows. The 20-fewer-row acceptance target stays unmet, not waived.
+
+## One-off hosted comparison
+
+The separate gates/visual-artifact-proof.py takes before/after run IDs at invocation. It downloads exact-run windows-visual3 artifacts, validates capture SHA, compares with the unchanged oracle, reports all original counts, checks every sidebar pixel, and rejects changes to protected code, fixtures or thresholds. It never pins an expiring artifact in permanent CI. The separate Visual artifact comparison workflow runs manually or after a PR description edit, selecting already-completed base/head CI runs without polling; .github/workflows/ci.yml is unchanged. Its receipt distinguishes valid evidence from the unmet product target.
