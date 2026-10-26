@@ -190,3 +190,17 @@ They are not counted before or after.
 The summary alone used radius4 before, versus source6.
 Its new native regression now pins6, including the imported cascade.
 No frozen image, projection, fixture or tolerance changed.
+
+### Real glyph fixture
+
+Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40389284446
+proved that the default test font system paints no glyphs.
+Its glyph raster bounds are zero, deliberately.
+The new color observation refused that empty proof.
+The color regression now uses the existing real-font Linux recipe,
+as graphite_sidebar_source_measurements already does.
+Its name is sidebar_placeholder_paint_uses_web_tint_not_container_color.
+It requires actual glyph sprites, not an inherited container tint.
+Windows/macOS retain the control geometry and painted summary tests.
+Windows color proof also comes from real CI captures.
+No production rendering or fixture value changes in this correction.
