@@ -101,7 +101,7 @@ impl Db {
                 let mut before = if let crate::BoardWrite::AssignAgent { task, .. } | crate::BoardWrite::AssignToMe { task, .. } | crate::BoardWrite::StarTask { task, .. } = change { db.raw("Task",&json!(task))?.context("task is not cached")? } else { Value::Null };
                 // Upserts merge omitted fields, so rollback needs explicit empty assignment fields.
                 if !before.is_null() {
-                    if before.get("savedContent").is_none() { before["savedContent"] = json!([]); }
+                    if matches!(change, crate::BoardWrite::StarTask { .. }) && before.get("savedContent").is_none() { before["savedContent"] = json!([]); }
                     if before.get("assignees").is_none() { before["assignees"] = json!([]); }
                     if before.get("assigneeCount").is_none() { before["assigneeCount"] = json!(before["assignees"].as_array().map_or(0, Vec::len)); }
                 }

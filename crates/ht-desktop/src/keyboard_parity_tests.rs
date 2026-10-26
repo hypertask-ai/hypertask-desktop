@@ -369,14 +369,15 @@ struct KeyboardWriteServer {
     running: bool,
     enabled: bool,
     fail_effect: bool,
+    user: i64,
 }
 impl KeyboardWriteServer {
-    fn new() -> Self { Self { calls: vec![], running: false, enabled: true, fail_effect: false } }
+    fn new() -> Self { Self { calls: vec![], running: false, enabled: true, fail_effect: false, user: 42 } }
 }
 impl ht_core::Transport for KeyboardWriteServer {
     fn get(&mut self, path: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
         assert_eq!(path, "/user/context");
-        Ok(ht_core::http::Response { status: 200, body: serde_json::json!({"success":true,"user":{"id":42}}) })
+        Ok(ht_core::http::Response { status: 200, body: serde_json::json!({"success":true,"user":{"id":self.user}}) })
     }
     fn post(&mut self, path: &str, body: &serde_json::Value, _: &str) -> Result<ht_core::http::Response, ht_core::http::TransportError> {
         use serde_json::json;
@@ -393,7 +394,7 @@ impl ht_core::Transport for KeyboardWriteServer {
             "/time/start" | "/time/stop" => {
                 if self.fail_effect { return Err(ht_core::http::TransportError::Timeout); }
                 self.running = path == "/time/start";
-                json!({"success":true,"entry":{"id":90,"taskId":1,"endedAt":if self.running {json!(null)} else {json!("2026-10-26T12:00:00Z")}})
+                json!({"success":true,"entry":{"id":90,"taskId":1,"endedAt":if self.running {json!(null)} else {json!("2026-10-26T12:00:00Z")}}})
             }
             _ => panic!("unexpected keyboard request {path}"),
         };
@@ -510,5 +511,30 @@ fn keyboard_new_task_actions_never_escape_text_inputs_or_extra_modifiers(cx: &mu
         cx.simulate_keystrokes(activate);
         for key in ["alt-s", "shift-b", "w", "alt-t"] { cx.simulate_keystrokes(key); }
         view.read_with(cx, |this, _| assert!(this.db.mutations().unwrap().is_empty()));
+    }
+}
+
+#[gpui::test]
+fn keyboard_board_w_uses_selected_task_and_changed_accounts_never_send_effects(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for user in [42, 43] {
+        let (view, cx) = cx.add_window_view(|window, cx| {
+            let mut this = super::task_fields::tests::desktop(window, cx);
+            this.screen = Screen::Board;
+            this.reload();
+            this
+        });
+        for chord in ["ctrl-w", "alt-w", "shift-w", "ctrl-alt-t", "ctrl-alt-s", "ctrl-shift-b"] { cx.simulate_keystrokes(chord); }
+        view.read_with(cx, |this, _| assert!(this.db.mutations().unwrap().is_empty()));
+        cx.simulate_keystrokes("w");
+        let mut server = KeyboardWriteServer::new();
+        server.user = user;
+        view.update_in(cx, |this, _, cx| {
+            let result = this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap();
+            if user == 42 { assert!(matches!(result, ht_core::Drain::Applied(_))); }
+            else { assert!(matches!(result, ht_core::Drain::Failed(_))); }
+            this.poll_timer_shortcut(cx);
+        });
+        assert_eq!(server.calls.len(), if user == 42 {2} else {0});
     }
 }

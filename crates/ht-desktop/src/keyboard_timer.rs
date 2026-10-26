@@ -41,7 +41,9 @@ impl Desktop {
     }
     pub(super) fn task_timer_control(&self, task: i64, cx: &mut Context<Self>) -> AnyElement {
         let state = self.db.kv_get(&format!("timer-state:{task}")).ok().flatten().and_then(|s| serde_json::from_str::<serde_json::Value>(&s).ok());
-        let Some(running) = state.and_then(|v| v["timer_running"].as_bool()) else { return div().into_any_element(); };
+        let Some(state) = state else { return div().into_any_element(); };
+        let Some(running) = state["timer_running"].as_bool() else { return div().into_any_element(); };
+        if !running && state["timer_enabled"] == false { return div().into_any_element(); }
         let text = if running { "Stop" } else { "Start" };
         div().flex().gap(px(16.)).py(px(8.)).child("Time")
             .child(div().id("task-timer-toggle").cursor_pointer().child(text)

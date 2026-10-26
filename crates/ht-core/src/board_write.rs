@@ -379,6 +379,7 @@ pub(crate) fn toggle_timer(transport: &mut impl crate::Transport, task: i64, cli
         if start && (entry["taskId"] != task || !entry["endedAt"].is_null()) { return Err(TransportError::InvalidResponse); }
         if !start && !entry.is_null() && (entry["taskId"] != task || !entry["endedAt"].is_string()) { return Err(TransportError::InvalidResponse); }
         response.body["timer_running"] = json!(start);
+        response.body["timer_enabled"] = json!(enabled);
     }
     Ok(response)
 }

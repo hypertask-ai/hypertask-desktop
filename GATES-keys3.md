@@ -50,3 +50,11 @@ because dispatch/queue share identity; unrelated helpers' paths left untouched.
 Source findings: MCP task card-actions and waiting-on now exist; time/status
 returns enabled/runningEntry. Previous star/person/timer reasons were stale.
 MCP saved views still omit the active transient view/rendered tab order.
+
+### CI correction
+
+Initial run: https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40259947343
+at `5013a073f385111eeb2fe364e7b2e84325d175a2`.
+Three native jobs rejected a missing JSON fixture brace at
+`keyboard_parity_tests.rs:396`. Corrected fixture syntax; no assertion weakened.
+This was compiler rejection, not behavioral red proof.
