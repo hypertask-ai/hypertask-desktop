@@ -16,6 +16,10 @@ impl Transport for TaskServer {
         let body = match path {
             "/tasks?task_id=101" => self.response.take().ok_or(TransportError::Offline)?
                 .recv_timeout(Duration::from_secs(10)).unwrap()?,
+            "/projects?limit=100&offset=0" => json!({"success":true,"projects":[],"total":0}),
+            "/projects/15/sections?include_hidden=false" => json!({"success":true,"projectId":15,"sections":[]}),
+            "/projects/15/members" => json!({"success":true,"projectId":15,"members":[]}),
+            "/projects/15/labels" => json!({"success":true,"projectId":15,"labels":[]}),
             "/user/context" => json!({"success":true,"user":{"id":42}}),
             "/comments?task_id=101&limit=50&offset=0&sort_order=desc" => json!({"success":true,"comments":[],"total":0}),
             "/drafts?task_id=101" => json!({"success":true,"drafts":[]}),

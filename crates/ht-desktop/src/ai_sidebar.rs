@@ -83,7 +83,7 @@ impl Scope {
                     t.title
                 )
             })
-            .unwrap_or_else(|| board_name.clone());
+            .unwrap_or_else(|| if screen == Screen::Task { "Loading...".into() } else { board_name.clone() });
         let suggestions = ai_chat::suggestions(
             task.as_ref().filter(|_| screen == Screen::Task),
             (screen == Screen::Board).then_some((board_name.as_str(), columns.as_slice())),
@@ -92,8 +92,8 @@ impl Scope {
         );
         Self {
             context: DefaultContext {
-                project_id: (screen != Screen::Inbox && project > 0).then_some(project),
-                task_id: task.as_ref().map(|t| t.id),
+                project_id: (screen != Screen::Inbox && project > 0 && (screen != Screen::Task || task.is_some())).then_some(project),
+                task_id,
                 surface: surface.into(),
                 surface_path: path,
                 view_name: (screen != Screen::Inbox).then_some(board_name),
@@ -1465,6 +1465,16 @@ mod tests {
         assert!(rendered.text.contains("• first"));
         assert!(rendered.text.contains("link"));
         assert!(!rendered.text.contains("**"));
+    }
+
+    #[test]
+    fn uncached_task_scope_keeps_route_id_without_borrowing_another_board() {
+        let db = Db::memory().unwrap();
+        let scope = Scope::load(&db, Screen::Task, 999, Some(456), 0);
+        assert_eq!(scope.context.task_id, Some(456));
+        assert_eq!(scope.context.project_id, None);
+        assert_eq!(scope.label, "Loading...");
+        assert!(scope.context.surface_path.is_empty());
     }
 
     #[test]

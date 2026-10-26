@@ -87,6 +87,10 @@ impl Server {
                     json!({"success":true,"tasks":[{"id":1,"title":"server","projectId":15,"status":"Normal"}]})
                 } else if path == "/tasks/update" {
                     json!({"success":true,"task":{"id":1,"title":"server","projectId":15,"status":"Normal"}})
+                } else if path.starts_with("/projects?limit=") {
+                    json!({"success":true,"projects":[],"total":0})
+                } else if path == "/user/context" {
+                    json!({"success":true,"user":{"id":42}})
                 } else if path.ends_with("/members") {
                     json!({"success":true,"projectId":15,"members":[]})
                 } else if path.ends_with("/labels") {

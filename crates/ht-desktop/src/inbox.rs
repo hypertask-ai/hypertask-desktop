@@ -352,7 +352,8 @@ impl Desktop {
                                         .gap(px(12.))
                                         .text_color(color(t.muted))
                                         .child(icon("inbox", t.muted, 32.))
-                                        .child(if self.inbox_actions.search_text.is_empty() { "You're all caught up" } else { "No results" }),
+                                        .child(if self.collection_load.is_some() { "Loading..." } else if self.inbox_actions.search_text.is_empty() { "You're all caught up" } else { "No results" })
+                                        .layout_key(&self.layout, "inbox.empty", Some(if self.collection_load.is_some() { "Loading..." } else if self.inbox_actions.search_text.is_empty() { "You're all caught up" } else { "No results" }.into())),
                                 )
                             })
                             .child(
