@@ -13,7 +13,7 @@ impl Desktop {
         self.search_query = query.trim().to_owned();
         self.search_ids = None;
         self.search_error = None;
-        self.search_load = self.worker.as_ref().filter(|_| !self.search_query.is_empty())
+        self.search_load = self.worker.as_ref().filter(|_| !self.search_query.is_empty() || self.interaction.modal == Some(interactions::Modal::Search))
             .and_then(|worker| worker.handle().search(self.search_query.clone()).ok());
     }
 
@@ -181,7 +181,7 @@ impl Desktop {
                                             .px(px(36.))
                                             .my(px(16.))
                                             .text_color(color(self.colors.muted))
-                                            .child(if self.search_load.is_some() { "Loading..." } else { self.search_error.as_deref().unwrap_or("No results found") })
+                                            .child(if self.search_load.is_some() { "Loading..." } else { self.search_error.as_deref().unwrap_or("No results found") }.to_owned())
                                             .layout_key(&self.layout, "shell.search.empty", Some(if self.search_load.is_some() { "Loading..." } else { self.search_error.as_deref().unwrap_or("No results found") }.into())),
                                     )
                                 })

@@ -758,6 +758,7 @@ impl Desktop {
             .query
             .update(cx, |input, cx| input.set_content(String::new(), cx));
         self.interaction.modal = Some(modal);
+        if modal == Modal::Search { self.request_search(String::new()); }
         self.interaction.choice = 0;
         self.interaction
             .modal_scroll
@@ -1304,7 +1305,7 @@ impl Desktop {
                 filtered[i].group
             } else {
                 match modal {
-                    Modal::Search => "Search cached tasks",
+                    Modal::Search => "Search all tasks",
                     Modal::LocalSearch => "Search this view",
                     Modal::Boards => "Switch boards",
                     Modal::Column => "Move task to column",
@@ -1470,7 +1471,7 @@ impl Desktop {
                             ),
                     )
                     .when(self.interaction.modal == Some(Modal::Search) && self.search_load.is_some(), |d| d.child(
-                        div().px(px(16.)).py(px(8.)).child("Loading...").layout_key(&self.layout, "command.loading", Some("Loading...".into()))))
+                        div().px(px(16.)).py(px(8.)).child("Loading tasks…").layout_key(&self.layout, "command.loading", Some("Loading tasks…".into()))))
                     .child(list.layout_key(&self.layout, "command.results", None))
                     .child(
                         div()

@@ -512,6 +512,12 @@ fn worker_refreshes_board_drafts_progressively_without_opening_task_pages() {
                 json!({"success":true,"projects":[],"total":0})
             } else if path.starts_with("/projects/15/sections?") {
                 f["sections"].clone()
+            } else if path == "/user/context" {
+                json!({"success":true,"user":{"id":42}})
+            } else if path == "/projects/15/members" {
+                json!({"success":true,"projectId":15,"members":[]})
+            } else if path == "/projects/15/labels" {
+                json!({"success":true,"projectId":15,"labels":[]})
             } else if path.starts_with("/drafts?") {
                 let id: i64 = query(path)["task_id"].parse().unwrap();
                 self.send.send(id).unwrap();

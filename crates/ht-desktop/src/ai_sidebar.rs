@@ -1416,7 +1416,7 @@ impl Render for AiSidebar {
                         cx.notify();
                     }))
                     .child(icon("columns-2", t.muted))
-                    .child(div().truncate().child(label))
+                    .child(div().truncate().child(label.clone()).layout_key(&self.capture, "ai.context", Some(label)))
                     .child(icon(
                         if self.include_context {
                             "x"

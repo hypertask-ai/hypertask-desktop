@@ -175,7 +175,8 @@ impl<T: Transport> Sync<T> {
 
     pub fn search(&mut self, query: &str) -> Result<Vec<i64>> {
         let mut params = url::form_urlencoded::Serializer::new(String::new());
-        params.append_pair("search", query).append_pair("status", "Normal")
+        if !query.trim().is_empty() { params.append_pair("search", query); }
+        params.append_pair("status", "Normal")
             .append_pair("limit", "100").append_pair("offset", "0");
         let response = successful(self.transport.get(&format!("/tasks?{}", params.finish()))?)?;
         let tasks = array(&response, "tasks")?;

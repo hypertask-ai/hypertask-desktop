@@ -62,10 +62,15 @@ impl Transport for Server {
             let ids = path.split_once('=').unwrap().1.split(',').map(|id|task(id.parse().unwrap())).collect::<Vec<_>>();
             json!({"success":true,"tasks":ids})
         } else if path.starts_with("/tasks?project_id=15&") {
-            let tasks = if path.contains("status=Normal") {vec![task(101),task(102)]} else {vec![]};
+            let tasks = if path.contains("status=Normal") {[101,102].into_iter().map(|id| {
+                let mut task = task(id);
+                task.as_object_mut().unwrap().remove("createdBy");
+                task.as_object_mut().unwrap().remove("ai_summary");
+                task
+            }).collect::<Vec<_>>()} else {vec![]};
             json!({"success":true,"total":tasks.len(),"tasks":tasks})
-        } else if path.starts_with("/tasks?search=") {
-            json!({"success":true,"tasks":[task(102)],"total":1})
+        } else if path.starts_with("/tasks?search=") || path == "/tasks?status=Normal&limit=100&offset=0" {
+            json!({"success":true,"tasks":[{"id":102,"projectId":15,"status":"Normal","title":"Server task 102"}],"total":1})
         } else { panic!("unexpected first-run request {path}"); };
         Ok(Response { status:200, body })
     }
@@ -156,6 +161,7 @@ fn fresh_signin_inbox_row_board_card_walkthrough_fetches_real_content(cx: &mut g
     let send = h.block("/tasks?task_id=101");
     click(h.view,&mut h.cx,"inbox.row.0");
     assert_eq!(measured(h.view,&mut h.cx,"task.unavailable")["text"],"Loading...");
+    assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"Loading...");
     send.send(()).unwrap();
     h.wait(|this| this.task_load.is_none() && task_ready(this,101));
     assert_eq!(measured(h.view,&mut h.cx,"task.title")["text"],"Server task 101");
@@ -172,6 +178,7 @@ fn fresh_signin_inbox_row_board_card_walkthrough_fetches_real_content(cx: &mut g
     send.send(()).unwrap();
     h.wait(|this| this.collection_load.is_none() && this.columns.iter().map(|c|c.cards.len()).sum::<usize>()==2);
     assert_eq!(measured(h.view,&mut h.cx,"board.title")["text"],"Server board");
+    assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"Server board");
     assert_eq!(measured(h.view,&mut h.cx,"board.card.0.title")["text"],"Server task 101");
     click(h.view,&mut h.cx,"board.card.0");
     h.wait(|this| task_ready(this,101));
@@ -196,6 +203,7 @@ fn never_synced_board_loads_instead_of_blank_and_embeds_uncached_metadata(cx: &m
     h.wait(|this|this.collection_load.is_none() && !this.columns.is_empty() && !this.db.projects().unwrap().is_empty()
         && !this.db.project_members(15).unwrap().is_empty());
     assert_eq!(measured(h.view,&mut h.cx,"board.title")["text"],"Server board");
+    assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"Server board");
     h.view.read_with(&h.cx,|this,_| {
         let task = &this.columns[0].cards[0];
         assert_eq!(task.extra["assignees"][0]["displayName"],"Server assignee");
@@ -229,9 +237,14 @@ fn fresh_search_fetches_uncached_result_then_opens_full_task(cx: &mut gpui::Test
     send.send(()).unwrap();
     h.wait(|this|this.search_ids.as_ref().is_some_and(|ids|ids==&vec![102]));
     assert_eq!(measured(h.view,&mut h.cx,"shell.search.result.0")["text"],"Server task 102");
+    let send = h.block("/tasks?task_id=102");
     click(h.view,&mut h.cx,"shell.search.result.0");
+    assert_eq!(measured(h.view,&mut h.cx,"task.unavailable")["text"],"Loading...");
+    assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"Loading...");
+    send.send(()).unwrap();
     h.wait(|this|task_ready(this,102));
     assert_eq!(measured(h.view,&mut h.cx,"task.title")["text"],"Server task 102");
+    assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"NEW-102 Server task 102");
 }
 
 #[gpui::test]
@@ -240,10 +253,11 @@ fn fresh_command_search_fetches_and_keyboard_opens_uncached_task(cx: &mut gpui::
     let send = h.block("/tasks?search=");
     h.view.update(&mut h.cx,|this,window,cx|this.show_modal(interactions::Modal::Search,window,cx)).unwrap();
     h.cx.simulate_input("Server");
-    assert_eq!(measured(h.view,&mut h.cx,"command.loading")["text"],"Loading...");
+    assert_eq!(measured(h.view,&mut h.cx,"command.loading")["text"],"Loading tasks…");
     send.send(()).unwrap();
     h.wait(|this|this.search_ids.as_ref().is_some_and(|ids|ids==&vec![102]));
     h.cx.simulate_keystrokes("enter");
     h.wait(|this|task_ready(this,102));
     assert_eq!(measured(h.view,&mut h.cx,"task.title")["text"],"Server task 102");
+    assert_eq!(measured(h.view,&mut h.cx,"ai.context")["text"],"NEW-102 Server task 102");
 }
