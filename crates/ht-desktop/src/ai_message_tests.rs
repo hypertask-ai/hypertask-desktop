@@ -214,8 +214,12 @@ fn human_message_copy_and_edit_are_real_mouse_actions(cx: &mut gpui::TestAppCont
     });
     click(&view, cx, "ai.response.0.copy");
     cx.update(|_, cx| assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap().trim(), "Hello é🙂"));
-    cx.update(|_, cx| cx.write_to_clipboard(gpui::ClipboardItem::new_string("control".into())));
+    cx.update(|window, cx| {
+        cx.write_to_clipboard(gpui::ClipboardItem::new_string("control".into()));
+        window.draw(cx).clear(cx);
+    });
     cx.simulate_keystrokes("enter");
+    cx.simulate_event(gpui::KeyUpEvent { keystroke: gpui::Keystroke::parse("enter").unwrap() });
     cx.update(|_, cx| assert_eq!(cx.read_from_clipboard().unwrap().text().unwrap().trim(), "Hello é🙂"));
     click(&view, cx, "ai.message.0.edit");
     cx.simulate_keystrokes("end");

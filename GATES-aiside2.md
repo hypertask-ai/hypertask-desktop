@@ -56,3 +56,9 @@ Pending source audit, implementation and current-head hosted CI.
   ownership through chat switches, enabled delivered-action keyboard focus,
   normalized source-backed errors inside their failed message and added native
   alignment/error regressions. No generic editor UI or live auth claimed.
+- Run 40259462241: 223 desktop tests passed on each platform, including fixed
+  geometry, error display, queue drain, message alignment and composer grips.
+  The added copy-keyboard proof failed: GPUI's simulate_keystrokes dispatches
+  key-down only, while focusable click activation correctly requires key-up.
+  Proof now paints focused handlers and sends the matching real Enter release;
+  clipboard negative control remains "control", expected value unchanged.
