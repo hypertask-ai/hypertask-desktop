@@ -253,3 +253,113 @@ fn keyboard_alt_enter_sends_an_inbox_reply_without_archiving_or_advancing(cx: &m
         });
     }
 }
+
+#[gpui::test]
+fn keyboard_escape_saves_description_but_never_publishes_comment(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    cx.simulate_keystrokes("ctrl-d ctrl-a");
+    cx.simulate_input("Saved on Escape é🙂");
+    cx.simulate_keystrokes("escape");
+    view.update_in(cx, |this, window, cx| {
+        let task = this.db.task(1).unwrap().unwrap();
+        assert!(task.description.contains("Saved on Escape é🙂"), "{}", task.description);
+        let rows = this.db.mutations().unwrap();
+        let writes: Vec<_> = rows.iter().filter(|row| row.kind == "task_patch").collect();
+        assert_eq!(writes.len(), 1);
+        assert_eq!(writes[0].payload_json["task_id"], 1);
+        assert!(writes[0].payload_json["description"].as_str().unwrap().contains("Saved on Escape é🙂"));
+        assert!(matches!(this.editing, Editing::None));
+        assert!(this.focus.is_focused(window));
+        assert_eq!(this.screen, Screen::Task);
+        assert!(this.interaction.modal.is_none());
+    });
+    cx.simulate_keystrokes("ctrl-m");
+    cx.simulate_input("Unsent comment");
+    cx.simulate_keystrokes("escape");
+    view.read_with(cx, |this, cx| {
+        assert!(this.comment_input.read(cx).content.contains("Unsent comment"));
+        assert!(this.db.mutations().unwrap().iter().all(|row| row.kind != "task_comment"));
+        assert_eq!(this.screen, Screen::Task);
+    });
+}
+
+#[gpui::test]
+fn cmdk_assign_to_me_preserves_people_agents_and_reopens_assignment(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    view.update_in(cx, |this, _, _| {
+        this.db.kv_set("members:15", &serde_json::json!([
+            {"id":7,"displayName":"Alex"}, {"id":42,"displayName":"Me"},
+            {"id":"agent-a","displayName":"Runner"}
+        ]).to_string()).unwrap();
+        this.db.apply_response(&serde_json::json!({"success":true,"tasks":[
+            {"id":1,"projectId":15,"sectionId":10,"title":"Needle","status":"Normal","assignees":[{"id":7,"displayName":"Alex"},{"id":"agent-a","agent":{"id":"agent-a","displayName":"Runner"}}],"assigneeCount":2}
+        ]})).unwrap();
+        this.reload();
+    });
+    for expected_writes in [1, 1] {
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Assign to me");
+        view.read_with(cx, |this, cx| {
+            assert!(this.choices(cx).iter().any(|row| row.name == "Assign to me"));
+        });
+        cx.simulate_keystrokes("enter");
+        view.read_with(cx, |this, _| {
+            let task = this.db.task(1).unwrap().unwrap();
+            assert_eq!(task.assignee_count, 3);
+            assert!(task.extra["assignees"].as_array().unwrap().iter().any(|row| row["id"] == 7));
+            assert!(task.extra["assignees"].as_array().unwrap().iter().any(|row| row["id"] == 42));
+            assert!(task.extra["assignees"].as_array().unwrap().iter().any(|row| row["agent"]["id"] == "agent-a"));
+            let writes: Vec<_> = this.db.mutations().unwrap().into_iter().filter(|row| row.kind == "board_write").collect();
+            assert_eq!(writes.len(), expected_writes);
+            assert_eq!(writes[0].payload_json["change"], serde_json::json!({"AssignToMe":{"task":1,"user":42}}));
+            assert_eq!(this.interaction.modal, Some(super::interactions::Modal::Assign));
+        });
+        cx.simulate_keystrokes("escape");
+    }
+}
+
+#[gpui::test]
+fn cmdk_assign_to_me_is_absent_without_account_member_or_active_task(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    for (user, members, status) in [
+        ("", serde_json::json!([{"id":42,"displayName":"Me"}]), "Normal"),
+        ("42", serde_json::json!([{"id":7,"displayName":"Alex"}]), "Normal"),
+        ("42", serde_json::json!([{"id":42,"displayName":"Me"}]), "Archive"),
+    ] {
+        let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+        view.update_in(cx, |this, _, _| {
+            this.db.kv_set("current-user-id", user).unwrap();
+            this.db.kv_set("members:15", &members.to_string()).unwrap();
+            this.db.apply_response(&serde_json::json!({"success":true,"tasks":[
+                {"id":1,"projectId":15,"sectionId":10,"title":"Needle","status":status}
+            ]})).unwrap();
+            this.reload();
+        });
+        cx.simulate_keystrokes("ctrl-k");
+        cx.simulate_input("Assign to me");
+        view.read_with(cx, |this, cx| {
+            assert!(!this.choices(cx).iter().any(|row| row.name == "Assign to me"));
+            assert!(this.db.mutations().unwrap().is_empty());
+        });
+    }
+}
+
+#[gpui::test]
+fn keyboard_escape_keeps_description_when_lossless_save_is_refused(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    cx.simulate_keystrokes("ctrl-d ctrl-a ctrl-shift-h");
+    cx.simulate_input("Highlighted draft");
+    cx.simulate_keystrokes("escape");
+    view.update_in(cx, |this, window, cx| {
+        assert!(matches!(this.editing, Editing::Description));
+        assert!(this.interaction.description.focus_handle(cx).is_focused(window));
+        assert!(this.interaction.description.read(cx).html().contains("<mark"));
+        assert!(this.interaction.description.read(cx).content.contains("Highlighted draft"));
+        assert!(this.error.as_deref().unwrap().contains("strips highlights"));
+        assert_eq!(this.db.task(1).unwrap().unwrap().description, "<p>Hidden</p>");
+        assert!(this.db.mutations().unwrap().is_empty());
+    });
+}

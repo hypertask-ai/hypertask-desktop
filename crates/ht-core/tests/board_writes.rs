@@ -364,3 +364,59 @@ fn archive_board_uses_existing_bearer_archive_contract_and_real_status_ack() {
     assert_eq!(db.drain_once(&mut s, 101).unwrap(), Drain::Applied(id));
     assert_eq!(db.projects().unwrap()[0]["status"], "Archive");
 }
+
+#[test]
+fn self_assignment_uses_assign_intent_survives_restart_and_keeps_concurrent_people() {
+    let file = std::env::temp_dir().join(format!("ht-self-assign-{}.db", uuid::Uuid::new_v4()));
+    let mut db = Db::open(&file).unwrap();
+    seed(&mut db);
+    db.kv_set("members:15", &json!([
+        {"id":7,"displayName":"Alex"},{"id":42,"displayName":"Me"}
+    ]).to_string()).unwrap();
+    db.apply_response(&json!({"success":true,"tasks":[{
+        "id":1,"projectId":15,"sectionId":10,"title":"Task","status":"Normal",
+        "assignees":[{"id":7,"displayName":"Alex"},{"id":42,"agent":{"id":"agent-a","displayName":"Runner"}}],"assigneeCount":2
+    }]})).unwrap();
+    let id = db.enqueue(Write::Board { change: BoardWrite::AssignToMe { task:1, user:42 } }, 100).unwrap();
+    assert_eq!(db.task(1).unwrap().unwrap().assignee_count, 3);
+    drop(db);
+    let mut db = Db::open(&file).unwrap();
+    let mut s = server(
+        "POST", "/assignees/assign",
+        json!({"task_id":1,"user_id":42,"intent":"assign"}),
+        json!({"success":true,"assignees":[
+            {"userId":7},{"userId":42},{"userId":8},
+            {"userId":42,"agent":{"id":"agent-a","displayName":"Runner"}}
+        ]}),
+    );
+    assert_eq!(db.drain_once(&mut s, 101).unwrap(), Drain::Applied(id));
+    let task = db.task(1).unwrap().unwrap();
+    assert_eq!(task.assignee_count, 4);
+    let rows = task.extra["assignees"].as_array().unwrap();
+    assert!(rows.iter().any(|row| row["id"] == 8 && row["agent"].is_null()));
+    assert!(rows.iter().any(|row| row["id"] == 42 && row["agent"].is_null()));
+    assert!(rows.iter().any(|row| row["agent"]["id"] == "agent-a"));
+    assert_eq!(db.drain_once(&mut s, 102).unwrap(), Drain::Empty);
+    assert_eq!(s.calls, 1);
+    drop(db);
+    std::fs::remove_file(file).unwrap();
+}
+
+#[test]
+fn self_assignment_denial_restores_people_and_rejects_another_account() {
+    let mut db = Db::memory().unwrap();
+    seed(&mut db);
+    db.kv_set("members:15", &json!([
+        {"id":7,"displayName":"Alex"},{"id":42,"displayName":"Me"}
+    ]).to_string()).unwrap();
+    assert!(db.enqueue(Write::Board { change: BoardWrite::AssignToMe { task:1, user:7 } }, 100).is_err());
+    assert!(db.mutations().unwrap().is_empty());
+    let id = db.enqueue(Write::Board { change: BoardWrite::AssignToMe { task:1, user:42 } }, 100).unwrap();
+    assert_eq!(db.task(1).unwrap().unwrap().assignee_count, 1);
+    let mut deny = server("POST", "/assignees/assign", json!({"task_id":1,"user_id":42,"intent":"assign"}), json!({"success":false}));
+    deny.status = 403;
+    assert_eq!(db.drain_once(&mut deny, 101).unwrap(), Drain::Failed(id));
+    let task = db.task(1).unwrap().unwrap();
+    assert_eq!(task.assignee_count, 0);
+    assert_eq!(task.extra["assignees"], json!([]));
+}

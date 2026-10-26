@@ -9,6 +9,16 @@ impl Desktop {
         cx: &mut Context<Self>,
     ) {
         match action {
+            ShellCommand::AssignToMe => {
+                let Some(user) = self.db.current_user_id() else { return; };
+                let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) else { return; };
+                let assigned = task.extra.get("assignees").and_then(serde_json::Value::as_array)
+                    .into_iter().flatten().any(|row| row["id"] == user && row["agent"].is_null());
+                if !assigned && !self.enqueue(Write::Board { change: ht_core::BoardWrite::AssignToMe { task: task.id, user } }, cx) {
+                    return;
+                }
+                self.show_modal(super::interactions::Modal::Assign, window, cx);
+            }
             ShellCommand::CopyBranchName => {
                 if let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten()) {
                     if let Some(ticket) = task.ticket_number {

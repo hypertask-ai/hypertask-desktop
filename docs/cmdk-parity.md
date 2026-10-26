@@ -245,7 +245,7 @@ Written before production changes. Web source root: `/home/valentin/projects/hyp
 | `saveTaskTemplate` | Save task as template | `components/Modals/commands/HTC/taskCommands.ts:37` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `assignUser` | Assign task | `components/Modals/commands/HTC/taskCommands.ts:44` | Existing action; audit order, context, label, shortcut, group. |
 | `blockedByPerson` | Blocked by person… | `components/Modals/commands/HTC/taskCommands.ts:51` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
-| `assignToMe` | Assign to me | `components/Modals/commands/HTC/taskCommands.ts:58` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
+| `assignToMe` | Assign to me | `components/Modals/commands/HTC/taskCommands.ts:58-63` | Added for active task context with cached account membership. Durable explicit-assign intent preserves other people and agents, then opens the assignment picker. |
 | `addSubTask` | Create subtask | `components/Modals/commands/HTC/taskCommands.ts:65` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `viewSubTask` | View subtasks | `components/Modals/commands/HTC/taskCommands.ts:72` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
 | `addRelatedTask` | Add related task | `components/Modals/commands/HTC/taskCommands.ts:79` | Unsupported or outside inbox/board/task/AI-sidebar/shortcuts scope. No matching native action; omit. |
@@ -374,3 +374,38 @@ Its macOS result is 187 passed, two failed. Both failures have targeted input
 coverage in the follow-up. GPUI heading letter spacing has no native style
 property; web `tracking-wider` remains a presentation gap. No exact pixel
 parity claim is made.
+
+
+## Remaining-gap continuation
+
+Acceptance is `docs/gaps-acceptance.md`. Source re-read at web revision
+`10377b20e8c338357fda306b025ef16699c9b4ab`.
+
+- Assign to me follows `components/generalCommandActions.ts:80-93`: add the
+  current person, then open assignment. Existing assignment is not toggled off.
+  Unknown account, uncached membership, archived task and bulk context omit the
+  row instead of advertising an action that cannot run. The New badge matches
+  `components/Modals/commands/HTC/taskCommands.ts:58-63`.
+- Self assignment sends only task_id, user_id and intent=assign to the existing
+  bearer `/assignees/assign` route, not a replacement human list. Server
+  `lib/mcp/operations/assignees/assign/operation.ts:348-395` validates membership
+  and applies explicit intent. This preserves people added since the local
+  cache was read. Its acknowledgement retains the full human/agent list.
+  Restart, denial rollback and concurrent uncached-person tests cover this
+  contract. It does not claim a live authenticated server round trip.
+- Full create and plain quick entry remain server-blocked, not unknown rules.
+  `docs/creation-parity.md` records exact filter precedence, validated defaults,
+  target selection, rank generation, both save routes and HTPR-7699's narrow
+  authorization boundary. GET defaults does not authorize POST createGlobally.
+- The three additional bulk-selection commands are feature-flagged in
+  `components/Modals/commands/HTC/navigationCommands.ts:301-322`. Without the
+  account's authoritative flag, their presence is not inferred from the native
+  keyboard selection capability. The existing unflagged four-command group stays.
+- Existing B1-B11 server/read-model blockers and scope exclusions are unchanged.
+  Native links/history/upload flows and command-heading letter spacing remain
+  documented gaps, not silently relabeled as implemented or CI-proven parity.
+
+The regression uses real Ctrl+K input and observes assignment counts, retained
+people/agents, the durable payload, repeated-action idempotence and picker state.
+Negative input cases cover unknown identity, absent membership and archives.
+Exact-head CI evidence belongs in `docs/gaps-evidence.md`.

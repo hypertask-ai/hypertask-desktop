@@ -34,6 +34,7 @@ pub enum ShellCommand {
     ToggleAi,
     ToggleAiMode,
     CopyBranchName,
+    AssignToMe,
 }
 
 // Web declaration order, with unsupported commands omitted rather than inert rows.
@@ -140,7 +141,7 @@ pub fn commands(screen: Screen, task: bool) -> Vec<Command> {
 
 // Context producers append rows; order the complete list, not just the base registry.
 pub fn order(rows: &mut [Command], screen: Screen) {
-    let task = ["assignUser", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "renameTask", "deleteTask"];
+    let task = ["assignUser", "assignToMe", "setDueDate", "priorityModal", "labelmodal", "estimateModal", "moveToColumn", "movetasktodifferentboard", "archiveTask", "copyformattedTaskLink", "copyLink", "copyTaskId", "copyTaskTitleId", "copyBranchName", "toggleAllComments", "removeTaskNotification", "renameTask", "deleteTask"];
     let board = ["createTaskWithAiWriter", "sendFeedback", "renameColumn", "addColumn", "deleteColumn", "inviteBoard", "manageMembers", "renameBoard", "archiveBoards", "toggleRailExpanded"];
     rows.sort_by_key(|row| {
         let group = match row.group {

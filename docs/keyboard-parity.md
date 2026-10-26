@@ -275,13 +275,16 @@ Conflicting hints stay explicit below.
 | Rich editor | Ctrl/Cmd+Shift+A | Upload attachment | Blocked staged upload flow; not outside-editor selection | `components/RTE/useTaskDetailEditorKeyboard.tsx:70-73` |
 | Comment editor | Ctrl/Cmd+Alt+Enter | Send without inbox advance | Added. Existing durable send-and-stay action. | `lib/taskDetailInboxFlow.ts:89-109`, `components/RTE/useTaskDetailEditorKeyboard.tsx:121-140` |
 | Rich editor | Ctrl/Cmd+J | AI writer or flagged compose tab | Native flagged compose alternative. Legacy writer remains partial. | `components/RTE/useTaskDetailEditorKeyboard.tsx:156-159` |
-| Rich editor | Escape | Save description or leave comment editor | Partial. Native leaves editing; does not auto-publish description on Escape. | `components/RTE/useTaskDetailEditorKeyboard.tsx:44-56` |
+| Rich editor | Escape | Save description or leave comment editor | Added. Description uses the existing durable save; comment Escape never publishes. Refused lossy saves retain editing, focus and draft. | `components/RTE/useTaskDetailEditorKeyboard.tsx:44-56` |
 | Rich editor | Enter inside reply quote | Leave quoted block | Supported native reply-block handling | `components/RTE/Extensions/ReplyBlockquote.ts:201-220` |
 | Rich editor | Ctrl/Cmd+Alt+0 | Normal text block | Supported native paragraph action | `components/RTE/Extensions/dBlock/dBlock.ts:82-85` |
 
 Task creation remains deliberately unavailable for plain keys.
-Its defaults require active filters and exact ranks.
-AI compose cannot replace that user promise.
+The exact defaults and authorization boundary are now traced in
+[creation-parity.md](creation-parity.md), including N/Shift+C column targeting,
+active-filter precedence, assignable IDs and exact top/bottom ranks.
+Both exact save routes still need server sign-in work under HTPR-7699.
+MCP append and AI compose cannot replace that user promise.
 No fake quick-add UI was introduced.
 
 ## Native input evidence
@@ -298,6 +301,8 @@ No fake quick-add UI was introduced.
 | Plain keys inside F2/Ctrl+M/Ctrl+D editors | `keyboard_plain_shortcuts_do_not_escape_title_comment_or_description_inputs` |
 | /, 6, Ctrl/Cmd+B | `keyboard_search_and_board_switch_shortcuts_use_existing_controls` |
 | G then I default split | `keyboard_g_i_returns_to_the_default_inbox_split` |
+| Description Escape, comment Escape | `keyboard_escape_saves_description_but_never_publishes_comment` |
+| Refused description Escape save | `keyboard_escape_keeps_description_when_lossless_save_is_refused` |
 | Comment Ctrl/Cmd+Alt+Enter | `keyboard_alt_enter_sends_an_inbox_reply_without_archiving_or_advancing` |
 | Every formatting chord and slash choice | Existing `every_format_keyboard_and_slash_choice_is_a_real_editor_action` |
 | I summary | Existing `task_summary_i_click_escape_preserve_full_markdown_without_requesting_ai` |

@@ -264,7 +264,9 @@ impl Desktop {
                 window.focus(&self.focus, cx);
             }
             Back => {
-                if self.editing != Editing::None {
+                if self.editing == Editing::Description {
+                    self.save_edit(window, cx);
+                } else if self.editing != Editing::None {
                     self.comment_actions.edit_id = None;
                     self.editing = Editing::None;
                     window.focus(&self.focus, cx);
@@ -788,6 +790,14 @@ impl Desktop {
         {
             rows.push(command_center::Command { key: "copyBranchName".into(), name: "Copy branch name".into(), group: "Task", keys: String::new(), keywords: "git branch name copy github", action: CommandAction::Shell(command_center::ShellCommand::CopyBranchName) });
         }
+        if context == Screen::Task && self.interaction.bulk.is_empty()
+            && let Some(task) = self.selected_task().and_then(|id| self.db.task(id).ok().flatten())
+            && task.status == Status::Normal
+            && let Some(user) = self.db.current_user_id()
+            && self.db.project_members(task.project_id).unwrap_or_default().iter().any(|member| member["id"] == user)
+        {
+            rows.push(command_center::Command { key: "assignToMe".into(), name: "Assign to me".into(), group: "Task", keys: String::new(), keywords: "assign me self take claim mine my task i'll do it", action: CommandAction::Shell(command_center::ShellCommand::AssignToMe) });
+        }
         command_center::order(&mut rows, context);
         let context_groups = if rows.first().is_some_and(|row| row.group == "Comment") { 2 } else { 1 };
         let mut groups = 0;
@@ -1299,7 +1309,7 @@ impl Desktop {
                         this.run_choice(window, cx);
                     }))
                     .child(div().flex_1().flex().items_center().child(choice.name.clone())
-                        .when(modal == Modal::Commands && matches!(filtered[i].key.as_str(), "copyCommentToAiChat" | "cliInstall"), |d| d.child(
+                        .when(modal == Modal::Commands && matches!(filtered[i].key.as_str(), "copyCommentToAiChat" | "assignToMe" | "cliInstall"), |d| d.child(
                             div().ml(px(8.)).px(px(5.)).py(px(2.)).rounded(px(2.))
                                 .bg(color(0x4455bb)).text_color(color(0xffffff)).text_size(px(11.))
                                 .font_weight(FontWeight::MEDIUM).line_height(px(11.)).child("New")
