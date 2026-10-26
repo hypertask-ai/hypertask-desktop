@@ -58,3 +58,12 @@ at `5013a073f385111eeb2fe364e7b2e84325d175a2`.
 Three native jobs rejected a missing JSON fixture brace at
 `keyboard_parity_tests.rs:396`. Corrected fixture syntax; no assertion weakened.
 This was compiler rejection, not behavioral red proof.
+
+### Audit self-review
+
+Corrected stale ranking premise: Shift+J/K swaps two ranks through PUT
+`/api/tasks/single`, not drag/drop `/api/tasks/moveTask`. Both are session-only.
+Distinguished actual runtime keys from Shift+S/2xTab/Ctrl+Y help-only claims.
+History preference is local; missing interactive feed fields remain the blocker.
+Time-log MCP report restricts ordinary members; web entries expose all task users.
+Native options/compose/column-focus subsets remain explicitly partial.

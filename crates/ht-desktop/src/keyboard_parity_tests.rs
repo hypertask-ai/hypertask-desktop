@@ -538,3 +538,24 @@ fn keyboard_board_w_uses_selected_task_and_changed_accounts_never_send_effects(c
         assert_eq!(server.calls.len(), if user == 42 {2} else {0});
     }
 }
+
+#[gpui::test]
+fn keyboard_star_refuses_unknown_state_and_rolls_back_on_account_refusal(cx: &mut TestAppContext) {
+    cx.update(crate::input::init);
+    let (view, cx) = cx.add_window_view(super::task_fields::tests::desktop);
+    cx.simulate_keystrokes("alt-s");
+    view.update_in(cx, |this, _, _| {
+        assert!(this.db.mutations().unwrap().is_empty());
+        assert!(this.error.as_ref().unwrap().contains("Sync this task"));
+        this.db.apply_task(&serde_json::json!({"id":1,"savedContent":[{"id":"old-star","type":"Private"}]})).unwrap();
+    });
+    cx.simulate_keystrokes("alt-s");
+    let mut server = KeyboardWriteServer::new();
+    server.user = 43;
+    view.update_in(cx, |this, _, _| {
+        assert!(this.db.task(1).unwrap().unwrap().extra["savedContent"].as_array().unwrap().is_empty());
+        assert!(matches!(this.db.drain_one(&mut server, chrono::Utc::now().timestamp()+1).unwrap(), ht_core::Drain::Failed(_)));
+        assert_eq!(this.db.task(1).unwrap().unwrap().extra["savedContent"], serde_json::json!([{"id":"old-star","type":"Private"}]));
+    });
+    assert!(server.calls.is_empty());
+}
