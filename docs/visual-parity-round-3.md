@@ -128,3 +128,44 @@ test web_pixel_advances_preserve_unopted_text pins 106/70/46/7 advances and
 checks unchanged original-font glyph IDs, positions and byte indices afterward.
 The hosted capture gate still requires every requested source box within the
 original 1.5px tolerance, and exact zero sidebar pixel changes.
+
+## Verified Windows unit and task correction
+
+Source-metrics unit SHA 9b7955631708d7d492a5e2a46ca6c906a40f2b27 passed
+CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40353410678.
+All eight applicable jobs succeeded, including ARM64 and both memory budgets.
+Historical memory comparison kept its original skipped branch condition.
+The supplied receipt emitted DESKTOP_CI_VERIFIED. Account quota exhaustion
+required the installed shared reader's existing auth and a process-local
+60-second watch adapter; no shared tools, credentials or production state changed.
+
+| Comparison | Inbox | Board | Task | Total |
+| --- | ---: | ---: | ---: | ---: |
+| Original round 2 dense measured records | 24 | 24 | 23 | 71 |
+| Same dense content after typography | 21 | 23 | 23 | 67 |
+| Round 2 executable, matched capture content | 18 | 12 | 9 | 39 |
+| New executable, same matched content | 8 | 8 | 9 | 25 |
+
+This is 32 content-alignment rows plus 14 same-content product rows, not 46
+product fixes. Original remaining inventories include six additional original
+screenshot-only records per screen: 30/30/29 to 14/14/15, total 89 to 43.
+All 24 unsampled rail keys remain counted, not silently removed. The Task
+footer remains an open measured row. All original sidebar classes stay open.
+Dense and matched sidebar x1500..1919 comparisons each returned zero changed
+pixels on Inbox, Board and Task. The protected-code/reference diff was empty.
+
+The remaining source-backed Task header correction replaces the summary's
+21px reserve with its 13px text's 19.5px line box, and gives the title itself
+the source textarea's 37px minimum. Text continues wrapping naturally; the
+unrelated long dense title is never clipped or shortened. The existing
+no-summary 16px Bootstrap bottom spacing remains unchanged.
+
+| Task value | Web component | Token/cascade authority | Native proof |
+| --- | --- | --- | --- |
+| Title 24px, naturally wrapping, minimum 37px | src/components/PageComponents/TaskDetail/TopRow/TaskTitle.tsx:43-49,168-173,210 | src/styles/tailwind-entry.css:7-11; TaskTitle.tsx:46,210 | task_web_header_title_description_meta_and_composer_flow |
+| Summary 13px / 19.5px, 8px row spacing and bottom padding | src/components/PageComponents/TaskDetail/TopRow/TaskSummary.tsx:30-40; BaseTitleContainer.tsx:44,51-52 | src/styles/tailwind-entry.css:10-11; tailwind.config.ts:172 | same test; strict hosted old/new header and title check |
+| Empty description 80px minimum + 8px top margin, content may grow | src/components/PageComponents/TaskDetail/CommentAndDescription/DescriptionContainer/StaticDescriptionShell.tsx:65-75 | src/styles/tiptap.module.scss:62-64; src/styles/tailwind-entry.css:10-11 | same test, including twenty published paragraphs |
+| Composer follows actual comments; never an absolute account-specific offset | src/components/PageComponents/TaskDetail/CommentAndDescription/index.tsx:274-280 | src/components/PageComponents/TaskDetail/CommentAndDescription/BaseCommentAndDescriptionContainer.tsx:18-26; src/styles/tailwind-entry.css:10-11 | same test, including two actual comments and exact 16px native flow gap |
+
+All acceptance constraints remain unchanged. Final exact-head receipt follows
+in the PR evidence comment, avoiding a self-referential documentation commit.

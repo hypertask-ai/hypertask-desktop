@@ -2014,6 +2014,7 @@ mod tests {
             assert_eq!(before.width, after.width);
             assert_eq!(before.runs.len(), after.runs.len());
             for (before, after) in before.runs.iter().zip(&after.runs) {
+                assert_eq!(before.glyphs.len(), after.glyphs.len());
                 for (before, after) in before.glyphs.iter().zip(&after.glyphs) {
                     assert_eq!(before.id, after.id);
                     assert_eq!(before.position, after.position);

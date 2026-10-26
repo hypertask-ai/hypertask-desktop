@@ -162,7 +162,7 @@ impl Desktop {
         div()
             .id("task-summary")
             .mt(px(8.))
-            .h(px(21.))
+            .h(px(19.5))
             .w_full()
             .relative()
             .text_size(px(13.))

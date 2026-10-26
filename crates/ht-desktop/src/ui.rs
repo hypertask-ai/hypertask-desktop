@@ -1439,6 +1439,7 @@ impl Desktop {
                 .id("task-title")
                 .flex_1()
                 .min_w_0()
+                .min_h(px(37.))
                 .whitespace_normal()
                 .cursor_text()
                 .on_click(cx.listener(|this, _, window, cx| this.edit_title(window, cx)))

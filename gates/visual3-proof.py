@@ -87,6 +87,13 @@ for screen, keys in {
         assert delta <= 1.5, (key, delta, native[key], live[key])
         print(f"VISUAL3_NATIVE_BOX {key} max_delta={delta}", flush=True)
 
+old_task = {e["key"]: e for e in json.loads((OUT / "round2_matched/task.json").read_text())["elements"]}
+new_task = {e["key"]: e for e in json.loads((OUT / "current_matched/task.json").read_text())["elements"]}
+assert old_task["task.header"]["h"] == 110, old_task["task.header"]
+assert abs(new_task["task.header"]["h"] - 108.5) <= 0.5, new_task["task.header"]
+assert old_task["task.title"]["h"] == 36 and new_task["task.title"]["h"] == 37
+print("VISUAL3_TASK_HEADER old=110 new=" + str(new_task["task.header"]["h"]) + " title=37", flush=True)
+
 subprocess.run(["git", "fetch", "--no-tags", "--depth=1", "origin", BASE], cwd=ROOT, check=True)
 protected = [
     "crates/ht-desktop/src/ai*", "crates/ht-desktop/src/keyboard*",

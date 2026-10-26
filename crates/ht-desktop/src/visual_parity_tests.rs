@@ -102,3 +102,49 @@ fn inbox_web_tabs_and_intrinsic_row_widths_follow_reference_content(cx: &mut gpu
         assert!(this.db.mutations().unwrap().is_empty());
     }).unwrap();
 }
+
+#[gpui::test]
+fn task_web_header_title_description_meta_and_composer_flow(cx: &mut gpui::TestAppContext) {
+    cx.update(crate::input::init);
+    let view = cx.open_window(gpui::size(px(1920.), px(1009.)), |window, cx| reference("task", window, cx));
+    let mut cx = VisualTestContext::from_window(view.into(), cx);
+    for (key, y, height) in [
+        ("task.header", 0., 108.5), ("task.title", 36., 37.),
+        ("task.description", 165.5, 88.), ("task.composer", 347.5, 154.),
+        ("task.meta.0", 135.5, 24.), ("task.meta.1", 183.5, 27.),
+        ("task.meta.2", 234.5, 27.), ("task.meta.3", 285.5, 24.),
+        ("task.meta.4", 333.5, 24.), ("task.meta.5", 381.5, 24.),
+    ] {
+        let element = measured(view, &mut cx, key);
+        assert!((element["y"].as_f64().unwrap() - y).abs() <= 0.5, "{element}");
+        assert!((element["h"].as_f64().unwrap() - height).abs() <= 0.5, "{element}");
+    }
+    view.read_with(&mut cx, |this, _| {
+        assert!(this.detail.as_ref().unwrap().comments.is_empty());
+        assert!(this.detail.as_ref().unwrap().task.description.is_empty());
+    }).unwrap();
+    view.update(&mut cx, |this, _, cx| {
+        let mut task = serde_json::to_value(&this.detail.as_ref().unwrap().task).unwrap();
+        task["title"] = json!("A genuinely long task title must continue wrapping without truncation. ".repeat(8));
+        task["description"] = json!("<p>Published description, not an empty placeholder.</p>".repeat(20));
+        this.db.apply_task(&task).unwrap();
+        this.db.apply_comments(103, &json!({"success":true,"comments":[
+            {"id":500,"taskId":103,"text":"<p>First actual comment.</p>","createdAt":"2026-10-23T12:00:00Z","creator":{"displayName":"QA Author"}},
+            {"id":501,"taskId":103,"text":"<p>Second actual comment.</p>","createdAt":"2026-10-23T12:01:00Z","creator":{"displayName":"QA Author"}}
+        ]})).unwrap();
+        this.reload();
+        cx.notify();
+    }).unwrap();
+    let title = measured(view, &mut cx, "task.title");
+    let description = measured(view, &mut cx, "task.description");
+    let last_comment = measured(view, &mut cx, "task.comment.1");
+    let composer = measured(view, &mut cx, "task.composer");
+    assert!(title["h"].as_f64().unwrap() >= 72., "Long titles must wrap");
+    assert!(description["h"].as_f64().unwrap() > 88., "Published text must grow the description");
+    assert_eq!(composer["y"].as_f64().unwrap() - last_comment["y"].as_f64().unwrap() - last_comment["h"].as_f64().unwrap(), 16.);
+    view.read_with(&mut cx, |this, _| {
+        assert_eq!(this.detail.as_ref().unwrap().comments.len(), 2);
+        assert!(this.detail.as_ref().unwrap().task.description.contains("Published description"));
+        assert!(this.db.mutations().unwrap().is_empty());
+    }).unwrap();
+}
