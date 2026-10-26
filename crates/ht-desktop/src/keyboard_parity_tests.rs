@@ -958,3 +958,17 @@ fn keyboard_shortcut_sheet_keeps_search_keys_but_dismisses_outside_input(cx: &mu
         assert!(this.db.mutations().unwrap().is_empty());
     }).unwrap();
 }
+
+#[gpui::test]
+fn keyboard_hidden_ai_aliases_never_escape_title_inputs(cx: &mut TestAppContext) {
+    let (view, mut cx) = setup(cx);
+    cx.simulate_keystrokes("ctrl-shift-/ f2");
+    for chord in ["ctrl-shift-o", "cmd-shift-o", "ctrl-shift-j", "cmd-shift-j"] {
+        cx.simulate_keystrokes(chord);
+        view.update(&mut cx, |this, window, cx| {
+            assert!(!this.shell.ai_open, "{chord}");
+            assert!(this.title_input.focus_handle(cx).is_focused(window));
+            assert!(this.db.mutations().unwrap().is_empty());
+        }).unwrap();
+    }
+}

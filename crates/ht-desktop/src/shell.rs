@@ -257,6 +257,7 @@ impl Desktop {
             ("5" | "]", false, false, false)
             | ("/" | "?", true, true, false)
             | ("?", true, false, false) => self.toggle_ai(window, cx),
+            ("o" | "j", true, true, false) if !self.shell.ai_open => self.toggle_ai(window, cx),
             ("?", false, _, false) => self.open_shortcuts(window, cx),
             ("2", false, false, false) => self.navigate_board(cx),
             ("3", false, false, false) => self.navigate_table(cx),

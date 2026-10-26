@@ -57,3 +57,17 @@ Linux job `121566533572` rejected a test accessing private TaskFields.due
 focus after the durable due write. No production visibility widened and no
 behavior assertion weakened. Other newly added tests were not executed in that
 compiler-rejected run. Final evidence must use the subsequent exact head.
+
+### Behavioral rejection and correction
+
+Run https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40322596395
+at `9341ea98657658e9140130ede380406009e1137e`: each desktop suite
+reported 271 passed, 1 failed. Picker digits, task jumps, focused own-comment
+editing, empty-board C, AI reopen, due navigation and shortcut-sheet tests passed.
+Compose skill selection returned /review instead of /write. Input observation
+reset choice on every notification, including notifications unrelated to token
+changes. Reset only when the slash range/query changes. Retained the failed
+observable-text oracle and added intermediate Up/Down selection assertions.
+Also moved hidden-AI reopen into the existing shell input/modal guards, with a
+native title-input regression. Visible chat reset behavior remains unchanged.
+Failed receipt retained separately; never counted as passing final evidence.

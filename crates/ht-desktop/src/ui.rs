@@ -701,15 +701,10 @@ impl Desktop {
                 cx.stop_propagation();
                 return;
             }
-            if (m.control || m.platform) && m.shift && !m.alt
+            if self.shell.ai_open && (m.control || m.platform) && m.shift && !m.alt
                 && matches!(key.key.as_str(), "o" | "j")
             {
-                if self.shell.ai_open {
-                    sidebar.update(cx, |sidebar, cx| sidebar.new_chat(window, cx));
-                } else {
-                    self.shell.ai_open = true;
-                    sidebar.update(cx, |sidebar, cx| sidebar.focus_composer(window, cx));
-                }
+                sidebar.update(cx, |sidebar, cx| sidebar.new_chat(window, cx));
                 cx.stop_propagation();
                 return;
             }

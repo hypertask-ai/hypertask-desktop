@@ -18,6 +18,7 @@ pub(super) struct Compose {
     skills: Vec<Value>,
     skill_owner: Option<(i64, Option<String>)>,
     skill_choice: usize,
+    skill_query: Option<(std::ops::Range<usize>, String)>,
     skill_generation: u64,
     skill_loading: bool,
     skill_fetched: Option<std::time::Instant>,
@@ -31,7 +32,11 @@ impl Compose {
         let board_query =
             cx.new(|cx| TextInput::new(String::new(), "Search boards", color(0x8e9093), cx));
         cx.observe(&input, |this, _, cx| {
-            this.compose.skill_choice = 0;
+            let query = this.compose_skill_token(cx);
+            if this.compose.skill_query != query {
+                this.compose.skill_query = query;
+                this.compose.skill_choice = 0;
+            }
             this.request_compose_skills(cx);
             cx.notify();
         }).detach();
@@ -56,6 +61,7 @@ impl Compose {
             skills: vec![],
             skill_owner: None,
             skill_choice: 0,
+            skill_query: None,
             skill_generation: 0,
             skill_loading: false,
             skill_fetched: None,
@@ -961,7 +967,10 @@ mod tests {
                 this.compose.skills = vec![json!({"slug":"review","name":"Review","description":"Review changes"}), json!({"slug":"write","name":"Write"})];
             });
             cx.simulate_input("/");
-            cx.simulate_keystrokes("up down down");
+            cx.simulate_keystrokes("up");
+            view.read_with(cx, |this, _| assert_eq!(this.compose.skill_choice, 1));
+            cx.simulate_keystrokes("down down");
+            view.read_with(cx, |this, _| assert_eq!(this.compose.skill_choice, 1));
             cx.simulate_keystrokes(select);
             view.update_in(cx, |this, window, cx| {
                 assert_eq!(this.compose.input.read(cx).content.as_ref(), "é🙂 (/write ");
