@@ -30,4 +30,4 @@ Unavailable host tools: Cursor control-ui and cursor-team-kit deslop. Use serial
 
 ## CI proof
 
-Pending exact-head GitHub CI; no local execution performed.
+Initial run `https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40292296290` compiled and ran native tests on Linux, Windows, and macOS. Each reported `244 passed; 1 failed`: the new failed-request assertion expected the full message while `layout.rs:184` deliberately captures only 40 characters. Actual output was `Task is not available offline. Sync this`. The fetch/render/cache and late-response tests passed on all three. Corrected the observation to the existing capture contract, matched the comments mock URL, and strengthened success coverage to click a real uncached inbox row. Final exact-head receipt is retained externally; no local execution performed.

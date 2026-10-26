@@ -1,5 +1,5 @@
 use super::*;
-use crate::ui::shell::tests::{draw, measured};
+use crate::ui::shell::tests::{click, draw, measured};
 use gpui::{VisualTestContext, WindowHandle};
 use ht_core::{Transport, http::{Response, TransportError}};
 use serde_json::{Value, json};
@@ -17,7 +17,7 @@ impl Transport for TaskServer {
             "/tasks?task_id=101" => self.response.take().ok_or(TransportError::Offline)?
                 .recv_timeout(Duration::from_secs(10)).unwrap()?,
             "/user/context" => json!({"success":true,"user":{"id":42}}),
-            "/comments?task_id=101" => json!({"success":true,"comments":[],"total":0}),
+            "/comments?task_id=101&limit=50&offset=0&sort_order=desc" => json!({"success":true,"comments":[],"total":0}),
             "/drafts?task_id=101" => json!({"success":true,"drafts":[]}),
             _ => return Err(TransportError::InvalidResponse),
         };
@@ -78,8 +78,17 @@ fn opening_uncached_task_fetches_renders_and_caches_server_response(cx: &mut gpu
     let (view, mut cx, send, requests, directory) = setup(cx);
     view.update(&mut cx, |this, _, cx| {
         assert!(this.db.task(101).unwrap().is_none());
-        this.open_task(101, cx);
+        this.db.apply_response(&json!({"success":true,"user_notifications":[{
+            "id":901,"taskId":101,"projectId":15,"status":"Normal","seen":true,
+            "createdAt":"2026-10-20T12:00:00Z",
+            "task":{"title":"Human-authored task","ticketNumber":"FID-101"}
+        }]})).unwrap();
+        this.reload();
+        this.split = this.splits.iter().position(|split| split == "All").unwrap();
+        this.filter_inbox();
+        cx.notify();
     }).unwrap();
+    click(view, &mut cx, "inbox.row.0");
     assert_eq!(measured(view, &mut cx, "task.unavailable")["text"], "Loading...");
     let response = response();
     let title = response["tasks"][0]["title"].clone();
@@ -102,7 +111,7 @@ fn failed_uncached_task_request_shows_offline_only_after_failure(cx: &mut gpui::
     send.send(Err(TransportError::Offline)).unwrap();
     finish(view, &mut cx);
     assert_eq!(measured(view, &mut cx, "task.unavailable")["text"],
-        "Task is not available offline. Sync this task first.");
+        "Task is not available offline. Sync this task first.".chars().take(40).collect::<String>());
     assert!(requests.lock().unwrap().iter().any(|p| p == "/tasks?task_id=101"));
     view.read_with(&mut cx, |this, _| assert!(this.db.task(101).unwrap().is_none())).unwrap();
 }
