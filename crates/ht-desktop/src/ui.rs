@@ -1364,7 +1364,7 @@ impl Desktop {
                                             let name = person["displayName"].as_str().unwrap_or("");
                                             div().size(px(22.)).rounded_full().bg(color(t.active)).text_color(color(t.text))
                                                 .font_weight(FontWeight::SEMIBOLD).flex().items_center().justify_center()
-                                                .child(avatar_initials(name)).layout_key(&self.layout, format!("board.card.{index}.assignee.{i}"), Some(name.to_owned()))
+                                                .child(avatar_initials(name)).layout_key(&self.layout, format!("board.card.{index}.assignee.{i}"), Some(avatar_initials(name)))
                                         }))
                                         .layout_key(
                                             &self.layout,

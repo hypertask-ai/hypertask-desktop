@@ -274,7 +274,7 @@ fn data4_task_fields_use_web_names_indices_and_relative_dates(cx: &mut gpui::Tes
                 "dueDate":"2030-01-02T13:00:00Z","labels":[{"id":"tag","name":"Real tag"}],
                 "assignees":[{"id":1,"email":"not-a-name@example.test"},{"id":2,"displayName":"Person Name"},{"id":3,"displayName":"Owner","agent":{"id":"runner","displayName":"Agent Name"}}]}]}),
             json!({"success":true,"tasks":[{"id":102,"projectId":15,"title":"Actual child","ticketNumber":"REAL-2","status":"Normal"}]}),
-            json!({"success":true,"comments":[{"id":7,"taskId":101,"text":"<p>Real comment</p>","createdAt":now,"agent":{"displayName":"Live agent"},"agent_display_name":"Old stored name","creator":{"displayName":"Owner"}}],"total":1}),
+            json!({"success":true,"comments":[{"id":7,"taskId":101,"text":"<p>Real comment</p>","createdAt":now,"agent":{"displayName":"Live agent"},"agent_display_name":"Old stored name","creator":{"displayName":"Owner"},"reactions":[{"id":"r1","emoji":"👍","userId":42,"user":{"id":42,"displayName":"Real person"}},{"id":"r2","emoji":"👍","userId":8,"isAgent":true,"agent":{"displayName":"Real reactor"}}]}],"total":1}),
         ])));
         sync.task(101).unwrap();
         sync.task(102).unwrap();
@@ -296,6 +296,7 @@ fn data4_task_fields_use_web_names_indices_and_relative_dates(cx: &mut gpui::Tes
     assert_eq!(measured(view, &mut cx, "task.property.4.value")["text"], due);
     assert_eq!(measured(view, &mut cx, "task.comment.0.author")["text"], "Live agent");
     assert_eq!(measured(view, &mut cx, "task.comment.0.timestamp")["text"], "Just now");
+    assert_eq!(measured(view, &mut cx, "task.comment.0.reaction.👍")["text"], "👍 2");
     assert_eq!(measured(view, &mut cx, "task.subtask.0")["text"], "REAL-2 Actual child");
     click(view, &mut cx, "task.subtask.0");
     assert_eq!(measured(view, &mut cx, "task.title")["text"], "Actual child");
@@ -340,7 +341,7 @@ fn data4_board_shows_real_assignees_size_and_three_tags(cx: &mut gpui::TestAppCo
     let mut cx=VisualTestContext::from_window(view.into(),cx);
     draw(view,&mut cx);
     assert_eq!(measured(view,&mut cx,"board.card.0.indicator")["bg"],"#ffcb33");
-    for (key,text) in [("priority","High"),("size","S"),("label","One"),("label.1","Two"),("label.2","Three"),("labels.more","+1"),("assignee.0","First Person"),("agent.0","Real Runner"),("comments","4")] {
+    for (key,text) in [("priority","High"),("size","S"),("label","One"),("label.1","Two"),("label.2","Three"),("labels.more","+1"),("assignee.0","FP"),("agent.0","Real Runner"),("comments","4")] {
         assert_eq!(measured(view,&mut cx,&format!("board.card.0.{key}"))["text"],text);
     }
     view.read_with(&mut cx,|this,_| {
@@ -436,4 +437,20 @@ fn data4_inbox_renders_web_kinds_actors_indicators_and_metadata(cx: &mut gpui::T
             assert_eq!(actual,colors);assert!(this.db.mutations().unwrap().is_empty());
         }).unwrap();
     }
+}
+
+#[test]
+fn data4_web_constants_and_grapheme_initials_reject_raw_label_fallbacks() {
+    use serde_json::json;
+    for (index, compact, full) in [(0,"No size","-"),(2,"XS","Extra small"),(3,"S","Small"),(4,"M","Medium"),(5,"L","Large"),(6,"XL","Extra large")] {
+        let estimate=json!({"estimate_index":index,"estimate_value":"not the display field"});
+        assert_eq!(estimate_name(&estimate,false),compact);
+        assert_eq!(estimate_name(&estimate,true),full);
+    }
+    assert_eq!(estimate_name(&json!({"estimate_index":99,"estimate_value":"invented"}),false),"");
+    for (name,expected) in [("First Middle Last","FL"),("single","SI"),(" e\u{301}lodie  👩‍💻 ","E\u{301}👩‍💻"),("","?")] {
+        assert_eq!(avatar_initials(name),expected);
+    }
+    assert_eq!(short_date("not a date"),"");
+    assert_eq!(priority_name(json!({"priority":{"priority_index":99,"Priority_Value":"invented"}}).as_object().unwrap()),"");
 }

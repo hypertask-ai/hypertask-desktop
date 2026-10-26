@@ -427,8 +427,9 @@ impl Db {
                 let created_at = n["createdAt"].as_str().context("notification createdAt missing")?.to_owned();
                 if display_only {
                     // Identity/source already live in typed fields; retain only rendered metadata.
-                    n.as_object_mut().context("notification object missing")?.retain(|key, _| {
-                        matches!(key.as_str(), "type" | "computedSplit" | "directReply" | "unreadCount" | "project" | "comment" | "task" | "message" | "commentId" | "userId" | "reaction" | "staleNudgeDays" | "returnedFromReminders")
+                    n.as_object_mut().context("notification object missing")?.retain(|key, value| {
+                        matches!(key.as_str(), "type" | "computedSplit" | "directReply" | "unreadCount" | "project" | "comment" | "task")
+                            || (!value.is_null() && matches!(key.as_str(), "message" | "commentId" | "userId" | "reaction" | "staleNudgeDays" | "returnedFromReminders"))
                     });
                     if cfg!(feature = "packed-inbox-metadata") {
                         let old = std::mem::take(n.as_object_mut().unwrap());

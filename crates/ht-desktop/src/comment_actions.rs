@@ -62,6 +62,23 @@ pub(super) fn editor_html(text: &str) -> String {
     format!("<p>{}</p>", escape(text).replace('\n', "<br>"))
 }
 
+fn reactors_label(people: &[(String, bool)]) -> String {
+    if people.is_empty() { return String::new(); }
+    let mine = people.iter().any(|(_, mine)| *mine);
+    let others: Vec<_> = people.iter().filter(|(_, mine)| !mine).map(|(name, _)| name.as_str()).collect();
+    match others.len() {
+        0 => "You (click to remove)".into(),
+        1 if mine => format!("{} and you", others[0]),
+        1 => others[0].to_owned(),
+        _ if people.len() > 5 => {
+            let shown = if mine { 4 } else { 5 };
+            format!("{}{} and +{}", others[..shown].join(", "), if mine { ", you" } else { "" }, people.len() - shown - usize::from(mine))
+        }
+        _ => format!("{}{}{}", others[..others.len()-1].join(", "), if mine { ", " } else { " and " },
+            if mine { format!("{} and you", others.last().unwrap()) } else { others.last().unwrap().to_string() }),
+    }
+}
+
 fn activity(comment: &CommentView) -> bool {
     comment.extra.get("activity").is_some_and(|v| !v.is_null())
         || comment.extra.get("type").and_then(Value::as_str) == Some("activity")
@@ -502,7 +519,7 @@ impl Desktop {
             .chars()
             .take(150)
             .collect::<String>();
-        let mut reactions: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        let mut reactions: BTreeMap<String, Vec<(String, bool)>> = BTreeMap::new();
         for reaction in comment
             .extra
             .get("reactions")
@@ -512,12 +529,12 @@ impl Desktop {
         {
             if let Some(emoji) = reaction["emoji"].as_str() {
                 let who = reaction
-                    .pointer("/agent/displayName")
-                    .or_else(|| reaction.pointer("/user/displayName"))
-                    .and_then(Value::as_str)
-                    .map(str::to_owned)
-                    .unwrap_or_else(|| reaction["userId"].to_string());
-                reactions.entry(emoji.into()).or_default().push(who);
+                    .pointer("/agent/displayName").and_then(Value::as_str)
+                    .or_else(|| reaction.pointer("/user/displayName").and_then(Value::as_str))
+                    .unwrap_or("").to_owned();
+                let mine = reaction["isAgent"] != true && reaction["agent"].is_null()
+                    && reaction["userId"].as_i64().is_some_and(|id| self.db.current_user_id() == Some(id));
+                reactions.entry(emoji.into()).or_default().push((who, mine));
             }
         }
         div()
@@ -708,7 +725,8 @@ impl Desktop {
                             .bg(color(t.hover))
                             .cursor_pointer()
                             .child(format!("{emoji} {}", people.len()))
-                            .tooltip(move |_, cx| comment_tooltip(people.join(", "), cx))
+                            .layout_key(&self.layout, format!("task.comment.{i}.reaction.{emoji}"), Some(format!("{emoji} {}", people.len())))
+                            .tooltip(move |_, cx| comment_tooltip(reactors_label(&people), cx))
                             .on_click(cx.listener(move |this, _, _, cx| {
                                 cx.stop_propagation();
                                 this.react_comment(id, &e, cx);
@@ -1277,4 +1295,20 @@ mod tests {
         }}
     }
 
+}
+
+#[cfg(test)]
+mod fidelity_reaction_tests {
+    use super::*;
+    #[test]
+    fn data4_reaction_names_use_web_labels_not_database_ids() {
+        for (people, expected) in [
+            (vec![], ""),
+            (vec![("".into(), false)], ""),
+            (vec![("Me".into(), true)], "You (click to remove)"),
+            (vec![("Real person".into(), false), ("Me".into(), true)], "Real person and you"),
+            (vec![("First".into(), false),("Second".into(), false)], "First and Second"),
+            (vec![("First".into(), false),("Second".into(), false),("Me".into(), true)], "First, Second and you"),
+        ] { assert_eq!(reactors_label(&people), expected); }
+    }
 }
