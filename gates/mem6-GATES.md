@@ -58,3 +58,12 @@ comparison prove the original glyph/decorations/geometry remain. The pinned GPUI
 crate is vendored with its unchanged license because these fields are private;
 unsafe casts or mutating shared Cargo sources were rejected. The large source
 import is mechanical; only two upstream source files change.
+
+CI 40283074283 compiled the vendored crate on ARM64 and all platforms. The new
+regression incorrectly equated font-run count with decoration count; the headless
+text system returns one font run for the same font. Replaced that internal-shape
+assertion with real painting of 64 alternating underline styles: require all 64
+callback byte ranges and colors, plus wrapped-line painting and split lengths.
+No production capacity or visual/memory acceptance is changed. The supplied
+watcher hit the shared user's rate limit; direct read-only GitHub API logs retain
+the actual failure. No test/build ran on this host.
