@@ -41,3 +41,23 @@ The assertion incorrectly compared the selector against the pre-toolbar card.
 The correction compares both bounds from the same current frame, retaining
 exact 12px/8px offsets, 15px size and painted visibility checks.
 All 264 pre-existing desktop tests passed on each platform in that run.
+
+Board unit exact-head receipt passed for 55afbe460c584a0718adb6a0aa6aed906ecc1ca8,
+CI https://github.com/hypertask-ai/hypertask-desktop/actions/runs/40324161571.
+Eight applicable jobs succeeded. Historical memory comparison skipped.
+Supplied receipt returned DESKTOP_CI_VERIFIED. Shared quota blocked ordinary
+watch/download transport; a process-local adapter reused the installed shared
+reader's existing auth and watched at 60-second intervals. No shared tool edits.
+
+Inbox unit restores the existing web timestamp outside the selected row instead
+of painting archive/remind on every row. Source NotificationRow.tsx:81-101,
+109-126 specifies 62px action reserve, 57px timestamp minimum, 13px text and
+selected-only actions. NotificationRow.tsx:55-58 drives pointer selection.
+Token authority src/lib/configs/inbox.config.ts:145-146 and
+src/styles/tailwindThemes/graphite.css:55 gives #8e9093.
+src/styles/tailwind-entry.css:10-11 supplies the inherited 1.5 line-height.
+Relative time comes from src/utils/generateTime.ts:1-30 and the equivalent
+src/lib/firstScreen/display.ts:5-24. No sample-specific dates are hard-coded.
+Native tests inbox_selected_actions_replace_web_timestamp_without_moving_content
+and inbox_timestamp_uses_web_relative_time_boundaries_and_year pin these values.
+Existing archive/reminder click/queue tests remain unchanged.
