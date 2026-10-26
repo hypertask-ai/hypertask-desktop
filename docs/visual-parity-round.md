@@ -331,4 +331,3 @@ The inventory retains missing actions, hover-only card controls, Windows text
 metrics, content differences and collector omissions. No task-open, first-run,
 author, task-summary or draft-marker code changes. No local build/test/lint/app
 execution and no laptop access. Self-review only; no independent agent claimed.
-
