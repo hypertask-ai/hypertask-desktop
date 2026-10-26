@@ -376,7 +376,8 @@ mod tests {
             let painted = cx.update(|window, _| {
                 let origin = point(px(selector["x"].as_f64().unwrap() as f32), px(selector["y"].as_f64().unwrap() as f32)).scale(window.scale_factor());
                 window.painted_quads().iter().any(|quad| {
-                    quad.bounds.origin == origin && quad.border_color.a > 0.
+                    quad.bounds.origin == origin
+                        && quad.border_color == if selected { color(0x4455bb) } else { rgba(0x0000001a).into() }
                         && quad.bounds.size.width == px(15.).scale(window.scale_factor())
                 })
             });
