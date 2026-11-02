@@ -60,11 +60,11 @@ def resolve_web_face(fetch):
     return faces[0]
 
 
-def pinned_web_face(fetch):
+def pinned_web_face(fetch, expected=WEB_DIGEST):
     url = resolve_web_face(fetch)
     data = fetch(url)
     digest = hashlib.sha256(data).hexdigest()
-    assert digest == WEB_DIGEST, f"{url} hashes to {digest}, not the pinned {FAMILY} face"
+    assert digest == expected, f"{url} hashes to {digest}, not the pinned {FAMILY} face"
     return url, data
 
 
@@ -80,41 +80,34 @@ def self_test():
     )
     html = '<link rel="stylesheet" href="/_next/static/css/aaaa.css"><link rel="stylesheet" href="/_next/static/css/aaaa.css">'
     latin = APP + "_next/static/media/cccc-s.p.woff2"
-    fonts = {latin: b"pinned bytes"}
-    digests = {latin: hashlib.sha256(fonts[latin]).hexdigest()}
+    pinned = hashlib.sha256(b"pinned bytes").hexdigest()
 
-    def served(url, css=sheet, fonts=fonts):
+    def served(url, css=sheet, font=b"pinned bytes"):
         if url.endswith(".css"):
             return css.encode()
         if url == APP:
             return html.encode()
-        return fonts[url]
+        return font
 
-    global WEB_DIGEST
-    pinned = WEB_DIGEST
-    try:
-        WEB_DIGEST = digests[latin]
-        assert pinned_web_face(served)[0] == latin
+    assert pinned_web_face(served, pinned)[0] == latin
 
-        def refused(fetch, why):
-            try:
-                pinned_web_face(fetch)
-            except AssertionError:
-                return
-            raise AssertionError(f"accepted {why}")
+    def refused(fetch, why):
+        try:
+            pinned_web_face(fetch, pinned)
+        except AssertionError:
+            return
+        raise AssertionError(f"accepted {why}")
 
-        refused(lambda url, css=sheet: served(url, css=css, fonts={latin: b"changed bytes"}), "changed font bytes")
-        refused(lambda url: served(url, css=sheet.replace("IBM Plex Sans", "IBM Plex Mono")), "a missing family")
-        refused(lambda url: served(url, css=sheet.replace("u+00??,u+2000-206f", "u+2000-206f")), "a non-latin subset")
-        refused(
-            lambda url: served(
-                url,
-                css=sheet + "@font-face{font-family:IBM Plex Sans;src:url(/_next/static/media/eeee-s.woff2);unicode-range:u+00??}",
-            ),
-            "two latin faces",
-        )
-    finally:
-        WEB_DIGEST = pinned
+    refused(lambda url: served(url, font=b"changed bytes"), "changed font bytes")
+    refused(lambda url: served(url, css=sheet.replace("IBM Plex Sans", "IBM Plex Mono")), "a missing family")
+    refused(lambda url: served(url, css=sheet.replace("u+00??,u+2000-206f", "u+2000-206f")), "a non-latin subset")
+    refused(
+        lambda url: served(
+            url,
+            css=sheet + "@font-face{font-family:IBM Plex Sans;src:url(/_next/static/media/eeee-s.woff2);unicode-range:u+00??}",
+        ),
+        "two latin faces",
+    )
     print("WEB_FONT_SOURCE_SELFTEST_OK")
 
 
