@@ -4,12 +4,16 @@ import { readFileSync, writeFileSync } from 'node:fs';
 import { chromium } from 'playwright';
 
 // src/lib/fonts/ibmPlexSans.ts:3; src/styles/tailwindThemes/graphite.css:171-172.
-const url = 'https://app.hypertask.ai/_next/static/media/26d4368bf94c0ec4-s.woff2';
+// The app's media filename rotates on rebuild; layout-font-assets.py resolves the
+// latin face from the served stylesheet and pins its SHA-256 content.
+const source = JSON.parse(readFileSync('evidence/web-fonts/source.json', 'utf8'));
+assert.ok(source.web?.url, 'run gates/layout-font-assets.py first to resolve the app font');
+const url = source.web.url;
 const response = await fetch(url);
 assert.equal(response.status, 200);
 const font = Buffer.from(await response.arrayBuffer());
 const digest = createHash('sha256').update(font).digest('hex');
-assert.equal(digest, '056e4e2459f57a0033c8c9c844ff19d6e42ac8602027803d4345823bcc939818');
+assert.equal(digest, source.web.digest);
 const browser = await chromium.launch({ headless: true });
 try {
   const page = await browser.newPage({ viewport: { width: 1920, height: 1009 }, deviceScaleFactor: 1 });

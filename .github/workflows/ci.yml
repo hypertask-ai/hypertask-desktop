@@ -71,6 +71,7 @@ jobs:
         if: runner.os == 'Linux'
         run: |
           python3 -m pip install fonttools==4.60.1 brotli==1.1.0
+          python3 gates/layout-font-assets.py --self-test
           python3 gates/layout-font-assets.py
           python3 gates/layout-font-freetype.py
       - name: Upload web font faces
