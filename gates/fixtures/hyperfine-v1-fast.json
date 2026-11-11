@@ -1,0 +1,19 @@
+{
+  "results": [
+    {
+      "command": "ht-desktop --exit-after-ready",
+      "mean": 0.264,
+      "stddev": 0.005,
+      "median": 0.262,
+      "user": 0.2,
+      "system": 0.05,
+      "min": 0.258,
+      "max": 0.271,
+      "times": [
+        0.262,
+        0.271,
+        0.258
+      ]
+    }
+  ]
+}

@@ -7,6 +7,17 @@ concurrency:
   group: bench-${{ github.ref }}
   cancel-in-progress: true
 jobs:
+  cold-start-report:
+    name: cold-start-report
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Fast report prints every sample and slow report fails
+        run: node gates/cold-start-report.test.mjs
   bench:
     name: bench-macos-gpu
     runs-on: macos-15
