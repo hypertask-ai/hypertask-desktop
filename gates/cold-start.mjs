@@ -1,7 +1,7 @@
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { APP, buildRelease, run, seedLargeBoard, withXvfb } from './lib.mjs';
+import { APP, ROOT, buildRelease, run, seedLargeBoard, withXvfb } from './lib.mjs';
 
 const BUDGET_MS = 300;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ht-cold-'));
