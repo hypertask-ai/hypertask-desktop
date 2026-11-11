@@ -14,6 +14,9 @@ await withXvfb(async () => {
   run('hyperfine', ['--warmup', '2', '--runs', '15', '--export-json', report,
     `${APP} --db ${db} --offline --screen board --board 15 --exit-after-ready`]);
 });
+const evidence = path.join(ROOT, 'evidence/cold-start');
+fs.mkdirSync(evidence, { recursive: true });
+fs.copyFileSync(report, path.join(evidence, 'hyperfine.json'));
 const { results } = JSON.parse(fs.readFileSync(report, 'utf8'));
 const medianMs = results[0].median * 1000;
 console.log(`cold start median ${medianMs.toFixed(1)} ms over ${results[0].times.length} runs (budget ${BUDGET_MS} ms)`);

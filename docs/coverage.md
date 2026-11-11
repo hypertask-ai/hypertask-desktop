@@ -36,3 +36,14 @@ Baseline proof passed for all four cases at `97d0f04c16d7b80c7ab7165a00246e7b8c3
 `windows-input` retains `baseline/`, `broken/`, and `restored/` per-case receipts, screenshots, snapshots, and SQLite backups. `negative-control.patch` records four distinct production write suppressions in one hosted-only build. Every case runs in its own process and database. The gate requires native key acknowledgement and two further frames before checking these synchronous write effects. Missing-effect controls must retain an empty mutation queue. This suite is not an idle-render soak test. Each rejection must be `EffectMissing`, with its matching production suppression marker. Startup, typing, focus, database, and cleanup failures cannot pass as rejection proof. Source and executable bytes are restored before all four cases must pass again. `negative-control.json` binds both executable hashes, source restoration, revision agreement, and control cleanup. Latest exact-head proof is recorded on [draft PR checks](https://github.com/hypertask-ai/hypertask-desktop/pull/31/checks). Accept only completed green CI with `NATIVE_INPUT_CONTROLS_VERIFIED` and all four restored cases.
 
 The native Windows result does not certify Intel hardware pixels. Linux screenshots do not certify Windows pixels. Neither proves live authorization. Unmigrated cases remain covered only at their recorded layer.
+
+## HTPR-7381 acceptance jobs
+
+The Bench workflow measures three budgets outside the app's own log line.
+
+- Cold start: `gates/cold-start.mjs` runs Hyperfine on macOS and writes `evidence/cold-start/hyperfine.json`. The median must be under 300 ms.
+- Input to frame: `gates/presentmon-frame.ps1` sends operating-system keystrokes on Windows while PresentMon 2.6 records. `gates/presentmon-score.py` reads `MsAllInputToPhotonLatency` and `MsBetweenPresents`. Input-to-photon p95 must be under 16 ms.
+- Memory: `gates/memory.mjs` builds the input benchmark and keeps the 100 MB cap.
+- Live readback: `gates/live-readback.py` creates a probe task, writes a title and a comment through `ht-core-cli`, archives one of the signed-in account's inbox rows, then reads each result back with a separate API GET. It deletes the probe and unarchives the inbox row before it exits. It runs only when Bench is dispatched by hand with `HT_TOKEN` set. It does not run on pull requests.
+
+Theme captures for Porcelain, Graphite, AMOLED and Dia land in `evidence/theme-pixels`. Light and Graphite 2 are not desktop themes, so this job does not score them. Pixel scores against the live app run only when `gates/fixtures/live-theme-pixels/<theme>/<screen>.png` is present.
