@@ -53,7 +53,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        os: [ubuntu-24.04, windows-2025, macos-15]
+        os: [ubuntu-24.04, macos-15]
     runs-on: ${{ matrix.os }}
     timeout-minutes: 60
     steps:
@@ -111,17 +111,6 @@ jobs:
             target/compose-live-requests.json
           if-no-files-found: error
       - run: cargo build --release -p ht-desktop -p ht-core
-      - name: Hosted Windows interaction dependencies
-        if: runner.os == 'Windows'
-        run: python -m pip install Pillow==11.3.0
-      - name: Web-source Windows advances and unopted text preservation
-        if: runner.os == 'Windows'
-        run: cargo test --release -p gpui_windows --lib web_pixel_advances_preserve_unopted_text -- --nocapture
-      - name: Native Windows interactions
-        if: runner.os == 'Windows'
-        run: python gates/windows-input.py
-        env:
-          HT_VERIFY_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
       - name: Layout dump contract
         if: runner.os == 'Linux'
         run: xvfb-run -a -s '-screen 0 1920x1009x24' python3 gates/layout-dump.py
@@ -176,72 +165,6 @@ jobs:
             evidence/layout/**/*.json
             evidence/layout/**/*.txt
           if-no-files-found: error
-      - name: Windows memory (three runs per screen)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: >-
-          ./gates/windows-memory.ps1
-          -Exe target/release/ht-desktop.exe
-          -CoreExe target/release/ht-core-cli.exe
-          -Fixtures fixtures/demo
-          -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
-          -Out evidence/windows-memory
-          -StartupProof
-      - name: Validate Windows memory receipt
-        if: runner.os == 'Windows'
-        run: python gates/windows-memory-check.py evidence/windows-memory --owners --budget gates/windows-memory-budget.json
-      - name: Upload Windows memory
-        if: runner.os == 'Windows' && always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-memory
-          path: evidence/windows-memory/
-          if-no-files-found: error
-      - name: Generate heavy account
-        if: runner.os == 'Windows'
-        run: python gates/heavy-fixture.py evidence/heavy-fixtures
-      - name: Heavy account Windows memory (three runs per screen)
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: >-
-          ./gates/windows-memory.ps1
-          -Exe target/release/ht-desktop.exe
-          -CoreExe target/release/ht-core-cli.exe
-          -Fixtures evidence/heavy-fixtures
-          -HeavyManifest evidence/heavy-manifest.json
-          -AiHistory evidence/heavy-ai-history.json
-          -Assets evidence/heavy-assets
-          -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
-          -Out evidence/windows-memory-heavy
-          -StartupProof
-      - name: Validate heavy account receipt
-        if: runner.os == 'Windows'
-        run: python gates/heavy-memory-check.py evidence/windows-memory-heavy --budget gates/windows-memory-heavy-budget.json
-      - name: Upload heavy Windows memory
-        if: runner.os == 'Windows' && always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-memory-heavy
-          path: evidence/windows-memory-heavy/
-          if-no-files-found: error
-      - name: Windows reference-content capture
-        if: runner.os == 'Windows'
-        shell: pwsh
-        run: ./gates/windows-memory.ps1 -Exe target/release/ht-desktop.exe -CoreExe target/release/ht-core-cli.exe -Fixtures gates/fixtures/visual3 -TaskId 103 -Revision '${{ github.event.pull_request.head.sha || github.sha }}' -Out evidence/windows-visual3
-      - name: Upload Windows visual captures
-        if: runner.os == 'Windows' && always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-visual3
-          path: evidence/windows-visual3/**
-          if-no-files-found: error
-      - name: Upload Windows app
-        if: runner.os == 'Windows'
-        uses: actions/upload-artifact@v4
-        with:
-          name: hypertask-desktop-windows
-          path: target/release/ht-desktop.exe
-          retention-days: 14
       - name: Upload Linux app
         if: runner.os == 'Linux'
         uses: actions/upload-artifact@v4
@@ -256,18 +179,6 @@ jobs:
           name: hypertask-desktop-mac-arm64
           path: target/release/ht-desktop
           retention-days: 14
-      - name: Native Windows missing-effect controls and restored proof
-        if: runner.os == 'Windows'
-        run: python gates/windows-input-negative.py
-        env:
-          HT_VERIFY_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
-      - name: Upload native Windows input evidence
-        if: runner.os == 'Windows' && always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: windows-input
-          path: evidence/windows-input/
-          if-no-files-found: error
       - name: Opt-in input benchmark smoke
         if: runner.os == 'Linux'
         run: |
@@ -277,6 +188,184 @@ jobs:
           set -o pipefail
           xvfb-run -a -s '-screen 0 1440x900x24' target/release/ht-desktop --db "$db_dir/local.db" --offline --screen inbox --bench-input 4 | tee "$db_dir/benchmark.txt"
           grep 'INPUT_TO_FRAME n=4 ' "$db_dir/benchmark.txt"
+
+  windows-2025:
+    name: windows-2025
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo build --release -p ht-desktop -p ht-core
+      - name: Upload the release binaries the gates reuse
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-release-bin
+          path: |
+            target/release/ht-desktop.exe
+            target/release/ht-core-cli.exe
+            target/release/*.dll
+          retention-days: 1
+      - name: Upload Windows app
+        uses: actions/upload-artifact@v4
+        with:
+          name: hypertask-desktop-windows
+          path: target/release/ht-desktop.exe
+          retention-days: 14
+
+  windows-tests:
+    name: windows-tests
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test --workspace --release
+        env:
+          HT_QA_COMMENT_ID: ${{ inputs.qa_comment_id || '7' }}
+      - name: Web-source Windows advances and unopted text preservation
+        run: cargo test --release -p gpui_windows --lib web_pixel_advances_preserve_unopted_text -- --nocapture
+
+  windows-memory:
+    name: windows-memory
+    needs: windows-2025
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download the release binaries built once
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-bin
+          path: target/release
+      - name: Hosted Windows interaction dependencies
+        run: python -m pip install Pillow==11.3.0
+      - name: Windows memory (three runs per screen)
+        shell: pwsh
+        run: >-
+          ./gates/windows-memory.ps1
+          -Exe target/release/ht-desktop.exe
+          -CoreExe target/release/ht-core-cli.exe
+          -Fixtures fixtures/demo
+          -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
+          -Out evidence/windows-memory
+          -StartupProof
+      - name: Validate Windows memory receipt
+        run: python gates/windows-memory-check.py evidence/windows-memory --owners --budget gates/windows-memory-budget.json
+      - name: Upload Windows memory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-memory
+          path: evidence/windows-memory/
+          if-no-files-found: error
+
+  windows-memory-heavy:
+    name: windows-memory-heavy
+    needs: windows-2025
+    runs-on: windows-2025
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download the release binaries built once
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-bin
+          path: target/release
+      - name: Hosted Windows interaction dependencies
+        run: python -m pip install Pillow==11.3.0
+      - name: Generate heavy account
+        run: python gates/heavy-fixture.py evidence/heavy-fixtures
+      - name: Heavy account Windows memory (three runs per screen)
+        shell: pwsh
+        run: >-
+          ./gates/windows-memory.ps1
+          -Exe target/release/ht-desktop.exe
+          -CoreExe target/release/ht-core-cli.exe
+          -Fixtures evidence/heavy-fixtures
+          -HeavyManifest evidence/heavy-manifest.json
+          -AiHistory evidence/heavy-ai-history.json
+          -Assets evidence/heavy-assets
+          -Revision '${{ github.event.pull_request.head.sha || github.sha }}'
+          -Out evidence/windows-memory-heavy
+          -StartupProof
+      - name: Validate heavy account receipt
+        run: python gates/heavy-memory-check.py evidence/windows-memory-heavy --budget gates/windows-memory-heavy-budget.json
+      - name: Upload heavy Windows memory
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-memory-heavy
+          path: evidence/windows-memory-heavy/
+          if-no-files-found: error
+
+  windows-visual:
+    name: windows-visual
+    needs: windows-2025
+    runs-on: windows-2025
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download the release binaries built once
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-bin
+          path: target/release
+      - name: Windows reference-content capture
+        shell: pwsh
+        run: ./gates/windows-memory.ps1 -Exe target/release/ht-desktop.exe -CoreExe target/release/ht-core-cli.exe -Fixtures gates/fixtures/visual3 -TaskId 103 -Revision '${{ github.event.pull_request.head.sha || github.sha }}' -Out evidence/windows-visual3
+      - name: Upload Windows visual captures
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-visual3
+          path: evidence/windows-visual3/**
+          if-no-files-found: error
+
+  windows-input:
+    name: windows-input
+    needs: windows-2025
+    runs-on: windows-2025
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Download the release binaries built once
+        uses: actions/download-artifact@v4
+        with:
+          name: windows-release-bin
+          path: target/release
+      - name: Hosted Windows interaction dependencies
+        run: python -m pip install Pillow==11.3.0
+      - name: Native Windows interactions
+        run: python gates/windows-input.py
+        env:
+          HT_VERIFY_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Native Windows missing-effect controls and restored proof
+        run: python gates/windows-input-negative.py
+        env:
+          HT_VERIFY_REVISION: ${{ github.event.pull_request.head.sha || github.sha }}
+      - name: Upload native Windows input evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-input
+          path: evidence/windows-input/
+          if-no-files-found: error
+
   windows-arm64:
     name: windows-arm64
     runs-on: windows-2025
@@ -383,9 +472,10 @@ jobs:
     name: Windows memory receipt and budget
     # Comparative baselines run for ram2/mem2/mem3/mem5/mem6; frozen budgets apply on every PR/main.
     if: >-
-      ${{ !cancelled() && needs.build.result == 'success' &&
+      ${{ !cancelled() && needs.windows-2025.result == 'success' &&
+      needs.windows-memory.result == 'success' && needs.windows-memory-heavy.result == 'success' &&
       (github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref == 'refs/heads/main')) }}
-    needs: [build, windows-memory-baselines]
+    needs: [windows-2025, windows-memory, windows-memory-heavy, windows-memory-baselines]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@v4
