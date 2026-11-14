@@ -338,6 +338,7 @@ class Gate:
         self.reopen = []
         self.created_tasks = []
         self.notification_archived = None
+        self.inbox_reminder = None
         self.board_title = None
         self.extra_columns = []
         self.timer_task = None
@@ -503,6 +504,102 @@ def timer_kind(gate, task):
     running = api("GET", "/time/running")
     need(not timer_running_on(running, task), f"API timer still running: GET /time/running said {redact(json.dumps(running)[:400])}")
     gate.timer_task = None
+
+
+# hypertask-ai/hypertask. Two live-app rules make a remind unrecoverable through /inbox/* alone.
+# 1. The inbox list hides every notification whose task holds a Normal Reminder
+#    (src/utils/controllers/notifications/getAll.ts:138-143 exposes the same predicate as
+#    src/utils/controllers/notifications/visibleInboxScope.ts:24-37).
+# 2. Unarchive only flips the notification back to Normal and clears archivedAt
+#    (src/lib/mcp/operations/inbox/unarchive/operation.ts:56-68). It never touches the Reminder,
+#    nor the My Tasks snooze the remind set (src/lib/mcp/operations/inbox/archive/operation.ts:170-177).
+# So a reminded and unarchived row stays invisible for the whole remind window, and a reminder the
+# gate leaves behind is a reminder it left on the account.
+# The app's own cancel-reminder write is "take the task out of the inbox": with a human token it
+# archives the task's Normal TaskMovedToInbox notifications and sets every Normal Reminder on the
+# task to Archive (src/lib/taskCardActions/inboxState.ts:94-111, the reminder write guarded by
+# `input.agentId == null` at lines 100-110). That is POST /api/mcp/tasks/card-actions
+# (src/app/api/mcp/tasks/card-actions/route.ts:1-5, body and 403 rules in
+# src/lib/mcp/tasks/cardActionHandler.ts:127-164) behind the same Bearer token as every other call
+# here, and it is the route the desktop CLI itself sends for MoveToInbox
+# (crates/ht-core/src/board_write.rs:85). crates/ht-core/src/queue.rs:9-45 `Write` has no
+# cancel-reminder variant, so this gate calls that route instead of adding an untested Rust write.
+INBOX_CARD_ACTION = "/tasks/card-actions"
+
+
+def inbox_rows():
+    listing = api("GET", "/inbox/list")
+    rows = listing.get("user_notifications")
+    need(isinstance(rows, list), "inbox list response has no user_notifications list")
+    return rows
+
+
+def inbox_row(notification_id):
+    return next((row for row in inbox_rows() if row.get("id") == notification_id), None)
+
+
+def cancel_inbox_reminder(task, project):
+    """Cancel every Normal Reminder on the task and take it out of the Inbox."""
+    response = api("POST", INBOX_CARD_ACTION, {"task_id": task, "project_id": project, "action": "inbox", "active": False})
+    need(
+        response.get("success") is True and response.get("active") is False,
+        f"inbox card action did not report the task out of the inbox: {redact(json.dumps(response)[:300])}",
+    )
+
+
+def inbox_remind_kind(gate, task, project, notification_id):
+    """Remind, unarchive, cancel the Reminder and plain-archive one Inbox row.
+
+    Only ever run on a notification of a task this run created: the remind write archives every
+    Normal notification on the task (hypertask src/lib/mcp/operations/inbox/archive/operation.ts:179-182)
+    and the plain archive write turns every other one on the task into Deleted (same file:212-224),
+    which no route restores. A run-created task carries only run notifications, and deleting it
+    deletes its Reminders, Assignees (so the My Tasks snooze) and Notifications
+    (src/utils/controllers/tasks/invokeTaskDelete.ts:495, 525, 555-560), so the damage dies with it.
+    """
+    context = api("GET", "/user/context")
+    need(
+        not context.get("connected_agent"),
+        "INBOX_REMIND_NEEDS_HUMAN_TOKEN: an agent token cannot clear a Reminder through POST /api/mcp/tasks/card-actions",
+    )
+    remind_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3 * 86400))
+    gate.notification_archived = notification_id
+    gate.inbox_reminder = {"task_id": task, "project_id": project}
+    gate.write({"kind": "inbox_remind", "notification_ids": [notification_id], "remind_at": remind_at})
+    need(not inbox_row(notification_id), f"API still lists the reminded row {notification_id}")
+    restored = api("POST", "/inbox/unarchive", {"notification_ids": [notification_id]})
+    need(restored.get("unarchived_count") == 1, f"unarchive count {restored.get('unarchived_count')}")
+    need(not inbox_row(notification_id), f"notification {notification_id} is visible while its Reminder is still Normal")
+    cancel_inbox_reminder(task, project)
+    restored = api("POST", "/inbox/unarchive", {"notification_ids": [notification_id]})
+    need(restored.get("unarchived_count") == 1, f"unarchive count {restored.get('unarchived_count')} after the reminder was cancelled")
+    row = inbox_row(notification_id)
+    need(
+        row is not None and row.get("status") == "Normal",
+        f"notification {notification_id} is not back in the inbox after its Reminder was cancelled",
+    )
+    # Only now is the Reminder provably gone, so cleanup has nothing left to cancel.
+    gate.inbox_reminder = None
+    gate.write({"kind": "inbox_archive", "notification_id": notification_id})
+    need(not inbox_row(notification_id), f"notification {notification_id} is still active")
+    gate.sync()
+    cached = local(gate.db, "Notification", notification_id) or {}
+    need(cached.get("status") == "Archive", f"local inbox row is {cached.get('status')!r} after an archive and a resync")
+    # The driver in hypertask-ai/hypertask (.github/scripts/desktop-live-readback.py) reads the row id
+    # and its task from this line to prove the run took its own row away with its own task.
+    print(f"INBOX_READBACK notification {notification_id} task {task}")
+    restored = api("POST", "/inbox/unarchive", {"notification_ids": [notification_id]})
+    need(restored.get("unarchived_count") == 1, f"unarchive count {restored.get('unarchived_count')}")
+    need(inbox_row(notification_id) is not None, f"notification {notification_id} did not return to the inbox")
+    gate.notification_archived = None
+    gate.sync()
+    restored_row = local(gate.db, "Notification", notification_id) or {}
+    need(restored_row.get("status") == "Normal", f"local inbox row is {restored_row.get('status')!r} after the restore and a resync")
+    gate.expect_local(
+        "inbox_archive",
+        "Inbox row restored",
+        lambda db: (local(db, "Notification", notification_id) or {}).get("status") == "Normal",
+    )
 
 
 def labels_clear_kind(gate, task):
@@ -755,26 +852,8 @@ def execute(gate):
         need(any(p.get("id") == BOARD and (p.get("title") or p.get("name")) == gate.board_title for p in restored.get("projects", [])), "board title was not restored")
 
     def inbox_archive_and_remind():
-        rows = query(gate.db, 'SELECT id FROM "Notification" WHERE status=\'Normal\' AND id>0 AND taskId IS NOT NULL AND projectId IS NOT NULL ORDER BY id LIMIT 1')
-        need(rows, "INBOX_EMPTY")
-        notification_id = rows[0][0]
-        remind_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3 * 86400))
-        gate.notification_archived = notification_id
-        gate.write({"kind": "inbox_remind", "notification_ids": [notification_id], "remind_at": remind_at})
-        listing = api("GET", "/inbox/list")
-        need(not contains_id(listing.get("user_notifications", []), notification_id) or any(r.get("id") == notification_id and r.get("status") != "Normal" for r in listing.get("user_notifications", [])), "API still lists the reminded row as active")
-        restored = api("POST", "/inbox/unarchive", {"notification_ids": [notification_id]})
-        need(restored.get("unarchived_count") == 1, f"unarchive count {restored.get('unarchived_count')}")
-        gate.sync()
-        gate.write({"kind": "inbox_archive", "notification_id": notification_id})
-        listing = api("GET", "/inbox/list")
-        need(not any(r.get("id") == notification_id and r.get("status") == "Normal" for r in listing.get("user_notifications", [])), f"notification {notification_id} is still active")
-        print(f"INBOX_READBACK notification {notification_id}")
-        gate.expect_local("inbox_archive", "Inbox archive", lambda db: (local(db, "Notification", notification_id) or {}).get("status") != "Normal")
-        restored = api("POST", "/inbox/unarchive", {"notification_ids": [notification_id]})
-        need(restored.get("unarchived_count") == 1, f"unarchive count {restored.get('unarchived_count')}")
-        gate.notification_archived = None
-        gate.reopen[:] = [item for item in gate.reopen if item[0] != "inbox_archive"]
+        need("id" in moved_notification, "no moved-task notification to remind and archive")
+        inbox_remind_kind(gate, assign_task, BOARD, moved_notification["id"])
 
     def labels_clear():
         labels_clear_kind(gate, main_task)
@@ -842,6 +921,9 @@ def cleanup(gate):
 
     if gate.timer_task is not None:
         attempt("stop timer", lambda: stop_running_timer(gate.timer_task))
+    if gate.inbox_reminder is not None:
+        reminder = gate.inbox_reminder
+        attempt("cancel inbox reminder", lambda: cancel_inbox_reminder(reminder["task_id"], reminder["project_id"]))
     if gate.notification_archived is not None:
         attempt("unarchive notification", lambda: api("POST", "/inbox/unarchive", {"notification_ids": [gate.notification_archived]}))
     if gate.board_title:

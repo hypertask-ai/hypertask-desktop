@@ -905,26 +905,240 @@ class LabelReopenCheckTests(GateCase):
         self.assertFalse(self.check([{"name": "gate-label-1"}], None))
 
 
+class InboxWorld:
+    """The live inbox as the gate sees it: one row, one Reminder, one card-action route."""
+
+    def __init__(self, notification_id=41, task=9, project=7049):
+        self.notification_id = notification_id
+        self.task = task
+        self.project = project
+        self.row = {"id": notification_id, "taskId": task, "status": "Normal", "type": "TaskMovedToInbox"}
+        self.reminder = False
+        self.connected_agent = None
+        self.remind_hides = True
+        self.archive_hides = True
+        self.cancel_clears_reminder = True
+        self.unarchive_limit = None
+        self.unarchives = 0
+        self.unarchive_lies_after = None
+        self.local_follows_sync = True
+        self.local_status = "Normal"
+        self.writes = []
+        self.requests = []
+
+    def listing(self):
+        # hypertask getAll.ts:138-143 hides the row while its task holds a Normal Reminder.
+        if self.reminder or self.row["status"] != "Normal":
+            return []
+        return [dict(self.row)]
+
+    def api(self, method, path, body=None):
+        self.requests.append((method, path, body))
+        if path == "/user/context":
+            return {"success": True, "user": {"id": 5}, "connected_agent": self.connected_agent}
+        if path == "/inbox/list":
+            return {"success": True, "user_notifications": self.listing()}
+        if path == "/inbox/unarchive":
+            self.unarchives += 1
+            if self.unarchive_limit is not None and self.unarchives > self.unarchive_limit:
+                return {"success": True, "unarchived_count": 0}
+            if (
+                self.unarchive_lies_after is not None
+                and self.unarchives > self.unarchive_lies_after
+                and self.row["status"] == "Archive"
+            ):
+                return {"success": True, "unarchived_count": 1}
+            count = 0
+            if self.row["status"] == "Archive":
+                self.row["status"] = "Normal"
+                count = 1
+            return {"success": True, "unarchived_count": count}
+        if path == "/tasks/card-actions":
+            # hypertask inboxState.ts:94-111: archive this task's TaskMovedToInbox rows, cancel its Reminders.
+            if self.cancel_clears_reminder:
+                self.reminder = False
+            if self.row["type"] == "TaskMovedToInbox" and self.row["status"] == "Normal":
+                self.row["status"] = "Archive"
+            return {"success": True, "action": "inbox", "active": False}
+        raise AssertionError(f"unexpected request {method} {path}")
+
+    def write(self, payload):
+        self.writes.append(payload)
+        if payload["kind"] == "inbox_remind":
+            if self.remind_hides:
+                self.reminder = True
+                self.row["status"] = "Archive"
+        elif payload["kind"] == "inbox_archive":
+            if self.archive_hides:
+                self.row["status"] = "Archive"
+        self.local_status = "Archive"
+
+    def sync(self):
+        self.local_status = self.row["status"] if self.local_follows_sync else "Normal"
+
+    def local(self, _db, _table, notification_id):
+        if notification_id != self.notification_id:
+            return None
+        return {"id": self.notification_id, "status": self.local_status}
+
+
+class FakeInboxGate:
+    def __init__(self, world):
+        self.db = "db"
+        self.world = world
+        self.reopen = []
+        self.notification_archived = None
+        self.inbox_reminder = None
+        self.synced = 0
+
+    def write(self, payload):
+        self.world.write(payload)
+
+    def sync(self):
+        self.synced += 1
+        self.world.sync()
+
+    def expect_local(self, name, description, check):
+        self.reopen.append((name, description, check))
+
+
+class InboxRemindKindTests(GateCase):
+    def run_kind(self, world):
+        gate = FakeInboxGate(world)
+        with mock.patch.object(gate_module, "api", world.api), mock.patch.object(gate_module, "local", world.local), quiet():
+            gate_module.inbox_remind_kind(gate, world.task, world.project, world.notification_id)
+        return gate
+
+    def run_kind_with_failure(self, world):
+        self.gate = FakeInboxGate(world)
+        with mock.patch.object(gate_module, "api", world.api), mock.patch.object(gate_module, "local", world.local), quiet():
+            with self.assertRaises(gate_module.Failure) as raised:
+                gate_module.inbox_remind_kind(self.gate, world.task, world.project, world.notification_id)
+        return str(raised.exception)
+
+    def test_a_clean_run_reminds_archives_cancels_the_reminder_and_restores_the_row(self):
+        world = InboxWorld()
+        gate = self.run_kind(world)
+        self.assertEqual([write["kind"] for write in world.writes], ["inbox_remind", "inbox_archive"])
+        self.assertEqual([write.get("notification_ids") or [write.get("notification_id")] for write in world.writes], [[41], [41]])
+        self.assertIn(("POST", "/tasks/card-actions", {"task_id": 9, "project_id": 7049, "action": "inbox", "active": False}), world.requests)
+        self.assertEqual(world.row["status"], "Normal")
+        self.assertFalse(world.reminder)
+        self.assertEqual(gate.synced, 2, "the cache must be re-read after the archive and after the restore")
+        self.assertIsNone(gate.notification_archived)
+        self.assertIsNone(gate.inbox_reminder)
+
+    def test_the_kind_only_ever_writes_the_run_row_it_was_given(self):
+        world = InboxWorld()
+        self.run_kind(world)
+        for write in world.writes:
+            ids = write.get("notification_ids") or [write.get("notification_id")]
+            self.assertEqual(set(ids), {world.notification_id})
+
+    def test_the_row_is_proven_hidden_by_the_reminder_before_the_cancel_route_runs(self):
+        world = InboxWorld()
+        self.run_kind(world)
+        paths = [(method, path) for method, path, _ in world.requests]
+        cancel = paths.index(("POST", "/tasks/card-actions"))
+        self.assertEqual(paths[cancel - 1], ("GET", "/inbox/list"))
+        self.assertEqual(paths[cancel - 2], ("POST", "/inbox/unarchive"))
+        self.assertEqual(paths[cancel - 3], ("GET", "/inbox/list"))
+        self.assertLess(cancel, paths.index(("GET", "/inbox/list"), cancel))
+
+    def test_a_cancel_route_that_leaves_the_reminder_fails_and_keeps_the_cleanup_marker(self):
+        world = InboxWorld()
+        world.cancel_clears_reminder = False
+        message = self.run_kind_with_failure(world)
+        self.assertIn("is not back in the inbox after its Reminder was cancelled", message)
+        self.assertEqual(self.gate.inbox_reminder, {"task_id": 9, "project_id": 7049})
+        self.assertEqual([write["kind"] for write in world.writes], ["inbox_remind"])
+
+    def test_an_agent_token_is_refused_before_any_write(self):
+        world = InboxWorld()
+        world.connected_agent = {"id": "agent-1", "displayName": "helper"}
+        message = self.run_kind_with_failure(world)
+        self.assertIn("INBOX_REMIND_NEEDS_HUMAN_TOKEN", message)
+        self.assertEqual(world.writes, [])
+        self.assertIsNone(self.gate.notification_archived)
+
+    def test_a_remind_the_server_does_not_hide_fails(self):
+        world = InboxWorld()
+        world.remind_hides = False
+        self.assertIn("still lists the reminded row", self.run_kind_with_failure(world))
+
+    def test_an_archive_the_server_does_not_hide_fails(self):
+        world = InboxWorld()
+        world.archive_hides = False
+        self.assertIn("is still active", self.run_kind_with_failure(world))
+
+    def test_a_restore_the_server_refuses_fails(self):
+        world = InboxWorld()
+        world.unarchive_limit = 2
+        self.assertIn("unarchive count 0", self.run_kind_with_failure(world))
+
+    def test_the_unarchive_after_the_reminder_cancel_must_report_the_one_row(self):
+        world = InboxWorld()
+        world.unarchive_limit = 1
+        self.assertIn("unarchive count 0 after the reminder was cancelled", self.run_kind_with_failure(world))
+
+    def test_a_restore_the_server_only_claims_fails(self):
+        world = InboxWorld()
+        world.unarchive_lies_after = 2
+        self.assertIn("did not return to the inbox", self.run_kind_with_failure(world))
+
+    def test_a_local_cache_that_keeps_the_row_after_the_archive_fails(self):
+        world = InboxWorld()
+        world.local_follows_sync = False
+        self.assertIn("after an archive and a resync", self.run_kind_with_failure(world))
+
+    def test_the_reopen_check_wants_the_restored_row_in_the_cache(self):
+        world = InboxWorld()
+        gate = self.run_kind(world)
+        self.assertEqual([item[0] for item in gate.reopen], ["inbox_archive"])
+        check = gate.reopen[0][2]
+        with mock.patch.object(gate_module, "local", world.local):
+            self.assertTrue(check("db"))
+            world.local_status = "Archive"
+            self.assertFalse(check("db"))
+
+    def test_the_readback_line_names_the_row_and_the_task_the_run_owns(self):
+        world = InboxWorld()
+        gate = FakeInboxGate(world)
+        printed = io.StringIO()
+        with mock.patch.object(gate_module, "api", world.api), mock.patch.object(gate_module, "local", world.local), redirect_stdout(printed):
+            gate_module.inbox_remind_kind(gate, world.task, world.project, world.notification_id)
+        self.assertEqual(re.findall(r"INBOX_READBACK notification (\d+) task (\d+)", printed.getvalue()), [("41", "9")])
+
+    def test_the_gate_no_longer_borrows_a_preexisting_inbox_row(self):
+        source = GATE_SOURCE.read_text()
+        self.assertNotIn('SELECT id FROM "Notification"', source)
+        self.assertIn('inbox_remind_kind(gate, assign_task, BOARD, moved_notification["id"])', source)
+        self.assertIn("cancel_inbox_reminder(task, project)", source)
+
+
 class CleanupTests(GateCase):
     class Gate:
-        def __init__(self, timer_task):
+        def __init__(self, timer_task, inbox_reminder=None):
             self.timer_task = timer_task
             self.notification_archived = None
+            self.inbox_reminder = inbox_reminder
             self.board_title = None
             self.extra_columns = []
             self.created_tasks = []
 
-    def run_cleanup(self, running, timer_task=9, fail_on=None):
+    def run_cleanup(self, running, timer_task=9, fail_on=None, inbox_reminder=None, notification_archived=None):
         requests = []
 
         def fake(method, path, body=None, base=None):
             requests.append((method, path, body))
             if fail_on == path:
                 raise gate_module.Failure(f"API {method} {path} status 500")
-            return running
+            return {"success": True, "active": False, "unarchived_count": 1, **running}
 
+        gate = CleanupTests.Gate(timer_task, inbox_reminder)
+        gate.notification_archived = notification_archived
         with mock.patch.object(gate_module, "api", fake), quiet():
-            problems = gate_module.cleanup(CleanupTests.Gate(timer_task))
+            problems = gate_module.cleanup(gate)
         return problems, requests
 
     def test_a_timer_still_running_on_the_task_is_stopped(self):
@@ -945,6 +1159,36 @@ class CleanupTests(GateCase):
         problems, _ = self.run_cleanup({"timers": [{"id": 1, "task": {"id": 9}}]}, fail_on="/time/stop")
         self.assertEqual(len(problems), 1)
         self.assertIn("stop timer", problems[0])
+
+    def test_a_reminder_the_kind_left_behind_is_cancelled_before_the_unarchive(self):
+        problems, requests = self.run_cleanup(
+            {"success": True},
+            timer_task=None,
+            inbox_reminder={"task_id": 9, "project_id": 7049},
+            notification_archived=41,
+        )
+        self.assertEqual(problems, [])
+        self.assertEqual(
+            requests,
+            [
+                ("POST", "/tasks/card-actions", {"task_id": 9, "project_id": 7049, "action": "inbox", "active": False}),
+                ("POST", "/inbox/unarchive", {"notification_ids": [41]}),
+            ],
+        )
+
+    def test_a_failed_reminder_cancel_is_reported(self):
+        problems, _ = self.run_cleanup(
+            {"success": True},
+            timer_task=None,
+            fail_on="/tasks/card-actions",
+            inbox_reminder={"task_id": 9, "project_id": 7049},
+        )
+        self.assertEqual(len(problems), 1)
+        self.assertIn("cancel inbox reminder", problems[0])
+
+    def test_a_green_kind_leaves_no_reminder_or_archive_for_cleanup(self):
+        problems, requests = self.run_cleanup({"timers": []}, timer_task=None)
+        self.assertEqual((problems, requests), ([], []))
 
 
 def snake_case(variant):
