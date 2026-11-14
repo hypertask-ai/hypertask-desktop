@@ -2,6 +2,7 @@ name: Bench
 on:
   push:
     branches: [main]
+  pull_request:
   workflow_dispatch:
 concurrency:
   group: bench-${{ github.ref }}
@@ -30,8 +31,74 @@ jobs:
           sysctl -n machdep.cpu.brand_string | tee -a bench.txt
           system_profiler SPDisplaysDataType | grep -E 'Chipset|Metal' | tee -a bench.txt
       - uses: actions/upload-artifact@v4
+        if: always()
         with:
           name: bench-macos
-          path: bench.txt
+          path: |
+            bench.txt
+            evidence/cold-start/hyperfine.json
+          if-no-files-found: warn
       - name: Fail when a budget fails
         run: "! grep -E '^exit .*=[1-9]' bench.txt"
+  presentmon:
+    name: presentmon-windows
+    runs-on: windows-2025
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build
+        run: cargo build --release -p ht-core -p ht-desktop --features ht-desktop/input-benchmark
+      - name: PresentMon
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force evidence/frame-time | Out-Null
+          curl.exe -fsSL -o evidence/frame-time/PresentMon.exe https://github.com/GameTechDev/PresentMon/releases/download/v2.6.0/PresentMon-2.6.0-x64.exe
+          ./gates/presentmon-frame.ps1 -Exe target/release/ht-desktop.exe -CoreExe target/release/ht-core-cli.exe -Fixtures fixtures/demo -PresentMon evidence/frame-time/PresentMon.exe -Out evidence/frame-time
+      - name: Capture four themes
+        shell: pwsh
+        run: ./gates/theme-capture.ps1 -Exe target/release/ht-desktop.exe -CoreExe target/release/ht-core-cli.exe -Fixtures fixtures/demo -Out evidence/theme-pixels
+      - name: Score against live baselines when they exist
+        shell: pwsh
+        run: |
+          if (Test-Path gates/fixtures/live-theme-pixels/porcelain/inbox.png) {
+            python -m pip install Pillow==11.3.0
+            python gates/theme-pixel-score.py gates/fixtures/live-theme-pixels evidence/theme-pixels
+          } else {
+            Write-Host "PIXEL_BASELINE_ABSENT"
+          }
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: presentmon-windows
+          path: evidence/frame-time/
+          if-no-files-found: warn
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: theme-pixels
+          path: evidence/theme-pixels/
+          if-no-files-found: warn
+  live-readback:
+    name: live-readback
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+      - name: Build the core CLI
+        run: cargo build --release -p ht-core
+      - name: Read writes back from the live API
+        env:
+          HT_TOKEN: ${{ secrets.HT_DESKTOP_QA }}
+          HT_CORE_CLI: target/release/ht-core-cli
+          HT_BOARD: "15"
+        run: |
+          if [ -z "$HT_TOKEN" ]; then
+            echo "LIVE_READBACK_SKIPPED missing HT_DESKTOP_QA"
+            exit 0
+          fi
+          python3 gates/live-readback.py
