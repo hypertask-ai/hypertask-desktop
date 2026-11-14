@@ -74,6 +74,13 @@ pub fn backoff(attempts: u32) -> i64 {
 pub fn permanent(status: u16) -> bool {
     (400..500).contains(&status) && !matches!(status, 408 | 429)
 }
+/// A board write that ended on exactly `HTTP 429` was refused by the MCP route wrapper before its
+/// handler ran (hypertask-ai/hypertask `src/lib/mcp/auth/rateLimit.ts`), so it changed no server
+/// state. The queue writes this text only for a real 429 status and clears it when the next attempt
+/// is claimed, so an attempt that never recorded an outcome never inherits it.
+pub fn rate_limited_error(message: Option<&str>) -> bool {
+    message == Some("HTTP 429")
+}
 
 impl Db {
     pub fn enqueue(&mut self, write: Write, now: i64) -> Result<i64> {
@@ -412,13 +419,25 @@ impl Db {
         .collect()
     }
 
+    pub fn drain_all(&mut self, transport: &mut impl Transport, now: i64) -> Result<Vec<Drain>> {
+        let mut outcomes = Vec::new();
+        loop {
+            let outcome = self.drain_once(transport, now)?;
+            let more = matches!(outcome, Drain::Applied(_) | Drain::Failed(_));
+            outcomes.push(outcome);
+            if !more {
+                return Ok(outcomes);
+            }
+        }
+    }
+
     pub fn drain_once(&mut self, transport: &mut impl Transport, now: i64) -> Result<Drain> {
         let claim = self.transaction(|db| {
             let head = db.mutations()?.into_iter().find(|m| m.status != "failed");
             let Some(mut row) = head else { return Ok(None); };
             let ready = if row.status == "inflight" { row.lease_until.unwrap_or(0) } else { row.next_attempt_at };
             if ready > now { return Ok(Some((row, false, ready))); }
-            db.conn.execute("UPDATE mutation_queue SET status='inflight', attempts=attempts+1, lease_until=? WHERE id=?", params![now+120,row.id])?;
+            db.conn.execute("UPDATE mutation_queue SET status='inflight', attempts=attempts+1, lease_until=?, last_error=NULL WHERE id=?", params![now+120,row.id])?;
             row.attempts += 1;
             Ok(Some((row, true, 0)))
         })?;
@@ -459,7 +478,7 @@ impl Db {
                 Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true => {
                     if response.body["user"]["id"] == row.payload_json["user_id"] {
                         if let crate::BoardWrite::ToggleTimer { task } = change {
-                            if row.attempts > 1 {
+                            if row.attempts > 1 && !rate_limited_error(row.last_error.as_deref()) {
                                 Ok(Response { status:409, body:json!({"success":false,"error":"Timer outcome unknown; refresh before retrying"}) })
                             } else { crate::board_write::toggle_timer(transport, task, &row.client_id) }
                         } else { transport.mutate(method, &path, &body, &row.client_id) }
@@ -542,7 +561,7 @@ impl Db {
             }
             Err(error) => (false, error.to_string()),
         };
-        let result = if row.kind == "board_write" && row.payload_json["change"].get("ToggleTimer").is_some() {
+        let result = if row.kind == "board_write" && row.payload_json["change"].get("ToggleTimer").is_some() && !rate_limited_error(Some(result.1.as_str())) {
             (true, format!("Timer outcome unavailable; refresh before retrying ({})", result.1))
         } else { result };
         self.transaction(|db| {

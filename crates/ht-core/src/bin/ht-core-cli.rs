@@ -94,6 +94,7 @@ fn run() -> Result<()> {
                 }
                 sync.projects()?;
                 sync.board(board_id)?;
+                sync.catalog(board_id)?;
                 sync.inbox()?;
                 sync.refetch_pending()?;
                 Ok(())
@@ -101,6 +102,17 @@ fn run() -> Result<()> {
             .join()
             .map_err(|_| anyhow::anyhow!("sync thread failed"))??;
             println!("SYNC_OK");
+        }
+        Some("task") if args.len() == 3 && args[1] == "--task" => {
+            let task_id = args[2].parse::<i64>()?;
+            let http = Http::new(std::env::var("HT_TOKEN").context("HT_TOKEN is required for task")?)?;
+            std::thread::spawn(move || -> Result<()> {
+                let mut sync = Sync::new(db, http);
+                sync.task(task_id)
+            })
+            .join()
+            .map_err(|_| anyhow::anyhow!("task thread failed"))??;
+            println!("TASK_OK {task_id}");
         }
         Some("write") if args.len() >= 3 => {
             let id: i64 = args[2].parse()?;
@@ -136,6 +148,38 @@ fn run() -> Result<()> {
                 .map_err(|_| anyhow::anyhow!("write thread failed"))??;
             }
         }
+        Some("drain") if args.len() == 1 => {
+            // Drain the queue without enqueuing anything: a write-json that stopped at a
+            // retrying row leaves its own row pending, and re-running write-json would
+            // enqueue the edit twice.
+            let mut db = db;
+            let mut http = Http::new(std::env::var("HT_TOKEN").context("HT_TOKEN is required for drain")?)?;
+            let drained = std::thread::spawn(move || {
+                db.drain_all(&mut http, chrono::Utc::now().timestamp())
+            })
+            .join()
+            .map_err(|_| anyhow::anyhow!("drain thread failed"))??;
+            for outcome in drained {
+                println!("DRAIN {outcome:?}");
+            }
+        }
+        Some("write-json") if args.len() == 2 => {
+            let write: Write = serde_json::from_str(&args[1]).context("write-json needs a Write as JSON")?;
+            let mut db = db;
+            let mutation = db.enqueue(write, chrono::Utc::now().timestamp())?;
+            println!("QUEUED {mutation}");
+            if let Ok(token) = std::env::var("HT_TOKEN") {
+                let mut http = Http::new(token)?;
+                let drained = std::thread::spawn(move || {
+                    db.drain_all(&mut http, chrono::Utc::now().timestamp())
+                })
+                .join()
+                .map_err(|_| anyhow::anyhow!("write thread failed"))??;
+                for outcome in drained {
+                    println!("DRAIN {outcome:?}");
+                }
+            }
+        }
         Some("import-fixtures") if args.len() == 2 || args.len() == 4 => {
             let synthetic_tasks = match args.get(2).map(String::as_str) {
                 Some("--synthetic-tasks") => args[3].parse::<usize>()?,
@@ -148,7 +192,7 @@ fn run() -> Result<()> {
             println!("IMPORTED files={imported} synthetic_tasks={added}");
         }
         _ => bail!(
-            "usage: ht-core-cli [--db path] sync --board <id> | write <kind> ... | dump | import-fixtures <dir> [--synthetic-tasks <n>]"
+            "usage: ht-core-cli [--db path] sync --board <id> | task --task <id> | write <kind> ... | write-json <Write JSON> | drain | dump | import-fixtures <dir> [--synthetic-tasks <n>]"
         ),
     }
     Ok(())

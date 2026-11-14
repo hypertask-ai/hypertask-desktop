@@ -41,6 +41,13 @@ jobs:
           node-version: 22
       - name: Fast report prints every sample and slow report fails
         run: node gates/cold-start-report.test.mjs
+  live-readback-tests:
+    name: Live readback gate tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 gates/live-readback.test.py
   pstack:
     name: Pstack contract
     runs-on: ubuntu-24.04

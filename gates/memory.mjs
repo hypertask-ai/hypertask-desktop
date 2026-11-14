@@ -7,7 +7,7 @@ const BUDGET_MB = 100;
 const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'ht-mem-'));
 const db = path.join(tmp, 'local.db');
 
-buildRelease();
+buildRelease(['input-benchmark']);
 seedLargeBoard(db);
 const mb = await withXvfb(async () =>
   peakMemoryMb(APP, ['--db', db, '--offline', '--screen', 'board', '--board', '15', '--bench-input', '300']));

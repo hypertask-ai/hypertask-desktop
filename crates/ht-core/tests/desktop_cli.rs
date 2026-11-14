@@ -481,3 +481,32 @@ fn writer_body_matches_web_board_scope_without_copying_provider_secrets() {
     assert_eq!(writer_request(&json!({"id":7283,"teamId":null}), "Note", "UTC").body["teamId"], -1);
     assert!(!body.to_string().contains("never-send-this"));
 }
+
+#[test]
+fn saved_comment_toggle_after_a_rate_limit_text_is_still_never_replayed() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let mut db = Db::open(file.path()).unwrap();
+    seed(&mut db);
+    let id = db
+        .enqueue(
+            Write::CommentAction {
+                task_id: 60253,
+                comment_id: 7,
+                change: CommentWrite::Saved { public: false },
+            },
+            100,
+        )
+        .unwrap();
+    let conn = rusqlite::Connection::open(file.path()).unwrap();
+    conn.execute(
+        "UPDATE mutation_queue SET attempts=1,status='pending',last_error='HTTP 429',next_attempt_at=101 WHERE id=?",
+        [id],
+    )
+    .unwrap();
+    drop(conn);
+    drop(db);
+    let mut db = Db::open(file.path()).unwrap();
+    let mut server = Server::default();
+    assert_eq!(db.drain_once(&mut server, 102).unwrap(), Drain::Failed(id));
+    assert!(server.calls.is_empty());
+}

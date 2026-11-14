@@ -1,0 +1,941 @@
+import json
+import os
+import re
+import sqlite3
+import subprocess
+import sys
+import time
+import urllib.error
+import urllib.request
+
+APP = "https://app.hypertask.ai"
+BASE = APP + "/api/mcp"
+BOARD = int(os.environ.get("HT_BOARD", "7049"))
+FORBIDDEN_BOARDS = {15, 4060}
+CLI = os.environ["HT_CORE_CLI"]
+TOKEN = os.environ.get("HT_TOKEN", "")
+ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+EVIDENCE = os.path.join(ROOT, "evidence", "live-readback")
+# hypertask-ai/hypertask src/lib/mcp/auth/rateLimit.ts: one token gets 120 requests per
+# fixed one-minute window (600 for agent tokens) and the route wrapper rejects with 429
+# before the handler runs, so a 429 request never changed server state and may be replayed.
+# The gate needs more than one window, so it waits for the next window instead of failing.
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_RETRIES = 4
+RATE_LIMIT_WAIT_BUDGET_SECONDS = 900
+QUEUE_RATE_LIMIT_ERRORS = ("HTTP 429", "Rate limit exceeded. Please slow down and try again shortly.")
+waited_seconds = 0.0
+
+STEP_NAMES = (
+    "task_title", "task_section", "move_task", "task_description", "task_priority",
+    "task_estimate", "task_due_date", "labels", "task_assignees", "assign_to_me",
+    "parent_and_remove_subtask", "task_status", "star_task", "waiting_on", "toggle_timer",
+    "move_to_inbox", "inbox_seen", "task_comment", "comment_edit", "comment_reaction",
+    "comment_saved", "comment_delete", "comment_draft_and_discard", "compose_task", "columns",
+    "rename_board", "inbox_remind_and_archive", "labels_clear",
+)
+
+# Serde shapes mirrored from crates/ht-core. `Write` and `CommentWrite` are internally
+# tagged, so the variant is a field value (`{"kind": "board"}`, `{"action": "edit"}`).
+# `BoardWrite` and `TaskPatch` are externally tagged, so the variant name is the only key.
+# live-readback.test.py reads those Rust enums and fails when these tables drift.
+WRITE_SHAPES = {
+    "compose_task": ({"project_id", "text", "time_zone"}, set()),
+    "shell": ({"request"}, set()),
+    "board": ({"change"}, set()),
+    "editor_improve": ({"task_id", "command", "text"}, set()),
+    "discard_draft": ({"task_id", "draft_type"}, set()),
+    "task_title": ({"task_id", "title"}, set()),
+    "task_section": ({"task_id", "section_id"}, set()),
+    "task_comment": ({"task_id", "text"}, set()),
+    "comment_draft": ({"task_id"}, {"text"}),
+    "comment_action": ({"task_id", "comment_id", "change"}, set()),
+    "task_patch": ({"task_id", "patch"}, set()),
+    "inbox_seen": ({"notification_id"}, set()),
+    "inbox_remind": ({"notification_ids", "remind_at"}, set()),
+    "inbox_archive": ({"notification_id"}, set()),
+}
+BOARD_SHAPES = {
+    "RemoveSubtask": {"task", "parent"},
+    "MoveToInbox": {"task", "project"},
+    "WaitingOn": {"task", "user"},
+    "ToggleTimer": {"task"},
+    "StarTask": {"task", "project", "active"},
+    "ArchiveBoard": {"project"},
+    "AssignAgent": {"task", "agent", "active"},
+    "AssignToMe": {"task", "user"},
+    "AddColumn": {"project", "title"},
+    "RenameColumn": {"project", "section", "title"},
+    "DeleteColumn": {"project", "section"},
+    "RenameBoard": {"project", "title"},
+    "CreateTaskLabel": {"project", "task", "name"},
+    "MoveTask": {"task", "project", "section"},
+}
+# TaskPatch variants are newtype variants, so the externally tagged value is the field itself.
+TASK_PATCH_SHAPES = {
+    "Parent": (type(None), int),
+    "Status": str,
+    "Description": str,
+    "Priority": int,
+    "Labels": list,
+    "Assignees": list,
+    "Estimate": int,
+    "DueDate": (type(None), str),
+}
+COMMENT_SHAPES = {"edit": {"text"}, "delete": set(), "saved": {"public"}, "reaction": {"emoji", "active"}}
+DRAFT_TYPES = {"comment", "description"}
+
+
+class Failure(Exception):
+    pass
+
+
+class RateLimited(Exception):
+    pass
+
+
+def rate_limited(message):
+    return "http 429" in (message or "").lower()
+
+
+def window_wait(now=None):
+    now = time.time() if now is None else now
+    return float(RATE_LIMIT_WINDOW_SECONDS - (now % RATE_LIMIT_WINDOW_SECONDS)) + 2.0
+
+
+def pause(reason):
+    global waited_seconds
+    wait = window_wait()
+    if waited_seconds + wait > RATE_LIMIT_WAIT_BUDGET_SECONDS:
+        raise Failure(f"rate limit wait budget of {RATE_LIMIT_WAIT_BUDGET_SECONDS}s is spent ({waited_seconds:.0f}s waited): {reason}")
+    waited_seconds += wait
+    print(f"LIVE_READBACK_WAIT {wait:.0f}s {reason}")
+    time.sleep(wait)
+
+
+def redact(text):
+    if TOKEN:
+        text = text.replace(TOKEN, "[token]")
+    return text
+
+
+def api(method, path, body=None, base=BASE):
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            return api_once(method, path, body, base)
+        except RateLimited as error:
+            if attempt == RATE_LIMIT_RETRIES:
+                raise Failure(str(error))
+            pause(f"{method} {path}")
+
+
+def api_once(method, path, body=None, base=BASE):
+    data = None if body is None else json.dumps(body).encode()
+    request = urllib.request.Request(
+        base + path,
+        data=data,
+        method=method,
+        headers={"Authorization": f"Bearer {TOKEN}", "Accept": "application/json", "Content-Type": "application/json"},
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=60) as response:
+            raw = response.read().decode()
+    except urllib.error.HTTPError as error:
+        detail = redact(error.read().decode(errors="replace")[:400])
+        message = f"API {method} {path} status {error.code}: {detail}"
+        if error.code == 429:
+            raise RateLimited(message)
+        raise Failure(message)
+    payload = json.loads(raw) if raw.strip() else {}
+    if isinstance(payload, dict) and payload.get("success") is False:
+        detail = redact(json.dumps(payload)[:400])
+        raise Failure(f"API {method} {path} refused: {detail}")
+    return payload
+
+
+def cli(db, *args, timeout=300, env=None):
+    result = subprocess.run([CLI, "--db", db, *args], text=True, capture_output=True, timeout=timeout, env=env)
+    output = redact((result.stderr or "") + (result.stdout or ""))
+    if result.returncode != 0:
+        raise Failure(f"cli {' '.join(args)[:80]} failed: {output[-500:]}")
+    return output
+
+
+def query(db, sql, params=()):
+    connection = sqlite3.connect(db)
+    try:
+        return connection.execute(sql, params).fetchall()
+    finally:
+        connection.close()
+
+
+def execute_sql(db, sql, params=()):
+    connection = sqlite3.connect(db)
+    try:
+        with connection:
+            connection.execute(sql, params)
+    finally:
+        connection.close()
+
+
+def local(db, table, row_id):
+    rows = query(db, f'SELECT raw_json FROM "{table}" WHERE id=?', (row_id,))
+    return json.loads(rows[0][0]) if rows else None
+
+
+def contains_id(value, wanted):
+    if isinstance(value, dict):
+        if value.get("id") == wanted:
+            return True
+        return any(contains_id(item, wanted) for item in value.values())
+    if isinstance(value, list):
+        return any(contains_id(item, wanted) for item in value)
+    return False
+
+
+def task_of(payload):
+    task = payload.get("task")
+    if isinstance(task, dict):
+        return task
+    tasks = payload.get("tasks")
+    if isinstance(tasks, list) and tasks and isinstance(tasks[0], dict):
+        return tasks[0]
+    raise Failure("task response has no task")
+
+
+def get_task(task_id):
+    return task_of(api("GET", f"/tasks?task_id={task_id}"))
+
+
+def need(condition, message):
+    if not condition:
+        raise Failure(message)
+
+
+def external_variant(value, shapes, label):
+    if not isinstance(value, dict) or len(value) != 1:
+        raise Failure(f"{label} is externally tagged: exactly one variant key, got {value!r}")
+    variant = next(iter(value))
+    if variant not in shapes:
+        raise Failure(f"unknown {label} {variant!r}; expected one of {sorted(shapes)}")
+    fields = value[variant]
+    if not isinstance(fields, dict) or set(fields) != shapes[variant]:
+        got = sorted(fields) if isinstance(fields, dict) else fields
+        raise Failure(f"{label} {variant} fields are {got}, expected {sorted(shapes[variant])}")
+    return variant
+
+
+def external_value(value, shapes, label):
+    if not isinstance(value, dict) or len(value) != 1:
+        raise Failure(f"{label} is externally tagged: exactly one variant key, got {value!r}")
+    variant = next(iter(value))
+    if variant not in shapes:
+        raise Failure(f"unknown {label} {variant!r}; expected one of {sorted(shapes)}")
+    inner = value[variant]
+    allowed = shapes[variant]
+    if not isinstance(inner, allowed):
+        raise Failure(f"{label} {variant} must be {allowed}, got {type(inner).__name__}")
+    return variant
+
+
+def internal_variant(value, shapes, tag, label):
+    if not isinstance(value, dict):
+        raise Failure(f"{label} must be an object tagged {tag!r}, got {value!r}")
+    variant = value.get(tag)
+    if variant not in shapes:
+        raise Failure(f"{label} needs {tag!r} in {sorted(shapes)}, got {variant!r}")
+    fields = set(value) - {tag}
+    if fields != shapes[variant]:
+        raise Failure(f"{label} {variant} fields are {sorted(fields)}, expected {sorted(shapes[variant])}")
+    return variant
+
+
+def validate_write(payload):
+    """Reject a payload the Rust `Write` type would refuse, before the CLI sees it."""
+    if not isinstance(payload, dict):
+        raise Failure(f"write must be an object, got {type(payload).__name__}")
+    kind = payload.get("kind")
+    if kind not in WRITE_SHAPES:
+        raise Failure(f"unknown write kind {kind!r}; expected one of {sorted(WRITE_SHAPES)}")
+    required, optional = WRITE_SHAPES[kind]
+    missing = required - set(payload)
+    extra = set(payload) - required - optional - {"kind"}
+    if missing or extra:
+        raise Failure(f"{kind} write has missing fields {sorted(missing)} and unknown fields {sorted(extra)}")
+    if kind == "board":
+        external_variant(payload["change"], BOARD_SHAPES, "board change")
+    elif kind == "task_patch":
+        external_value(payload["patch"], TASK_PATCH_SHAPES, "task patch")
+    elif kind == "comment_action":
+        internal_variant(payload["change"], COMMENT_SHAPES, "action", "comment action")
+    elif kind == "discard_draft" and payload["draft_type"] not in DRAFT_TYPES:
+        raise Failure(f"unknown draft type {payload['draft_type']!r}; expected one of {sorted(DRAFT_TYPES)}")
+
+
+def index_of(value, key):
+    if isinstance(value, dict):
+        return value.get(key)
+    return value
+
+
+# hypertask src/lib/constants/constants.ts PriorityConstants, the same table
+# crates/ht-core/src/task_patch.rs writes optimistically.
+PRIORITY_NAMES = {0: "No Priority", 1: "Urgent", 2: "High", 3: "Medium", 4: "Low"}
+
+
+def priority_index(value):
+    """Map a cached priority to its server index.
+
+    The live API returns the indexed object from /tasks?task_id=
+    (hypertask src/lib/mcp/tasks/mappers.ts) but only the name string from the board
+    list (src/lib/mcp/operations/tasks/operation.ts returns task.priority?.Priority_Value),
+    so a cached row legitimately holds either form for the same server value.
+    """
+    if isinstance(value, dict):
+        return value.get("priority_index")
+    if isinstance(value, str):
+        return next((index for index, name in PRIORITY_NAMES.items() if name == value), None)
+    return None
+
+
+def comments_of(task_id):
+    payload = api("GET", f"/comments?task_id={task_id}")
+    rows = payload.get("comments")
+    need(isinstance(rows, list), "comments response has no list")
+    return rows
+
+
+def sections_of(board):
+    payload = api("GET", f"/projects/{board}/sections")
+    rows = payload.get("sections")
+    need(isinstance(rows, list), "sections response has no list")
+    return rows
+
+
+def section_title(row):
+    return row.get("section_title") or row.get("title") or row.get("name")
+
+
+def parent_of(task):
+    return (task or {}).get("parentTaskId") or (task or {}).get("parent_id")
+
+
+def timer_running_on(running, task_id):
+    timers = running.get("timers") if isinstance(running, dict) else None
+    return any(isinstance(timer, dict) and isinstance(timer.get("task"), dict) and timer["task"].get("id") == task_id for timer in timers or [])
+
+
+class Gate:
+    def __init__(self):
+        self.nonce = str(time.time_ns())
+        os.makedirs(EVIDENCE, exist_ok=True)
+        self.db = os.path.join(EVIDENCE, "local.db")
+        for suffix in ("", "-wal", "-shm"):
+            if os.path.exists(self.db + suffix):
+                os.remove(self.db + suffix)
+        self.user = None
+        self.results = {}
+        self.reopen = []
+        self.created_tasks = []
+        self.notification_archived = None
+        self.inbox_reminder = None
+        self.board_title = None
+        self.extra_columns = []
+        self.timer_task = None
+        self.rate_limit_waits = 0
+
+    def read_with_retry(self, db, reason, *args):
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            try:
+                cli(db, *args)
+                return
+            except Failure as error:
+                if attempt == RATE_LIMIT_RETRIES or not rate_limited(str(error)):
+                    raise
+                self.rate_limit_waits += 1
+                pause(reason)
+
+    def sync(self, db=None):
+        self.read_with_retry(db or self.db, "sync --board", "sync", "--board", str(BOARD))
+
+    def fetch_task(self, task_id):
+        self.read_with_retry(self.db, f"task --task {task_id}", "task", "--task", str(task_id))
+
+    def drain_outcomes(self, output):
+        outcomes = re.findall(r"DRAIN (\w+)", output)
+        need(outcomes, f"no drain result: {output[-300:]}")
+        return outcomes
+
+    def write(self, payload):
+        validate_write(payload)
+        outcomes = self.drain_outcomes(cli(self.db, "write-json", json.dumps(payload)))
+        retries = 0
+        while outcomes[-1] == "Retrying" and self.rate_limit_pending() and retries < RATE_LIMIT_RETRIES:
+            retries += 1
+            self.rate_limit_waits += 1
+            pause(f"drain after {outcomes[-1]}")
+            outcomes += self.drain_outcomes(cli(self.db, "drain"))
+        applied = [outcome for outcome in outcomes if outcome != "Retrying"]
+        need(applied, f"write was {outcomes[-1]}: {self.queue_state()}")
+        need(applied[0] == "Applied", f"write was {applied[0]}: {self.queue_state()}")
+        need(all(o == "Applied" for o in applied[:-1]) and applied[-1] == "Empty", f"drain ended {outcomes}: {self.queue_state()}")
+        self.require_empty_queue()
+
+    def queue_state(self):
+        return query(self.db, "SELECT kind,status,attempts,last_error FROM mutation_queue")
+
+    def rate_limit_pending(self):
+        pending = [row for row in self.queue_state() if row[1] == "pending"]
+        return bool(pending) and all(row[3] in QUEUE_RATE_LIMIT_ERRORS for row in pending)
+
+    def require_empty_queue(self):
+        left = self.queue_state()
+        failed = [row for row in left if row[1] == "failed"]
+        need(not failed, f"queue row failed: {failed}")
+        need(not left, f"queue not empty after drain: {left}")
+
+    def expect_local(self, name, description, check):
+        self.reopen.append((name, description, check))
+
+    def run(self, name, fn):
+        try:
+            fn()
+            self.results[name] = None
+            print(f"KIND_PASS {name}")
+        except (Failure, KeyError, IndexError, TypeError, ValueError, json.JSONDecodeError, subprocess.TimeoutExpired) as error:
+            self.results[name] = redact(f"{type(error).__name__}: {error}")[:500]
+            print(f"KIND_FAIL {name}: {self.results[name]}")
+            try:
+                execute_sql(self.db, "DELETE FROM mutation_queue")
+            except sqlite3.Error:
+                pass
+
+    def make_task(self, label):
+        created = api("POST", "/tasks/create", {"project_id": BOARD, "title": f"HTPR-7381 {label} {self.nonce}"})
+        task_id = created["task"]["id"]
+        self.created_tasks.append(task_id)
+        return task_id
+
+
+REOPEN_OWNER = {"create_label": "labels", "remove_subtask": "parent_and_remove_subtask", "inbox_archive": "inbox_remind_and_archive"}
+
+
+def report(gate):
+    reopen_failed = [key for key, value in gate.results.items() if key.startswith("reopen:") and value]
+    reopened_kinds = {REOPEN_OWNER.get(key.split(":", 2)[2], key.split(":", 2)[2]) for key in reopen_failed}
+    passed = sum(1 for name in STEP_NAMES if name in gate.results and gate.results[name] is None and name not in reopened_kinds)
+    if reopen_failed:
+        print(f"REOPEN_FAILED {len(reopen_failed)}")
+    if gate.rate_limit_waits:
+        print(f"LIVE_READBACK_RATE_LIMIT_WAITS {gate.rate_limit_waits}")
+    print(f"KINDS_PASSED {passed}/{len(STEP_NAMES)}")
+    return 0 if passed == len(STEP_NAMES) and not reopen_failed else 1
+
+
+def main():
+    if not TOKEN:
+        print("LIVE_READBACK_NO_TOKEN")
+        return 1
+    if BOARD in FORBIDDEN_BOARDS:
+        print(f"LIVE_READBACK_REFUSED board {BOARD}")
+        return 1
+    gate = Gate()
+    status = 1
+    try:
+        execute(gate)
+        status = 0
+    except (Exception, SystemExit, KeyboardInterrupt) as error:
+        print(f"LIVE_READBACK_CRASH {type(error).__name__}: {redact(str(error))[:300]}")
+        status = 1
+    cleanup_failed = []
+    try:
+        cleanup_failed = cleanup(gate)
+    except (Exception, SystemExit, KeyboardInterrupt) as error:
+        cleanup_failed = [f"cleanup crashed: {type(error).__name__}: {redact(str(error))[:200]}"]
+    if cleanup_failed:
+        print("CLEANUP_FAILED " + "; ".join(cleanup_failed))
+    counted = report(gate)
+    if status == 0 and counted == 0 and not cleanup_failed:
+        print("LIVE_READBACK_OK")
+        return 0
+    return 1
+
+
+def parent_kind(gate, task, parent):
+    def api_parent():
+        return parent_of(get_task(task))
+
+    def local_parent():
+        return parent_of(local(gate.db, "Task", task))
+
+    def local_children():
+        return (local(gate.db, "Task", parent) or {}).get("sub_tasks")
+
+    def set_parent():
+        gate.write({"kind": "task_patch", "task_id": task, "patch": {"Parent": parent}})
+        need(api_parent() == parent, "API parent missing")
+        need(local_parent() == parent, "local task lacks the new parent")
+
+    set_parent()
+    gate.write({"kind": "task_patch", "task_id": task, "patch": {"Parent": None}})
+    need(not api_parent(), "API parent not removed by Parent(None)")
+    need(local(gate.db, "Task", task) is not None and not local_parent(), "local task still has its parent after Parent(None)")
+
+    set_parent()
+    gate.fetch_task(parent)
+    need(contains_id(local_children(), task), f"parent's cached sub-tasks lack the child after a fresh task fetch: {redact(json.dumps(local_children())[:200])}")
+    gate.write({"kind": "board", "change": {"RemoveSubtask": {"task": task, "parent": parent}}})
+    need(not api_parent(), "API parent not removed by RemoveSubtask")
+    need(not contains_id(get_task(parent).get("sub_tasks"), task), "API parent still lists the removed sub-task")
+    need(not local_parent(), "local task still has its parent after RemoveSubtask")
+    need(not contains_id(local_children(), task), "parent's cached sub-tasks still list the removed sub-task")
+    gate.expect_local("remove_subtask", "Task parent and parent's sub-task list cleared", lambda db: local(db, "Task", task) is not None and not parent_of(local(db, "Task", task)) and not contains_id((local(db, "Task", parent) or {}).get("sub_tasks"), task))
+
+
+def timer_kind(gate, task):
+    toggle = {"kind": "board", "change": {"ToggleTimer": {"task": task}}}
+    summary = api("POST", "/time/status", {"task": str(task)}).get("summary") or {}
+    need(summary.get("enabled") is True, f"board {BOARD} has time tracking disabled: POST /time/status said {redact(json.dumps(summary)[:300])}")
+    gate.timer_task = task
+    gate.write(toggle)
+    running = api("GET", "/time/running")
+    need(timer_running_on(running, task), f"API timer not running: GET /time/running said {redact(json.dumps(running)[:400])}")
+    gate.write(toggle)
+    running = api("GET", "/time/running")
+    need(not timer_running_on(running, task), f"API timer still running: GET /time/running said {redact(json.dumps(running)[:400])}")
+    gate.timer_task = None
+
+
+# hypertask-ai/hypertask. Two live-app rules make a remind unrecoverable through /inbox/* alone.
+# 1. The inbox list hides every notification whose task holds a Normal Reminder
+#    (src/utils/controllers/notifications/getAll.ts:138-143 exposes the same predicate as
+#    src/utils/controllers/notifications/visibleInboxScope.ts:24-37).
+# 2. Unarchive only flips the notification back to Normal and clears archivedAt
+#    (src/lib/mcp/operations/inbox/unarchive/operation.ts:56-68). It never touches the Reminder,
+#    nor the My Tasks snooze the remind set (src/lib/mcp/operations/inbox/archive/operation.ts:170-177).
+# So a reminded and unarchived row stays invisible for the whole remind window, and a reminder the
+# gate leaves behind is a reminder it left on the account.
+# The app's own cancel-reminder write is "take the task out of the inbox": with a human token it
+# archives the task's Normal TaskMovedToInbox notifications and sets every Normal Reminder on the
+# task to Archive (src/lib/taskCardActions/inboxState.ts:94-111, the reminder write guarded by
+# `input.agentId == null` at lines 100-110). That is POST /api/mcp/tasks/card-actions
+# (src/app/api/mcp/tasks/card-actions/route.ts:1-5, body and 403 rules in
+# src/lib/mcp/tasks/cardActionHandler.ts:127-164) behind the same Bearer token as every other call
+# here, and it is the route the desktop CLI itself sends for MoveToInbox
+# (crates/ht-core/src/board_write.rs:85). crates/ht-core/src/queue.rs:9-45 `Write` has no
+# cancel-reminder variant, so this gate calls that route instead of adding an untested Rust write.
+INBOX_CARD_ACTION = "/tasks/card-actions"
+
+
+def inbox_rows():
+    listing = api("GET", "/inbox/list")
+    rows = listing.get("user_notifications")
+    need(isinstance(rows, list), "inbox list response has no user_notifications list")
+    return rows
+
+
+def inbox_row(notification_id):
+    return next((row for row in inbox_rows() if row.get("id") == notification_id), None)
+
+
+def cancel_inbox_reminder(task, project):
+    """Cancel every Normal Reminder on the task and take it out of the Inbox."""
+    response = api("POST", INBOX_CARD_ACTION, {"task_id": task, "project_id": project, "action": "inbox", "active": False})
+    need(
+        response.get("success") is True and response.get("active") is False,
+        f"inbox card action did not report the task out of the inbox: {redact(json.dumps(response)[:300])}",
+    )
+
+
+def inbox_remind_kind(gate, task, project, notification_id):
+    """Remind, unarchive, cancel the Reminder and plain-archive one Inbox row.
+
+    Only ever run on a notification of a task this run created: the remind write archives every
+    Normal notification on the task (hypertask src/lib/mcp/operations/inbox/archive/operation.ts:179-182)
+    and the plain archive write turns every other one on the task into Deleted (same file:212-224),
+    which no route restores. A run-created task carries only run notifications, and deleting it
+    deletes its Reminders, Assignees (so the My Tasks snooze) and Notifications
+    (src/utils/controllers/tasks/invokeTaskDelete.ts:495, 525, 555-560), so the damage dies with it.
+    """
+    context = api("GET", "/user/context")
+    need(
+        not context.get("connected_agent"),
+        "INBOX_REMIND_NEEDS_HUMAN_TOKEN: an agent token cannot clear a Reminder through POST /api/mcp/tasks/card-actions",
+    )
+    remind_at = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time() + 3 * 86400))
+    gate.notification_archived = notification_id
+    gate.inbox_reminder = {"task_id": task, "project_id": project}
+    gate.write({"kind": "inbox_remind", "notification_ids": [notification_id], "remind_at": remind_at})
+    need(not inbox_row(notification_id), f"API still lists the reminded row {notification_id}")
+    restored = api("POST", "/inbox/unarchive", {"notification_ids": [notification_id]})
+    need(restored.get("unarchived_count") == 1, f"unarchive count {restored.get('unarchived_count')}")
+    need(not inbox_row(notification_id), f"notification {notification_id} is visible while its Reminder is still Normal")
+    cancel_inbox_reminder(task, project)
+    restored = api("POST", "/inbox/unarchive", {"notification_ids": [notification_id]})
+    need(restored.get("unarchived_count") == 1, f"unarchive count {restored.get('unarchived_count')} after the reminder was cancelled")
+    row = inbox_row(notification_id)
+    need(
+        row is not None and row.get("status") == "Normal",
+        f"notification {notification_id} is not back in the inbox after its Reminder was cancelled",
+    )
+    # Only now is the Reminder provably gone, so cleanup has nothing left to cancel.
+    gate.inbox_reminder = None
+    gate.write({"kind": "inbox_archive", "notification_id": notification_id})
+    need(not inbox_row(notification_id), f"notification {notification_id} is still active")
+    gate.sync()
+    cached = local(gate.db, "Notification", notification_id) or {}
+    need(cached.get("status") == "Archive", f"local inbox row is {cached.get('status')!r} after an archive and a resync")
+    # The driver in hypertask-ai/hypertask (.github/scripts/desktop-live-readback.py) reads the row id
+    # and its task from this line to prove the run took its own row away with its own task.
+    print(f"INBOX_READBACK notification {notification_id} task {task}")
+    restored = api("POST", "/inbox/unarchive", {"notification_ids": [notification_id]})
+    need(restored.get("unarchived_count") == 1, f"unarchive count {restored.get('unarchived_count')}")
+    need(inbox_row(notification_id) is not None, f"notification {notification_id} did not return to the inbox")
+    gate.notification_archived = None
+    gate.sync()
+    restored_row = local(gate.db, "Notification", notification_id) or {}
+    need(restored_row.get("status") == "Normal", f"local inbox row is {restored_row.get('status')!r} after the restore and a resync")
+    gate.expect_local(
+        "inbox_archive",
+        "Inbox row restored",
+        lambda db: (local(db, "Notification", notification_id) or {}).get("status") == "Normal",
+    )
+
+
+def labels_clear_kind(gate, task):
+    gate.write({"kind": "task_patch", "task_id": task, "patch": {"Labels": []}})
+    need(not (get_task(task).get("labels") or []), "API labels not cleared")
+    need(not ((local(gate.db, "Task", task) or {}).get("labels") or []), "local task still carries the labels")
+    gate.sync()
+    need(not ((local(gate.db, "Task", task) or {}).get("labels") or []), "labels came back after a resync")
+
+
+def label_reopen_check(name, task):
+    def check(db):
+        board_label = any(name in row[0] for row in query(db, 'SELECT raw_json FROM "Label" WHERE projectId=?', (BOARD,)))
+        task_label = name in json.dumps((local(db, "Task", task) or {}).get("labels"))
+        return board_label and task_label
+
+    return check
+
+
+def execute(gate):
+    nonce = gate.nonce
+    context = api("GET", "/user/context")
+    gate.user = context["user"]["id"]
+    projects = api("GET", f"/projects?status=Normal&search=QA%20Sandbox&limit=100")
+    boards = [p for p in projects.get("projects", []) if p.get("id") == BOARD]
+    need(boards, f"board {BOARD} is not available to this login")
+    gate.board_title = boards[0].get("title") or boards[0].get("name")
+
+    main_task = gate.make_task("main")
+    parent_task = gate.make_task("parent")
+    assign_task = gate.make_task("assign")
+    gate.sync()
+    cli(gate.db, "dump")
+    query(gate.db, "SELECT 1")
+    connection = sqlite3.connect(gate.db)
+    connection.execute("INSERT OR REPLACE INTO kv(key,value) VALUES('current-user-id',?)", (str(gate.user),))
+    connection.commit()
+    connection.close()
+    sections = query(gate.db, 'SELECT id,section_title FROM "Section" WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY id', (BOARD,))
+    need(len(sections) >= 2, f"board {BOARD} needs two visible columns, has {len(sections)}")
+    def other_column(task_id):
+        current = local(gate.db, "Task", task_id)["sectionId"]
+        return next(row[0] for row in sections if row[0] != current)
+
+    parent_target = other_column(parent_task)
+    main_target = other_column(main_task)
+
+    def title():
+        renamed = f"HTPR-7381 renamed {nonce}"
+        gate.write({"kind": "task_title", "task_id": main_task, "title": renamed})
+        need(get_task(main_task).get("title") == renamed, "API title differs")
+        gate.expect_local("task_title", "Task title", lambda db: (local(db, "Task", main_task) or {}).get("title") == renamed)
+        print(f"BOARD_READBACK task {main_task}")
+
+    def section():
+        gate.write({"kind": "task_section", "task_id": parent_task, "section_id": parent_target})
+        need(get_task(parent_task).get("sectionId") == parent_target, "API column differs")
+        gate.expect_local("task_section", "Task column", lambda db: (local(db, "Task", parent_task) or {}).get("sectionId") == parent_target)
+
+    def move():
+        gate.write({"kind": "board", "change": {"MoveTask": {"task": main_task, "project": BOARD, "section": main_target}}})
+        need(get_task(main_task).get("sectionId") == main_target, "API column after move differs")
+        gate.expect_local("move_task", "Task column after move", lambda db: (local(db, "Task", main_task) or {}).get("sectionId") == main_target)
+
+    def description():
+        html = f"<p>HTPR-7381 description {nonce}</p>"
+        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Description": html}})
+        need(nonce in (get_task(main_task).get("description") or ""), "API description differs")
+        gate.expect_local("task_description", "Task description", lambda db: nonce in ((local(db, "Task", main_task) or {}).get("description") or ""))
+
+    def priority():
+        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Priority": 2}})
+        need(priority_index(get_task(main_task).get("priority")) == 2, "API priority differs")
+        gate.expect_local("task_priority", "Task priority", lambda db: priority_index((local(db, "Task", main_task) or {}).get("priority")) == 2)
+
+    def estimate():
+        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Estimate": 3}})
+        need(index_of(get_task(main_task).get("estimate"), "estimate_index") == 3, "API estimate differs")
+        gate.expect_local("task_estimate", "Task size", lambda db: index_of((local(db, "Task", main_task) or {}).get("estimate"), "estimate_index") == 3)
+
+    def due_date():
+        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"DueDate": "2031-06-01T09:00:00Z"}})
+        need(str(get_task(main_task).get("dueDate") or "").startswith("2031-06-01"), "API due date differs")
+        gate.expect_local("task_due_date", "Task due date", lambda db: str((local(db, "Task", main_task) or {}).get("dueDate") or "").startswith("2031-06-01"))
+
+    def label_names(task):
+        return [item.get("value") or item.get("name") or item.get("label") if isinstance(item, dict) else item for item in (task.get("labels") or [])]
+
+    def label():
+        name = f"ht7381-{nonce[-8:]}"
+        gate.write({"kind": "board", "change": {"CreateTaskLabel": {"project": BOARD, "task": main_task, "name": name}}})
+        need(name in json.dumps(get_task(main_task).get("labels")), "API label missing")
+        need(name in json.dumps((local(gate.db, "Task", main_task) or {}).get("labels")), "local task lacks the new label")
+        gate.expect_local("create_label", "Board label and task label", label_reopen_check(name, main_task))
+
+    def assignees():
+        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Assignees": [gate.user]}})
+        need(contains_id(get_task(main_task).get("assignees"), gate.user), "API assignee missing")
+        gate.expect_local("task_assignees", "Task assignee", lambda db: contains_id((local(db, "Task", main_task) or {}).get("assignees"), gate.user))
+
+    def assign_me():
+        gate.write({"kind": "board", "change": {"AssignToMe": {"task": assign_task, "user": gate.user}}})
+        need(contains_id(get_task(assign_task).get("assignees"), gate.user), "API self assignment missing")
+        gate.expect_local("assign_to_me", "Task self assignment", lambda db: contains_id((local(db, "Task", assign_task) or {}).get("assignees"), gate.user))
+
+    def parent():
+        parent_kind(gate, main_task, parent_task)
+
+    def status():
+        gate.write({"kind": "task_patch", "task_id": assign_task, "patch": {"Status": "Archive"}})
+        need(get_task(assign_task).get("status") == "Archive", "API archive status differs")
+        gate.write({"kind": "task_patch", "task_id": assign_task, "patch": {"Status": "Normal"}})
+        need(get_task(assign_task).get("status") == "Normal", "API restored status differs")
+        gate.expect_local("task_status", "Task status restored", lambda db: (local(db, "Task", assign_task) or {}).get("status") == "Normal")
+
+    def star():
+        gate.write({"kind": "board", "change": {"StarTask": {"task": main_task, "project": BOARD, "active": True}}})
+        need(get_task(main_task).get("savedContent"), "API star missing")
+        gate.write({"kind": "board", "change": {"StarTask": {"task": main_task, "project": BOARD, "active": False}}})
+        need(not get_task(main_task).get("savedContent"), "API star not removed")
+        gate.expect_local("star_task", "Task star removed", lambda db: not (local(db, "Task", main_task) or {}).get("savedContent"))
+
+    def waiting_on():
+        gate.write({"kind": "board", "change": {"WaitingOn": {"task": main_task, "user": gate.user}}})
+        need(get_task(main_task).get("waitingOnUserId") == gate.user, "API waiting-on missing")
+        gate.write({"kind": "board", "change": {"WaitingOn": {"task": main_task, "user": None}}})
+        need(get_task(main_task).get("waitingOnUserId") is None, "API waiting-on not cleared")
+        gate.expect_local("waiting_on", "Task waiting-on cleared", lambda db: (local(db, "Task", main_task) or {}).get("waitingOnUserId") is None)
+
+    def timer():
+        timer_kind(gate, assign_task)
+
+    moved_notification = {}
+
+    def move_to_inbox():
+        gate.write({"kind": "board", "change": {"MoveToInbox": {"task": assign_task, "project": BOARD}}})
+        listing = api("GET", "/inbox/list")
+        rows = [row for row in listing.get("user_notifications", []) if row.get("taskId") == assign_task and row.get("status") == "Normal"]
+        need(rows, "API inbox lacks the moved task")
+        moved_notification["id"] = rows[0]["id"]
+
+    def inbox_seen():
+        need("id" in moved_notification, "no moved-task notification to mark seen")
+        gate.sync()
+        notification_id = moved_notification["id"]
+        gate.write({"kind": "inbox_seen", "notification_id": notification_id})
+        listing = api("GET", "/inbox/list")
+        row = next((r for r in listing.get("user_notifications", []) if r.get("id") == notification_id), None)
+        need(row is not None and row.get("seen") is True, f"API seen flag differs: {None if row is None else row.get('seen')}")
+        gate.expect_local("inbox_seen", "Inbox seen", lambda db: (local(db, "Notification", notification_id) or {}).get("seen") in (1, True))
+
+    comment_state = {}
+
+    def comment_send():
+        text = f"<p>HTPR-7381 comment {nonce}</p>"
+        gate.write({"kind": "task_comment", "task_id": main_task, "text": text})
+        rows = [row for row in comments_of(main_task) if nonce in json.dumps(row)]
+        need(len(rows) == 1, f"API comments hold {len(rows)} matching rows")
+        comment_state["id"] = rows[0]["id"]
+        print(f"TASK_READBACK task {main_task}")
+        gate.expect_local("task_comment", "Task comment", lambda db: any(nonce in json.dumps(json.loads(r[0])) for r in query(db, 'SELECT raw_json FROM "Comment" WHERE taskId=? AND id>0', (main_task,))))
+
+    def comment_cached():
+        need("id" in comment_state, "no comment to act on")
+        if local(gate.db, "Comment", comment_state["id"]) is None:
+            gate.sync()
+        need(local(gate.db, "Comment", comment_state["id"]) is not None, "comment is not in the local cache")
+
+    def comment_edit():
+        comment_cached()
+        edited = f"<p>HTPR-7381 edited {nonce}</p>"
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "edit", "text": edited}})
+        row = next(r for r in comments_of(main_task) if r["id"] == comment_state["id"])
+        need(f"edited {nonce}" in json.dumps(row), "API comment text not edited")
+        gate.expect_local("comment_edit", "Comment edit", lambda db: f"edited {nonce}" in json.dumps(local(db, "Comment", comment_state["id"]) or {}))
+
+    def comment_reaction():
+        comment_cached()
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "reaction", "emoji": "\U0001F44D", "active": True}})
+        row = next(r for r in comments_of(main_task) if r["id"] == comment_state["id"])
+        need("\U0001F44D" in json.dumps(row, ensure_ascii=False), "API reaction missing")
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "reaction", "emoji": "\U0001F44D", "active": False}})
+        row = next(r for r in comments_of(main_task) if r["id"] == comment_state["id"])
+        need("\U0001F44D" not in json.dumps(row, ensure_ascii=False), "API reaction not removed")
+
+    def comment_saved():
+        comment_cached()
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "saved", "public": False}})
+        saved = api("GET", "/api/savedContent/getAll", base=APP)
+        need(str(comment_state["id"]) in json.dumps(saved), "API saved comment missing")
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "saved", "public": False}})
+        saved = api("GET", "/api/savedContent/getAll", base=APP)
+        need(f'"commentId": "{comment_state["id"]}"' not in json.dumps(saved) and f'"commentId": {comment_state["id"]}' not in json.dumps(saved), "API saved comment not removed")
+
+    def comment_delete():
+        marker = f"doomed {nonce}"
+        gate.write({"kind": "task_comment", "task_id": main_task, "text": f"<p>HTPR-7381 {marker}</p>"})
+        rows = [row for row in comments_of(main_task) if marker in json.dumps(row)]
+        need(len(rows) == 1, f"API comments hold {len(rows)} rows to delete")
+        doomed = rows[0]["id"]
+        gate.sync()
+        need(local(gate.db, "Comment", doomed) is not None, "comment to delete is not in the local cache")
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": doomed, "change": {"action": "delete"}})
+        need(not any(r["id"] == doomed for r in comments_of(main_task)), "API comment still present")
+        gate.expect_local("comment_delete", "Comment removed", lambda db: local(db, "Comment", doomed) is None)
+
+    def draft():
+        text = f"<p>HTPR-7381 draft {nonce}</p>"
+        gate.write({"kind": "comment_draft", "task_id": main_task, "text": text})
+        drafts = api("GET", f"/drafts?task_id={main_task}")
+        need(nonce in json.dumps(drafts), "API draft missing")
+        gate.write({"kind": "discard_draft", "task_id": main_task, "draft_type": "comment"})
+        drafts = api("GET", f"/drafts?task_id={main_task}")
+        need(nonce not in json.dumps(drafts), "API draft not discarded")
+
+    def compose():
+        text = f"HTPR-7381 compose {nonce}"
+        gate.write({"kind": "compose_task", "project_id": BOARD, "text": text, "time_zone": "Europe/London"})
+        rows = query(gate.db, 'SELECT id FROM "Task" WHERE title LIKE ? AND id>0', (f"%{nonce}%compose%",)) or query(gate.db, 'SELECT id FROM "Task" WHERE raw_json LIKE ? AND id>0 AND id NOT IN (?,?,?)', (f"%compose {nonce}%", main_task, parent_task, assign_task))
+        need(rows, "composed task is not in the local cache")
+        composed = rows[0][0]
+        gate.created_tasks.append(composed)
+        need(nonce in json.dumps(get_task(composed)), "API composed task differs")
+        gate.expect_local("compose_task", "Composed task", lambda db: local(db, "Task", composed) is not None)
+
+    def columns():
+        name = f"ht7381 column {nonce[-8:]}"
+        renamed = name + " renamed"
+        gate.write({"kind": "board", "change": {"AddColumn": {"project": BOARD, "title": name}}})
+        rows = [row for row in sections_of(BOARD) if section_title(row) == name]
+        need(len(rows) == 1, "API column missing after add")
+        column = rows[0]["id"]
+        gate.extra_columns.append(column)
+        gate.sync()
+        gate.write({"kind": "board", "change": {"RenameColumn": {"project": BOARD, "section": column, "title": renamed}}})
+        need(any(section_title(row) == renamed for row in sections_of(BOARD)), "API column not renamed")
+        gate.write({"kind": "board", "change": {"DeleteColumn": {"project": BOARD, "section": column}}})
+        listed = [row for row in sections_of(BOARD) if row.get("id") == column and not row.get("deleted")]
+        need(not listed, "API column still active")
+        gate.extra_columns.remove(column)
+        gate.expect_local("columns", "Column removed", lambda db: (local(db, "Section", column) or {}).get("deleted") in (None, 1, True))
+
+    def rename_board():
+        renamed = f"{gate.board_title} ht{nonce[-6:]}"
+        gate.write({"kind": "board", "change": {"RenameBoard": {"project": BOARD, "title": renamed}}})
+        found = api("GET", f"/projects?status=Normal&search=ht{nonce[-6:]}&limit=100")
+        need(any(p.get("id") == BOARD for p in found.get("projects", [])), "API board title not renamed")
+        api("PATCH", f"/projects/{BOARD}", {"title": gate.board_title})
+        restored = api("GET", f"/projects?status=Normal&search=QA%20Sandbox&limit=100")
+        need(any(p.get("id") == BOARD and (p.get("title") or p.get("name")) == gate.board_title for p in restored.get("projects", [])), "board title was not restored")
+
+    def inbox_archive_and_remind():
+        need("id" in moved_notification, "no moved-task notification to remind and archive")
+        inbox_remind_kind(gate, assign_task, BOARD, moved_notification["id"])
+
+    def labels_clear():
+        labels_clear_kind(gate, main_task)
+
+    steps = dict([
+        ("task_title", title), ("task_section", section), ("move_task", move),
+        ("task_description", description), ("task_priority", priority), ("task_estimate", estimate),
+        ("task_due_date", due_date), ("labels", label), ("task_assignees", assignees),
+        ("assign_to_me", assign_me), ("parent_and_remove_subtask", parent), ("task_status", status),
+        ("star_task", star), ("waiting_on", waiting_on), ("toggle_timer", timer),
+        ("move_to_inbox", move_to_inbox), ("inbox_seen", inbox_seen),
+        ("task_comment", comment_send), ("comment_edit", comment_edit), ("comment_reaction", comment_reaction),
+        ("comment_saved", comment_saved), ("comment_delete", comment_delete),
+        ("comment_draft_and_discard", draft), ("compose_task", compose), ("columns", columns),
+        ("rename_board", rename_board), ("inbox_remind_and_archive", inbox_archive_and_remind),
+    ])
+    after_reopen = {"labels_clear": labels_clear}
+    need(set(steps) | set(after_reopen) == set(STEP_NAMES), "step list and STEP_NAMES disagree")
+    for name in STEP_NAMES:
+        if name in steps:
+            gate.run(name, steps[name])
+    reopen_phase(gate)
+    for name, fn in after_reopen.items():
+        gate.run(name, fn)
+
+
+def reopen_phase(gate):
+    def check(phase, db):
+        for name, description, predicate in gate.reopen:
+            try:
+                ok = bool(predicate(db))
+            except (sqlite3.Error, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
+                ok = False
+                description = f"{description} ({type(error).__name__})"
+            print(f"REOPEN_{'PASS' if ok else 'FAIL'} {phase} {name}")
+            if not ok:
+                gate.results[f"reopen:{phase}:{name}"] = description
+
+    cli(gate.db, "dump")
+    check("same_database", gate.db)
+    gate.sync()
+    check("after_resync", gate.db)
+    fresh = os.path.join(EVIDENCE, "fresh.db")
+    for suffix in ("", "-wal", "-shm"):
+        if os.path.exists(fresh + suffix):
+            os.remove(fresh + suffix)
+    gate.sync(fresh)
+    skip_fresh = {"task_comment", "comment_edit", "comment_delete", "compose_task", "inbox_seen"}
+    gate.reopen[:] = [item for item in gate.reopen if item[0] not in skip_fresh]
+    check("fresh_database", fresh)
+
+
+def cleanup(gate):
+    problems = []
+
+    def attempt(label, action):
+        try:
+            action()
+        except (Failure, SystemExit, KeyError, TypeError) as error:
+            problems.append(f"{label}: {redact(str(error))[:200]}")
+
+    def stop_running_timer(task_id):
+        if timer_running_on(api("GET", "/time/running"), task_id):
+            api("POST", "/time/stop", {"task": str(task_id)})
+
+    if gate.timer_task is not None:
+        attempt("stop timer", lambda: stop_running_timer(gate.timer_task))
+    if gate.inbox_reminder is not None:
+        reminder = gate.inbox_reminder
+        attempt("cancel inbox reminder", lambda: cancel_inbox_reminder(reminder["task_id"], reminder["project_id"]))
+    if gate.notification_archived is not None:
+        attempt("unarchive notification", lambda: api("POST", "/inbox/unarchive", {"notification_ids": [gate.notification_archived]}))
+    if gate.board_title:
+        attempt("restore board title", lambda: api("PATCH", f"/projects/{BOARD}", {"title": gate.board_title}))
+    for column in gate.extra_columns:
+        attempt(f"delete column {column}", lambda column=column: api("DELETE", f"/projects/{BOARD}/sections/{column}"))
+    for task_id in gate.created_tasks:
+        attempt(f"delete task {task_id}", lambda task_id=task_id: api("POST", "/tasks/delete", {"task_id": task_id}))
+    if not problems:
+        print("CLEANUP_OK")
+    return problems
+
+
+if __name__ == "__main__":
+    sys.exit(main())

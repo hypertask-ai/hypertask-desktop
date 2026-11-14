@@ -36,3 +36,47 @@ Baseline proof passed for all four cases at `97d0f04c16d7b80c7ab7165a00246e7b8c3
 `windows-input` retains `baseline/`, `broken/`, and `restored/` per-case receipts, screenshots, snapshots, and SQLite backups. `negative-control.patch` records four distinct production write suppressions in one hosted-only build. Every case runs in its own process and database. The gate requires native key acknowledgement and two further frames before checking these synchronous write effects. Missing-effect controls must retain an empty mutation queue. This suite is not an idle-render soak test. Each rejection must be `EffectMissing`, with its matching production suppression marker. Startup, typing, focus, database, and cleanup failures cannot pass as rejection proof. Source and executable bytes are restored before all four cases must pass again. `negative-control.json` binds both executable hashes, source restoration, revision agreement, and control cleanup. Latest exact-head proof is recorded on [draft PR checks](https://github.com/hypertask-ai/hypertask-desktop/pull/31/checks). Accept only completed green CI with `NATIVE_INPUT_CONTROLS_VERIFIED` and all four restored cases.
 
 The native Windows result does not certify Intel hardware pixels. Linux screenshots do not certify Windows pixels. Neither proves live authorization. Unmigrated cases remain covered only at their recorded layer.
+
+## HTPR-7381 acceptance jobs
+
+The Bench workflow measures three budgets outside the app's own log line.
+
+- Cold start: `gates/cold-start.mjs` runs Hyperfine on macOS and writes `evidence/cold-start/hyperfine.json`. The median must be under 300 ms.
+- Input to frame: `gates/presentmon-frame.ps1` sends operating-system keystrokes on Windows while PresentMon 2.6 records. `gates/presentmon-score.py` reads `MsAllInputToPhotonLatency` and `MsBetweenPresents`. Input-to-photon p95 must be under 16 ms.
+- Memory: `gates/memory.mjs` builds the input benchmark and keeps the 100 MB cap.
+- Live readback: `gates/live-readback.py` writes every supported edit through `ht-core-cli write-json` on QA Sandbox board 7049, reads each one back with its own API GET, and prints `KIND_PASS <kind>` or `KIND_FAIL <kind>`. It then proves reopening three ways: the same database in a new process, a resync of that database, and a fresh database, printing `REOPEN_PASS` or `REOPEN_FAIL` per edit. It deletes its test tasks, restores the board title, removes its test column and unarchives the inbox row before it exits. It prints `LIVE_READBACK_OK` only when every kind and every reopen check passes. The web repo workflow `desktop-live-readback.yml` runs it from production with the QA login at a pinned desktop commit.
+
+## Supported edits and exclusions
+
+Every edit below is reachable from the Inbox, Board or Task detail screens and goes through `Db::enqueue` and `drain_once`.
+
+| Edit | Write kind | Live check |
+| --- | --- | --- |
+| Rename task | `task_title` | Task GET title |
+| Move task to a column | `task_section`, `board` `MoveTask` | Task GET column |
+| Description | `task_patch` `Description` | Task GET description |
+| Priority, size, due date | `task_patch` `Priority`, `Estimate`, `DueDate` | Task GET fields |
+| Labels | `board` `CreateTaskLabel`, `task_patch` `Labels` | Task GET labels |
+| Assignees, assign to me | `task_patch` `Assignees`, `board` `AssignToMe` | Task GET assignees |
+| Parent and remove subtask | `task_patch` `Parent`, `board` `RemoveSubtask` | Task GET parent |
+| Archive and restore task | `task_patch` `Status` | Task GET status |
+| Star task | `board` `StarTask` | Task GET saved flag |
+| Waiting on | `board` `WaitingOn` | Task GET waiting user |
+| Timer | `board` `ToggleTimer` | Running timer GET |
+| Move to inbox | `board` `MoveToInbox` | Inbox list GET |
+| Mark inbox row seen | `inbox_seen` | Inbox list GET |
+| Remind or archive inbox row | `inbox_remind`, `inbox_archive` | Inbox list GET, then unarchive |
+| Send, edit, react, save, delete comment | `task_comment`, `comment_action` | Comments GET, saved content GET |
+| Comment draft save and discard | `comment_draft`, `discard_draft` | Drafts GET |
+| Compose task | `compose_task` | Task GET |
+| Add, rename, delete column | `board` `AddColumn`, `RenameColumn`, `DeleteColumn` | Sections GET |
+| Rename board | `board` `RenameBoard` | Projects GET, then restored |
+
+Excluded, with the reason:
+
+- `board` `ArchiveBoard`: the API cannot create a throwaway board, and archiving the shared sandbox would break design QA.
+- `board` `AssignAgent`: needs a second agent identity that the QA login does not own.
+- `shell` writes (profile, webhooks, skills, project instructions, members): not on the Inbox, Board or Task screens.
+- `editor_improve`: calls the AI writer, which is not a stored edit.
+
+Theme captures for Porcelain, Graphite, AMOLED and Dia land in `evidence/theme-pixels`. Light and Graphite 2 are not desktop themes, so this job does not score them. Pixel scores against the live app run only when `gates/fixtures/live-theme-pixels/<theme>/<screen>.png` is present.
