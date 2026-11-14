@@ -74,6 +74,15 @@ pub fn backoff(attempts: u32) -> i64 {
 pub fn permanent(status: u16) -> bool {
     (400..500).contains(&status) && !matches!(status, 408 | 429)
 }
+/// The MCP route wrapper rejects a rate-limited request before the handler runs
+/// (hypertask-ai/hypertask `src/lib/mcp/auth/rateLimit.ts`), so an attempt that ended on a
+/// 429 cannot have changed server state and is not an uncertain replay.
+pub fn rate_limited_error(message: Option<&str>) -> bool {
+    message.is_some_and(|message| {
+        let message = message.to_ascii_lowercase();
+        message.contains("http 429") || message.contains("rate limit")
+    })
+}
 
 impl Db {
     pub fn enqueue(&mut self, write: Write, now: i64) -> Result<i64> {
@@ -440,6 +449,7 @@ impl Db {
         if !claimed {
             return Ok(Drain::Waiting(ready));
         }
+        let replay_allowed = rate_limited_error(row.last_error.as_deref());
         let (path, body) = match row.kind.as_str() {
             "editor_improve" => ("/ai/improve",row.payload_json.clone()),
             "draft_discard" => ("",Value::Null),
@@ -471,7 +481,7 @@ impl Db {
                 Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true => {
                     if response.body["user"]["id"] == row.payload_json["user_id"] {
                         if let crate::BoardWrite::ToggleTimer { task } = change {
-                            if row.attempts > 1 {
+                            if row.attempts > 1 && !replay_allowed {
                                 Ok(Response { status:409, body:json!({"success":false,"error":"Timer outcome unknown; refresh before retrying"}) })
                             } else { crate::board_write::toggle_timer(transport, task, &row.client_id) }
                         } else { transport.mutate(method, &path, &body, &row.client_id) }
@@ -509,7 +519,7 @@ impl Db {
                 serde_json::from_value(row.payload_json["change"].clone())?;
             if let crate::CommentWrite::Saved { public } = change {
                 // toggleSaved has no idempotency support: never replay an uncertain toggle.
-                if row.attempts > 1 { Ok(Response { status: 409, body: json!({"success":false}) }) }
+                if row.attempts > 1 && !replay_allowed { Ok(Response { status: 409, body: json!({"success":false}) }) }
                 else if self.current_user_id() != row.payload_json["user_id"].as_i64() {
                     Ok(Response { status:403, body:json!({"success":false}) })
                 } else {
@@ -554,7 +564,7 @@ impl Db {
             }
             Err(error) => (false, error.to_string()),
         };
-        let result = if row.kind == "board_write" && row.payload_json["change"].get("ToggleTimer").is_some() {
+        let result = if row.kind == "board_write" && row.payload_json["change"].get("ToggleTimer").is_some() && !rate_limited_error(Some(result.1.as_str())) {
             (true, format!("Timer outcome unavailable; refresh before retrying ({})", result.1))
         } else { result };
         self.transaction(|db| {

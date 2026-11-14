@@ -16,10 +16,47 @@ CLI = os.environ["HT_CORE_CLI"]
 TOKEN = os.environ.get("HT_TOKEN", "")
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 EVIDENCE = os.path.join(ROOT, "evidence", "live-readback")
+# hypertask-ai/hypertask src/lib/mcp/auth/rateLimit.ts: one token gets 120 requests per
+# fixed one-minute window (600 for agent tokens) and the route wrapper rejects with 429
+# before the handler runs, so a 429 request never changed server state and may be replayed.
+# The gate needs more than one window, so it waits for the next window instead of failing.
+RATE_LIMIT_WINDOW_SECONDS = 60
+RATE_LIMIT_RETRIES = 4
+RATE_LIMIT_MARKERS = ("http 429", "rate limit")
+
+STEP_NAMES = (
+    "task_title", "task_section", "move_task", "task_description", "task_priority",
+    "task_estimate", "task_due_date", "labels", "task_assignees", "assign_to_me",
+    "parent_and_remove_subtask", "task_status", "star_task", "waiting_on", "toggle_timer",
+    "move_to_inbox", "inbox_seen", "task_comment", "comment_edit", "comment_reaction",
+    "comment_saved", "comment_delete", "comment_draft_and_discard", "compose_task", "columns",
+    "rename_board", "inbox_remind_and_archive", "labels_clear",
+)
 
 
 class Failure(Exception):
     pass
+
+
+class RateLimited(Exception):
+    pass
+
+
+def rate_limited(message):
+    text = (message or "").lower()
+    return any(marker in text for marker in RATE_LIMIT_MARKERS)
+
+
+def window_wait(now=None):
+    now = time.time() if now is None else now
+    return float(RATE_LIMIT_WINDOW_SECONDS - (now % RATE_LIMIT_WINDOW_SECONDS)) + 2.0
+
+
+def pause(reason):
+    wait = window_wait()
+    # The web repo wrapper prints lines containing LIVE_READBACK, so keep the marker.
+    print(f"LIVE_READBACK_WAIT {wait:.0f}s {reason}")
+    time.sleep(wait)
 
 
 def redact(text):
@@ -29,6 +66,16 @@ def redact(text):
 
 
 def api(method, path, body=None, base=BASE):
+    for attempt in range(RATE_LIMIT_RETRIES + 1):
+        try:
+            return api_once(method, path, body, base)
+        except RateLimited as error:
+            if attempt == RATE_LIMIT_RETRIES:
+                raise Failure(str(error))
+            pause(f"{method} {path}")
+
+
+def api_once(method, path, body=None, base=BASE):
     data = None if body is None else json.dumps(body).encode()
     request = urllib.request.Request(
         base + path,
@@ -41,10 +88,16 @@ def api(method, path, body=None, base=BASE):
             raw = response.read().decode()
     except urllib.error.HTTPError as error:
         detail = redact(error.read().decode(errors="replace")[:400])
-        raise Failure(f"API {method} {path} status {error.code}: {detail}")
+        message = f"API {method} {path} status {error.code}: {detail}"
+        if error.code == 429 or rate_limited(detail):
+            raise RateLimited(message)
+        raise Failure(message)
     payload = json.loads(raw) if raw.strip() else {}
     if isinstance(payload, dict) and payload.get("success") is False:
-        raise Failure(f"API {method} {path} refused: {redact(json.dumps(payload)[:400])}")
+        detail = redact(json.dumps(payload)[:400])
+        if rate_limited(detail):
+            raise RateLimited(f"API {method} {path} refused: {detail}")
+        raise Failure(f"API {method} {path} refused: {detail}")
     return payload
 
 
@@ -146,20 +199,45 @@ class Gate:
         self.notification_archived = None
         self.board_title = None
         self.extra_columns = []
+        self.timer_task = None
+        self.rate_limit_waits = 0
 
     def sync(self, db=None):
-        cli(db or self.db, "sync", "--board", str(BOARD))
+        for attempt in range(RATE_LIMIT_RETRIES + 1):
+            try:
+                cli(db or self.db, "sync", "--board", str(BOARD))
+                return
+            except Failure as error:
+                if attempt == RATE_LIMIT_RETRIES or not rate_limited(str(error)):
+                    raise
+                self.rate_limit_waits += 1
+                pause("sync --board")
 
-    def write(self, payload):
-        output = cli(self.db, "write-json", json.dumps(payload))
+    def drain_outcomes(self, output):
         outcomes = re.findall(r"DRAIN (\w+)", output)
         need(outcomes, f"no drain result: {output[-300:]}")
-        need(outcomes[0] == "Applied", f"write was {outcomes[0]}: {self.queue_state()}")
-        need(all(o == "Applied" for o in outcomes[:-1]) and outcomes[-1] == "Empty", f"drain ended {outcomes}: {self.queue_state()}")
+        return outcomes
+
+    def write(self, payload):
+        outcomes = self.drain_outcomes(cli(self.db, "write-json", json.dumps(payload)))
+        retries = 0
+        while outcomes[-1] == "Retrying" and self.rate_limit_pending() and retries < RATE_LIMIT_RETRIES:
+            retries += 1
+            self.rate_limit_waits += 1
+            pause(f"drain after {outcomes[-1]}")
+            outcomes += self.drain_outcomes(cli(self.db, "drain"))
+        applied = [outcome for outcome in outcomes if outcome != "Retrying"]
+        need(applied, f"write was {outcomes[-1]}: {self.queue_state()}")
+        need(applied[0] == "Applied", f"write was {applied[0]}: {self.queue_state()}")
+        need(all(o == "Applied" for o in applied[:-1]) and applied[-1] == "Empty", f"drain ended {outcomes}: {self.queue_state()}")
         self.require_empty_queue()
 
     def queue_state(self):
         return query(self.db, "SELECT kind,status,attempts,last_error FROM mutation_queue")
+
+    def rate_limit_pending(self):
+        pending = [row for row in self.queue_state() if row[1] == "pending"]
+        return bool(pending) and all(rate_limited(row[3]) for row in pending)
 
     def require_empty_queue(self):
         left = self.queue_state()
@@ -190,6 +268,18 @@ class Gate:
         return task_id
 
 
+def report(gate):
+    passed = sum(1 for name in STEP_NAMES if name in gate.results and gate.results[name] is None)
+    reopen_failed = [key for key, value in gate.results.items() if key.startswith("reopen:") and value]
+    if reopen_failed:
+        print(f"REOPEN_FAILED {len(reopen_failed)}")
+    if gate.rate_limit_waits:
+        print(f"LIVE_READBACK_RATE_LIMIT_WAITS {gate.rate_limit_waits}")
+    # Always the last status line, including after a crash outside gate.run.
+    print(f"KINDS_PASSED {passed}/{len(STEP_NAMES)}")
+    return 0 if passed == len(STEP_NAMES) and not reopen_failed else 1
+
+
 def main():
     if not TOKEN:
         print("LIVE_READBACK_NO_TOKEN")
@@ -198,13 +288,27 @@ def main():
         print(f"LIVE_READBACK_REFUSED board {BOARD}")
         return 1
     gate = Gate()
+    status = 1
     try:
-        return execute(gate)
-    finally:
+        execute(gate)
+        status = 0
+    except Exception as error:
+        # Anything outside gate.run (preflight, reopen_phase) used to escape as a bare
+        # traceback with no KINDS_PASSED line, which hides how far the run got.
+        print(f"LIVE_READBACK_CRASH {type(error).__name__}: {redact(str(error))[:300]}")
+        status = 1
+    cleanup_failed = []
+    try:
         cleanup_failed = cleanup(gate)
-        if cleanup_failed:
-            print("CLEANUP_FAILED " + "; ".join(cleanup_failed))
-            sys.exit(1)
+    except Exception as error:
+        cleanup_failed = [f"cleanup crashed: {type(error).__name__}: {redact(str(error))[:200]}"]
+    if cleanup_failed:
+        print("CLEANUP_FAILED " + "; ".join(cleanup_failed))
+    counted = report(gate)
+    if status == 0 and counted == 0 and not cleanup_failed:
+        print("LIVE_READBACK_OK")
+        return 0
+    return 1
 
 
 def execute(gate):
@@ -281,10 +385,9 @@ def execute(gate):
         gate.write({"kind": "board", "change": {"CreateTaskLabel": {"project": BOARD, "task": main_task, "name": name}}})
         need(name in json.dumps(get_task(main_task).get("labels")), "API label missing")
         need(name in json.dumps((local(gate.db, "Task", main_task) or {}).get("labels")), "local task lacks the new label")
-        gate.expect_local("create_label", "Board label", lambda db: any(name in r[0] for r in query(db, 'SELECT raw_json FROM "Label" WHERE projectId=?', (BOARD,))))
-        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Labels": []}})
-        need(not (get_task(main_task).get("labels") or []), "API labels not cleared")
-        gate.expect_local("task_labels_clear", "Task labels cleared", lambda db: not ((local(db, "Task", main_task) or {}).get("labels") or []))
+        # The clear runs after the reopen phases (labels_clear), so this stays task-level:
+        # the association itself has to survive the reopen, not just the board label row.
+        gate.expect_local("create_label", "Task label", lambda db: name in json.dumps((local(db, "Task", main_task) or {}).get("labels")))
 
     def assignees():
         gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Assignees": [gate.user]}})
@@ -300,7 +403,13 @@ def execute(gate):
         gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Parent": parent_task}})
         got = get_task(main_task)
         need((got.get("parentTaskId") or got.get("parent_id")) == parent_task, "API parent missing")
-        gate.write({"kind": "board", "change": {"RemoveSubtask": {"task": main_task, "parent": parent_task}}})
+        # Removing the parent of the open task is TaskPatch::Parent(None) in the desktop
+        # (crates/ht-desktop/src/shell_commands.rs:26). BoardWrite::RemoveSubtask is the
+        # "remove a sub-task" modal, whose own guard needs the parent's sub_tasks in the
+        # cache (crates/ht-core/src/queue.rs:94-99) that the board list strips
+        # (crates/ht-core/src/db.rs:344); the modal only offers children it read from that
+        # same cached list, so the gate used a write the app never issues with this cache.
+        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Parent": None}})
         got = get_task(main_task)
         need(not (got.get("parentTaskId") or got.get("parent_id")), "API parent not removed")
         gate.expect_local("remove_subtask", "Task parent removed", lambda db: not (local(db, "Task", main_task) or {}).get("parentTaskId"))
@@ -327,12 +436,16 @@ def execute(gate):
         gate.expect_local("waiting_on", "Task waiting-on cleared", lambda db: (local(db, "Task", main_task) or {}).get("waitingOnUserId") is None)
 
     def timer():
+        summary = api("POST", "/time/status", {"task": str(assign_task)}).get("summary") or {}
+        need(summary.get("enabled") is True, f"board {BOARD} has time tracking disabled: POST /time/status said {redact(json.dumps(summary)[:300])}")
+        gate.write({"kind": "board", "change": {"ToggleTimer": {"task": assign_task}}})
+        gate.timer_task = assign_task
+        running = api("GET", "/time/running")
+        need(contains_id(running, assign_task) or str(assign_task) in json.dumps(running), f"API timer not running: GET /time/running said {redact(json.dumps(running)[:400])}")
         gate.write({"kind": "board", "change": {"ToggleTimer": {"task": assign_task}}})
         running = api("GET", "/time/running")
-        need(contains_id(running, assign_task) or str(assign_task) in json.dumps(running), "API timer not running")
-        gate.write({"kind": "board", "change": {"ToggleTimer": {"task": assign_task}}})
-        running = api("GET", "/time/running")
-        need(not (contains_id(running, assign_task) or str(assign_task) in json.dumps(running)), "API timer still running")
+        need(not (contains_id(running, assign_task) or str(assign_task) in json.dumps(running)), f"API timer still running: GET /time/running said {redact(json.dumps(running)[:400])}")
+        gate.timer_task = None
 
     moved_notification = {}
 
@@ -475,7 +588,17 @@ def execute(gate):
         gate.notification_archived = None
         gate.reopen[:] = [item for item in gate.reopen if item[0] != "inbox_archive"]
 
-    steps = [
+    def labels_clear():
+        # Runs after everything reopened: while the label is still attached, create_label's
+        # reopen check can stay task-level. The clear is then proven on the server, in this
+        # database, and again after a resync of it.
+        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Labels": []}})
+        need(not (get_task(main_task).get("labels") or []), "API labels not cleared")
+        need(not ((local(gate.db, "Task", main_task) or {}).get("labels") or []), "local task still carries the labels")
+        gate.sync()
+        need(not ((local(gate.db, "Task", main_task) or {}).get("labels") or []), "labels came back after a resync")
+
+    steps = dict([
         ("task_title", title), ("task_section", section), ("move_task", move),
         ("task_description", description), ("task_priority", priority), ("task_estimate", estimate),
         ("task_due_date", due_date), ("labels", label), ("task_assignees", assignees),
@@ -486,24 +609,20 @@ def execute(gate):
         ("comment_saved", comment_saved), ("comment_delete", comment_delete),
         ("comment_draft_and_discard", draft), ("compose_task", compose), ("columns", columns),
         ("rename_board", rename_board), ("inbox_remind_and_archive", inbox_archive_and_remind),
-    ]
-    for name, fn in steps:
-        gate.run(name, fn)
-
+    ])
+    after_reopen = {"labels_clear": labels_clear}
+    need(set(steps) | set(after_reopen) == set(STEP_NAMES), "step list and STEP_NAMES disagree")
+    for name in STEP_NAMES:
+        if name in steps:
+            gate.run(name, steps[name])
     reopen_phase(gate)
-    failed = {k: v for k, v in gate.results.items() if v}
-    print(f"KINDS_PASSED {len(gate.results) - len(failed)}/{len(gate.results)}")
-    if failed:
-        return 1
-    print("LIVE_READBACK_OK")
-    return 0
+    for name, fn in after_reopen.items():
+        gate.run(name, fn)
 
 
 def reopen_phase(gate):
     def check(phase, db):
         for name, description, predicate in gate.reopen:
-            if gate.results.get(name) is None or name not in gate.results:
-                pass
             try:
                 ok = bool(predicate(db))
             except (sqlite3.Error, KeyError, TypeError, ValueError, json.JSONDecodeError) as error:
@@ -536,6 +655,8 @@ def cleanup(gate):
         except (Failure, SystemExit, KeyError, TypeError) as error:
             problems.append(f"{label}: {redact(str(error))[:200]}")
 
+    if gate.timer_task is not None:
+        attempt("stop timer", lambda: api("POST", "/time/stop", {"task": str(gate.timer_task)}))
     if gate.notification_archived is not None:
         attempt("unarchive notification", lambda: api("POST", "/inbox/unarchive", {"notification_ids": [gate.notification_archived]}))
     if gate.board_title:
