@@ -64,6 +64,15 @@ def query(db, sql, params=()):
         connection.close()
 
 
+def execute_sql(db, sql, params=()):
+    connection = sqlite3.connect(db)
+    try:
+        with connection:
+            connection.execute(sql, params)
+    finally:
+        connection.close()
+
+
 def local(db, table, row_id):
     rows = query(db, f'SELECT raw_json FROM "{table}" WHERE id=?', (row_id,))
     return json.loads(rows[0][0]) if rows else None
@@ -143,9 +152,10 @@ class Gate:
 
     def write(self, payload):
         output = cli(self.db, "write-json", json.dumps(payload))
-        drained = re.search(r"DRAIN (\w+)", output)
-        need(drained is not None, f"no drain result: {output[-300:]}")
-        need(drained.group(1) == "Applied", f"write was {drained.group(1)}: {self.queue_state()}")
+        outcomes = re.findall(r"DRAIN (\w+)", output)
+        need(outcomes, f"no drain result: {output[-300:]}")
+        need(outcomes[0] == "Applied", f"write was {outcomes[0]}: {self.queue_state()}")
+        need(all(o == "Applied" for o in outcomes[:-1]) and outcomes[-1] == "Empty", f"drain ended {outcomes}: {self.queue_state()}")
         self.require_empty_queue()
 
     def queue_state(self):
@@ -153,6 +163,8 @@ class Gate:
 
     def require_empty_queue(self):
         left = self.queue_state()
+        failed = [row for row in left if row[1] == "failed"]
+        need(not failed, f"queue row failed: {failed}")
         need(not left, f"queue not empty after drain: {left}")
 
     def expect_local(self, name, description, check):
@@ -167,7 +179,7 @@ class Gate:
             self.results[name] = redact(f"{type(error).__name__}: {error}")[:500]
             print(f"KIND_FAIL {name}: {self.results[name]}")
             try:
-                query(self.db, "DELETE FROM mutation_queue")
+                execute_sql(self.db, "DELETE FROM mutation_queue")
             except sqlite3.Error:
                 pass
 
@@ -216,8 +228,12 @@ def execute(gate):
     connection.close()
     sections = query(gate.db, 'SELECT id,section_title FROM "Section" WHERE projectId=? AND deleted=0 AND visibility=1 ORDER BY id', (BOARD,))
     need(len(sections) >= 2, f"board {BOARD} needs two visible columns, has {len(sections)}")
-    home_section = local(gate.db, "Task", main_task)["sectionId"]
-    other_section = next(row[0] for row in sections if row[0] != home_section)
+    def other_column(task_id):
+        current = local(gate.db, "Task", task_id)["sectionId"]
+        return next(row[0] for row in sections if row[0] != current)
+
+    parent_target = other_column(parent_task)
+    main_target = other_column(main_task)
 
     def title():
         renamed = f"HTPR-7381 renamed {nonce}"
@@ -227,14 +243,14 @@ def execute(gate):
         print(f"BOARD_READBACK task {main_task}")
 
     def section():
-        gate.write({"kind": "task_section", "task_id": main_task, "section_id": other_section})
-        need(get_task(main_task).get("sectionId") == other_section, "API column differs")
-        gate.expect_local("task_section", "Task column", lambda db: (local(db, "Task", main_task) or {}).get("sectionId") == other_section)
+        gate.write({"kind": "task_section", "task_id": parent_task, "section_id": parent_target})
+        need(get_task(parent_task).get("sectionId") == parent_target, "API column differs")
+        gate.expect_local("task_section", "Task column", lambda db: (local(db, "Task", parent_task) or {}).get("sectionId") == parent_target)
 
     def move():
-        gate.write({"kind": "board", "change": {"MoveTask": {"task": main_task, "project": BOARD, "section": home_section}}})
-        need(get_task(main_task).get("sectionId") == home_section, "API column after move differs")
-        gate.expect_local("move_task", "Task column after move", lambda db: (local(db, "Task", main_task) or {}).get("sectionId") == home_section)
+        gate.write({"kind": "board", "change": {"MoveTask": {"task": main_task, "project": BOARD, "section": main_target}}})
+        need(get_task(main_task).get("sectionId") == main_target, "API column after move differs")
+        gate.expect_local("move_task", "Task column after move", lambda db: (local(db, "Task", main_task) or {}).get("sectionId") == main_target)
 
     def description():
         html = f"<p>HTPR-7381 description {nonce}</p>"
@@ -264,7 +280,8 @@ def execute(gate):
         name = f"ht7381-{nonce[-8:]}"
         gate.write({"kind": "board", "change": {"CreateTaskLabel": {"project": BOARD, "task": main_task, "name": name}}})
         need(name in json.dumps(get_task(main_task).get("labels")), "API label missing")
-        gate.expect_local("create_label", "Task label", lambda db: name in json.dumps((local(db, "Task", main_task) or {}).get("labels")))
+        need(name in json.dumps((local(gate.db, "Task", main_task) or {}).get("labels")), "local task lacks the new label")
+        gate.expect_local("create_label", "Board label", lambda db: any(name in r[0] for r in query(db, 'SELECT raw_json FROM "Label" WHERE projectId=?', (BOARD,))))
         gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Labels": []}})
         need(not (get_task(main_task).get("labels") or []), "API labels not cleared")
         gate.expect_local("task_labels_clear", "Task labels cleared", lambda db: not ((local(db, "Task", main_task) or {}).get("labels") or []))
@@ -380,10 +397,16 @@ def execute(gate):
         need(f'"commentId": "{comment_state["id"]}"' not in json.dumps(saved) and f'"commentId": {comment_state["id"]}' not in json.dumps(saved), "API saved comment not removed")
 
     def comment_delete():
-        comment_cached()
-        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": "Delete"})
-        need(not any(r["id"] == comment_state["id"] for r in comments_of(main_task)), "API comment still present")
-        gate.expect_local("comment_delete", "Comment removed", lambda db: local(db, "Comment", comment_state["id"]) is None)
+        marker = f"doomed {nonce}"
+        gate.write({"kind": "task_comment", "task_id": main_task, "text": f"<p>HTPR-7381 {marker}</p>"})
+        rows = [row for row in comments_of(main_task) if marker in json.dumps(row)]
+        need(len(rows) == 1, f"API comments hold {len(rows)} rows to delete")
+        doomed = rows[0]["id"]
+        gate.sync()
+        need(local(gate.db, "Comment", doomed) is not None, "comment to delete is not in the local cache")
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": doomed, "change": "Delete"})
+        need(not any(r["id"] == doomed for r in comments_of(main_task)), "API comment still present")
+        gate.expect_local("comment_delete", "Comment removed", lambda db: local(db, "Comment", doomed) is None)
 
     def draft():
         text = f"<p>HTPR-7381 draft {nonce}</p>"

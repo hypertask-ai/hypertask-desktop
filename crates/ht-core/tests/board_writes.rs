@@ -525,3 +525,83 @@ fn projected_subtask_removal_retains_parent_on_refusal_or_wrong_acknowledgement(
         assert!(db.task(99).unwrap().is_none());
     }
 }
+
+struct LabelServer {
+    updates: usize,
+}
+impl Transport for LabelServer {
+    fn get(&mut self, path: &str) -> Result<Response, TransportError> {
+        assert_eq!(path, "/user/context");
+        Ok(Response {
+            status: 200,
+            body: json!({"success":true,"user":{"id":42}}),
+        })
+    }
+    fn post(&mut self, path: &str, _: &Value, _: &str) -> Result<Response, TransportError> {
+        let body = match path {
+            "/projects/15/labels" => json!({"success":true,"label":{"id":"real-label","name":"New"}}),
+            "/tasks/update" => {
+                self.updates += 1;
+                json!({"success":true,"task":{"id":1,"projectId":15,"title":"Task","status":"Normal","labels":[{"id":"real-label","name":"New"}]}})
+            }
+            other => panic!("unexpected request {other}"),
+        };
+        Ok(Response { status: 200, body })
+    }
+}
+
+#[test]
+fn drain_all_applies_the_label_follow_up_row_and_stops_on_an_empty_queue() {
+    let mut db = Db::memory().unwrap();
+    seed(&mut db);
+    db.enqueue(
+        Write::Board {
+            change: BoardWrite::CreateTaskLabel {
+                project: 15,
+                task: 1,
+                name: "New".into(),
+            },
+        },
+        100,
+    )
+    .unwrap();
+    let mut server = LabelServer { updates: 0 };
+    let outcomes = db.drain_all(&mut server, 101).unwrap();
+    assert!(matches!(
+        outcomes.as_slice(),
+        [Drain::Applied(_), Drain::Applied(_), Drain::Empty]
+    ));
+    assert_eq!(server.updates, 1);
+    assert!(db.mutations().unwrap().is_empty());
+    assert_eq!(
+        db.task(1).unwrap().unwrap().extra["labels"][0]["id"],
+        "real-label"
+    );
+}
+
+#[test]
+fn drain_all_stops_at_a_row_that_is_retrying_and_keeps_it_queued() {
+    let mut db = Db::memory().unwrap();
+    seed(&mut db);
+    db.enqueue(
+        Write::Board {
+            change: BoardWrite::RenameColumn {
+                project: 15,
+                section: 10,
+                title: "Changed".into(),
+            },
+        },
+        100,
+    )
+    .unwrap();
+    let mut s = server(
+        "PATCH",
+        "/projects/15/sections/10",
+        json!({"title":"Changed"}),
+        json!({"success":false}),
+    );
+    s.status = 500;
+    let outcomes = db.drain_all(&mut s, 101).unwrap();
+    assert!(matches!(outcomes.as_slice(), [Drain::Retrying(_)]));
+    assert_eq!(db.mutations().unwrap().len(), 1);
+}

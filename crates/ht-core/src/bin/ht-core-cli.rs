@@ -94,6 +94,7 @@ fn run() -> Result<()> {
                 }
                 sync.projects()?;
                 sync.board(board_id)?;
+                sync.catalog(board_id)?;
                 sync.inbox()?;
                 sync.refetch_pending()?;
                 Ok(())
@@ -144,11 +145,13 @@ fn run() -> Result<()> {
             if let Ok(token) = std::env::var("HT_TOKEN") {
                 let mut http = Http::new(token)?;
                 let drained = std::thread::spawn(move || {
-                    db.drain_once(&mut http, chrono::Utc::now().timestamp())
+                    db.drain_all(&mut http, chrono::Utc::now().timestamp())
                 })
                 .join()
                 .map_err(|_| anyhow::anyhow!("write thread failed"))??;
-                println!("DRAIN {drained:?}");
+                for outcome in drained {
+                    println!("DRAIN {outcome:?}");
+                }
             }
         }
         Some("import-fixtures") if args.len() == 2 || args.len() == 4 => {

@@ -412,6 +412,18 @@ impl Db {
         .collect()
     }
 
+    pub fn drain_all(&mut self, transport: &mut impl Transport, now: i64) -> Result<Vec<Drain>> {
+        let mut outcomes = Vec::new();
+        loop {
+            let outcome = self.drain_once(transport, now)?;
+            let more = matches!(outcome, Drain::Applied(_) | Drain::Failed(_));
+            outcomes.push(outcome);
+            if !more {
+                return Ok(outcomes);
+            }
+        }
+    }
+
     pub fn drain_once(&mut self, transport: &mut impl Transport, now: i64) -> Result<Drain> {
         let claim = self.transaction(|db| {
             let head = db.mutations()?.into_iter().find(|m| m.status != "failed");
