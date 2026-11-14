@@ -35,6 +35,56 @@ STEP_NAMES = (
     "rename_board", "inbox_remind_and_archive", "labels_clear",
 )
 
+# Serde shapes mirrored from crates/ht-core. `Write` and `CommentWrite` are internally
+# tagged, so the variant is a field value (`{"kind": "board"}`, `{"action": "edit"}`).
+# `BoardWrite` and `TaskPatch` are externally tagged, so the variant name is the only key.
+# live-readback.test.py reads those Rust enums and fails when these tables drift.
+WRITE_SHAPES = {
+    "compose_task": ({"project_id", "text", "time_zone"}, set()),
+    "shell": ({"request"}, set()),
+    "board": ({"change"}, set()),
+    "editor_improve": ({"task_id", "command", "text"}, set()),
+    "discard_draft": ({"task_id", "draft_type"}, set()),
+    "task_title": ({"task_id", "title"}, set()),
+    "task_section": ({"task_id", "section_id"}, set()),
+    "task_comment": ({"task_id", "text"}, set()),
+    "comment_draft": ({"task_id"}, {"text"}),
+    "comment_action": ({"task_id", "comment_id", "change"}, set()),
+    "task_patch": ({"task_id", "patch"}, set()),
+    "inbox_seen": ({"notification_id"}, set()),
+    "inbox_remind": ({"notification_ids", "remind_at"}, set()),
+    "inbox_archive": ({"notification_id"}, set()),
+}
+BOARD_SHAPES = {
+    "RemoveSubtask": {"task", "parent"},
+    "MoveToInbox": {"task", "project"},
+    "WaitingOn": {"task", "user"},
+    "ToggleTimer": {"task"},
+    "StarTask": {"task", "project", "active"},
+    "ArchiveBoard": {"project"},
+    "AssignAgent": {"task", "agent", "active"},
+    "AssignToMe": {"task", "user"},
+    "AddColumn": {"project", "title"},
+    "RenameColumn": {"project", "section", "title"},
+    "DeleteColumn": {"project", "section"},
+    "RenameBoard": {"project", "title"},
+    "CreateTaskLabel": {"project", "task", "name"},
+    "MoveTask": {"task", "project", "section"},
+}
+# TaskPatch variants are newtype variants, so the externally tagged value is the field itself.
+TASK_PATCH_SHAPES = {
+    "Parent": (type(None), int),
+    "Status": str,
+    "Description": str,
+    "Priority": int,
+    "Labels": list,
+    "Assignees": list,
+    "Estimate": int,
+    "DueDate": (type(None), str),
+}
+COMMENT_SHAPES = {"edit": {"text"}, "delete": set(), "saved": {"public"}, "reaction": {"emoji", "active"}}
+DRAFT_TYPES = {"comment", "description"}
+
 
 class Failure(Exception):
     pass
@@ -162,10 +212,90 @@ def need(condition, message):
         raise Failure(message)
 
 
+def external_variant(value, shapes, label):
+    if not isinstance(value, dict) or len(value) != 1:
+        raise Failure(f"{label} is externally tagged: exactly one variant key, got {value!r}")
+    variant = next(iter(value))
+    if variant not in shapes:
+        raise Failure(f"unknown {label} {variant!r}; expected one of {sorted(shapes)}")
+    fields = value[variant]
+    if not isinstance(fields, dict) or set(fields) != shapes[variant]:
+        got = sorted(fields) if isinstance(fields, dict) else fields
+        raise Failure(f"{label} {variant} fields are {got}, expected {sorted(shapes[variant])}")
+    return variant
+
+
+def external_value(value, shapes, label):
+    if not isinstance(value, dict) or len(value) != 1:
+        raise Failure(f"{label} is externally tagged: exactly one variant key, got {value!r}")
+    variant = next(iter(value))
+    if variant not in shapes:
+        raise Failure(f"unknown {label} {variant!r}; expected one of {sorted(shapes)}")
+    inner = value[variant]
+    allowed = shapes[variant]
+    if not isinstance(inner, allowed):
+        raise Failure(f"{label} {variant} must be {allowed}, got {type(inner).__name__}")
+    return variant
+
+
+def internal_variant(value, shapes, tag, label):
+    if not isinstance(value, dict):
+        raise Failure(f"{label} must be an object tagged {tag!r}, got {value!r}")
+    variant = value.get(tag)
+    if variant not in shapes:
+        raise Failure(f"{label} needs {tag!r} in {sorted(shapes)}, got {variant!r}")
+    fields = set(value) - {tag}
+    if fields != shapes[variant]:
+        raise Failure(f"{label} {variant} fields are {sorted(fields)}, expected {sorted(shapes[variant])}")
+    return variant
+
+
+def validate_write(payload):
+    """Reject a payload the Rust `Write` type would refuse, before the CLI sees it."""
+    if not isinstance(payload, dict):
+        raise Failure(f"write must be an object, got {type(payload).__name__}")
+    kind = payload.get("kind")
+    if kind not in WRITE_SHAPES:
+        raise Failure(f"unknown write kind {kind!r}; expected one of {sorted(WRITE_SHAPES)}")
+    required, optional = WRITE_SHAPES[kind]
+    missing = required - set(payload)
+    extra = set(payload) - required - optional - {"kind"}
+    if missing or extra:
+        raise Failure(f"{kind} write has missing fields {sorted(missing)} and unknown fields {sorted(extra)}")
+    if kind == "board":
+        external_variant(payload["change"], BOARD_SHAPES, "board change")
+    elif kind == "task_patch":
+        external_value(payload["patch"], TASK_PATCH_SHAPES, "task patch")
+    elif kind == "comment_action":
+        internal_variant(payload["change"], COMMENT_SHAPES, "action", "comment action")
+    elif kind == "discard_draft" and payload["draft_type"] not in DRAFT_TYPES:
+        raise Failure(f"unknown draft type {payload['draft_type']!r}; expected one of {sorted(DRAFT_TYPES)}")
+
+
 def index_of(value, key):
     if isinstance(value, dict):
         return value.get(key)
     return value
+
+
+# hypertask src/lib/constants/constants.ts PriorityConstants, the same table
+# crates/ht-core/src/task_patch.rs writes optimistically.
+PRIORITY_NAMES = {0: "No Priority", 1: "Urgent", 2: "High", 3: "Medium", 4: "Low"}
+
+
+def priority_index(value):
+    """Map a cached priority to its server index.
+
+    The live API returns the indexed object from /tasks?task_id=
+    (hypertask src/lib/mcp/tasks/mappers.ts) but only the name string from the board
+    list (src/lib/mcp/operations/tasks/operation.ts returns task.priority?.Priority_Value),
+    so a cached row legitimately holds either form for the same server value.
+    """
+    if isinstance(value, dict):
+        return value.get("priority_index")
+    if isinstance(value, str):
+        return next((index for index, name in PRIORITY_NAMES.items() if name == value), None)
+    return None
 
 
 def comments_of(task_id):
@@ -236,6 +366,7 @@ class Gate:
         return outcomes
 
     def write(self, payload):
+        validate_write(payload)
         outcomes = self.drain_outcomes(cli(self.db, "write-json", json.dumps(payload)))
         retries = 0
         while outcomes[-1] == "Retrying" and self.rate_limit_pending() and retries < RATE_LIMIT_RETRIES:
@@ -444,8 +575,8 @@ def execute(gate):
 
     def priority():
         gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Priority": 2}})
-        need(index_of(get_task(main_task).get("priority"), "priority_index") == 2, "API priority differs")
-        gate.expect_local("task_priority", "Task priority", lambda db: index_of((local(db, "Task", main_task) or {}).get("priority"), "priority_index") == 2)
+        need(priority_index(get_task(main_task).get("priority")) == 2, "API priority differs")
+        gate.expect_local("task_priority", "Task priority", lambda db: priority_index((local(db, "Task", main_task) or {}).get("priority")) == 2)
 
     def estimate():
         gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Estimate": 3}})
@@ -543,26 +674,26 @@ def execute(gate):
     def comment_edit():
         comment_cached()
         edited = f"<p>HTPR-7381 edited {nonce}</p>"
-        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"Edit": {"text": edited}}})
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "edit", "text": edited}})
         row = next(r for r in comments_of(main_task) if r["id"] == comment_state["id"])
         need(f"edited {nonce}" in json.dumps(row), "API comment text not edited")
         gate.expect_local("comment_edit", "Comment edit", lambda db: f"edited {nonce}" in json.dumps(local(db, "Comment", comment_state["id"]) or {}))
 
     def comment_reaction():
         comment_cached()
-        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"Reaction": {"emoji": "\U0001F44D", "active": True}}})
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "reaction", "emoji": "\U0001F44D", "active": True}})
         row = next(r for r in comments_of(main_task) if r["id"] == comment_state["id"])
         need("\U0001F44D" in json.dumps(row, ensure_ascii=False), "API reaction missing")
-        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"Reaction": {"emoji": "\U0001F44D", "active": False}}})
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "reaction", "emoji": "\U0001F44D", "active": False}})
         row = next(r for r in comments_of(main_task) if r["id"] == comment_state["id"])
         need("\U0001F44D" not in json.dumps(row, ensure_ascii=False), "API reaction not removed")
 
     def comment_saved():
         comment_cached()
-        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"Saved": {"public": False}}})
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "saved", "public": False}})
         saved = api("GET", "/api/savedContent/getAll", base=APP)
         need(str(comment_state["id"]) in json.dumps(saved), "API saved comment missing")
-        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"Saved": {"public": False}}})
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": comment_state["id"], "change": {"action": "saved", "public": False}})
         saved = api("GET", "/api/savedContent/getAll", base=APP)
         need(f'"commentId": "{comment_state["id"]}"' not in json.dumps(saved) and f'"commentId": {comment_state["id"]}' not in json.dumps(saved), "API saved comment not removed")
 
@@ -574,7 +705,7 @@ def execute(gate):
         doomed = rows[0]["id"]
         gate.sync()
         need(local(gate.db, "Comment", doomed) is not None, "comment to delete is not in the local cache")
-        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": doomed, "change": "Delete"})
+        gate.write({"kind": "comment_action", "task_id": main_task, "comment_id": doomed, "change": {"action": "delete"}})
         need(not any(r["id"] == doomed for r in comments_of(main_task)), "API comment still present")
         gate.expect_local("comment_delete", "Comment removed", lambda db: local(db, "Comment", doomed) is None)
 

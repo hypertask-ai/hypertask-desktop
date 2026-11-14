@@ -1,7 +1,9 @@
+import ast
 import importlib.util
 import io
 import json
 import os
+import re
 import sqlite3
 import stat
 import sys
@@ -46,6 +48,12 @@ os.environ["FAKE_CALLS"] = FAKE_CALLS
 spec = importlib.util.spec_from_file_location("live_readback", Path(__file__).with_name("live-readback.py"))
 gate_module = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(gate_module)
+
+# Minimal payloads with a valid serde shape, for tests that only exercise queue behaviour.
+BOARD_WRITE = {"kind": "board", "change": {"ToggleTimer": {"task": 1}}}
+TITLE_WRITE = {"kind": "task_title", "task_id": 1, "title": "title"}
+GATE_SOURCE = Path(__file__).with_name("live-readback.py")
+RUST_SRC = Path(__file__).resolve().parents[1] / "crates" / "ht-core" / "src"
 
 
 def new_gate(rows=()):
@@ -94,7 +102,7 @@ def write_with(rows, *steps, payload=None):
         gate = new_gate(rows)
         outcome = None
         try:
-            gate.write(payload or {"kind": "board"})
+            gate.write(payload or BOARD_WRITE)
         except gate_module.Failure as error:
             outcome = error
         return gate, outcome, slept
@@ -103,29 +111,29 @@ def write_with(rows, *steps, payload=None):
 class WriteTests(GateCase):
     def test_a_chained_follow_up_row_applied_in_the_same_call_is_accepted(self):
         plan({"output": "QUEUED 1\nDRAIN Applied(1)\nDRAIN Applied(2)\nDRAIN Empty\n"})
-        new_gate().write({"kind": "board"})
+        new_gate().write(BOARD_WRITE)
 
     def test_a_single_applied_row_is_accepted(self):
         plan({"output": "QUEUED 1\nDRAIN Applied(1)\nDRAIN Empty\n"})
-        new_gate().write({"kind": "task_title"})
+        new_gate().write(TITLE_WRITE)
 
     def test_a_first_row_that_is_not_applied_fails(self):
         for first in ("Retrying(1)", "Failed(1)", "Waiting(9)", "Empty"):
             plan({"output": f"QUEUED 1\nDRAIN {first}\n"})
             with self.assertRaises(gate_module.Failure, msg=first):
-                new_gate().write({"kind": "task_title"})
+                new_gate().write(TITLE_WRITE)
 
     def test_a_follow_up_row_that_retries_fails(self):
         plan({"output": "QUEUED 1\nDRAIN Applied(1)\nDRAIN Retrying(2)\n"})
         with self.assertRaises(gate_module.Failure) as raised:
-            new_gate([("task_patch", "pending", 1, "HTTP 500")]).write({"kind": "board"})
+            new_gate([("task_patch", "pending", 1, "HTTP 500")]).write(BOARD_WRITE)
         self.assertIn("drain ended", str(raised.exception))
 
     def test_a_follow_up_row_that_fails_is_a_failure_with_its_own_message(self):
         plan({"output": "QUEUED 1\nDRAIN Applied(1)\nDRAIN Failed(2)\nDRAIN Empty\n", "clear": True})
         gate = new_gate([("task_patch", "failed", 1, "HTTP 422")])
         with self.assertRaises(gate_module.Failure):
-            gate.write({"kind": "board"})
+            gate.write(BOARD_WRITE)
         with self.assertRaises(gate_module.Failure) as raised:
             gate.require_empty_queue()
         self.assertIn("queue row failed", str(raised.exception))
@@ -133,13 +141,13 @@ class WriteTests(GateCase):
     def test_a_row_left_pending_after_a_clean_drain_fails(self):
         plan({"output": "QUEUED 1\nDRAIN Applied(1)\nDRAIN Empty\n"})
         with self.assertRaises(gate_module.Failure) as raised:
-            new_gate([("task_patch", "pending", 0, None)]).write({"kind": "board"})
+            new_gate([("task_patch", "pending", 0, None)]).write(BOARD_WRITE)
         self.assertIn("queue not empty", str(raised.exception))
 
     def test_output_without_a_drain_line_fails(self):
         plan({"output": "QUEUED 1\n"})
         with self.assertRaises(gate_module.Failure):
-            new_gate().write({"kind": "task_title"})
+            new_gate().write(TITLE_WRITE)
 
 
 class RateLimitWriteTests(GateCase):
@@ -937,6 +945,233 @@ class CleanupTests(GateCase):
         problems, _ = self.run_cleanup({"timers": [{"id": 1, "task": {"id": 9}}]}, fail_on="/time/stop")
         self.assertEqual(len(problems), 1)
         self.assertIn("stop timer", problems[0])
+
+
+def snake_case(variant):
+    return re.sub(r"(?<!^)(?=[A-Z])", "_", variant).lower()
+
+
+def literal_shape(node):
+    """A payload literal with every computed value replaced by one sentinel string."""
+    if isinstance(node, ast.Dict):
+        return {literal_shape(key): literal_shape(value) for key, value in zip(node.keys, node.values)}
+    if isinstance(node, ast.Constant):
+        return node.value
+    if isinstance(node, (ast.List, ast.Tuple)):
+        return [literal_shape(item) for item in node.elts]
+    return "<computed>"
+
+
+def gate_write_shapes():
+    """Every payload literal passed to gate.write() in the gate source."""
+    tree = ast.parse(GATE_SOURCE.read_text())
+    assigned = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign) and len(node.targets) == 1 and isinstance(node.targets[0], ast.Name):
+            assigned.setdefault(node.targets[0].id, node.value)
+    shapes = []
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "write"
+            and isinstance(node.func.value, ast.Name)
+            and node.func.value.id == "gate"
+        ):
+            continue
+        argument = node.args[0]
+        if isinstance(argument, ast.Name) and argument.id in assigned:
+            argument = assigned[argument.id]
+        shapes.append(literal_shape(argument))
+    return shapes
+
+
+def with_sampled_values(shape):
+    """Fill AST sentinels with one value of each TaskPatch variant's field type.
+
+    The scan cannot evaluate names or f-strings, so a computed value reaches this table
+    as a sentinel. The key/tag shape is still the scanned one; the field types are the
+    ones pinned to crates/ht-core/src/task_patch.rs.
+    """
+    patch = shape.get("patch")
+    if shape.get("kind") != "task_patch" or not isinstance(patch, dict):
+        return shape
+    sampled = dict(shape)
+    sampled["patch"] = {}
+    for variant, value in patch.items():
+        allowed = gate_module.TASK_PATCH_SHAPES[variant]
+        if value == "<computed>":
+            allowed = allowed if isinstance(allowed, tuple) else (allowed,)
+            kind = next((item for item in allowed if item is not type(None)), type(None))
+            value = {int: 1, str: "<computed>", list: []}[kind]
+        sampled["patch"][variant] = value
+    return sampled
+
+
+def rust_enum(source, name):
+    """The serde attributes and top-level variant names of a Rust enum."""
+    text = source.read_text()
+    match = re.search(r"pub enum %s\s*\{" % name, text)
+    if match is None:
+        raise AssertionError(f"{name} is not declared in {source}")
+    attributes = []
+    for line in reversed(text[: match.start()].splitlines()):
+        if line.strip().startswith("#["):
+            attributes.append(line.strip())
+        elif line.strip() == "":
+            continue
+        else:
+            break
+    depth = 1
+    body = []
+    for char in text[match.end():]:
+        if char == "{":
+            depth += 1
+        elif char == "}":
+            depth -= 1
+            if depth == 0:
+                break
+        body.append(char)
+    segments, current, depth = [], "", 0
+    for char in "".join(body):
+        if char in "{([<":
+            depth += 1
+        elif char in "})]>":
+            depth -= 1
+        if char == "," and depth == 0:
+            segments.append(current)
+            current = ""
+        else:
+            current += char
+    segments.append(current)
+    variants = []
+    for segment in segments:
+        segment = "\n".join(line for line in segment.splitlines() if not line.strip().startswith("//"))
+        found = re.match(r"\s*([A-Z][A-Za-z0-9_]*)", segment)
+        if found:
+            variants.append(found.group(1))
+    return attributes, variants
+
+
+class WriteShapeValidationTests(GateCase):
+    def test_every_write_the_gate_sends_matches_a_serde_shape(self):
+        shapes = gate_write_shapes()
+        self.assertGreaterEqual(len(shapes), 30)
+        for shape in shapes:
+            with self.subTest(write=shape):
+                gate_module.validate_write(with_sampled_values(shape))
+
+    def test_board_and_task_patch_shapes_are_checked(self):
+        for payload in [
+            {"kind": "board"},
+            {"kind": "board", "change": {"MoveTask": {"task": 1, "project": 2}}},
+            {"kind": "board", "change": {"ToggleTimer": {"task": 1}, "MoveTask": {"task": 1, "project": 2, "section": 3}}},
+            {"kind": "board", "change": {"ToggleTimer": {"task": 1}, "comment": 4}},
+            {"kind": "task_patch", "task_id": 1, "patch": {"Priority": "high"}},
+            {"kind": "task_patch", "task_id": 1, "patch": {"Ranking": 1}},
+            {"kind": "task_patch", "task_id": 1, "patch": {"Priority": 2, "Estimate": 3}},
+        ]:
+            with self.subTest(payload=payload):
+                with self.assertRaises(gate_module.Failure):
+                    gate_module.validate_write(payload)
+
+    def test_unknown_kinds_missing_fields_and_unknown_fields_are_checked(self):
+        for payload in [
+            {"kind": "nope"},
+            {"kind": "task_title", "task_id": 1},
+            {"kind": "task_title", "task_id": 1, "title": "t", "extra": True},
+            {"kind": "discard_draft", "task_id": 1, "draft_type": "commentary"},
+        ]:
+            with self.subTest(payload=payload):
+                with self.assertRaises(gate_module.Failure):
+                    gate_module.validate_write(payload)
+
+    def test_a_valid_comment_draft_without_text_is_accepted(self):
+        gate_module.validate_write({"kind": "comment_draft", "task_id": 1})
+
+    def test_a_refused_shape_never_reaches_the_cli(self):
+        plan({"output": "QUEUED 1\nDRAIN Applied(1)\nDRAIN Empty\n"})
+        with self.assertRaises(gate_module.Failure):
+            new_gate().write({"kind": "comment_action", "task_id": 1, "comment_id": 2, "change": {"Edit": {"text": "x"}}})
+        self.assertEqual(calls(), [])
+
+
+class CommentActionShapeTests(GateCase):
+    def test_a_comment_action_is_tagged_with_its_action(self):
+        for change in [
+            {"action": "edit", "text": "<p>x</p>"},
+            {"action": "reaction", "emoji": "\U0001F44D", "active": True},
+            {"action": "saved", "public": False},
+            {"action": "delete"},
+        ]:
+            with self.subTest(change=change):
+                gate_module.validate_write({"kind": "comment_action", "task_id": 1, "comment_id": 2, "change": change})
+
+    def test_the_externally_tagged_shapes_that_failed_live_are_refused(self):
+        for change in [
+            {"Edit": {"text": "<p>x</p>"}},
+            {"Reaction": {"emoji": "\U0001F44D", "active": True}},
+            {"Saved": {"public": False}},
+            "Delete",
+        ]:
+            with self.subTest(change=change):
+                with self.assertRaises(gate_module.Failure):
+                    gate_module.validate_write({"kind": "comment_action", "task_id": 1, "comment_id": 2, "change": change})
+
+    def test_a_comment_action_needs_its_field_and_no_extra_field(self):
+        for change in [{"action": "edit"}, {"action": "edit", "text": "x", "extra": 1}, {"action": "Delete"}]:
+            with self.subTest(change=change):
+                with self.assertRaises(gate_module.Failure):
+                    gate_module.validate_write({"kind": "comment_action", "task_id": 1, "comment_id": 2, "change": change})
+
+
+class RustWriteShapeTests(unittest.TestCase):
+    def test_the_write_table_matches_the_rust_enum_and_its_kind_tag(self):
+        attributes, variants = rust_enum(RUST_SRC / "queue.rs", "Write")
+        self.assertTrue(any('tag = "kind"' in line for line in attributes), attributes)
+        self.assertTrue(any('rename_all = "snake_case"' in line for line in attributes), attributes)
+        self.assertEqual({snake_case(variant) for variant in variants}, set(gate_module.WRITE_SHAPES))
+
+    def test_the_comment_table_matches_the_rust_enum_and_its_action_tag(self):
+        attributes, variants = rust_enum(RUST_SRC / "comment_write.rs", "CommentWrite")
+        self.assertTrue(any('tag = "action"' in line for line in attributes), attributes)
+        self.assertTrue(any('rename_all = "snake_case"' in line for line in attributes), attributes)
+        self.assertEqual({snake_case(variant) for variant in variants}, set(gate_module.COMMENT_SHAPES))
+
+    def test_board_and_patch_tables_match_their_untagged_external_enums(self):
+        for source, name, table in [
+            ("board_write.rs", "BoardWrite", gate_module.BOARD_SHAPES),
+            ("task_patch.rs", "TaskPatch", gate_module.TASK_PATCH_SHAPES),
+        ]:
+            with self.subTest(enum=name):
+                attributes, variants = rust_enum(RUST_SRC / source, name)
+                self.assertFalse(any("tag =" in line for line in attributes), f"{name} must stay externally tagged")
+                self.assertEqual(set(variants), set(table))
+
+    def test_the_nested_write_fields_point_at_the_types_these_tables_cover(self):
+        text = (RUST_SRC / "queue.rs").read_text()
+        for field in ("change: crate::CommentWrite", "change: crate::BoardWrite", "patch: crate::TaskPatch"):
+            self.assertIn(field, text)
+
+
+class PriorityReopenTests(GateCase):
+    def test_both_cached_forms_name_the_same_served_priority(self):
+        self.assertEqual(gate_module.priority_index({"priority_index": 2, "Priority_Value": "High"}), 2)
+        self.assertEqual(gate_module.priority_index("High"), 2)
+
+    def test_a_different_missing_or_misspelled_priority_does_not_pass_the_check(self):
+        for value in [
+            {"priority_index": 1, "Priority_Value": "Urgent"},
+            "Urgent",
+            "No Priority",
+            "high",
+            "",
+            {},
+            None,
+            ["High"],
+        ]:
+            with self.subTest(value=value):
+                self.assertNotEqual(gate_module.priority_index(value), 2)
 
 
 if __name__ == "__main__":
