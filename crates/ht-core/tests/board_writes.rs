@@ -605,3 +605,147 @@ fn drain_all_stops_at_a_row_that_is_retrying_and_keeps_it_queued() {
     assert!(matches!(outcomes.as_slice(), [Drain::Retrying(_)]));
     assert_eq!(db.mutations().unwrap().len(), 1);
 }
+
+struct TimerServer {
+    running: bool,
+    fail: Option<(&'static str, u16)>,
+    crash_after_start: bool,
+    posts: Vec<String>,
+    starts: usize,
+    stops: usize,
+}
+impl TimerServer {
+    fn new() -> Self {
+        Self {
+            running: false,
+            fail: None,
+            crash_after_start: false,
+            posts: vec![],
+            starts: 0,
+            stops: 0,
+        }
+    }
+}
+impl Transport for TimerServer {
+    fn get(&mut self, path: &str) -> Result<Response, TransportError> {
+        assert_eq!(path, "/user/context");
+        Ok(Response {
+            status: 200,
+            body: json!({"success":true,"user":{"id":42}}),
+        })
+    }
+    fn post(&mut self, path: &str, _: &Value, _: &str) -> Result<Response, TransportError> {
+        self.posts.push(path.to_owned());
+        if let Some((failing, status)) = self.fail {
+            if failing == path {
+                self.fail = None;
+                return Ok(Response {
+                    status,
+                    body: json!({"success":false,"error":"Rate limit exceeded. Please slow down and try again shortly."}),
+                });
+            }
+        }
+        let body = match path {
+            "/time/status" => json!({"success":true,"summary":{"enabled":true,"runningEntry":if self.running {json!({"taskId":1})} else {Value::Null}}}),
+            "/time/start" => {
+                self.running = true;
+                self.starts += 1;
+                if self.crash_after_start {
+                    panic!("process died after the server started the timer");
+                }
+                json!({"success":true,"entry":{"taskId":1,"endedAt":null}})
+            }
+            "/time/stop" => {
+                self.running = false;
+                self.stops += 1;
+                json!({"success":true,"entry":{"taskId":1,"endedAt":"2026-11-14T12:00:00Z"}})
+            }
+            other => panic!("unexpected request {other}"),
+        };
+        Ok(Response { status: 200, body })
+    }
+}
+fn toggle_timer_row(db: &mut Db) -> i64 {
+    seed(db);
+    db.enqueue(
+        Write::Board {
+            change: BoardWrite::ToggleTimer { task: 1 },
+        },
+        100,
+    )
+    .unwrap()
+}
+
+#[test]
+fn timer_toggle_after_a_429_and_then_a_crash_is_refused_and_never_toggles_back() {
+    let file = tempfile::NamedTempFile::new().unwrap();
+    let mut db = Db::open(file.path()).unwrap();
+    let id = toggle_timer_row(&mut db);
+    let mut server = TimerServer::new();
+    server.fail = Some(("/time/status", 429));
+    assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Retrying(id));
+    assert_eq!(db.mutations().unwrap()[0].last_error.as_deref(), Some("HTTP 429"));
+    assert!(!server.running);
+
+    server.crash_after_start = true;
+    let crashed = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        db.drain_once(&mut server, 102)
+    }));
+    assert!(crashed.is_err());
+    assert!(server.running);
+    assert_eq!(server.starts, 1);
+    drop(db);
+
+    let mut db = Db::open(file.path()).unwrap();
+    assert_eq!(db.mutations().unwrap()[0].last_error, None);
+    assert_eq!(db.drain_once(&mut server, 400).unwrap(), Drain::Failed(id));
+    assert!(server.running);
+    assert_eq!(server.starts, 1);
+    assert_eq!(server.stops, 0);
+    assert!(
+        db.mutations().unwrap()[0]
+            .last_error
+            .as_deref()
+            .unwrap()
+            .starts_with("Timer outcome unavailable; refresh before retrying")
+    );
+}
+
+#[test]
+fn timer_toggle_after_a_429_and_a_clean_retry_replays_exactly_once() {
+    for failing in ["/time/status", "/time/start"] {
+        let mut db = Db::memory().unwrap();
+        let id = toggle_timer_row(&mut db);
+        let mut server = TimerServer::new();
+        server.fail = Some((failing, 429));
+        assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Retrying(id));
+        assert_eq!(db.mutations().unwrap()[0].last_error.as_deref(), Some("HTTP 429"));
+        assert_eq!(db.mutations().unwrap()[0].status, "pending");
+        assert!(!server.running);
+        assert_eq!(db.drain_once(&mut server, 102).unwrap(), Drain::Applied(id));
+        assert!(server.running);
+        assert_eq!(server.starts, 1);
+        assert_eq!(server.stops, 0);
+        assert!(db.mutations().unwrap().is_empty());
+        assert_eq!(db.drain_once(&mut server, 1000).unwrap(), Drain::Empty);
+        assert_eq!(server.starts, 1);
+    }
+}
+
+#[test]
+fn timer_toggle_failure_that_is_not_a_429_is_permanent_even_if_its_body_mentions_the_rate_limit() {
+    for status in [500, 503, 409] {
+        let mut db = Db::memory().unwrap();
+        let id = toggle_timer_row(&mut db);
+        let mut server = TimerServer::new();
+        server.fail = Some(("/time/status", status));
+        assert_eq!(db.drain_once(&mut server, 100).unwrap(), Drain::Failed(id));
+        let error = db.mutations().unwrap()[0].last_error.clone().unwrap();
+        assert_eq!(
+            error,
+            format!("Timer outcome unavailable; refresh before retrying (HTTP {status})")
+        );
+        assert_eq!(db.drain_once(&mut server, 1000).unwrap(), Drain::Empty);
+        assert_eq!(server.posts, vec!["/time/status"]);
+    }
+}

@@ -22,7 +22,9 @@ EVIDENCE = os.path.join(ROOT, "evidence", "live-readback")
 # The gate needs more than one window, so it waits for the next window instead of failing.
 RATE_LIMIT_WINDOW_SECONDS = 60
 RATE_LIMIT_RETRIES = 4
-RATE_LIMIT_MARKERS = ("http 429", "rate limit")
+RATE_LIMIT_WAIT_BUDGET_SECONDS = 900
+QUEUE_RATE_LIMIT_ERRORS = ("HTTP 429", "Rate limit exceeded. Please slow down and try again shortly.")
+waited_seconds = 0.0
 
 STEP_NAMES = (
     "task_title", "task_section", "move_task", "task_description", "task_priority",
@@ -43,8 +45,7 @@ class RateLimited(Exception):
 
 
 def rate_limited(message):
-    text = (message or "").lower()
-    return any(marker in text for marker in RATE_LIMIT_MARKERS)
+    return "http 429" in (message or "").lower()
 
 
 def window_wait(now=None):
@@ -53,8 +54,11 @@ def window_wait(now=None):
 
 
 def pause(reason):
+    global waited_seconds
     wait = window_wait()
-    # The web repo wrapper prints lines containing LIVE_READBACK, so keep the marker.
+    if waited_seconds + wait > RATE_LIMIT_WAIT_BUDGET_SECONDS:
+        raise Failure(f"rate limit wait budget of {RATE_LIMIT_WAIT_BUDGET_SECONDS}s is spent ({waited_seconds:.0f}s waited): {reason}")
+    waited_seconds += wait
     print(f"LIVE_READBACK_WAIT {wait:.0f}s {reason}")
     time.sleep(wait)
 
@@ -89,14 +93,12 @@ def api_once(method, path, body=None, base=BASE):
     except urllib.error.HTTPError as error:
         detail = redact(error.read().decode(errors="replace")[:400])
         message = f"API {method} {path} status {error.code}: {detail}"
-        if error.code == 429 or rate_limited(detail):
+        if error.code == 429:
             raise RateLimited(message)
         raise Failure(message)
     payload = json.loads(raw) if raw.strip() else {}
     if isinstance(payload, dict) and payload.get("success") is False:
         detail = redact(json.dumps(payload)[:400])
-        if rate_limited(detail):
-            raise RateLimited(f"API {method} {path} refused: {detail}")
         raise Failure(f"API {method} {path} refused: {detail}")
     return payload
 
@@ -184,6 +186,15 @@ def section_title(row):
     return row.get("section_title") or row.get("title") or row.get("name")
 
 
+def parent_of(task):
+    return (task or {}).get("parentTaskId") or (task or {}).get("parent_id")
+
+
+def timer_running_on(running, task_id):
+    timers = running.get("timers") if isinstance(running, dict) else None
+    return any(isinstance(timer, dict) and isinstance(timer.get("task"), dict) and timer["task"].get("id") == task_id for timer in timers or [])
+
+
 class Gate:
     def __init__(self):
         self.nonce = str(time.time_ns())
@@ -202,16 +213,22 @@ class Gate:
         self.timer_task = None
         self.rate_limit_waits = 0
 
-    def sync(self, db=None):
+    def read_with_retry(self, db, reason, *args):
         for attempt in range(RATE_LIMIT_RETRIES + 1):
             try:
-                cli(db or self.db, "sync", "--board", str(BOARD))
+                cli(db, *args)
                 return
             except Failure as error:
                 if attempt == RATE_LIMIT_RETRIES or not rate_limited(str(error)):
                     raise
                 self.rate_limit_waits += 1
-                pause("sync --board")
+                pause(reason)
+
+    def sync(self, db=None):
+        self.read_with_retry(db or self.db, "sync --board", "sync", "--board", str(BOARD))
+
+    def fetch_task(self, task_id):
+        self.read_with_retry(self.db, f"task --task {task_id}", "task", "--task", str(task_id))
 
     def drain_outcomes(self, output):
         outcomes = re.findall(r"DRAIN (\w+)", output)
@@ -237,7 +254,7 @@ class Gate:
 
     def rate_limit_pending(self):
         pending = [row for row in self.queue_state() if row[1] == "pending"]
-        return bool(pending) and all(rate_limited(row[3]) for row in pending)
+        return bool(pending) and all(row[3] in QUEUE_RATE_LIMIT_ERRORS for row in pending)
 
     def require_empty_queue(self):
         left = self.queue_state()
@@ -268,14 +285,17 @@ class Gate:
         return task_id
 
 
+REOPEN_OWNER = {"create_label": "labels", "remove_subtask": "parent_and_remove_subtask", "inbox_archive": "inbox_remind_and_archive"}
+
+
 def report(gate):
-    passed = sum(1 for name in STEP_NAMES if name in gate.results and gate.results[name] is None)
     reopen_failed = [key for key, value in gate.results.items() if key.startswith("reopen:") and value]
+    reopened_kinds = {REOPEN_OWNER.get(key.split(":", 2)[2], key.split(":", 2)[2]) for key in reopen_failed}
+    passed = sum(1 for name in STEP_NAMES if name in gate.results and gate.results[name] is None and name not in reopened_kinds)
     if reopen_failed:
         print(f"REOPEN_FAILED {len(reopen_failed)}")
     if gate.rate_limit_waits:
         print(f"LIVE_READBACK_RATE_LIMIT_WAITS {gate.rate_limit_waits}")
-    # Always the last status line, including after a crash outside gate.run.
     print(f"KINDS_PASSED {passed}/{len(STEP_NAMES)}")
     return 0 if passed == len(STEP_NAMES) and not reopen_failed else 1
 
@@ -292,15 +312,13 @@ def main():
     try:
         execute(gate)
         status = 0
-    except Exception as error:
-        # Anything outside gate.run (preflight, reopen_phase) used to escape as a bare
-        # traceback with no KINDS_PASSED line, which hides how far the run got.
+    except (Exception, SystemExit, KeyboardInterrupt) as error:
         print(f"LIVE_READBACK_CRASH {type(error).__name__}: {redact(str(error))[:300]}")
         status = 1
     cleanup_failed = []
     try:
         cleanup_failed = cleanup(gate)
-    except Exception as error:
+    except (Exception, SystemExit, KeyboardInterrupt) as error:
         cleanup_failed = [f"cleanup crashed: {type(error).__name__}: {redact(str(error))[:200]}"]
     if cleanup_failed:
         print("CLEANUP_FAILED " + "; ".join(cleanup_failed))
@@ -309,6 +327,68 @@ def main():
         print("LIVE_READBACK_OK")
         return 0
     return 1
+
+
+def parent_kind(gate, task, parent):
+    def api_parent():
+        return parent_of(get_task(task))
+
+    def local_parent():
+        return parent_of(local(gate.db, "Task", task))
+
+    def local_children():
+        return (local(gate.db, "Task", parent) or {}).get("sub_tasks")
+
+    def set_parent():
+        gate.write({"kind": "task_patch", "task_id": task, "patch": {"Parent": parent}})
+        need(api_parent() == parent, "API parent missing")
+        need(local_parent() == parent, "local task lacks the new parent")
+
+    set_parent()
+    gate.write({"kind": "task_patch", "task_id": task, "patch": {"Parent": None}})
+    need(not api_parent(), "API parent not removed by Parent(None)")
+    need(local(gate.db, "Task", task) is not None and not local_parent(), "local task still has its parent after Parent(None)")
+
+    set_parent()
+    gate.fetch_task(parent)
+    need(contains_id(local_children(), task), f"parent's cached sub-tasks lack the child after a fresh task fetch: {redact(json.dumps(local_children())[:200])}")
+    gate.write({"kind": "board", "change": {"RemoveSubtask": {"task": task, "parent": parent}}})
+    need(not api_parent(), "API parent not removed by RemoveSubtask")
+    need(not contains_id(get_task(parent).get("sub_tasks"), task), "API parent still lists the removed sub-task")
+    need(not local_parent(), "local task still has its parent after RemoveSubtask")
+    need(not contains_id(local_children(), task), "parent's cached sub-tasks still list the removed sub-task")
+    gate.expect_local("remove_subtask", "Task parent and parent's sub-task list cleared", lambda db: local(db, "Task", task) is not None and not parent_of(local(db, "Task", task)) and not contains_id((local(db, "Task", parent) or {}).get("sub_tasks"), task))
+
+
+def timer_kind(gate, task):
+    toggle = {"kind": "board", "change": {"ToggleTimer": {"task": task}}}
+    summary = api("POST", "/time/status", {"task": str(task)}).get("summary") or {}
+    need(summary.get("enabled") is True, f"board {BOARD} has time tracking disabled: POST /time/status said {redact(json.dumps(summary)[:300])}")
+    gate.timer_task = task
+    gate.write(toggle)
+    running = api("GET", "/time/running")
+    need(timer_running_on(running, task), f"API timer not running: GET /time/running said {redact(json.dumps(running)[:400])}")
+    gate.write(toggle)
+    running = api("GET", "/time/running")
+    need(not timer_running_on(running, task), f"API timer still running: GET /time/running said {redact(json.dumps(running)[:400])}")
+    gate.timer_task = None
+
+
+def labels_clear_kind(gate, task):
+    gate.write({"kind": "task_patch", "task_id": task, "patch": {"Labels": []}})
+    need(not (get_task(task).get("labels") or []), "API labels not cleared")
+    need(not ((local(gate.db, "Task", task) or {}).get("labels") or []), "local task still carries the labels")
+    gate.sync()
+    need(not ((local(gate.db, "Task", task) or {}).get("labels") or []), "labels came back after a resync")
+
+
+def label_reopen_check(name, task):
+    def check(db):
+        board_label = any(name in row[0] for row in query(db, 'SELECT raw_json FROM "Label" WHERE projectId=?', (BOARD,)))
+        task_label = name in json.dumps((local(db, "Task", task) or {}).get("labels"))
+        return board_label and task_label
+
+    return check
 
 
 def execute(gate):
@@ -385,9 +465,7 @@ def execute(gate):
         gate.write({"kind": "board", "change": {"CreateTaskLabel": {"project": BOARD, "task": main_task, "name": name}}})
         need(name in json.dumps(get_task(main_task).get("labels")), "API label missing")
         need(name in json.dumps((local(gate.db, "Task", main_task) or {}).get("labels")), "local task lacks the new label")
-        # The clear runs after the reopen phases (labels_clear), so this stays task-level:
-        # the association itself has to survive the reopen, not just the board label row.
-        gate.expect_local("create_label", "Task label", lambda db: name in json.dumps((local(db, "Task", main_task) or {}).get("labels")))
+        gate.expect_local("create_label", "Board label and task label", label_reopen_check(name, main_task))
 
     def assignees():
         gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Assignees": [gate.user]}})
@@ -400,19 +478,7 @@ def execute(gate):
         gate.expect_local("assign_to_me", "Task self assignment", lambda db: contains_id((local(db, "Task", assign_task) or {}).get("assignees"), gate.user))
 
     def parent():
-        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Parent": parent_task}})
-        got = get_task(main_task)
-        need((got.get("parentTaskId") or got.get("parent_id")) == parent_task, "API parent missing")
-        # Removing the parent of the open task is TaskPatch::Parent(None) in the desktop
-        # (crates/ht-desktop/src/shell_commands.rs:26). BoardWrite::RemoveSubtask is the
-        # "remove a sub-task" modal, whose own guard needs the parent's sub_tasks in the
-        # cache (crates/ht-core/src/queue.rs:94-99) that the board list strips
-        # (crates/ht-core/src/db.rs:344); the modal only offers children it read from that
-        # same cached list, so the gate used a write the app never issues with this cache.
-        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Parent": None}})
-        got = get_task(main_task)
-        need(not (got.get("parentTaskId") or got.get("parent_id")), "API parent not removed")
-        gate.expect_local("remove_subtask", "Task parent removed", lambda db: not (local(db, "Task", main_task) or {}).get("parentTaskId"))
+        parent_kind(gate, main_task, parent_task)
 
     def status():
         gate.write({"kind": "task_patch", "task_id": assign_task, "patch": {"Status": "Archive"}})
@@ -436,16 +502,7 @@ def execute(gate):
         gate.expect_local("waiting_on", "Task waiting-on cleared", lambda db: (local(db, "Task", main_task) or {}).get("waitingOnUserId") is None)
 
     def timer():
-        summary = api("POST", "/time/status", {"task": str(assign_task)}).get("summary") or {}
-        need(summary.get("enabled") is True, f"board {BOARD} has time tracking disabled: POST /time/status said {redact(json.dumps(summary)[:300])}")
-        gate.write({"kind": "board", "change": {"ToggleTimer": {"task": assign_task}}})
-        gate.timer_task = assign_task
-        running = api("GET", "/time/running")
-        need(contains_id(running, assign_task) or str(assign_task) in json.dumps(running), f"API timer not running: GET /time/running said {redact(json.dumps(running)[:400])}")
-        gate.write({"kind": "board", "change": {"ToggleTimer": {"task": assign_task}}})
-        running = api("GET", "/time/running")
-        need(not (contains_id(running, assign_task) or str(assign_task) in json.dumps(running)), f"API timer still running: GET /time/running said {redact(json.dumps(running)[:400])}")
-        gate.timer_task = None
+        timer_kind(gate, assign_task)
 
     moved_notification = {}
 
@@ -589,14 +646,7 @@ def execute(gate):
         gate.reopen[:] = [item for item in gate.reopen if item[0] != "inbox_archive"]
 
     def labels_clear():
-        # Runs after everything reopened: while the label is still attached, create_label's
-        # reopen check can stay task-level. The clear is then proven on the server, in this
-        # database, and again after a resync of it.
-        gate.write({"kind": "task_patch", "task_id": main_task, "patch": {"Labels": []}})
-        need(not (get_task(main_task).get("labels") or []), "API labels not cleared")
-        need(not ((local(gate.db, "Task", main_task) or {}).get("labels") or []), "local task still carries the labels")
-        gate.sync()
-        need(not ((local(gate.db, "Task", main_task) or {}).get("labels") or []), "labels came back after a resync")
+        labels_clear_kind(gate, main_task)
 
     steps = dict([
         ("task_title", title), ("task_section", section), ("move_task", move),
@@ -655,8 +705,12 @@ def cleanup(gate):
         except (Failure, SystemExit, KeyError, TypeError) as error:
             problems.append(f"{label}: {redact(str(error))[:200]}")
 
+    def stop_running_timer(task_id):
+        if timer_running_on(api("GET", "/time/running"), task_id):
+            api("POST", "/time/stop", {"task": str(task_id)})
+
     if gate.timer_task is not None:
-        attempt("stop timer", lambda: api("POST", "/time/stop", {"task": str(gate.timer_task)}))
+        attempt("stop timer", lambda: stop_running_timer(gate.timer_task))
     if gate.notification_archived is not None:
         attempt("unarchive notification", lambda: api("POST", "/inbox/unarchive", {"notification_ids": [gate.notification_archived]}))
     if gate.board_title:

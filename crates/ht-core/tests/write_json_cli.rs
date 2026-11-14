@@ -41,3 +41,20 @@ fn write_json_rejects_unknown_kinds_without_queueing() {
     assert!(!refused.status.success());
     assert!(Db::open(&path).unwrap().mutations().unwrap().is_empty());
 }
+
+#[test]
+fn task_fetch_needs_a_token_and_a_task_id_and_touches_nothing_without_them() {
+    let dir = tempfile::tempdir().unwrap();
+    let path = dir.path().join("local.db");
+    seeded(&path);
+    for args in [vec!["task", "--task", "501"], vec!["task", "--task", "nope"], vec!["task"]] {
+        let refused = Command::new(env!("CARGO_BIN_EXE_ht-core-cli"))
+            .env_remove("HT_TOKEN")
+            .args(["--db", path.to_str().unwrap()])
+            .args(&args)
+            .output()
+            .unwrap();
+        assert!(!refused.status.success(), "{args:?}");
+    }
+    assert_eq!(Db::open(&path).unwrap().task(501).unwrap().unwrap().title, "before");
+}

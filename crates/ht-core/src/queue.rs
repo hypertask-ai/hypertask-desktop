@@ -74,14 +74,12 @@ pub fn backoff(attempts: u32) -> i64 {
 pub fn permanent(status: u16) -> bool {
     (400..500).contains(&status) && !matches!(status, 408 | 429)
 }
-/// The MCP route wrapper rejects a rate-limited request before the handler runs
-/// (hypertask-ai/hypertask `src/lib/mcp/auth/rateLimit.ts`), so an attempt that ended on a
-/// 429 cannot have changed server state and is not an uncertain replay.
+/// A board write that ended on exactly `HTTP 429` was refused by the MCP route wrapper before its
+/// handler ran (hypertask-ai/hypertask `src/lib/mcp/auth/rateLimit.ts`), so it changed no server
+/// state. The queue writes this text only for a real 429 status and clears it when the next attempt
+/// is claimed, so an attempt that never recorded an outcome never inherits it.
 pub fn rate_limited_error(message: Option<&str>) -> bool {
-    message.is_some_and(|message| {
-        let message = message.to_ascii_lowercase();
-        message.contains("http 429") || message.contains("rate limit")
-    })
+    message == Some("HTTP 429")
 }
 
 impl Db {
@@ -439,7 +437,7 @@ impl Db {
             let Some(mut row) = head else { return Ok(None); };
             let ready = if row.status == "inflight" { row.lease_until.unwrap_or(0) } else { row.next_attempt_at };
             if ready > now { return Ok(Some((row, false, ready))); }
-            db.conn.execute("UPDATE mutation_queue SET status='inflight', attempts=attempts+1, lease_until=? WHERE id=?", params![now+120,row.id])?;
+            db.conn.execute("UPDATE mutation_queue SET status='inflight', attempts=attempts+1, lease_until=?, last_error=NULL WHERE id=?", params![now+120,row.id])?;
             row.attempts += 1;
             Ok(Some((row, true, 0)))
         })?;
@@ -449,7 +447,6 @@ impl Db {
         if !claimed {
             return Ok(Drain::Waiting(ready));
         }
-        let replay_allowed = rate_limited_error(row.last_error.as_deref());
         let (path, body) = match row.kind.as_str() {
             "editor_improve" => ("/ai/improve",row.payload_json.clone()),
             "draft_discard" => ("",Value::Null),
@@ -481,7 +478,7 @@ impl Db {
                 Ok(response) if (200..300).contains(&response.status) && response.body["success"] == true => {
                     if response.body["user"]["id"] == row.payload_json["user_id"] {
                         if let crate::BoardWrite::ToggleTimer { task } = change {
-                            if row.attempts > 1 && !replay_allowed {
+                            if row.attempts > 1 && !rate_limited_error(row.last_error.as_deref()) {
                                 Ok(Response { status:409, body:json!({"success":false,"error":"Timer outcome unknown; refresh before retrying"}) })
                             } else { crate::board_write::toggle_timer(transport, task, &row.client_id) }
                         } else { transport.mutate(method, &path, &body, &row.client_id) }
@@ -519,7 +516,7 @@ impl Db {
                 serde_json::from_value(row.payload_json["change"].clone())?;
             if let crate::CommentWrite::Saved { public } = change {
                 // toggleSaved has no idempotency support: never replay an uncertain toggle.
-                if row.attempts > 1 && !replay_allowed { Ok(Response { status: 409, body: json!({"success":false}) }) }
+                if row.attempts > 1 { Ok(Response { status: 409, body: json!({"success":false}) }) }
                 else if self.current_user_id() != row.payload_json["user_id"].as_i64() {
                     Ok(Response { status:403, body:json!({"success":false}) })
                 } else {
