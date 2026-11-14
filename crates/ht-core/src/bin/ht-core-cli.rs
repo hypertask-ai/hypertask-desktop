@@ -136,6 +136,21 @@ fn run() -> Result<()> {
                 .map_err(|_| anyhow::anyhow!("write thread failed"))??;
             }
         }
+        Some("write-json") if args.len() == 2 => {
+            let write: Write = serde_json::from_str(&args[1]).context("write-json needs a Write as JSON")?;
+            let mut db = db;
+            let mutation = db.enqueue(write, chrono::Utc::now().timestamp())?;
+            println!("QUEUED {mutation}");
+            if let Ok(token) = std::env::var("HT_TOKEN") {
+                let mut http = Http::new(token)?;
+                let drained = std::thread::spawn(move || {
+                    db.drain_once(&mut http, chrono::Utc::now().timestamp())
+                })
+                .join()
+                .map_err(|_| anyhow::anyhow!("write thread failed"))??;
+                println!("DRAIN {drained:?}");
+            }
+        }
         Some("import-fixtures") if args.len() == 2 || args.len() == 4 => {
             let synthetic_tasks = match args.get(2).map(String::as_str) {
                 Some("--synthetic-tasks") => args[3].parse::<usize>()?,
@@ -148,7 +163,7 @@ fn run() -> Result<()> {
             println!("IMPORTED files={imported} synthetic_tasks={added}");
         }
         _ => bail!(
-            "usage: ht-core-cli [--db path] sync --board <id> | write <kind> ... | dump | import-fixtures <dir> [--synthetic-tasks <n>]"
+            "usage: ht-core-cli [--db path] sync --board <id> | write <kind> ... | write-json <Write JSON> | dump | import-fixtures <dir> [--synthetic-tasks <n>]"
         ),
     }
     Ok(())
